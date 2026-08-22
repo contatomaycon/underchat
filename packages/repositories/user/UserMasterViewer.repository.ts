@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { user, permissionAssignment, account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 @injectable()
@@ -42,6 +42,11 @@ export class UserMasterViewerRepository {
           isNull(user.deleted_at),
           isNull(account.deleted_at)
         )
+      )
+      .orderBy(
+        sql`CASE WHEN ${permissionAssignment.permission_role_id} = ${EPermissionRole.master} THEN 0 ELSE 1 END`,
+        asc(user.created_at),
+        asc(user.user_id)
       )
       .limit(1)
       .execute();

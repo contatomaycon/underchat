@@ -92,7 +92,10 @@ func (qrc *qrChannel) emitQRs(codes []string) {
 			timeout = 60 * time.Second
 		}
 		nextCode, codes = codes[0], codes[1:]
-		qrc.log.Debugf("Emitting QR code %s", nextCode)
+		// The QR payload is a short-lived authentication credential. Keep the
+		// lifecycle visible in debug mode without ever writing the payload to
+		// stdout or a configured log sink.
+		qrc.log.Debugf("Emitting QR code event (remaining=%d, timeout=%s)", len(codes), timeout)
 		select {
 		case qrc.output <- QRChannelItem{Code: nextCode, Timeout: timeout, Event: QRChannelEventCode}:
 		default:

@@ -109,42 +109,6 @@ export const useWarmChannelsStore = defineStore('warmChannels', {
         return null;
       }
     },
-    async recreateWarmChannel(warmPoolId: string): Promise<boolean> {
-      try {
-        this.loading = true;
-
-        const response = await axios.patch<
-          IApiResponse<RecreateWarmChannelsResponse>
-        >(`/config/warm-channels/${warmPoolId}/recreate`);
-
-        this.loading = false;
-
-        const data = response?.data;
-
-        if (!data?.status) {
-          this.showSnackbar(
-            data?.message ?? this.i18n.global.t('warm_channel_recreate_error'),
-            EColor.error
-          );
-          return false;
-        }
-
-        this.showSnackbar(
-          data.message ?? this.i18n.global.t('warm_channel_recreate_enqueued'),
-          EColor.success
-        );
-
-        return true;
-      } catch (error) {
-        this.loading = false;
-        let errorMessage = this.i18n.global.t('warm_channel_recreate_error');
-        if (error instanceof AxiosError) {
-          errorMessage = error?.response?.data?.message ?? errorMessage;
-        }
-        this.showSnackbar(errorMessage, EColor.error);
-        return false;
-      }
-    },
     async viewWarmChannelSettings(): Promise<WarmChannelSettingsResponse | null> {
       try {
         this.settingsLoading = true;

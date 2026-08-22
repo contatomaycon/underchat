@@ -7,24 +7,24 @@ import {
   EditMessageBody,
 } from '@core/schema/chat/editMessage/request.schema';
 import { MessageVersion } from '@core/schema/chat/listMessageChats/response.schema';
-import { StreamProducerService } from '@core/services/streamProducer.service';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
-import { buildMessageSendQueueKey } from '@core/common/functions/messageIdentity';
-import { v7 as uuidv7 } from 'uuid';
+import { resolveWorkerCommandChatEntityKey } from '@core/common/functions/messageIdentity';
 import { WorkerService } from '@core/services/worker.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
+import { WorkerCommandAdmissionService } from '@core/services/workerCommandAdmission.service';
+import { workerCommandMessagePayload } from '@core/common/functions/workerCommandMessagePayload';
+import { currentWorkerCommandRetryOf } from '@core/common/functions/workerCommandAcceptanceContext';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class ChatMessageEditorUseCase {
   constructor(
     @inject(ChatService)
     private readonly chatService: ChatService,
-    @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(WorkerCommandAdmissionService)
+    private readonly workerCommandAdmissionService: WorkerCommandAdmissionService,
     @inject(WorkerService)
     private readonly workerService: WorkerService
   ) {}
@@ -35,7 +35,8 @@ export class ChatMessageEditorUseCase {
     params: EditMessageParams,
     body: EditMessageBody,
     userId: string,
-    userChannels: { id: string; name: string }[] = []
+    userChannels: { id: string; name: string }[] = [],
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<boolean> {
     const message = await this.chatService.findMessageByMessageId(
       accountId,
@@ -78,6 +79,42 @@ export class ChatMessageEditorUseCase {
       throw new Error(t('only_text_messages_can_be_edited'));
     }
 
+    const operationId =
+      body.operation_id === undefined ? uuidv7() : body.operation_id.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/u.test(operationId)) {
+      throw new Error('worker_command_operation_id_invalid');
+    }
+    if (
+      body.retry_of &&
+      (!/^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/u.test(body.retry_of) ||
+        body.retry_of === operationId)
+    ) {
+      throw new Error('worker_command_retry_of_invalid');
+    }
+
+    const versions = message.content.version ?? [];
+    const latestVersion = [...versions].sort(
+      (left, right) =>
+        new Date(right.date).getTime() - new Date(left.date).getTime()
+    )[0];
+    const effectiveMessage = latestVersion?.message ?? message.content.message;
+    if (effectiveMessage === body.message) {
+      if (
+        latestVersion &&
+        message.message_key?.id &&
+        message.message_key.remote_jid
+      ) {
+        await this.admitEdit(
+          accountId,
+          this.buildEditCommandMessage(message, operationId, body.message),
+          operationId,
+          webhookSource,
+          true
+        );
+      }
+      return true;
+    }
+
     const messageDate = new Date(message.date);
     const now = new Date();
     const diffInMinutes = (now.getTime() - messageDate.getTime()) / (1000 * 60);
@@ -92,15 +129,33 @@ export class ChatMessageEditorUseCase {
       date: new Date().toISOString(),
     };
 
-    const versions = message.content.version ?? [];
     const updatedContent = {
       ...message.content,
       version: [...versions, newVersion],
     };
 
-    const contentUpdated = await this.chatService.updateMessageContent(
-      params.message_id,
-      updatedContent
+    const editedMessage: IChatMessage = {
+      ...message,
+      content: {
+        ...message.content,
+        ...updatedContent,
+      },
+      hash: operationId,
+    };
+
+    const contentUpdated = await this.chatService.updateMessageChat(
+      editedMessage,
+      {
+        eventTypes: ['message.edited'],
+        idempotencyKey: `message-edit:${message.message_id}:${operationId}`,
+        source: webhookSource,
+        previousMessage: message,
+        actor: { type: 'user', id: userId },
+        changes: {
+          edited_at: newVersion.date,
+          origin: webhookSource,
+        },
+      }
     );
 
     if (!contentUpdated) {
@@ -111,22 +166,95 @@ export class ChatMessageEditorUseCase {
       return true;
     }
 
-    const editedMessage: IChatMessage = {
-      ...message,
-      content: {
-        ...message.content,
-        ...updatedContent,
-      },
-      hash: uuidv7(),
-    };
-
-    await this.streamProducerService.send(
-      this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),
-      editedMessage,
-      buildMessageSendQueueKey(editedMessage.account.id, editedMessage.chat_id)
+    await this.admitEdit(
+      accountId,
+      this.buildEditCommandMessage(editedMessage, operationId, body.message),
+      operationId,
+      webhookSource,
+      false
     );
 
     return true;
+  }
+
+  private async admitEdit(
+    accountId: string,
+    message: IChatMessage,
+    operationId: string,
+    source: OutboundWebhookRequestSource,
+    retry: boolean
+  ): Promise<void> {
+    const workerId = message.worker.id?.trim();
+    if (!workerId) {
+      throw new Error('Worker ID is required to edit message');
+    }
+    await this.workerCommandAdmissionService.admit({
+      accountId,
+      workerId,
+      commandType: 'direct_send',
+      entityKey: resolveWorkerCommandChatEntityKey(
+        accountId,
+        workerId,
+        message
+      ),
+      operationId,
+      retryOf: currentWorkerCommandRetryOf(),
+      payload: workerCommandMessagePayload(message),
+      source,
+      retry,
+    });
+  }
+
+  private buildEditCommandMessage(
+    message: IChatMessage,
+    operationId: string,
+    editedText: string
+  ): IChatMessage {
+    return {
+      message_id: message.message_id,
+      chat_id: message.chat_id,
+      message_key: message.message_key
+        ? {
+            remote_jid: message.message_key.remote_jid ?? null,
+            remote_jid_alt: message.message_key.remote_jid_alt ?? null,
+            from_me: message.message_key.from_me ?? false,
+            id: message.message_key.id ?? null,
+            participant: message.message_key.participant ?? null,
+            participant_alt: message.message_key.participant_alt ?? null,
+            addressing_mode: message.message_key.addressing_mode ?? null,
+            is_view_once: false,
+          }
+        : null,
+      type_user: message.type_user,
+      account: message.account,
+      worker: message.worker,
+      user: null,
+      phone: message.phone,
+      content: {
+        type: EMessageType.text,
+        message: message.content?.message ?? null,
+        version: [
+          {
+            type: EMessageType.text,
+            message: editedText,
+            // Provider ordering is carried by the lane; the original
+            // message clock keeps retries byte-for-byte stable.
+            date: message.date,
+          },
+        ],
+      },
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+        is_sent_to_internal: true,
+      },
+      date: message.date,
+      deleted: false,
+      has_quoted: false,
+      sent_from_platform: true,
+      hash: operationId,
+    };
   }
 
   private async isOfficialWorker(

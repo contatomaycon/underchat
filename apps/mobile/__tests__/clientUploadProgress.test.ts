@@ -130,6 +130,8 @@ describe('apiPostFormWithMessage upload progress', () => {
       status: true,
       data: { message_id: 'message-1' },
       message: 'ok',
+      requestId: null,
+      httpStatus: 200,
     });
     expect(progressValues).toEqual([50, 99]);
   });
@@ -173,6 +175,8 @@ describe('apiPostFormWithMessage upload progress', () => {
       status: true,
       data: { message_id: 'message-2' },
       message: null,
+      requestId: null,
+      httpStatus: 200,
     });
     expect(progressValues).toEqual([0, 25]);
   });

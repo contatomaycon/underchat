@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
-import SectorController from '@/controllers/sector';
+import SectorController from '@core/controllers/sector';
 import PlanController from '@/controllers/plan';
 import { salesViewPermissions } from '@/permissions/sales.permissions';
 import { listSectorSchema } from '@core/schema/sector/listSector';

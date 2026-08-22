@@ -7,6 +7,7 @@ import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerCon
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { EChatbotType } from '@core/common/enums/EChatbotType';
+import { EChatbotStatus } from '@core/common/enums/EChatbotStatus';
 import {
   OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES,
   parseOperatorReplyPendingAlertConfig,
@@ -51,12 +52,12 @@ export class WorkerConfigForChatViewerRepository {
   private async fetchChatbotConfig(
     workerId: string,
     configType:
-      | EWorkerConfigType.chatbot_id
-      | EWorkerConfigType.chatbot_output_id
+      EWorkerConfigType.chatbot_id | EWorkerConfigType.chatbot_output_id
   ): Promise<{
     chatbotId: string | null;
     name: string | null;
     type: EChatbotType | null;
+    status: EChatbotStatus | null;
     enabled: boolean;
   } | null> {
     const result = await this.dbRo
@@ -65,6 +66,7 @@ export class WorkerConfigForChatViewerRepository {
         worker_config_status_id: workerConfig.worker_config_status_id,
         name: chatbot.name,
         type: chatbot.type,
+        status: chatbot.status,
       })
       .from(workerConfig)
       .leftJoin(chatbot, eq(workerConfig.chatbot_id, chatbot.chatbot_id))
@@ -84,6 +86,7 @@ export class WorkerConfigForChatViewerRepository {
       chatbotId: row.chatbot_id,
       name: row.name,
       type: row.type ?? null,
+      status: row.status ?? null,
       enabled: row.worker_config_status_id === EWorkerConfigStatus.active,
     };
   }
@@ -119,12 +122,14 @@ export class WorkerConfigForChatViewerRepository {
       chatbotId: string | null;
       name: string | null;
       type: EChatbotType | null;
+      status: EChatbotStatus | null;
       enabled: boolean;
     } | null,
     chatbotOutputConfig: {
       chatbotId: string | null;
       name: string | null;
       type: EChatbotType | null;
+      status: EChatbotStatus | null;
       enabled: boolean;
     } | null,
     aiAgentConfig: { aiAgentId: string | null; enabled: boolean },
@@ -141,6 +146,7 @@ export class WorkerConfigForChatViewerRepository {
       chatbotInputConfig?.enabled &&
       chatbotInputConfig.chatbotId &&
       chatbotInputConfig.name &&
+      chatbotInputConfig.status === EChatbotStatus.active &&
       chatbotInputConfig.type === EChatbotType.input
         ? {
             chatbot_id: chatbotInputConfig.chatbotId,
@@ -153,6 +159,7 @@ export class WorkerConfigForChatViewerRepository {
       chatbotOutputConfig?.enabled &&
       chatbotOutputConfig.chatbotId &&
       chatbotOutputConfig.name &&
+      chatbotOutputConfig.status === EChatbotStatus.active &&
       chatbotOutputConfig.type === EChatbotType.output
         ? {
             chatbot_id: chatbotOutputConfig.chatbotId,

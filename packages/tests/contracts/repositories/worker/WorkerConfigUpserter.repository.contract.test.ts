@@ -2,6 +2,8 @@ import 'reflect-metadata';
 import { WorkerConfigUpserterRepository } from '@core/repositories/worker/WorkerConfigUpserter.repository';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 jest.mock('uuid', () => ({
   v7: jest.fn(() => 'mocked-uuid'),
@@ -23,6 +25,42 @@ function buildRepository() {
 }
 
 describe('WorkerConfigUpserterRepository', () => {
+  it('targets the partial singleton-config index for atomic boolean upserts', async () => {
+    const { repository } = buildRepository();
+    const execute = jest
+      .fn()
+      .mockResolvedValue([{ revision: '1777777777000000' }]);
+    const returning = jest.fn(() => ({ execute }));
+    const capturedConflicts: Array<{ targetWhere: SQL }> = [];
+    const onConflictDoUpdate = jest.fn((conflict: { targetWhere: SQL }) => {
+      capturedConflicts.push(conflict);
+      return { returning };
+    });
+    const values = jest.fn(() => ({ onConflictDoUpdate }));
+    const tx = {
+      insert: jest.fn(() => ({ values })),
+    };
+
+    await expect(
+      (repository as any).upsertBooleanConfig(
+        tx,
+        'w-1',
+        EWorkerConfigType.reject_call,
+        true
+      )
+    ).resolves.toBe('1777777777000000');
+
+    const conflict = capturedConflicts[0];
+    if (!conflict) {
+      throw new Error('worker_config_conflict_target_not_captured');
+    }
+    const predicate = new PgDialect().sqlToQuery(conflict.targetWhere as SQL);
+    expect(predicate.sql).toBe(
+      `"worker_config"."worker_config_type_id" <> '${EWorkerConfigType.chatbot_working_hours_rule}'::uuid`
+    );
+    expect(predicate.params).toEqual([]);
+  });
+
   it('upsertWorkerConfig routes boolean and proxy inputs to helper methods', async () => {
     const { repository, dbRw } = buildRepository();
     (repository as any).upsertBooleanConfig = jest.fn(async () => undefined);
@@ -34,11 +72,26 @@ describe('WorkerConfigUpserterRepository', () => {
         show_worker_name: false,
         proxy_enabled: true,
       } as never)
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ reject_call_revision: null });
 
     expect(dbRw.transaction).toHaveBeenCalledTimes(1);
     expect((repository as any).upsertBooleanConfig).toHaveBeenCalledTimes(2);
     expect((repository as any).upsertProxyConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the row-serialized revision for reject-call events', async () => {
+    const { repository } = buildRepository();
+    (repository as any).upsertBooleanConfig = jest
+      .fn()
+      .mockResolvedValue('1777777777000000');
+
+    await expect(
+      repository.upsertWorkerConfig('w-1', {
+        reject_call: true,
+      } as never)
+    ).resolves.toEqual({
+      reject_call_revision: '1777777777000000',
+    });
   });
 
   it('updateTransfer protocol methods call upsertConfigValue and return stored values', async () => {

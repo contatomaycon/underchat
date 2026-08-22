@@ -1,16 +1,18 @@
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
+import { normalizeCnpj } from '@core/common/functions/validateCnpj';
 
 export const sanitizationMap: Record<ETypeSanetize, (value: string) => string> =
   {
     [ETypeSanetize.document]: (value) => {
       const cleaned = value.replaceAll(/\D/g, '');
+      const cnpj = normalizeCnpj(value);
 
       if (cleaned.length === 11) {
         return `${cleaned.slice(0, 3)}.***.***-${cleaned.slice(-2)}`;
       }
 
-      if (cleaned.length === 14) {
-        return `${cleaned.slice(0, 2)}.***.***/****-${cleaned.slice(-2)}`;
+      if (/^[A-Z0-9]{12}\d{2}$/.test(cnpj)) {
+        return `${cnpj.slice(0, 2)}.***.***/****-${cnpj.slice(-2)}`;
       }
 
       return (

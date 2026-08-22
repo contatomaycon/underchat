@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "lib": ["ES2022"],
+    "moduleResolution": "bundler",
+    "declaration": true,
+    "rootDir": "../../",
+    "outDir": "./dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "typeRoots": ["./node_modules/@types", "../../packages/common/types"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@core/*": ["../../packages/*"]
+    }
+  },
+  "include": ["src/**/*", "../../packages/common/types/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

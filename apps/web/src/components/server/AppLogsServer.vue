@@ -1,8 +1,9 @@
 <script lang="ts" setup>
-import { onMounted, onUnmounted } from 'vue';
+import { computed, shallowRef, toRef, watch } from 'vue';
 import { useServerStore } from '@/@webcore/stores/server';
+import { ESortOrder } from '@core/common/enums/ESortOrder';
 import { ServerLogsInstallResponse } from '@core/schema/server/serverLogsInstall/response.schema';
-import { formatDateTimeSeconds } from '@core/common/functions/formatDateTimeSeconds';
+import AppInstallConsolePanel from './AppInstallConsolePanel.vue';
 
 const serverStore = useServerStore();
 
@@ -18,115 +19,87 @@ const isVisible = computed({
   set: (v) => emit('update:modelValue', v),
 });
 
-const fromElastic = ref(0);
-const sizeElastic = ref(500);
-const hasMore = ref(true);
-const items = ref<ServerLogsInstallResponse[]>([]);
+const fromElastic = shallowRef(0);
+const sizeElastic = shallowRef(300);
+const hasMore = shallowRef(true);
+const items = shallowRef<ServerLogsInstallResponse[]>([]);
+const isLoadingLogs = shallowRef(false);
+const serverStatus = shallowRef<string | null>(null);
 
 const serverId = toRef(props, 'serverId');
-const containerLogsServer = ref<HTMLElement | null>(null);
 
-const loadMore = async () => {
-  if (!hasMore.value || !serverId.value) return;
+const loadMore = async (): Promise<void> => {
+  if (!hasMore.value || !serverId.value || isLoadingLogs.value) return;
 
-  const response = await serverStore.searchInstallLogs(serverId.value, {
-    from: fromElastic.value,
-    size: sizeElastic.value,
-  });
+  isLoadingLogs.value = true;
+  try {
+    const response = await serverStore.searchInstallLogs(serverId.value, {
+      from: fromElastic.value,
+      size: sizeElastic.value,
+      sort: ESortOrder.desc,
+    });
 
-  if (response.length === 0) {
-    hasMore.value = false;
-    return;
-  }
-
-  items.value.push(...response);
-  fromElastic.value += response.length;
-};
-
-const handleScroll = () => {
-  const container = containerLogsServer.value;
-  if (!container) return;
-
-  const threshold = 50;
-  const { scrollTop, scrollHeight, clientHeight } = container;
-
-  if (scrollTop + clientHeight >= scrollHeight - threshold) {
-    loadMore();
-  }
-};
-
-watch(
-  () => containerLogsServer.value,
-  (container) => {
-    if (!container) return;
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-  },
-  { immediate: true }
-);
-
-onMounted(async () => {
-  await nextTick();
-});
-
-onUnmounted(() => {
-  containerLogsServer.value?.removeEventListener('scroll', handleScroll);
-});
-
-watch(
-  () => serverId.value,
-  async (newServerId) => {
-    if (newServerId) {
-      items.value = [];
-      fromElastic.value = 0;
-      hasMore.value = true;
-
-      await loadMore();
+    if (response.length === 0) {
+      hasMore.value = false;
+      return;
     }
+
+    const chronologicalResponse = [...response].reverse();
+    items.value =
+      fromElastic.value === 0
+        ? chronologicalResponse
+        : [...chronologicalResponse, ...items.value];
+    fromElastic.value += response.length;
+    hasMore.value = response.length === sizeElastic.value;
+  } finally {
+    isLoadingLogs.value = false;
+  }
+};
+
+watch(
+  [isVisible, serverId],
+  async ([visible, currentServerId]) => {
+    if (!visible || !currentServerId) return;
+
+    items.value = [];
+    fromElastic.value = 0;
+    hasMore.value = true;
+    serverStatus.value = null;
+
+    const [, server] = await Promise.all([
+      loadMore(),
+      serverStore.getServerById(currentServerId, { silent: true }),
+    ]);
+    serverStatus.value = server?.status.id ?? null;
   },
   { immediate: true }
 );
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
+  <VDialog v-model="isVisible" max-width="980">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VOverlay
-      :model-value="serverStore.loading"
-      class="align-center justify-center"
-      contained
-    >
-      <VProgressCircular color="primary" indeterminate size="64" />
-    </VOverlay>
-
-    <VCard :title="$t('server_logs')">
-      <VCardText>
-        <div
-          ref="containerLogsServer"
-          class="app-bar-search-list py-0"
-          style="max-height: 60vh; overflow-y: auto"
-        >
-          <VList v-show="items.length" density="compact">
-            <template v-for="item in items" :key="item">
-              <slot :item="item">
-                <VListItem>
-                  <VListItemTitle class="wrap-text">
-                    <strong>{{ formatDateTimeSeconds(item.date) }}:</strong>
-                    {{ item.command }}
-                  </VListItemTitle>
-                  <VListItemSubtitle class="wrap-text">
-                    {{ item.output }}
-                  </VListItemSubtitle>
-                </VListItem>
-              </slot>
-            </template>
-          </VList>
-        </div>
+    <VCard class="server-install-console-card">
+      <VCardText class="server-install-console-card__body">
+        <AppInstallConsolePanel
+          :has-more="hasMore"
+          :items="items"
+          :loading="isLoadingLogs && items.length === 0"
+          :server-status="serverStatus"
+          @load-more="loadMore"
+        />
       </VCardText>
 
-      <VCardText class="d-flex justify-end flex-wrap gap-3">
-        <VBtn variant="tonal" color="secondary" @click="isVisible = false">
+      <VCardText
+        class="server-install-console-card__footer d-flex justify-end flex-wrap gap-3"
+      >
+        <VBtn
+          color="secondary"
+          prepend-icon="tabler-x"
+          variant="tonal"
+          @click="isVisible = false"
+        >
           {{ $t('close') }}
         </VBtn>
       </VCardText>
@@ -135,8 +108,21 @@ watch(
 </template>
 
 <style scoped>
-.wrap-text {
-  white-space: pre-wrap;
-  word-break: break-word;
+.server-install-console-card {
+  display: flex;
+  flex-direction: column;
+  block-size: min(940px, calc(100vh - 32px));
+}
+
+.server-install-console-card__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+.server-install-console-card__footer {
+  flex: 0 0 auto;
 }
 </style>

@@ -5,6 +5,7 @@ jest.mock('@core/services/chat.service', () => ({
 }));
 
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { MetaGraphApiError } from '@core/services/metaWhatsappEmbedded.service';
 import { WhatsappOfficialHealthViewerUseCase } from '@core/useCases/worker/WhatsappOfficialHealthViewer.useCase';
 
 const t = ((key: string) => key) as never;
@@ -31,6 +32,24 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
     countOpenChatsByWorkerId: jest.fn(async () => 7),
   };
   const metaWhatsappEmbeddedService = {
+    debugAccessToken: jest.fn(async () => ({
+      app_id: 'app-1',
+      type: 'SYSTEM_USER',
+      is_valid: true,
+      issued_at: 1_785_789_163,
+      expires_at: 0,
+      data_access_expires_at: 0,
+      scopes: [
+        'business_management',
+        'whatsapp_business_management',
+        'whatsapp_business_messaging',
+      ],
+      granular_scopes: [],
+    })),
+    viewWabaWebhookSubscription: jest.fn(async () => ({
+      subscribed: true,
+      subscription_count: 1,
+    })),
     listDetailedPhoneNumbers: jest.fn(async () => [
       {
         id: 'phone-1',
@@ -105,6 +124,15 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
   const passwordEncryptorService = {
     decrypt: jest.fn((value: string) => value.replace('enc:', '')),
   };
+  const whatsappEmbeddedService = {
+    viewInternalConfig: jest.fn(async () => ({
+      app_id: 'app-1',
+      app_secret: 'app-secret-1',
+      webhook_verify_token: 'verify-1',
+      configuration_id: 'configuration-1',
+      api_version: 'v25.0',
+    })),
+  };
   const officialConnectionRepository = {
     findActiveByWorkerId: jest.fn(async () => connection),
   };
@@ -113,6 +141,7 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
     workerService,
     chatService,
     metaWhatsappEmbeddedService,
+    whatsappEmbeddedService,
     passwordEncryptorService,
     officialConnectionRepository,
     ...overrides,
@@ -122,6 +151,7 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
     deps.workerService as never,
     deps.chatService as never,
     deps.metaWhatsappEmbeddedService as never,
+    deps.whatsappEmbeddedService as never,
     deps.passwordEncryptorService as never,
     deps.officialConnectionRepository as never
   );
@@ -177,6 +207,24 @@ describe('WhatsappOfficialHealthViewerUseCase', () => {
               conversations: 0,
               cost: 0,
             },
+          },
+        },
+      },
+      diagnostics: {
+        reauthentication_required: false,
+        token: {
+          available: true,
+          data: {
+            valid: true,
+            app_matches_config: true,
+            missing_scopes: [],
+            does_not_expire: true,
+          },
+        },
+        webhook_subscription: {
+          available: true,
+          data: {
+            subscribed: true,
           },
         },
       },
@@ -247,7 +295,7 @@ describe('WhatsappOfficialHealthViewerUseCase', () => {
     expect(deps.passwordEncryptorService.decrypt).not.toHaveBeenCalled();
   });
 
-  it('keeps the response available and silent when one optional Meta call fails', async () => {
+  it('keeps the response available and reports when one optional Meta call fails', async () => {
     const { useCase } = buildUseCase({
       metaWhatsappEmbeddedService: {
         ...buildUseCase().deps.metaWhatsappEmbeddedService,
@@ -269,6 +317,61 @@ describe('WhatsappOfficialHealthViewerUseCase', () => {
         error_subcode: null,
       },
     });
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual(['meta_health_warning_partial_data']);
+  });
+
+  it('identifies when the stored token no longer has access to Meta assets', async () => {
+    const accessError = new MetaGraphApiError({
+      message: 'Unsupported get request',
+      code: 100,
+      error_subcode: 33,
+      type: 'GraphMethodException',
+    });
+    const { useCase } = buildUseCase({
+      metaWhatsappEmbeddedService: {
+        ...buildUseCase().deps.metaWhatsappEmbeddedService,
+        debugAccessToken: jest.fn(async () => ({
+          app_id: 'app-1',
+          type: 'SYSTEM_USER',
+          is_valid: true,
+          issued_at: 1_785_789_163,
+          expires_at: 0,
+          data_access_expires_at: 0,
+          scopes: ['business_management'],
+          granular_scopes: [],
+        })),
+        viewWabaHealth: jest.fn(async () => {
+          throw accessError;
+        }),
+        viewPhoneNumberHealth: jest.fn(async () => {
+          throw accessError;
+        }),
+        listDetailedPhoneNumbers: jest.fn(async () => {
+          throw accessError;
+        }),
+        viewWabaWebhookSubscription: jest.fn(async () => {
+          throw accessError;
+        }),
+      },
+    });
+
+    const result = await useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(result.diagnostics.reauthentication_required).toBe(true);
+    expect(result.diagnostics.token.data?.missing_scopes).toEqual([
+      'whatsapp_business_management',
+      'whatsapp_business_messaging',
+    ]);
+    expect(result.waba.error).toMatchObject({
+      code: 100,
+      error_subcode: 33,
+      type: 'GraphMethodException',
+    });
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        'meta_health_warning_reauthentication_required',
+        'meta_health_warning_partial_data',
+      ])
+    );
   });
 });

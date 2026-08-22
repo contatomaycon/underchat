@@ -9,6 +9,8 @@ import { IUpdateUserInfo } from '@core/common/interfaces/IUpdateUserInfo';
 import { IUpdateUserDocument } from '@core/common/interfaces/IUpdateUserDocument';
 import { ICreateUserDocument } from '@core/common/interfaces/ICreateUserDocument';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
+import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
+import { normalizeCnpj } from '@core/common/functions/validateCnpj';
 
 @injectable()
 export class AccountSettingsAdditionalInfoUpdaterUseCase {
@@ -56,7 +58,25 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     };
   }
 
-  private encryptDocumentData(document: string | null | undefined) {
+  private normalizeDocumentValue(
+    document: string | null | undefined,
+    documentTypeId: string | null | undefined
+  ): string | null | undefined {
+    if (!document) {
+      return document;
+    }
+
+    return documentTypeId === EUserDocumentType.CNPJ
+      ? normalizeCnpj(document)
+      : document;
+  }
+
+  private encryptDocumentData(
+    document: string | null | undefined,
+    documentTypeId?: string | null
+  ) {
+    document = this.normalizeDocumentValue(document, documentTypeId);
+
     if (!document) {
       return {
         documentCEncrypted: null,
@@ -123,10 +143,14 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     body: UpdateAdditionalInfoRequest
   ): IUpdateUserDocument {
     const documentValue = this.extractStringValue(body.document);
-    const documentData = this.encryptDocumentData(documentValue);
+    const documentTypeIdValue = this.extractStringValue(body.document_type_id);
+    const documentData = this.encryptDocumentData(
+      documentValue,
+      documentTypeIdValue
+    );
 
     return {
-      user_document_type_id: this.extractStringValue(body.document_type_id),
+      user_document_type_id: documentTypeIdValue,
       document: documentData.documentCEncrypted,
       document_partial: documentData.documentPartialEncrypted,
       document_c: documentData.documentC,
@@ -137,8 +161,11 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     body: UpdateAdditionalInfoRequest
   ): ICreateUserDocument {
     const documentValue = this.extractStringValue(body.document);
-    const documentData = this.encryptDocumentData(documentValue);
     const documentTypeIdValue = this.extractStringValue(body.document_type_id);
+    const documentData = this.encryptDocumentData(
+      documentValue,
+      documentTypeIdValue
+    );
 
     if (!documentTypeIdValue) {
       throw new Error('user_document_type_id is required to create document');

@@ -27,6 +27,7 @@ export const resetWorkerConnection = async (
       {
         remove_session: true,
         remove_volume: true,
+        fresh_connection: true,
         debug_trace_id: debugTraceId,
       }
     );

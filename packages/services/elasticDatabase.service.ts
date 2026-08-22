@@ -13,16 +13,205 @@ import type {
 
 @injectable()
 export class ElasticDatabaseService {
+  private static readonly OCC_RETRY_BASE_DELAY_MS = 50;
+  private static readonly OCC_RETRY_MAX_DELAY_MS = 1_000;
+
   constructor(
     @inject('DatabaseElasticClient') private readonly client: Client
   ) {}
 
   private normalizeErrorMessage(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message.toLowerCase();
+    const messages: string[] = [];
+
+    for (const item of this.getErrorChain(error)) {
+      const record = this.asRecord(item);
+
+      if (item instanceof Error) {
+        messages.push(item.name, item.message);
+      } else if (typeof record?.message === 'string') {
+        messages.push(record.message);
+      }
+
+      const body = this.asRecord(record?.body);
+      const meta = this.asRecord(record?.meta);
+      const metaBody = this.asRecord(meta?.body);
+
+      for (const errorBody of [body?.error, metaBody?.error]) {
+        if (typeof errorBody === 'string') {
+          messages.push(errorBody);
+          continue;
+        }
+
+        const errorRecord = this.asRecord(errorBody);
+        if (typeof errorRecord?.type === 'string') {
+          messages.push(errorRecord.type);
+        }
+        if (typeof errorRecord?.reason === 'string') {
+          messages.push(errorRecord.reason);
+        }
+      }
     }
 
-    return String(error).toLowerCase();
+    if (messages.length === 0) {
+      messages.push(String(error));
+    }
+
+    return messages.join(' ').toLowerCase();
+  }
+
+  private getErrorChain(error: unknown): unknown[] {
+    const chain: unknown[] = [];
+    const visited = new Set<unknown>();
+    let current: unknown = error;
+
+    while (current !== undefined && current !== null && !visited.has(current)) {
+      chain.push(current);
+      visited.add(current);
+
+      const record = this.asRecord(current);
+      current = record?.cause;
+    }
+
+    return chain;
+  }
+
+  private getErrorStatusCode(error: unknown): number | null {
+    for (const item of this.getErrorChain(error)) {
+      const record = this.asRecord(item);
+      const meta = this.asRecord(record?.meta);
+      const body = this.asRecord(record?.body);
+      const metaBody = this.asRecord(meta?.body);
+      const values = [
+        record?.statusCode,
+        record?.status,
+        meta?.statusCode,
+        body?.status,
+        metaBody?.status,
+      ];
+
+      for (const value of values) {
+        if (typeof value === 'number' && Number.isInteger(value)) {
+          return value;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private getElasticErrorType(error: unknown): string | null {
+    for (const item of this.getErrorChain(error)) {
+      const record = this.asRecord(item);
+      const meta = this.asRecord(record?.meta);
+      const body = this.asRecord(record?.body);
+      const metaBody = this.asRecord(meta?.body);
+
+      for (const errorBody of [body?.error, metaBody?.error]) {
+        const errorRecord = this.asRecord(errorBody);
+        if (typeof errorRecord?.type === 'string') {
+          return errorRecord.type;
+        }
+      }
+
+      if (typeof record?.type === 'string') {
+        return record.type;
+      }
+
+      if (typeof record?.name === 'string' && record.name !== 'Error') {
+        return record.name;
+      }
+    }
+
+    return null;
+  }
+
+  private getErrorCode(error: unknown): string | null {
+    for (const item of this.getErrorChain(error)) {
+      const record = this.asRecord(item);
+      if (typeof record?.code === 'string') {
+        return record.code;
+      }
+    }
+
+    return null;
+  }
+
+  private isRetryableElasticError(error: unknown): boolean {
+    const statusCode = this.getErrorStatusCode(error);
+    if ([429, 502, 503, 504].includes(statusCode ?? -1)) {
+      return true;
+    }
+
+    if (statusCode !== null) {
+      return false;
+    }
+
+    const code = this.getErrorCode(error)?.toLowerCase() ?? '';
+    const message = this.normalizeErrorMessage(error);
+    const transientTokens = [
+      'econnrefused',
+      'econnreset',
+      'ehostunreach',
+      'enetunreach',
+      'etimedout',
+      'eai_again',
+      'und_err_connect_timeout',
+      'connection error',
+      'connection refused',
+      'connection reset',
+      'socket hang up',
+      'timeout',
+      'timed out',
+    ];
+
+    return transientTokens.some(
+      (token) => code.includes(token) || message.includes(token)
+    );
+  }
+
+  private sanitizeErrorContext(value: string): string {
+    return value.replace(/[^a-zA-Z0-9._:@/-]/g, '_').slice(0, 160);
+  }
+
+  private buildSafeElasticError(
+    operation: string,
+    index: string,
+    id: string | null,
+    error: unknown,
+    attempts?: number,
+    preserveCause = false
+  ): Error {
+    const statusCode = this.getErrorStatusCode(error);
+    const errorType = this.getElasticErrorType(error);
+    const context = [
+      `operation=${this.sanitizeErrorContext(operation)}`,
+      `index=${this.sanitizeErrorContext(index)}`,
+      id ? `document_id=${this.sanitizeErrorContext(id)}` : null,
+      attempts === undefined ? null : `attempts=${attempts}`,
+      statusCode === null ? null : `status=${statusCode}`,
+      errorType ? `type=${this.sanitizeErrorContext(errorType)}` : null,
+    ]
+      .filter((value): value is string => value !== null)
+      .join(' ');
+    const safeError = new Error(`Elasticsearch operation failed [${context}]`);
+
+    if (preserveCause) {
+      (safeError as Error & { cause?: unknown }).cause = error;
+    }
+
+    return safeError;
+  }
+
+  private async waitForOccRetry(attempt: number): Promise<void> {
+    const exponentialDelay = Math.min(
+      ElasticDatabaseService.OCC_RETRY_MAX_DELAY_MS,
+      ElasticDatabaseService.OCC_RETRY_BASE_DELAY_MS * 2 ** attempt
+    );
+    const jitter = Math.floor(Math.random() * (exponentialDelay / 2 + 1));
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, exponentialDelay + jitter);
+    });
   }
 
   public isReadOnlyAllowDeleteBlockError(error: unknown): boolean {
@@ -40,12 +229,9 @@ export class ElasticDatabaseService {
     );
   }
 
-  private buildReadOnlyAllowDeleteBlockError(
-    index: string,
-    error: unknown
-  ): Error {
+  private buildReadOnlyAllowDeleteBlockError(index: string): Error {
     return new Error(
-      `Elasticsearch index [${index}] is read-only (read_only_allow_delete) due to flood-stage disk watermark. Free disk on Elasticsearch host and clear index.blocks.read_only_allow_delete before retrying writes. Original error: ${error}`
+      `Elasticsearch index [${this.sanitizeErrorContext(index)}] is read-only (read_only_allow_delete) due to flood-stage disk watermark. Free disk on Elasticsearch host and clear index.blocks.read_only_allow_delete before retrying writes.`
     );
   }
 
@@ -57,12 +243,34 @@ export class ElasticDatabaseService {
     >,
   >(index: string, query: object): Promise<SearchResponse<TDoc, TAggs> | null> {
     try {
+      return await this.selectOrThrow<TDoc, TAggs>(index, query);
+    } catch {
+      return null;
+    }
+  }
+
+  public async selectOrThrow<
+    TDoc = unknown,
+    TAggs extends Record<string, AggregationsAggregate> = Record<
+      string,
+      AggregationsAggregate
+    >,
+  >(index: string, query: object): Promise<SearchResponse<TDoc, TAggs>> {
+    try {
       return await this.client.search<TDoc, TAggs>({
         index,
         body: query,
       });
-    } catch {
-      return null;
+    } catch (error) {
+      throw this.buildSafeElasticError('search', index, null, error);
+    }
+  }
+
+  public async refreshIndex(index: string): Promise<void> {
+    try {
+      await this.client.indices.refresh({ index });
+    } catch (error) {
+      throw this.buildSafeElasticError('refresh_index', index, null, error);
     }
   }
 
@@ -91,7 +299,7 @@ export class ElasticDatabaseService {
       }
 
       if (this.isReadOnlyAllowDeleteBlockError(error)) {
-        throw this.buildReadOnlyAllowDeleteBlockError(index, error);
+        throw this.buildReadOnlyAllowDeleteBlockError(index);
       }
 
       throw new Error(`Failed to create document with ID: ${error}`);
@@ -127,7 +335,7 @@ export class ElasticDatabaseService {
       }
 
       if (this.isReadOnlyAllowDeleteBlockError(error)) {
-        throw this.buildReadOnlyAllowDeleteBlockError(index, error);
+        throw this.buildReadOnlyAllowDeleteBlockError(index);
       }
 
       throw new Error(`Failed to create document with ID: ${error}`);
@@ -211,7 +419,14 @@ export class ElasticDatabaseService {
         return null;
       }
 
-      throw new Error(`Failed to get document meta with ID: ${error}`);
+      throw this.buildSafeElasticError(
+        'get_document_meta',
+        index,
+        id,
+        error,
+        undefined,
+        true
+      );
     }
   };
 
@@ -284,8 +499,7 @@ export class ElasticDatabaseService {
           index,
           id,
           document,
-          meta,
-          document
+          meta
         );
 
         if (updateResult === 'conflict') {
@@ -329,12 +543,7 @@ export class ElasticDatabaseService {
 
       return 'conflict';
     } catch (createError: unknown) {
-      if (
-        typeof createError === 'object' &&
-        createError !== null &&
-        'statusCode' in createError &&
-        createError.statusCode === 409
-      ) {
+      if (this.getErrorStatusCode(createError) === 409) {
         return 'conflict';
       }
 
@@ -346,17 +555,19 @@ export class ElasticDatabaseService {
     index: string,
     id: string,
     doc: T,
-    meta: { seqNo: number; primaryTerm: number },
-    upsert?: T
+    meta: { seqNo: number; primaryTerm: number }
   ): Promise<'updated' | 'created' | 'noop' | 'conflict'> {
     try {
+      // Elasticsearch rejects update requests that combine `upsert` with
+      // sequence-number OCC. The caller already observed this document, so an
+      // absent/replaced document must conflict and be retried through the
+      // create-or-update decision instead of falling back inside this request.
       const updateParams: {
         index: string;
         id: string;
         doc: T;
         if_seq_no: number;
         if_primary_term: number;
-        upsert?: T;
       } = {
         index,
         id,
@@ -364,10 +575,6 @@ export class ElasticDatabaseService {
         if_seq_no: meta.seqNo,
         if_primary_term: meta.primaryTerm,
       };
-
-      if (upsert) {
-        updateParams.upsert = upsert;
-      }
 
       const result = await this.client.update(updateParams);
 
@@ -381,12 +588,7 @@ export class ElasticDatabaseService {
 
       return 'noop';
     } catch (updateError: unknown) {
-      if (
-        typeof updateError === 'object' &&
-        updateError !== null &&
-        'statusCode' in updateError &&
-        updateError.statusCode === 409
-      ) {
+      if (this.getErrorStatusCode(updateError) === 409) {
         return 'conflict';
       }
 
@@ -430,10 +632,26 @@ export class ElasticDatabaseService {
 
         attempt++;
       } catch (error) {
-        if (attempt >= maxRetries - 1) {
-          throw new Error(`Failed to update with OCC after retries: ${error}`);
+        if (this.isReadOnlyAllowDeleteBlockError(error)) {
+          throw this.buildReadOnlyAllowDeleteBlockError(index);
         }
 
+        if (this.getErrorStatusCode(error) === 409) {
+          attempt++;
+          continue;
+        }
+
+        if (attempt >= maxRetries - 1 || !this.isRetryableElasticError(error)) {
+          throw this.buildSafeElasticError(
+            'update_with_occ',
+            index,
+            id,
+            error,
+            attempt + 1
+          );
+        }
+
+        await this.waitForOccRetry(attempt);
         attempt++;
       }
     }
@@ -466,12 +684,7 @@ export class ElasticDatabaseService {
 
       return 'updated';
     } catch (indexError: unknown) {
-      if (
-        typeof indexError === 'object' &&
-        indexError !== null &&
-        'statusCode' in indexError &&
-        indexError.statusCode === 409
-      ) {
+      if (this.getErrorStatusCode(indexError) === 409) {
         return 'conflict';
       }
 
@@ -515,10 +728,26 @@ export class ElasticDatabaseService {
 
         attempt++;
       } catch (error) {
-        if (attempt >= maxRetries - 1) {
-          throw new Error(`Failed to index with OCC after retries: ${error}`);
+        if (this.isReadOnlyAllowDeleteBlockError(error)) {
+          throw this.buildReadOnlyAllowDeleteBlockError(index);
         }
 
+        if (this.getErrorStatusCode(error) === 409) {
+          attempt++;
+          continue;
+        }
+
+        if (attempt >= maxRetries - 1 || !this.isRetryableElasticError(error)) {
+          throw this.buildSafeElasticError(
+            'index_with_occ',
+            index,
+            id,
+            error,
+            attempt + 1
+          );
+        }
+
+        await this.waitForOccRetry(attempt);
         attempt++;
       }
     }
@@ -750,9 +979,13 @@ export class ElasticDatabaseService {
       scriptedUpsert?: boolean;
     },
     meta: { seqNo: number; primaryTerm: number },
-    refresh?: boolean
+    refresh?: boolean,
+    assertActive?: () => void | Promise<void>
   ): Promise<'updated' | 'created' | 'noop' | 'conflict'> {
     try {
+      // Keep the existing-document request mutually exclusive with the
+      // upsert path in tryCreateWithScript. Besides being required by
+      // Elasticsearch, this preserves OCC across competing service pods.
       const updateParams: {
         index: string;
         id: string;
@@ -760,10 +993,8 @@ export class ElasticDatabaseService {
           source: string;
           params: TParams;
         };
-        if_seq_no?: number;
-        if_primary_term?: number;
-        upsert?: Record<string, unknown>;
-        scripted_upsert?: boolean;
+        if_seq_no: number;
+        if_primary_term: number;
         refresh?: boolean | 'wait_for';
       } = {
         index,
@@ -772,20 +1003,15 @@ export class ElasticDatabaseService {
           source: input.source,
           params: input.params,
         },
+        if_seq_no: meta.seqNo,
+        if_primary_term: meta.primaryTerm,
       };
-
-      if (input.upsert) {
-        updateParams.upsert = input.upsert;
-        updateParams.scripted_upsert = input.scriptedUpsert ?? true;
-      } else {
-        updateParams.if_seq_no = meta.seqNo;
-        updateParams.if_primary_term = meta.primaryTerm;
-      }
 
       if (refresh) {
         updateParams.refresh = true;
       }
 
+      await assertActive?.();
       const result = await this.client.update(updateParams);
 
       if (result.result === 'updated') {
@@ -798,12 +1024,7 @@ export class ElasticDatabaseService {
 
       return 'noop';
     } catch (updateError: unknown) {
-      if (
-        typeof updateError === 'object' &&
-        updateError !== null &&
-        'statusCode' in updateError &&
-        updateError.statusCode === 409
-      ) {
+      if (this.getErrorStatusCode(updateError) === 409) {
         return 'conflict';
       }
 
@@ -820,7 +1041,8 @@ export class ElasticDatabaseService {
       upsert?: Record<string, unknown>;
       scriptedUpsert?: boolean;
     },
-    refresh?: boolean
+    refresh?: boolean,
+    assertActive?: () => void | Promise<void>
   ): Promise<'created' | 'updated' | 'noop' | 'conflict'> {
     try {
       const updateParams: {
@@ -848,6 +1070,7 @@ export class ElasticDatabaseService {
         updateParams.refresh = true;
       }
 
+      await assertActive?.();
       const result = await this.client.update(updateParams);
 
       if (result.result === 'created' || result.result === 'updated') {
@@ -856,12 +1079,7 @@ export class ElasticDatabaseService {
 
       return 'noop';
     } catch (createError: unknown) {
-      if (
-        typeof createError === 'object' &&
-        createError !== null &&
-        'statusCode' in createError &&
-        createError.statusCode === 409
-      ) {
+      if (this.getErrorStatusCode(createError) === 409) {
         return 'conflict';
       }
 
@@ -878,14 +1096,21 @@ export class ElasticDatabaseService {
       upsert?: Record<string, unknown>;
       scriptedUpsert?: boolean;
     },
-    options?: { upsert?: boolean; maxRetries?: number; refresh?: boolean }
+    options?: {
+      upsert?: boolean;
+      maxRetries?: number;
+      refresh?: boolean;
+      assertActive?: () => void | Promise<void>;
+    }
   ): Promise<'updated' | 'created' | 'noop' | 'conflict' | 'not_found'> => {
     const maxRetries = options?.maxRetries ?? 5;
     let attempt = 0;
 
     while (attempt < maxRetries) {
       try {
+        await options?.assertActive?.();
         const meta = await this.getDocumentMeta(index, id);
+        await options?.assertActive?.();
 
         if (!meta) {
           if (options?.upsert !== true && !input.upsert) {
@@ -896,8 +1121,10 @@ export class ElasticDatabaseService {
             index,
             id,
             input,
-            options?.refresh
+            options?.refresh,
+            options?.assertActive
           );
+          await options?.assertActive?.();
 
           if (createResult !== 'conflict') {
             return createResult;
@@ -912,8 +1139,10 @@ export class ElasticDatabaseService {
           id,
           input,
           meta,
-          options?.refresh
+          options?.refresh,
+          options?.assertActive
         );
+        await options?.assertActive?.();
 
         if (updateResult !== 'conflict') {
           return updateResult;
@@ -922,15 +1151,38 @@ export class ElasticDatabaseService {
         attempt++;
       } catch (error) {
         if (this.isReadOnlyAllowDeleteBlockError(error)) {
-          throw this.buildReadOnlyAllowDeleteBlockError(index, error);
+          throw this.buildReadOnlyAllowDeleteBlockError(index);
         }
 
+        await options?.assertActive?.();
+
+        if (this.getErrorStatusCode(error) === 409) {
+          attempt++;
+          continue;
+        }
+
+        const retryable = this.isRetryableElasticError(error);
         if (attempt >= maxRetries - 1) {
-          throw new Error(
-            `Failed to update with script OCC after retries: ${error}`
+          throw this.buildSafeElasticError(
+            'update_with_script_occ',
+            index,
+            id,
+            error,
+            attempt + 1
           );
         }
 
+        if (!retryable) {
+          throw this.buildSafeElasticError(
+            'update_with_script_occ',
+            index,
+            id,
+            error,
+            attempt + 1
+          );
+        }
+
+        await this.waitForOccRetry(attempt);
         attempt++;
       }
     }
@@ -1171,22 +1423,6 @@ export class ElasticDatabaseService {
     const body = operations.flatMap((op): any => {
       const meta = metaMap.get(op.id);
 
-      const payload: {
-        script: { source: string; params: TParams };
-        scripted_upsert?: boolean;
-        upsert?: Record<string, unknown>;
-      } = {
-        script: {
-          source: op.script.source,
-          params: op.script.params,
-        },
-      };
-
-      if (op.upsert) {
-        payload.scripted_upsert = true;
-        payload.upsert = op.upsert;
-      }
-
       if (meta) {
         return [
           {
@@ -1197,7 +1433,14 @@ export class ElasticDatabaseService {
               if_primary_term: meta.primaryTerm,
             },
           },
-          payload,
+          {
+            // Bulk update follows the same Elasticsearch invariant as the
+            // single-document path: OCC and upsert are mutually exclusive.
+            script: {
+              source: op.script.source,
+              params: op.script.params,
+            },
+          },
         ];
       }
 
@@ -1474,24 +1717,45 @@ export class ElasticDatabaseService {
     return fields ?? {};
   }
 
-  private getCurrentIndexProperties = async (
+  private getMappingFieldType(value: unknown): string | null {
+    const record = this.asRecord(value);
+    if (!record) {
+      return null;
+    }
+
+    if (typeof record.type === 'string') {
+      return record.type;
+    }
+
+    // Elasticsearch omits `type: "object"` from GET _mapping responses for
+    // regular object fields. Presence of `properties` is therefore the
+    // canonical way to recognize the implicit object type while reconciling
+    // an existing mapping.
+    if (this.asRecord(record.properties)) {
+      return 'object';
+    }
+
+    return null;
+  }
+
+  private getCurrentIndexMappings = async (
     index: string
-  ): Promise<Record<string, unknown>> => {
+  ): Promise<Record<string, unknown>[]> => {
     try {
       const mappingResponse = await this.client.indices.getMapping({ index });
-      let mergedProperties: Record<string, unknown> = {};
+      const mappings: Record<string, unknown>[] = [];
 
       for (const indexMapping of Object.values(mappingResponse)) {
         const indexMappingsRecord = this.asRecord(indexMapping);
-        const mappings = this.asRecord(indexMappingsRecord?.mappings);
-        const properties = this.getProperties(mappings);
-
-        mergedProperties = this.mergeProperties(mergedProperties, properties);
+        const currentMapping = this.asRecord(indexMappingsRecord?.mappings);
+        if (currentMapping) {
+          mappings.push(currentMapping);
+        }
       }
 
-      return mergedProperties;
-    } catch {
-      return {};
+      return mappings;
+    } catch (error) {
+      throw this.buildSafeElasticError('get_index_mapping', index, null, error);
     }
   };
 
@@ -1557,10 +1821,95 @@ export class ElasticDatabaseService {
     return mergedProperties;
   }
 
+  private buildMutableMappingPatch(
+    desiredMapping: unknown,
+    currentMapping: unknown
+  ): Record<string, unknown> {
+    const desiredRecord = this.asRecord(desiredMapping);
+    const currentRecord = this.asRecord(currentMapping);
+    if (!desiredRecord || !currentRecord) {
+      return {};
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (
+      Object.prototype.hasOwnProperty.call(desiredRecord, 'dynamic') &&
+      desiredRecord.dynamic !== currentRecord.dynamic
+    ) {
+      patch.dynamic = desiredRecord.dynamic;
+    }
+
+    const desiredProperties = this.getProperties(desiredRecord);
+    const currentProperties = this.getProperties(currentRecord);
+    const patchedProperties: Record<string, unknown> = {};
+
+    for (const [fieldName, desiredField] of Object.entries(desiredProperties)) {
+      const currentField = currentProperties[fieldName];
+      if (!currentField) {
+        continue;
+      }
+
+      const desiredType = this.getMappingFieldType(desiredField);
+      const currentType = this.getMappingFieldType(currentField);
+
+      // Mutable parameters such as `dynamic` can only be applied to the same
+      // mapper type. Skipping an incompatible/unknown field prevents a
+      // malformed patch from blocking every document write during startup.
+      if (desiredType !== currentType && (desiredType || currentType)) {
+        continue;
+      }
+
+      const fieldPatch = this.buildMutableMappingPatch(
+        desiredField,
+        currentField
+      );
+      if (Object.keys(fieldPatch).length === 0) {
+        continue;
+      }
+
+      if (desiredType) {
+        fieldPatch.type = desiredType;
+      }
+
+      patchedProperties[fieldName] = fieldPatch;
+    }
+
+    if (Object.keys(patchedProperties).length > 0) {
+      patch.properties = patchedProperties;
+    }
+
+    return patch;
+  }
+
+  private mergeMappingPatches(
+    currentPatch: Record<string, unknown>,
+    incomingPatch: Record<string, unknown>
+  ): Record<string, unknown> {
+    const mergedPatch: Record<string, unknown> = {
+      ...currentPatch,
+      ...incomingPatch,
+    };
+    const currentProperties = this.getProperties(currentPatch);
+    const incomingProperties = this.getProperties(incomingPatch);
+
+    if (
+      Object.keys(currentProperties).length > 0 ||
+      Object.keys(incomingProperties).length > 0
+    ) {
+      mergedPatch.properties = this.mergeProperties(
+        currentProperties,
+        incomingProperties
+      );
+    }
+
+    return mergedPatch;
+  }
+
   private buildAdditiveFieldMapping(
     desiredField: unknown,
     currentField: unknown
   ): Record<string, unknown> | null {
+    const desiredFieldRecord = this.asRecord(desiredField);
     const desiredProperties = this.getProperties(desiredField);
     const currentProperties = this.getProperties(currentField);
 
@@ -1570,7 +1919,8 @@ export class ElasticDatabaseService {
     if (hasDesiredProperties && hasCurrentProperties) {
       const nestedProperties = this.buildAdditiveProperties(
         desiredProperties,
-        currentProperties
+        currentProperties,
+        desiredFieldRecord?.dynamic === false
       );
 
       const desiredSubFields = this.getSubFields(desiredField);
@@ -1613,7 +1963,8 @@ export class ElasticDatabaseService {
 
   private buildAdditiveProperties(
     desiredProperties: Record<string, unknown>,
-    currentProperties: Record<string, unknown>
+    currentProperties: Record<string, unknown>,
+    skipAbsentSourceOnlyFields = false
   ): Record<string, unknown> {
     const additive: Record<string, unknown> = {};
 
@@ -1621,6 +1972,18 @@ export class ElasticDatabaseService {
       const currentField = currentProperties[fieldName];
 
       if (!currentField) {
+        const desiredFieldRecord = this.asRecord(desiredField);
+        if (
+          skipAbsentSourceOnlyFields &&
+          desiredFieldRecord?.enabled === false
+        ) {
+          // With the containing object already set to dynamic:false,
+          // Elasticsearch keeps this value in _source without allocating a
+          // mapping field. This lets legacy indices at total_fields.limit
+          // adopt source-only payloads without a reindex or a limit increase.
+          continue;
+        }
+
         additive[fieldName] = desiredField;
         continue;
       }
@@ -1655,11 +2018,12 @@ export class ElasticDatabaseService {
 
   indices = async (index: string, mappings: object): Promise<boolean> => {
     const exists = await this.client.indices.exists({ index });
-    const mappingBody = (
-      mappings as {
-        mappings?: Record<string, unknown>;
-      }
-    )?.mappings;
+    const mappingBody =
+      (
+        mappings as {
+          mappings?: Record<string, unknown>;
+        }
+      )?.mappings ?? {};
     const desiredProperties = this.getProperties(mappingBody);
 
     if (!exists) {
@@ -1676,12 +2040,46 @@ export class ElasticDatabaseService {
           return false;
         }
       } catch (error) {
-        throw new Error(`Failed to create index: ${error}`);
+        throw this.buildSafeElasticError('create_index', index, null, error);
       }
     }
 
-    if (exists && Object.keys(desiredProperties).length > 0) {
-      const currentProperties = await this.getCurrentIndexProperties(index);
+    if (exists) {
+      const currentMappings = await this.getCurrentIndexMappings(index);
+      let mutablePatch: Record<string, unknown> = {};
+      let currentProperties: Record<string, unknown> = {};
+
+      for (const currentMapping of currentMappings) {
+        mutablePatch = this.mergeMappingPatches(
+          mutablePatch,
+          this.buildMutableMappingPatch(mappingBody, currentMapping)
+        );
+        currentProperties = this.mergeProperties(
+          currentProperties,
+          this.getProperties(currentMapping)
+        );
+      }
+
+      if (Object.keys(mutablePatch).length > 0) {
+        try {
+          await this.client.indices.putMapping({
+            index,
+            ...(mutablePatch as any),
+          });
+        } catch (error) {
+          throw this.buildSafeElasticError(
+            'update_mutable_index_mapping',
+            index,
+            null,
+            error
+          );
+        }
+      }
+
+      if (Object.keys(desiredProperties).length === 0) {
+        return true;
+      }
+
       const additiveProperties = this.buildAdditiveProperties(
         desiredProperties,
         currentProperties
@@ -1701,7 +2099,12 @@ export class ElasticDatabaseService {
           return true;
         }
 
-        throw new Error(`Failed to update index mapping: ${error}`);
+        throw this.buildSafeElasticError(
+          'add_index_mapping_fields',
+          index,
+          null,
+          error
+        );
       }
     }
 

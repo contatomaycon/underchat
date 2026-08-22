@@ -5,7 +5,7 @@ import {
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq, ExtractTablesWithRelations } from 'drizzle-orm';
+import { and, eq, ExtractTablesWithRelations, isNull, sql } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { IUpdateContact } from '@core/common/interfaces/IUpdateContact';
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
@@ -13,6 +13,18 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { ContactLabelTemplateDeleterRepository } from './ContactLabelTemplateDeleter.repository';
 import { ContactLabelTemplateCreatorRepository } from './ContactLabelTemplateCreator.repository';
 import { ContactChannelsUpdaterTransactionRepository } from './ContactChannelsUpdaterTransaction.repository';
+import {
+  type ContactOutboundWebhookMarker,
+  lockContactOutboundWebhookSnapshotInTransaction,
+  markContactOutboundWebhookAppliedInTransaction,
+  viewContactOutboundWebhookSnapshotWithExecutor,
+} from './contactOutboundWebhookOutbox';
+import {
+  assertCurrentWhatsappRuntimeInTransaction,
+  StaleWhatsappRuntimeDatabaseFenceError,
+  type WhatsappRuntimeDatabaseFence,
+} from '@core/repositories/worker/WhatsappRuntimeDatabaseFence.repository';
+import type { ContactValidationOrigin } from '@core/common/types/ContactValidationOrigin';
 
 @injectable()
 export class ContactUpdaterRepository {
@@ -25,6 +37,50 @@ export class ContactUpdaterRepository {
     @inject(ContactChannelsUpdaterTransactionRepository)
     private readonly contactChannelsUpdaterTransactionRepository: ContactChannelsUpdaterTransactionRepository
   ) {}
+
+  /**
+   * Returns the PostgreSQL row revision used to identify a logical contact
+   * mutation without exposing infrastructure metadata through public contact
+   * schemas. `xmin` changes on every row update, so concurrent readers share
+   * a revision while a later delete/re-upload cycle receives a new one.
+   */
+  viewContactMutationRevision = async (
+    contactId: string,
+    accountId: string
+  ): Promise<{ revision: string; photo: string | null } | null> => {
+    const result = await this.dbRw
+      .select({
+        revision: sql<string>`xmin::text`,
+        photo: contact.photo,
+      })
+      .from(contact)
+      .where(
+        and(
+          eq(contact.contact_id, contactId),
+          eq(contact.account_id, accountId)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return result[0] ?? null;
+  };
+
+  /**
+   * Reads the canonical outbound-webhook projection from the writer database.
+   * The projection deliberately selects only masked/public contact columns;
+   * encrypted-at-rest `email`, `phone` and `document` never leave this layer.
+   */
+  viewContactOutboundWebhookSnapshot = async (
+    contactId: string,
+    accountId?: string
+  ): Promise<Record<string, unknown> | null> => {
+    return viewContactOutboundWebhookSnapshotWithExecutor(
+      this.dbRw,
+      contactId,
+      accountId
+    );
+  };
 
   private updateInput(
     input: IUpdateContact
@@ -63,8 +119,8 @@ export class ContactUpdaterRepository {
       inputUpdate.birthday = nullIfEmpty(input.birthday);
     }
 
-    if (input.notes) {
-      inputUpdate.notes = input.notes;
+    if (input.notes !== undefined) {
+      inputUpdate.notes = nullIfEmpty(input.notes);
     }
 
     if (input.photo !== undefined) {
@@ -92,6 +148,11 @@ export class ContactUpdaterRepository {
     }
 
     inputUpdate.is_valided = input.is_valided ?? false;
+    if (!inputUpdate.is_valided) {
+      inputUpdate.validation_origin = null;
+    } else if (input.validation_origin !== undefined) {
+      inputUpdate.validation_origin = input.validation_origin;
+    }
 
     return inputUpdate;
   }
@@ -103,23 +164,28 @@ export class ContactUpdaterRepository {
       ExtractTablesWithRelations<typeof schema>
     >,
     contactId: string,
-    labelTemplateIds: string[]
+    labelTemplateIds: string[],
+    accountId: string
   ): Promise<void> => {
     await this.contactLabelTemplateDeleterRepository.deleteContactLabelTemplatesByContactId(
       tx,
       contactId
     );
 
-    if (labelTemplateIds.length > 0) {
-      await Promise.all(
-        labelTemplateIds.map((labelTemplateId) =>
-          this.contactLabelTemplateCreatorRepository.createContactLabelTemplate(
+    const uniqueLabelTemplateIds = [...new Set(labelTemplateIds)];
+    if (uniqueLabelTemplateIds.length > 0) {
+      for (const labelTemplateId of uniqueLabelTemplateIds) {
+        const assignmentId =
+          await this.contactLabelTemplateCreatorRepository.createContactLabelTemplate(
             tx,
             contactId,
-            labelTemplateId
-          )
-        )
-      );
+            labelTemplateId,
+            accountId
+          );
+        if (!assignmentId) {
+          throw new Error('contact_label_template_creation_failed');
+        }
+      }
     }
   };
 
@@ -130,14 +196,21 @@ export class ContactUpdaterRepository {
       ExtractTablesWithRelations<typeof schema>
     >,
     contactId: string,
-    input: IUpdateContact
+    input: IUpdateContact,
+    accountId?: string | null
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
     const result = await tx
       .update(contact)
       .set(updateInput)
-      .where(eq(contact.contact_id, contactId))
+      .where(
+        and(
+          eq(contact.contact_id, contactId),
+          isNull(contact.deleted_at),
+          accountId ? eq(contact.account_id, accountId) : undefined
+        )
+      )
       .execute();
 
     return result.rowCount === 1;
@@ -145,14 +218,21 @@ export class ContactUpdaterRepository {
 
   private updateContactWithoutTransaction = async (
     contactId: string,
-    input: IUpdateContact
+    input: IUpdateContact,
+    accountId?: string | null
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
     const result = await this.dbRw
       .update(contact)
       .set(updateInput)
-      .where(eq(contact.contact_id, contactId))
+      .where(
+        and(
+          eq(contact.contact_id, contactId),
+          isNull(contact.deleted_at),
+          accountId ? eq(contact.account_id, accountId) : undefined
+        )
+      )
       .execute();
 
     return result.rowCount === 1;
@@ -161,47 +241,86 @@ export class ContactUpdaterRepository {
   updateContactById = async (
     contactId: string,
     input: IUpdateContact,
-    accountId?: string | null
+    accountId?: string | null,
+    webhookMarker?: ContactOutboundWebhookMarker | null,
+    runtimeFence?: WhatsappRuntimeDatabaseFence | null
   ): Promise<boolean> => {
     const hasLabelTemplates = input.label_template_ids !== undefined;
     const hasChannelIds = input.channel_ids !== undefined;
+    const scopedAccountId =
+      runtimeFence?.account_id.trim() || accountId?.trim() || undefined;
+    if (hasLabelTemplates && !scopedAccountId) {
+      throw new Error('contact_label_template_account_required');
+    }
 
-    if (hasLabelTemplates) {
+    if (
+      runtimeFence &&
+      accountId &&
+      accountId.trim() !== runtimeFence.account_id.trim()
+    ) {
+      throw new StaleWhatsappRuntimeDatabaseFenceError();
+    }
+
+    if (hasLabelTemplates || hasChannelIds || webhookMarker || runtimeFence) {
       return this.dbRw.transaction(async (tx) => {
-        const labelTemplateIds = input.label_template_ids ?? [];
-
-        await this.syncLabelTemplatesInTransaction(
+        if (runtimeFence) {
+          await assertCurrentWhatsappRuntimeInTransaction(tx, runtimeFence);
+        }
+        const previousContact =
+          await lockContactOutboundWebhookSnapshotInTransaction(
+            tx,
+            contactId,
+            webhookMarker,
+            scopedAccountId
+          );
+        const updated = await this.updateContactInTransaction(
           tx,
           contactId,
-          labelTemplateIds
+          input,
+          scopedAccountId
         );
+        if (!updated) return false;
 
-        if (hasChannelIds && accountId) {
-          await this.contactChannelsUpdaterTransactionRepository.updateContactChannels(
+        if (hasLabelTemplates) {
+          await this.syncLabelTemplatesInTransaction(
+            tx,
             contactId,
-            accountId,
+            input.label_template_ids ?? [],
+            scopedAccountId as string
+          );
+        }
+
+        if (hasChannelIds && scopedAccountId) {
+          await this.contactChannelsUpdaterTransactionRepository.updateContactChannelsInTransaction(
+            tx,
+            contactId,
+            scopedAccountId,
             input.channel_ids ?? []
           );
         }
 
-        return this.updateContactInTransaction(tx, contactId, input);
+        await markContactOutboundWebhookAppliedInTransaction(
+          tx,
+          contactId,
+          webhookMarker,
+          previousContact
+        );
+        return updated;
       });
     }
 
-    if (hasChannelIds && accountId) {
-      await this.contactChannelsUpdaterTransactionRepository.updateContactChannels(
-        contactId,
-        accountId,
-        input.channel_ids ?? []
-      );
-    }
-
-    return this.updateContactWithoutTransaction(contactId, input);
+    return this.updateContactWithoutTransaction(
+      contactId,
+      input,
+      scopedAccountId
+    );
   };
 
   validateContact = async (
     contactId: string,
-    input: IUpdateContact
+    input: IUpdateContact,
+    accountId?: string,
+    webhookMarker?: ContactOutboundWebhookMarker | null
   ): Promise<boolean> => {
     const updateInput: Partial<typeof contact.$inferInsert> = {
       phone_ddi: input.phone_ddi ?? undefined,
@@ -209,27 +328,134 @@ export class ContactUpdaterRepository {
       phone_partial: input.phone_partial ?? undefined,
       phone_c: input.phone_c ?? undefined,
       is_valided: true,
+      validation_origin: input.validation_origin,
     };
 
-    const result = await this.dbRw
-      .update(contact)
-      .set(updateInput)
-      .where(eq(contact.contact_id, contactId))
-      .execute();
+    if (!webhookMarker) {
+      const result = await this.dbRw
+        .update(contact)
+        .set(updateInput)
+        .where(
+          and(
+            eq(contact.contact_id, contactId),
+            isNull(contact.deleted_at),
+            accountId ? eq(contact.account_id, accountId) : undefined
+          )
+        )
+        .execute();
+      return result.rowCount === 1;
+    }
 
-    return result.rowCount === 1;
+    return this.dbRw.transaction(async (tx) => {
+      const previousContact =
+        await lockContactOutboundWebhookSnapshotInTransaction(
+          tx,
+          contactId,
+          webhookMarker,
+          accountId
+        );
+      const result = await tx
+        .update(contact)
+        .set(updateInput)
+        .where(
+          and(
+            eq(contact.contact_id, contactId),
+            isNull(contact.deleted_at),
+            accountId ? eq(contact.account_id, accountId) : undefined
+          )
+        )
+        .execute();
+      const updated = result.rowCount === 1;
+      if (updated) {
+        await markContactOutboundWebhookAppliedInTransaction(
+          tx,
+          contactId,
+          webhookMarker,
+          previousContact
+        );
+      }
+      return updated;
+    });
   };
 
   updateContactIsValided = async (
     contactId: string,
-    isValided: boolean
+    isValided: boolean,
+    accountId?: string,
+    webhookMarker?: ContactOutboundWebhookMarker | null,
+    runtimeFence?: WhatsappRuntimeDatabaseFence | null,
+    validationOrigin?: ContactValidationOrigin | null
   ): Promise<boolean> => {
-    const result = await this.dbRw
-      .update(contact)
-      .set({ is_valided: isValided })
-      .where(eq(contact.contact_id, contactId))
-      .execute();
+    const scopedAccountId =
+      runtimeFence?.account_id.trim() || accountId?.trim() || undefined;
+    if (
+      runtimeFence &&
+      accountId &&
+      accountId.trim() !== runtimeFence.account_id.trim()
+    ) {
+      throw new StaleWhatsappRuntimeDatabaseFenceError();
+    }
 
-    return result.rowCount === 1;
+    const validationUpdate: Partial<typeof contact.$inferInsert> = {
+      is_valided: isValided,
+    };
+    if (!isValided) {
+      validationUpdate.validation_origin = null;
+    } else if (validationOrigin !== undefined) {
+      validationUpdate.validation_origin = validationOrigin;
+    }
+
+    if (!webhookMarker && !runtimeFence) {
+      const result = await this.dbRw
+        .update(contact)
+        .set(validationUpdate)
+        .where(
+          and(
+            eq(contact.contact_id, contactId),
+            isNull(contact.deleted_at),
+            scopedAccountId
+              ? eq(contact.account_id, scopedAccountId)
+              : undefined
+          )
+        )
+        .execute();
+      return result.rowCount === 1;
+    }
+
+    return this.dbRw.transaction(async (tx) => {
+      if (runtimeFence) {
+        await assertCurrentWhatsappRuntimeInTransaction(tx, runtimeFence);
+      }
+      const previousContact =
+        await lockContactOutboundWebhookSnapshotInTransaction(
+          tx,
+          contactId,
+          webhookMarker,
+          scopedAccountId
+        );
+      const result = await tx
+        .update(contact)
+        .set(validationUpdate)
+        .where(
+          and(
+            eq(contact.contact_id, contactId),
+            isNull(contact.deleted_at),
+            scopedAccountId
+              ? eq(contact.account_id, scopedAccountId)
+              : undefined
+          )
+        )
+        .execute();
+      const updated = result.rowCount === 1;
+      if (updated) {
+        await markContactOutboundWebhookAppliedInTransaction(
+          tx,
+          contactId,
+          webhookMarker,
+          previousContact
+        );
+      }
+      return updated;
+    });
   };
 }

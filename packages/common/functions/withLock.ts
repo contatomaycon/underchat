@@ -22,6 +22,27 @@ export class RedisConnectionClosedError extends Error {
   }
 }
 
+export class LockLeaseLostError extends Error {
+  constructor(lockKey: string, cause?: unknown) {
+    super(`Distributed lock lease "${lockKey}" is no longer active`, {
+      cause,
+    });
+    this.name = 'LockLeaseLostError';
+  }
+}
+
+export interface ILockLeaseContext {
+  readonly signal: AbortSignal;
+  assertActive(): void;
+}
+
+const inactiveController = new AbortController();
+
+export const UNFENCED_LOCK_LEASE_CONTEXT: ILockLeaseContext = Object.freeze({
+  signal: inactiveController.signal,
+  assertActive: () => undefined,
+});
+
 function isConnectionClosedError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
@@ -177,29 +198,98 @@ async function safeRelease(
   await releaseLock(redis, key, token).catch(() => {});
 }
 
-function startLockWatchdog(
+export interface ILockLeaseGuard {
+  readonly context: ILockLeaseContext;
+  stop(): Promise<void>;
+  assertActive(): void;
+  deactivate(): void;
+}
+
+export function createLockLeaseGuard(
   redis: Redis,
   key: string,
+  lockKey: string,
   token: string,
-  ttlMs: number
-): { stop: () => void } {
+  ttlMs: number,
+  options: { renewIntervalMs?: number } = {}
+): ILockLeaseGuard {
   let stopped = false;
+  let confirmedUntilMs = nowMs() + ttlMs;
+  let lostError: LockLeaseLostError | null = null;
+  let wakeTimer: ReturnType<typeof setTimeout> | null = null;
+  let wakeResolve: (() => void) | null = null;
+  let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+  const abortController = new AbortController();
 
-  const tickEveryMs = clampMs(Math.floor(ttlMs * 0.4), 50);
+  const tickEveryMs = Math.min(
+    clampMs(options.renewIntervalMs ?? Math.floor(ttlMs * 0.4), 1),
+    Math.max(1, ttlMs - 1)
+  );
 
-  const run = async () => {
+  const clearExpiryTimer = () => {
+    if (expiryTimer !== null) {
+      clearTimeout(expiryTimer);
+      expiryTimer = null;
+    }
+  };
+
+  const loseLease = (cause?: unknown): LockLeaseLostError => {
+    if (lostError) {
+      return lostError;
+    }
+
+    lostError = new LockLeaseLostError(lockKey, cause);
+    clearExpiryTimer();
+    abortController.abort(lostError);
+    return lostError;
+  };
+
+  const armExpiryTimer = () => {
+    clearExpiryTimer();
+    const remainingMs = confirmedUntilMs - nowMs();
+    if (remainingMs <= 0) {
+      loseLease();
+      return;
+    }
+
+    expiryTimer = setTimeout(() => {
+      loseLease();
+    }, remainingMs);
+  };
+
+  const assertActive = () => {
+    if (!lostError && nowMs() >= confirmedUntilMs) {
+      loseLease();
+    }
+
+    if (lostError) {
+      throw lostError;
+    }
+  };
+
+  const waitForNextTick = (): Promise<void> =>
+    new Promise<void>((resolve) => {
+      wakeResolve = resolve;
+      wakeTimer = setTimeout(() => {
+        wakeTimer = null;
+        wakeResolve = null;
+        resolve();
+      }, tickEveryMs);
+    });
+
+  armExpiryTimer();
+
+  const run = async (): Promise<void> => {
     while (!stopped) {
-      await delay(tickEveryMs);
+      await waitForNextTick();
 
       if (stopped) {
         return;
       }
 
-      if (isRedisConnectionClosed(redis)) {
-        await waitForRedisConnection(redis, ttlMs).catch(() => {});
-      }
-
-      if (stopped) {
+      try {
+        assertActive();
+      } catch {
         return;
       }
 
@@ -207,15 +297,53 @@ function startLockWatchdog(
         continue;
       }
 
-      await extendLock(redis, key, token, ttlMs).catch(() => {});
+      try {
+        const extended = await extendLock(redis, key, token, ttlMs);
+        if (stopped) {
+          return;
+        }
+
+        if (!extended) {
+          loseLease();
+          return;
+        }
+
+        confirmedUntilMs = nowMs() + ttlMs;
+        armExpiryTimer();
+      } catch (error) {
+        if (nowMs() >= confirmedUntilMs) {
+          loseLease(error);
+          return;
+        }
+      }
     }
   };
 
-  void run();
+  const runPromise = run();
 
   return {
-    stop: () => {
+    context: {
+      signal: abortController.signal,
+      assertActive,
+    },
+    assertActive,
+    deactivate: () => {
+      loseLease(new Error('Distributed lock callback completed'));
+    },
+    stop: async () => {
       stopped = true;
+      clearExpiryTimer();
+
+      if (wakeTimer !== null) {
+        clearTimeout(wakeTimer);
+        wakeTimer = null;
+      }
+      const resolve = wakeResolve;
+      wakeResolve = null;
+      resolve?.();
+
+      await runPromise;
+      clearExpiryTimer();
     },
   };
 }
@@ -261,7 +389,7 @@ async function redisGetWithReconnect(
 export async function withLock<T>(
   redis: Redis,
   lockKey: string,
-  fn: () => Promise<T>,
+  fn: (context: ILockLeaseContext) => Promise<T>,
   options?: {
     ttlMs?: number;
     retryMs?: number;
@@ -283,7 +411,7 @@ export async function withLock<T>(
   const deadlineMs = startTime + maxWaitMs;
 
   let acquired = false;
-  let watchdog: { stop: () => void } | null = null;
+  let watchdog: ILockLeaseGuard | null = null;
 
   try {
     let attempt = 0;
@@ -323,6 +451,8 @@ export async function withLock<T>(
       await delay(sleepFor);
     }
 
+    watchdog = createLockLeaseGuard(redis, key, lockKey, token, ttlMs);
+
     if (preventDuplicate && executedKey) {
       const alreadyExecuted = await redisGetWithReconnect(
         redis,
@@ -332,24 +462,28 @@ export async function withLock<T>(
       );
 
       if (alreadyExecuted) {
+        await watchdog.stop();
+        watchdog.deactivate();
         await safeRelease(redis, key, token);
         return undefined as T;
       }
     }
 
-    watchdog = startLockWatchdog(redis, key, token, ttlMs);
-
     try {
-      const result = await fn();
+      watchdog.assertActive();
+      const result = await fn(watchdog.context);
+      watchdog.assertActive();
 
       if (preventDuplicate && executedKey) {
-        await redis
-          .set(executedKey, '1', 'EX', duplicateTtlSeconds)
-          .catch(() => {});
+        watchdog.assertActive();
+        await redis.set(executedKey, '1', 'EX', duplicateTtlSeconds);
+        watchdog.assertActive();
       }
 
       if (watchdog) {
-        watchdog.stop();
+        await watchdog.stop();
+        watchdog.assertActive();
+        watchdog.deactivate();
       }
 
       await safeRelease(redis, key, token);
@@ -357,7 +491,8 @@ export async function withLock<T>(
       return result;
     } catch (e) {
       if (watchdog) {
-        watchdog.stop();
+        watchdog.deactivate();
+        await watchdog.stop();
       }
 
       await safeRelease(redis, key, token);
@@ -366,7 +501,8 @@ export async function withLock<T>(
     }
   } finally {
     if (watchdog) {
-      watchdog.stop();
+      await watchdog.stop();
+      watchdog.deactivate();
     }
   }
 }

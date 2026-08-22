@@ -10,7 +10,10 @@ export class ContactGroupViewerExistsRepository {
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
-  existsContactGroupById = async (contactGroupId: string): Promise<boolean> => {
+  existsContactGroupById = async (
+    contactGroupId: string,
+    accountId?: string
+  ): Promise<boolean> => {
     const result = await this.dbRo
       .select({
         total: count(),
@@ -19,6 +22,7 @@ export class ContactGroupViewerExistsRepository {
       .where(
         and(
           eq(contactGroup.contact_group_id, contactGroupId),
+          accountId ? eq(contactGroup.account_id, accountId) : undefined,
           isNull(contactGroup.deleted_at)
         )
       )

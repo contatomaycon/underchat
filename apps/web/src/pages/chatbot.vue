@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { DataTableHeader } from 'vuetify';
 import { EChatbotType } from '@core/common/enums/EChatbotType';
+import { EChatbotStatus } from '@core/common/enums/EChatbotStatus';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
@@ -35,6 +36,7 @@ useSnackbarCleanup(chatbotStore);
 const headers: DataTableHeader<ListChatbotResponse>[] = [
   { title: t('name'), key: 'name' },
   { title: t('chatbot_type'), key: 'type' },
+  { title: t('status'), key: 'status' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -46,6 +48,10 @@ const cloningChatbotId = ref<string | null>(null);
 const editingChatbotId = ref<string | null>(null);
 const isDialogDeleterShow = ref(false);
 const chatbotToDelete = ref<string | null>(null);
+const chatbotPlanBlockAction = ref<{
+  chatbotId: string;
+  action: 'block' | 'unblock';
+} | null>(null);
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -96,6 +102,59 @@ const handleDelete = async () => {
 
   await chatbotStore.deleteChatbot(chatbotToDelete.value);
   chatbotToDelete.value = null;
+};
+
+const isChatbotBlockedByPlan = (item: ListChatbotResponse): boolean =>
+  item.status === EChatbotStatus.blocked;
+
+const isDialogChatbotPlanBlockShow = computed({
+  get: () => chatbotPlanBlockAction.value !== null,
+  set: (value: boolean) => {
+    if (!value) {
+      chatbotPlanBlockAction.value = null;
+    }
+  },
+});
+
+const chatbotPlanBlockDialogTitle = computed(() => {
+  const action = chatbotPlanBlockAction.value?.action ?? 'block';
+
+  return `${t(action)} ${t('chatbot')}`;
+});
+
+const chatbotPlanBlockDialogMessage = computed(() => {
+  const action = chatbotPlanBlockAction.value?.action ?? 'block';
+
+  return t(
+    action === 'block'
+      ? 'block_chatbot_confirmation'
+      : 'unblock_chatbot_confirmation'
+  );
+});
+
+const openChatbotPlanBlockDialog = (item: ListChatbotResponse) => {
+  chatbotPlanBlockAction.value = {
+    chatbotId: item.chatbot_id,
+    action: isChatbotBlockedByPlan(item) ? 'unblock' : 'block',
+  };
+};
+
+const handleChatbotPlanBlock = async () => {
+  if (!chatbotPlanBlockAction.value) {
+    return;
+  }
+
+  const { chatbotId, action } = chatbotPlanBlockAction.value;
+  const result =
+    action === 'block'
+      ? await chatbotStore.blockChatbot(chatbotId)
+      : await chatbotStore.unblockChatbot(chatbotId);
+
+  if (result) {
+    await chatbotStore.listChatbots();
+  }
+
+  chatbotPlanBlockAction.value = null;
 };
 
 const openConfigurations = (id: string) => {
@@ -189,6 +248,16 @@ onMounted(async () => {
             </VChip>
           </template>
 
+          <template #item.status="{ item }">
+            <VChip
+              size="small"
+              :color="isChatbotBlockedByPlan(item) ? 'error' : 'success'"
+              variant="tonal"
+            >
+              {{ $t(isChatbotBlockedByPlan(item) ? 'blocked' : 'active') }}
+            </VChip>
+          </template>
+
           <template #item.created_at="{ item }">
             {{ formatDateTime(item.created_at) }}
           </template>
@@ -206,6 +275,28 @@ onMounted(async () => {
                 <VIcon
                   icon="tabler-settings"
                   @click="openConfigurations(item.chatbot_id)"
+                />
+              </IconBtn>
+
+              <IconBtn>
+                <VTooltip
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
+                  <span>
+                    {{
+                      `${$t(isChatbotBlockedByPlan(item) ? 'unblock' : 'block')} ${$t('chatbot')}`
+                    }}
+                  </span>
+                </VTooltip>
+                <VIcon
+                  :icon="
+                    isChatbotBlockedByPlan(item)
+                      ? 'tabler-lock-open'
+                      : 'tabler-lock'
+                  "
+                  @click="openChatbotPlanBlockDialog(item)"
                 />
               </IconBtn>
 
@@ -288,6 +379,14 @@ onMounted(async () => {
       :title="$t('delete') + ' ' + $t('chatbot')"
       :message="$t('delete_chatbot_confirmation')"
       @confirm="handleDelete"
+    />
+
+    <VDialogHandler
+      v-if="isDialogChatbotPlanBlockShow"
+      v-model="isDialogChatbotPlanBlockShow"
+      :title="chatbotPlanBlockDialogTitle"
+      :message="chatbotPlanBlockDialogMessage"
+      @confirm="handleChatbotPlanBlock"
     />
 
     <VSnackbar

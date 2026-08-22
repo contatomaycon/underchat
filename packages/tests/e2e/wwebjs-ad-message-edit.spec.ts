@@ -1,4 +1,3 @@
-/* eslint-disable no-use-before-define */
 import 'reflect-metadata';
 
 import {
@@ -15,10 +14,6 @@ import pg from 'pg';
 loadEnv({ path: process.env.E2E_ENV_FILE ?? '.env' });
 
 const { Pool } = pg;
-
-const AD_BODY =
-  'Olá! Gostaria de saber sobre a Pós-Graduação EAD com um atendimento humanizado!';
-const AD_TITLE = 'Pós-Graduação EAD';
 
 const e2eEnabled = process.env.E2E_WWEBJS_AD_MESSAGE_ENABLED === 'true';
 let runtime: RuntimeContext | undefined;
@@ -203,6 +198,10 @@ interface AdReplay {
   contactInfoTo: string;
   adMessageId: string;
   adSerializedId: string;
+  adBody: string;
+  adTitle: string;
+  adDescription: string;
+  adGreeting: string;
   e2eSerializedId: string;
   contactCardSerializedId: string;
   historySequence: number[];
@@ -289,8 +288,9 @@ async function waitForMaterializedAdMessage(
 
         if (
           message?.content?.type === 'text' &&
-          message.content.message === AD_BODY &&
-          message.content.context_info?.external_ad_reply?.title === AD_TITLE
+          message.content.message === replay.adBody &&
+          message.content.context_info?.external_ad_reply?.title ===
+            replay.adTitle
         ) {
           return { chat, message };
         }
@@ -418,8 +418,8 @@ async function openChatUiAndAssert(
   await expect(renderedMessage).toBeVisible({
     timeout: ctx.config.uiTimeoutMs,
   });
-  await expect(renderedMessage).toContainText(AD_BODY);
-  await expect(renderedMessage).toContainText(AD_TITLE);
+  await expect(renderedMessage).toContainText(replay.adBody);
+  await expect(renderedMessage).toContainText(replay.adTitle);
 }
 
 function createAdReplay(ctx: RuntimeContext): AdReplay {
@@ -446,6 +446,13 @@ function createAdReplay(ctx: RuntimeContext): AdReplay {
     contactInfoTo: `${Date.now().toString().slice(-15)}:15@lid`,
     adMessageId: `3A7E64CFE62F${messageSuffix}`,
     adSerializedId: `false_${lidJid}_3A7E64CFE62F${messageSuffix}`,
+    adBody: optionalEnv('E2E_WWEBJS_AD_BODY') ?? `Mensagem de anúncio ${runId}`,
+    adTitle: optionalEnv('E2E_WWEBJS_AD_TITLE') ?? `Anúncio de teste ${runId}`,
+    adDescription:
+      optionalEnv('E2E_WWEBJS_AD_DESCRIPTION') ??
+      `Descrição de anúncio ${runId}`,
+    adGreeting:
+      optionalEnv('E2E_WWEBJS_AD_GREETING') ?? `Saudação de anúncio ${runId}`,
     e2eSerializedId: `false_${lidJid}_3EB086C68C75${messageSuffix}`,
     contactCardSerializedId: `false_${lidJid}_3EB0FA10AEA0${messageSuffix}`,
     historySequence: [

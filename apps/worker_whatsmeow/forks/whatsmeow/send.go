@@ -142,6 +142,16 @@ type SendResponse struct {
 type SendRequestExtra struct {
 	// The message ID to use when sending. If this is not provided, a random message ID will be generated
 	ID types.MessageID
+	// PreResolvedRecipientPN supplies the provider-canonical phone-number
+	// identity when the caller has already resolved a requested PN recipient to
+	// the LID passed as `to`. It may differ from the caller's logical PN only
+	// when the provider authoritatively returned a canonical alias.
+	//
+	// It is only valid with a non-AD HiddenUserServer recipient and must itself
+	// be a non-AD, numeric DefaultUserServer JID. Callers must verify the
+	// bidirectional PN↔LID mapping before invoking SendMessage. When provided,
+	// SendMessage does not read the reverse LID store mapping.
+	PreResolvedRecipientPN types.JID
 	// JID of the bot to be invoked (optional)
 	InlineBotJID types.JID
 	// Should the message be sent as a peer message (protocol messages to your own devices, e.g. app state key requests)
@@ -198,6 +208,10 @@ func (cli *Client) SendMessage(ctx context.Context, to types.JID, message *waE2E
 		err = ErrRecipientADJID
 		return
 	}
+	preResolvedRecipientPN, err := validatePreResolvedRecipientPN(to, req.PreResolvedRecipientPN)
+	if err != nil {
+		return resp, err
+	}
 	ownID := cli.getOwnID()
 	if ownID.IsEmpty() {
 		err = ErrNotLoggedIn
@@ -230,7 +244,7 @@ func (cli *Client) SendMessage(ctx context.Context, to types.JID, message *waE2E
 		isInlineBotMode = true
 	}
 
-	isBotMode := isInlineBotMode || to.IsBot()
+	isBotMode := isInlineBotMode || usesBotRecipientIdentity(to, preResolvedRecipientPN)
 	needsMessageSecret := isBotMode || cli.shouldIncludeReportingToken(message)
 	var extraParams nodeExtraParams
 
@@ -322,7 +336,11 @@ func (cli *Client) SendMessage(ctx context.Context, to types.JID, message *waE2E
 		resp.DebugTimings.GetParticipants = time.Since(start)
 	} else if to.Server == types.HiddenUserServer {
 		ownID = cli.getOwnLID()
-	} else if to.Server == types.DefaultUserServer && cli.Store.LIDMigrationTimestamp > 0 && !req.Peer {
+		extraParams.peerRecipientPN, err = cli.resolvePeerRecipientPNForLID(ctx, to, preResolvedRecipientPN)
+		if err != nil {
+			cli.Log.Warnf("Failed to get peer recipient PN for %s: %v", to, err)
+		}
+	} else if to.Server == types.DefaultUserServer && !req.Peer {
 		start := time.Now()
 		var toLID types.JID
 		toLID, err = cli.Store.LIDs.GetLIDForPN(ctx, to)
@@ -331,6 +349,7 @@ func (cli *Client) SendMessage(ctx context.Context, to types.JID, message *waE2E
 			return
 		} else if toLID.IsEmpty() {
 			var info map[types.JID]types.UserInfo
+			cli.Log.Debugf("LID for %s not found, fetching user info", to)
 			info, err = cli.GetUserInfo(ctx, []types.JID{to})
 			if err != nil {
 				err = fmt.Errorf("failed to get user info for %s to fill LID cache: %w", to, err)
@@ -341,7 +360,8 @@ func (cli *Client) SendMessage(ctx context.Context, to types.JID, message *waE2E
 			}
 		}
 		resp.DebugTimings.LIDFetch = time.Since(start)
-		cli.Log.Debugf("Replacing SendMessage destination with LID as migration timestamp is set %s -> %s", to, toLID)
+		cli.Log.Debugf("Replacing SendMessage destination with LID %s -> %s", to, toLID)
+		extraParams.peerRecipientPN = to
 		to = toLID
 		ownID = cli.getOwnLID()
 	}
@@ -463,6 +483,60 @@ func (cli *Client) SendMessage(ctx context.Context, to types.JID, message *waE2E
 		}
 	}
 	return
+}
+
+func validatePreResolvedRecipientPN(to, pn types.JID) (types.JID, error) {
+	if pn.IsEmpty() {
+		return types.EmptyJID, nil
+	}
+	if to.Server != types.HiddenUserServer ||
+		to.User == "" ||
+		to.RawAgent != 0 ||
+		to.Device != 0 ||
+		to.Integrator != 0 {
+		return types.EmptyJID, fmt.Errorf(
+			"%w: recipient must be a non-AD LID, got %s",
+			ErrInvalidPreResolvedRecipientPN,
+			to,
+		)
+	}
+	if pn.Server != types.DefaultUserServer ||
+		pn.User == "" ||
+		pn.RawAgent != 0 ||
+		pn.Device != 0 ||
+		pn.Integrator != 0 ||
+		!isNumericJIDUser(pn.User) {
+		return types.EmptyJID, fmt.Errorf(
+			"%w: PN must be a non-AD numeric user JID, got %s",
+			ErrInvalidPreResolvedRecipientPN,
+			pn,
+		)
+	}
+	return pn, nil
+}
+
+func usesBotRecipientIdentity(to, preResolvedRecipientPN types.JID) bool {
+	return to.IsBot() || preResolvedRecipientPN.IsBot()
+}
+
+func (cli *Client) resolvePeerRecipientPNForLID(
+	ctx context.Context,
+	to,
+	preResolvedRecipientPN types.JID,
+) (types.JID, error) {
+	if !preResolvedRecipientPN.IsEmpty() {
+		return preResolvedRecipientPN, nil
+	}
+	return cli.Store.LIDs.GetPNForLID(ctx, to)
+}
+
+func isNumericJIDUser(user string) bool {
+	for _, char := range user {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return user != ""
 }
 
 func (cli *Client) SendPeerMessage(ctx context.Context, message *waE2E.Message) (SendResponse, error) {
@@ -742,6 +816,7 @@ type nodeExtraParams struct {
 	metaNode        *waBinary.Node
 	additionalNodes *[]waBinary.Node
 	addressingMode  types.AddressingMode
+	peerRecipientPN types.JID
 }
 
 func (cli *Client) sendGroup(
@@ -1186,6 +1261,9 @@ func (cli *Client) prepareMessageNode(
 		"id":   id,
 		"type": msgType,
 		"to":   to,
+	}
+	if !extraParams.peerRecipientPN.IsEmpty() {
+		attrs["peer_recipient_pn"] = extraParams.peerRecipientPN
 	}
 	// TODO this is a very hacky hack for announcement group messages, why is it pn anyway?
 	if extraParams.addressingMode != "" {

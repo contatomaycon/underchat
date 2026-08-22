@@ -174,9 +174,12 @@ export class AiAgentService {
       accountId
     );
 
-    if (result) {
-      await this.invalidateAiAgentCache(aiAgentId, accountId);
-    }
+    /*
+     * A false result is the expected idempotent retry after an ambiguous
+     * response: the row may have been deleted before cache invalidation
+     * failed. Always clear the cache once the repository call resolves.
+     */
+    await this.invalidateAiAgentCache(aiAgentId, accountId);
 
     return result;
   };
@@ -315,7 +318,7 @@ export class AiAgentService {
     accountId: string,
     ids: {
       openai_assistant_id?: string;
-      openai_vector_store_id?: string;
+      openai_vector_store_id?: string | null;
     }
   ): Promise<boolean> => {
     const result = await this.aiAgentUpdaterRepository.updateAiAgentOpenAIIds(

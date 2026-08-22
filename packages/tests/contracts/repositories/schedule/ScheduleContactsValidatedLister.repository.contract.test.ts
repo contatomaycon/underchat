@@ -52,6 +52,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
         phone_ddi: '55',
         phone_partial: '***9999',
         is_validated: true,
+        validation_origin: null,
       },
     ]);
   });
@@ -123,6 +124,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
         phone_ddi: '55',
         phone_partial: '***9999',
         is_validated: false,
+        validation_origin: null,
       },
       {
         contact_id: 'ct-2',
@@ -132,6 +134,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
         phone_ddi: '55',
         phone_partial: '***8888',
         is_validated: true,
+        validation_origin: null,
       },
       {
         contact_id: 'ct-3',
@@ -141,6 +144,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
         phone_ddi: '55',
         phone_partial: '***7777',
         is_validated: false,
+        validation_origin: null,
       },
     ]);
   });

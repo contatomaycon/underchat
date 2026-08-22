@@ -9,5 +9,7 @@ export enum EWorkerStatus {
   delete = '019a930d-c6f6-766d-9c84-4dc1777f8f69',
   mismatched = '019a930d-c6f6-766d-9c84-5056ccf66633',
   creating = '019a930d-c6f6-766d-9c84-52e87789979b',
-  stopped = '019bcd18-ce66-77a2-9d7c-e48159c253da',
+  blocked = '019bcd18-ce66-77a2-9d7c-e48159c253da',
+  stopped = '019feb94-c2ff-76b1-9d00-d7602a50affe',
+  connecting = '019fee6d-09b1-752b-b759-943c3743db7e',
 }

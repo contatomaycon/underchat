@@ -16,6 +16,10 @@ import { ContactLabelTemplateCreatorRepository } from './ContactLabelTemplateCre
 import { ContactChannelCreatorRepository } from './ContactChannelCreator.repository';
 import { TFunction } from 'i18next';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
+import {
+  type ContactOutboundWebhookMarker,
+  markContactOutboundWebhookAppliedInTransaction,
+} from './contactOutboundWebhookOutbox';
 
 @injectable()
 export class ContactCreatorRepository {
@@ -64,16 +68,23 @@ export class ContactCreatorRepository {
       NodePgQueryResultHKT,
       typeof schema,
       ExtractTablesWithRelations<typeof schema>
-    >
+    >,
+    requestedContactId?: string,
+    webhookMarker?: ContactOutboundWebhookMarker | null
   ): Promise<string | null> => {
     const validatedInput = this.validateAndTruncateContact(input);
-    const contactId = uuidv7();
+    const contactId = requestedContactId ?? uuidv7();
     const hasLabels = this.hasLabelTemplates(validatedInput);
     const hasChannels = this.hasChannels(validatedInput);
-    const needsTransaction = (hasLabels || hasChannels) && !tx;
+    const needsTransaction =
+      (hasLabels || hasChannels || !!webhookMarker) && !tx;
 
     if (needsTransaction) {
-      return this.createContactWithLabelsAndChannels(validatedInput, contactId);
+      return this.createContactWithLabelsAndChannels(
+        validatedInput,
+        contactId,
+        webhookMarker
+      );
     }
 
     return this.executeCreateContact(
@@ -81,7 +92,8 @@ export class ContactCreatorRepository {
       contactId,
       tx || this.dbRw,
       tx ? hasLabels : false,
-      tx ? hasChannels : false
+      tx ? hasChannels : false,
+      webhookMarker
     );
   };
 
@@ -102,7 +114,8 @@ export class ContactCreatorRepository {
 
   private readonly createContactWithLabelsAndChannels = async (
     validatedInput: ICreateContact,
-    contactId: string
+    contactId: string,
+    webhookMarker?: ContactOutboundWebhookMarker | null
   ): Promise<string | null> => {
     return this.dbRw.transaction(async (transaction) => {
       const insertResult = await this.insertContact(
@@ -118,7 +131,8 @@ export class ContactCreatorRepository {
       await this.createLabelTemplates(
         transaction,
         contactId,
-        validatedInput.label_template_ids ?? []
+        validatedInput.label_template_ids ?? [],
+        validatedInput.account_id ?? null
       );
 
       await this.createContactChannels(
@@ -126,6 +140,12 @@ export class ContactCreatorRepository {
         contactId,
         validatedInput.channel_ids ?? [],
         validatedInput.account_id ?? null
+      );
+
+      await markContactOutboundWebhookAppliedInTransaction(
+        transaction,
+        contactId,
+        webhookMarker
       );
 
       return contactId;
@@ -143,7 +163,8 @@ export class ContactCreatorRepository {
           ExtractTablesWithRelations<typeof schema>
         >,
     createLabels: boolean,
-    createChannels: boolean
+    createChannels: boolean,
+    webhookMarker?: ContactOutboundWebhookMarker | null
   ): Promise<string | null> => {
     try {
       const insertResult = await this.insertContact(
@@ -166,7 +187,8 @@ export class ContactCreatorRepository {
         await this.createLabelTemplates(
           tx,
           contactId,
-          validatedInput.label_template_ids ?? []
+          validatedInput.label_template_ids ?? [],
+          validatedInput.account_id ?? null
         );
       }
 
@@ -176,6 +198,17 @@ export class ContactCreatorRepository {
           contactId,
           validatedInput.channel_ids ?? [],
           validatedInput.account_id ?? null
+        );
+      }
+
+      if (webhookMarker) {
+        if (!('rollback' in dbOrTx)) {
+          throw new Error('outbound_webhook_contact_transaction_required');
+        }
+        await markContactOutboundWebhookAppliedInTransaction(
+          dbOrTx,
+          contactId,
+          webhookMarker
         );
       }
 
@@ -210,6 +243,7 @@ export class ContactCreatorRepository {
       account_id: validatedInput.account_id,
       contact_document_type_id: validatedInput.contact_document_type_id,
       is_valided: validatedInput.is_valided ?? false,
+      validation_origin: validatedInput.validation_origin,
       name: validatedInput.name,
       last_name: validatedInput.last_name,
       email: validatedInput.email,
@@ -240,21 +274,28 @@ export class ContactCreatorRepository {
       ExtractTablesWithRelations<typeof schema>
     >,
     contactId: string,
-    labelTemplateIds: string[]
+    labelTemplateIds: string[],
+    accountId: string | null
   ) => {
-    const validLabelTemplateIds = labelTemplateIds.filter(
-      (labelTemplateId) => labelTemplateId
-    );
+    const validLabelTemplateIds = [
+      ...new Set(labelTemplateIds.filter((labelTemplateId) => labelTemplateId)),
+    ];
+    if (validLabelTemplateIds.length > 0 && !accountId) {
+      throw new Error('contact_label_template_account_required');
+    }
 
-    await Promise.all(
-      validLabelTemplateIds.map((labelTemplateId) =>
-        this.contactLabelTemplateCreatorRepository.createContactLabelTemplate(
+    for (const labelTemplateId of validLabelTemplateIds) {
+      const assignmentId =
+        await this.contactLabelTemplateCreatorRepository.createContactLabelTemplate(
           tx,
           contactId,
-          labelTemplateId
-        )
-      )
-    );
+          labelTemplateId,
+          accountId as string
+        );
+      if (!assignmentId) {
+        throw new Error('contact_label_template_creation_failed');
+      }
+    }
   };
 
   private readonly createContactChannels = async (
@@ -271,18 +312,22 @@ export class ContactCreatorRepository {
       return;
     }
 
-    const validChannelIds = channelIds.filter((channelId) => channelId);
+    const validChannelIds = [
+      ...new Set(channelIds.filter((channelId) => channelId)),
+    ];
 
-    await Promise.all(
-      validChannelIds.map((channelId) =>
-        this.contactChannelCreatorRepository.createContactChannelInTransaction(
+    for (const channelId of validChannelIds) {
+      const channelAssignmentId =
+        await this.contactChannelCreatorRepository.createContactChannelInTransaction(
           tx,
           contactId,
           channelId,
           accountId
-        )
-      )
-    );
+        );
+      if (!channelAssignmentId) {
+        throw new Error('contact_channel_creation_failed');
+      }
+    }
   };
 
   private readonly handleInsertError = (error: unknown): null => {
@@ -296,34 +341,53 @@ export class ContactCreatorRepository {
   createContactWithGroup = async (
     t: TFunction<'translation', undefined>,
     input: ICreateContact,
-    contactGroupId: string | null
-  ): Promise<boolean | null> => {
+    contactGroupId: string | null,
+    requestedContactId?: string,
+    webhookMarker?: ContactOutboundWebhookMarker | null
+  ): Promise<string | null> => {
     try {
       return await this.dbRw.transaction(async (tx) => {
-        const contactId = await this.createContact(input, tx);
+        const contactId = await this.createContact(
+          input,
+          tx,
+          requestedContactId
+        );
 
         if (!contactId) {
           return null;
         }
 
         if (contactGroupId && contactGroupId.trim() !== '') {
+          if (!input.account_id) {
+            throw new Error('contact_group_account_required');
+          }
           const contactGroupAssignmentId =
             await this.contactGroupAssignmentCreatorRepository.createContactGroupAssignment(
               tx,
               contactGroupId,
-              contactId
+              contactId,
+              input.account_id
             );
 
           if (!contactGroupAssignmentId) {
-            return null;
+            throw new Error('contact_group_assignment_creation_failed');
           }
         }
 
-        return true;
+        await markContactOutboundWebhookAppliedInTransaction(
+          tx,
+          contactId,
+          webhookMarker
+        );
+
+        return contactId;
       });
     } catch (error) {
       const pgError = error as { code?: string; message?: string };
-      if (pgError.code === '22001') {
+      if (
+        pgError.code === '22001' ||
+        pgError.message === 'contact_group_assignment_creation_failed'
+      ) {
         return null;
       }
       throw error;

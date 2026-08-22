@@ -34,7 +34,7 @@ describe('AiAgentUpdaterRepository', () => {
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'new name',
-        base_url: undefined,
+        base_url: null,
         voice_ia_id: null,
         enable_human_transfer: true,
       })

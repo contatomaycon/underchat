@@ -1,6 +1,5 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import {
@@ -8,6 +7,8 @@ import {
   UpdateContactRequest,
 } from '@core/schema/contact/editContact/request.schema';
 import { ContactUpdaterUseCase } from '@core/useCases/contact/ContactUpdater.useCase';
+import { resolveOutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
+import { handleChatMutationControllerError } from '@core/controllers/chat/methods/handleChatMutationControllerError';
 
 export const editContact = async (
   request: FastifyRequest<{
@@ -26,7 +27,9 @@ export const editContact = async (
       tokenJwtData.account_id,
       request.params.contact_id,
       request.body,
-      allowedChannelIds
+      allowedChannelIds,
+      tokenJwtData.user_id,
+      resolveOutboundWebhookRequestSource(request.module)
     );
 
     if (response) {
@@ -41,6 +44,8 @@ export const editContact = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    handleControllerError(error, reply, t);
+    handleChatMutationControllerError(error, reply, t, {
+      sanitizeUnexpected: true,
+    });
   }
 };

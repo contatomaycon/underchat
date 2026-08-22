@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
+import { EChatbotStatus } from '@core/common/enums/EChatbotStatus';
 import { WorkerConfigForChatViewerRepository } from '@core/repositories/chat/WorkerConfigForChatViewer.repository';
 
 function createActiveConfigChain(result: unknown[]) {
@@ -67,6 +68,7 @@ describe('WorkerConfigForChatViewerRepository', () => {
         worker_config_status_id: EWorkerConfigStatus.active,
         name: 'Entrada',
         type: 'input',
+        status: EChatbotStatus.active,
       },
     ]);
     const chatbotOutputChain = createLimitChain([
@@ -75,6 +77,7 @@ describe('WorkerConfigForChatViewerRepository', () => {
         worker_config_status_id: EWorkerConfigStatus.active,
         name: 'Saida',
         type: 'output',
+        status: EChatbotStatus.active,
       },
     ]);
     const aiAgentChain = createLimitChain([

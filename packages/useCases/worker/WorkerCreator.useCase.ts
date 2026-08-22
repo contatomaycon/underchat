@@ -27,6 +27,12 @@ import {
   createConnectionLifecycleDebugTraceId,
   isConnectionLifecycleDebugEnabled,
 } from '@core/services/connectionLifecycleDebug.service';
+import {
+  publishPreparedWorkerLifecycle,
+  retryWorkerLifecycleBoundary,
+} from '@core/common/functions/workerLifecycleBoundary';
+import { getWorkerWarmHealthFreshAfter } from '@core/common/functions/workerWarmHealthLease';
+import { defaultWorkerSessionStorage } from '@core/common/functions/workerSessionStorage';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -67,24 +73,6 @@ export class WorkerCreatorUseCase {
     await this.planAccountService.validateCanCreateWorker(t, accountId);
   }
 
-  private async publishWorkerCreateEnqueueError(
-    payload: IWorkerPayload
-  ): Promise<void> {
-    await this.workerService.updateWorkerById(payload.account_id, {
-      worker_id: payload.worker_id,
-      worker_status_id: EWorkerStatus.error,
-      lifecycle_operation_id: null,
-    });
-
-    await this.centrifugoService.publishSub(
-      workerCentrifugoQueue(payload.account_id),
-      {
-        ...payload,
-        worker_status_id: EWorkerStatus.error,
-      }
-    );
-  }
-
   private async publishWarmReplenish(
     serverId: string,
     workerType: EWorkerType,
@@ -121,7 +109,9 @@ export class WorkerCreatorUseCase {
       payload.server_id,
       payload.worker_type_id,
       payload.worker_id,
-      reservationExpiresAt
+      reservationExpiresAt,
+      getWorkerWarmHealthFreshAfter(settings),
+      payload.session_storage
     );
 
     if (!warm) {
@@ -160,6 +150,7 @@ export class WorkerCreatorUseCase {
       account_id: input.payload.account_id,
       server_id: input.payload.server_id,
       worker_type_id: input.payload.worker_type_id,
+      session_storage: input.payload.session_storage,
       worker_status_id: input.payload.worker_status_id,
       source: 'worker_create',
       warm_pool_id: input.warmPoolId,
@@ -168,16 +159,26 @@ export class WorkerCreatorUseCase {
     };
   }
 
-  private async enqueueLifecycleOrMarkError(
-    payload: IWorkerPayload,
+  private async enqueuePreparedLifecycle(
     message: IWorkerLifecycleQueueMessage
   ): Promise<void> {
-    try {
-      await this.workerLifecycleQueueService.publish(message);
-    } catch (error) {
-      await this.publishWorkerCreateEnqueueError(payload);
-      throw error;
-    }
+    /*
+     * Persist the final primary before touching Kafka. This is especially
+     * important after a warm reservation, because activate_warm must replace
+     * the generic create recovery command in the journal.
+     */
+    await retryWorkerLifecycleBoundary(() =>
+      this.workerLifecycleQueueService.prepare(message)
+    );
+    await publishPreparedWorkerLifecycle({
+      publish: () => this.workerLifecycleQueueService.publish(message),
+    });
+  }
+
+  private async publishCreateRecovery(
+    message: IWorkerLifecycleQueueMessage
+  ): Promise<void> {
+    await this.enqueuePreparedLifecycle(message);
   }
 
   async execute(
@@ -195,6 +196,7 @@ export class WorkerCreatorUseCase {
     const lifecycleOperationId = uuidv7();
     const requestedWorkerType =
       (input.worker_type as EWorkerType) ?? EWorkerType.baileys;
+    const requestedServerId = input.server_id?.trim() || undefined;
 
     void this.connectionLifecycleDebugService.log(
       'manager.worker_create.start',
@@ -205,7 +207,7 @@ export class WorkerCreatorUseCase {
         account_id: accountId,
         worker_type_id: requestedWorkerType,
         lifecycle_operation_id: lifecycleOperationId,
-        has_server_id: Boolean(input.server_id),
+        has_server_id: Boolean(requestedServerId),
       }
     );
 
@@ -235,28 +237,17 @@ export class WorkerCreatorUseCase {
       throw new Error(t('worker_name_required'));
     }
 
-    let serverId: string;
+    const sessionStorage = defaultWorkerSessionStorage(workerType);
 
-    if (input.server_id) {
-      const eligibleServers = await this.workerService.listWorkerServers();
-      const serverEligible = eligibleServers.some(
-        (s) => s.server_id === input.server_id
-      );
+    const eligibleServers = await this.workerService.listWorkerServers();
+    const serverId = requestedServerId
+      ? eligibleServers.find(
+          (eligibleServer) => eligibleServer.server_id === requestedServerId
+        )?.server_id
+      : eligibleServers[0]?.server_id;
 
-      if (!serverEligible) {
-        throw new Error(t('worker_server_not_disponible'));
-      }
-
-      serverId = input.server_id;
-    } else {
-      const viewWorkerServer =
-        await this.workerService.viewWorkerServer(accountId);
-
-      if (!viewWorkerServer?.server_id) {
-        throw new Error(t('worker_server_not_disponible'));
-      }
-
-      serverId = viewWorkerServer.server_id;
+    if (!serverId) {
+      throw new Error(t('worker_server_not_disponible'));
     }
 
     const recreateAvailableAt = getWorkerRecreateAvailableAt();
@@ -267,12 +258,51 @@ export class WorkerCreatorUseCase {
       server_id: serverId,
       account_id: accountId,
       name: input.name.trim(),
+      session_storage: sessionStorage,
+      lifecycle_operation_id: lifecycleOperationId,
       recreate_available_at: recreateAvailableAt,
     };
 
-    const isCreated =
-      await this.workerService.createWorker(createWorkerPayload);
+    const payloadCreate: IWorkerPayload = {
+      action: EWorkerAction.create,
+      worker_id: workerId,
+      worker_status_id: EWorkerStatus.creating,
+      worker_type_id: workerType,
+      server_id: serverId,
+      account_id: accountId,
+      name: input.name.trim(),
+      session_storage: sessionStorage,
+      lifecycle_operation_id: lifecycleOperationId,
+      recreate_available_at: recreateAvailableAt,
+      debug_trace_id: debugTraceId,
+    };
+    const createRecoveryMessage = this.buildLifecycleMessage({
+      payload: payloadCreate,
+      action: 'create',
+      operationId: lifecycleOperationId,
+    });
+    await this.workerLifecycleQueueService.prepare(createRecoveryMessage);
 
+    let isCreated = false;
+    try {
+      isCreated = await this.workerService.createWorker(createWorkerPayload);
+    } catch (claimError) {
+      try {
+        /*
+         * The INSERT response can be lost after commit. A create message for a
+         * missing row is stale, while the same message completes a committed
+         * row, so publishing it is the safe recovery action.
+         */
+        await this.enqueuePreparedLifecycle(createRecoveryMessage);
+      } catch (boundaryError) {
+        throw new AggregateError(
+          [claimError, boundaryError],
+          'Worker create lifecycle claim could not be recovered'
+        );
+      }
+
+      throw claimError;
+    }
     if (!isCreated) {
       throw new Error(t('worker_creation_failed'));
     }
@@ -289,17 +319,6 @@ export class WorkerCreatorUseCase {
       }
     );
 
-    const lifecycleMarked = await this.workerService.updateWorkerById(
-      accountId,
-      {
-        worker_id: workerId,
-        lifecycle_operation_id: lifecycleOperationId,
-      }
-    );
-
-    if (!lifecycleMarked) {
-      throw new Error(t('worker_creation_failed'));
-    }
     void this.connectionLifecycleDebugService.log(
       'manager.worker_create.lifecycle_marked',
       {
@@ -312,34 +331,45 @@ export class WorkerCreatorUseCase {
       }
     );
 
-    await Promise.all([
-      this.workerConfigService.ensureTypingSimulationDefault(workerId),
-      this.workerConfigService.ensureSecurityKeyDefault(workerId),
-    ]);
+    try {
+      await Promise.all([
+        this.workerConfigService.ensureTypingSimulationDefault(workerId),
+        this.workerConfigService.ensureSecurityKeyDefault(workerId),
+      ]);
+    } catch (error) {
+      try {
+        await this.publishCreateRecovery(createRecoveryMessage);
+      } catch (boundaryError) {
+        throw new AggregateError(
+          [error, boundaryError],
+          'Worker create preparation failure could not be durably resolved'
+        );
+      }
+      throw error;
+    }
 
-    const payloadCreate: IWorkerPayload = {
-      action: EWorkerAction.create,
-      worker_id: workerId,
-      worker_status_id: EWorkerStatus.creating,
-      worker_type_id: workerType,
-      server_id: serverId,
-      account_id: accountId,
-      name: input.name.trim(),
-      lifecycle_operation_id: lifecycleOperationId,
-      recreate_available_at: recreateAvailableAt,
-      debug_trace_id: debugTraceId,
-    };
-
-    await this.centrifugoService.publishSub(
-      workerCentrifugoQueue(payloadCreate.account_id),
-      payloadCreate
-    );
-
-    const warmSettings = await this.workerWarmPoolSettingsService.view();
-    const warmReserved = await this.tryReserveWarmWorker(
-      payloadCreate,
-      warmSettings
-    );
+    let warmSettings: IWorkerWarmPoolSettings | null = null;
+    let warmReserved: IWorkerWarmPool | null = null;
+    try {
+      warmSettings = await this.workerWarmPoolSettingsService.view();
+      warmReserved = await this.tryReserveWarmWorker(
+        payloadCreate,
+        warmSettings
+      );
+    } catch (error) {
+      void this.connectionLifecycleDebugService.log(
+        'manager.worker_create.warm_reservation_failed',
+        {
+          trace_id: debugTraceId,
+          layer: 'manager',
+          worker_id: workerId,
+          account_id: accountId,
+          worker_type_id: workerType,
+          lifecycle_operation_id: lifecycleOperationId,
+          reason: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
     const lifecycleMessage = this.buildLifecycleMessage({
       payload: payloadCreate,
       action: warmReserved ? 'activate_warm' : 'create',
@@ -360,7 +390,13 @@ export class WorkerCreatorUseCase {
         warm_pool_id: warmReserved?.warm_pool_id,
       }
     );
-    await this.enqueueLifecycleOrMarkError(payloadCreate, lifecycleMessage);
+    await this.enqueuePreparedLifecycle(lifecycleMessage);
+    await this.centrifugoService
+      .publishSub(
+        workerCentrifugoQueue(payloadCreate.account_id),
+        payloadCreate
+      )
+      .catch(() => undefined);
 
     const response: ICreateWorkerResponse = {
       code: 202,
@@ -370,13 +406,14 @@ export class WorkerCreatorUseCase {
       account_id: accountId,
       server_id: serverId,
       worker_type_id: workerType,
+      session_storage: sessionStorage,
       worker_status_id: EWorkerStatus.creating,
       operation_id: lifecycleOperationId,
       reason: warmReserved ? 'warm_activation_queued' : 'create_queued',
       recreate_available_at: recreateAvailableAt,
       warm_pool_claimed: Boolean(warmReserved),
       warm_pool_id: warmReserved?.warm_pool_id,
-      fallback_created: !warmReserved && warmSettings.warmup_enabled,
+      fallback_created: !warmReserved && warmSettings?.warmup_enabled === true,
       debug_trace_id: debugTraceId,
     };
 

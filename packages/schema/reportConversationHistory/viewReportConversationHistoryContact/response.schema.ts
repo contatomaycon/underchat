@@ -1,4 +1,5 @@
 import { Static, Type } from '@sinclair/typebox';
+import { contactValidationStatusSchema } from '@core/schema/contact/contactValidationStatus.schema';
 
 const labelTemplateSchema = Type.Object({
   label_template_id: Type.String({ format: 'uuid' }),
@@ -25,6 +26,7 @@ export const viewReportConversationHistoryContactResponseSchema = Type.Object({
   document_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  validation_status: Type.Optional(contactValidationStatusSchema),
   label_templates: Type.Array(labelTemplateSchema),
   contact_document_type: Type.Optional(
     Type.Union([contactDocumentTypeSchema, Type.Null()])

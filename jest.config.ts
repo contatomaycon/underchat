@@ -1,3 +1,4 @@
+/** @jest-config-loader esbuild-register */
 import type { Config } from 'jest';
 import { pathsToModuleNameMapper } from 'ts-jest';
 import fs from 'node:fs';
@@ -5,15 +6,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
+
 const { compilerOptions } = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, './tsconfig.json'), 'utf8')
+  fs.readFileSync(path.resolve(currentDirectory, './tsconfig.json'), 'utf8')
 ) as { compilerOptions: { paths?: Record<string, string[]> } };
 const pathAliases = pathsToModuleNameMapper(compilerOptions.paths ?? {}, {
   prefix: '<rootDir>/',
 });
 
-dotenv.config({ path: path.resolve(__dirname, './.env') });
+dotenv.config({ path: path.resolve(currentDirectory, './.env') });
 
 const config: Config = {
   clearMocks: true,

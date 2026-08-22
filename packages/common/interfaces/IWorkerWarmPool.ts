@@ -1,4 +1,5 @@
 import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
+import { EWorkerSessionStorage } from '@core/common/enums/EWorkerSessionStorage';
 
 export interface IWorkerWarmPool {
   warm_pool_id: string;
@@ -6,7 +7,11 @@ export interface IWorkerWarmPool {
   worker_type_id: string;
   container_id?: string | null;
   container_name?: string | null;
-  session_volume_name: string;
+  session_storage: EWorkerSessionStorage;
+  session_volume_name: string | null;
+  runtime_generation: number;
+  runtime_capability_hash?: string | null;
+  session_writer_epoch?: string | null;
   state: EWorkerWarmPoolState;
   reserved_by_worker_id?: string | null;
   reservation_expires_at?: string | null;

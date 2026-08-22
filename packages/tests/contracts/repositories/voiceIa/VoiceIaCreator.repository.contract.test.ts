@@ -44,6 +44,57 @@ describe('VoiceIaCreatorRepository', () => {
     );
   });
 
+  it.each([
+    [EVoiceIaType.gpt, 'tts-1'],
+    [EVoiceIaType.gemini, 'gemini-3.1-flash-tts-preview'],
+  ])(
+    'uses the provider-specific repository fallback for %s',
+    async (voiceIaType, expectedModel) => {
+      const { db, values } = createInsertDbMock({ rowCount: 1 });
+      const repository = new VoiceIaCreatorRepository(db as never);
+
+      await repository.createVoiceIa(
+        {
+          name: 'Voice',
+          api_key: 'api-key',
+          voice_id: 'voice',
+          voice_ia_type: voiceIaType,
+        },
+        'acc-1'
+      );
+
+      expect(values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          voice_ia_type: voiceIaType,
+          model_id: expectedModel,
+        })
+      );
+    }
+  );
+
+  it('does not persist an ElevenLabs model for a Gemini configuration', async () => {
+    const { db, values } = createInsertDbMock({ rowCount: 1 });
+    const repository = new VoiceIaCreatorRepository(db as never);
+
+    await repository.createVoiceIa(
+      {
+        name: 'Gemini Voice',
+        api_key: 'api-key',
+        voice_id: 'Kore',
+        voice_ia_type: EVoiceIaType.gemini,
+        model_id: 'eleven_multilingual_v2',
+      },
+      'acc-1'
+    );
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        voice_ia_type: EVoiceIaType.gemini,
+        model_id: 'gemini-3.1-flash-tts-preview',
+      })
+    );
+  });
+
   it('returns null when insert result is null', async () => {
     const { db } = createInsertDbMock(null);
     const repository = new VoiceIaCreatorRepository(db as never);

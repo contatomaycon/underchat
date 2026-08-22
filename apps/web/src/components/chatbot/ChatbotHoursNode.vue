@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './chatbot-node-workbench.css';
 import { computed, nextTick, ref, watch } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position, useVueFlow } from '@vue-flow/core';
@@ -78,7 +79,9 @@ const buildHoursOptions = (existingOptions?: HoursOption[]): HoursOption[] => {
     }
 
     const optionId =
-      typeof option.id === 'string' ? option.id.trim().replace(/^option-/i, '') : '';
+      typeof option.id === 'string'
+        ? option.id.trim().replace(/^option-/i, '')
+        : '';
 
     if (!optionId) {
       continue;
@@ -91,10 +94,12 @@ const buildHoursOptions = (existingOptions?: HoursOption[]): HoursOption[] => {
       continue;
     }
 
-    intervalOptions.push(normalizeIntervalOption({
-      ...option,
-      id: optionId,
-    }));
+    intervalOptions.push(
+      normalizeIntervalOption({
+        ...option,
+        id: optionId,
+      })
+    );
   }
 
   if (intervalOptions.length === 0) {
@@ -246,7 +251,9 @@ const removeInterval = (optionId: string) => {
     data.onRemoveOption(optionId);
   }
 
-  const intervals = intervalOptions.value.filter((option) => option.id !== optionId);
+  const intervals = intervalOptions.value.filter(
+    (option) => option.id !== optionId
+  );
   updateIntervals(intervals);
 };
 
@@ -267,27 +274,43 @@ watch(
 </script>
 
 <template>
-  <div class="chatbot-hours-node">
-    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
+  <div class="chatbot-hours-node chatbot-workbench-node">
+    <Handle
+      id="target"
+      type="target"
+      :position="Position.Top"
+      class="handle-target"
+    />
 
-    <VCard class="hours-card" elevation="2">
-      <VCardTitle class="d-flex align-center justify-space-between pa-2 node-drag-handle">
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-clock-hour-3" color="primary" size="20" />
-          <span class="text-sm font-weight-medium">{{ t('chatbot_hours') }}</span>
+    <VCard class="hours-card chatbot-workbench-card" elevation="2">
+      <VCardTitle
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle chatbot-workbench-header"
+      >
+        <div class="d-flex align-center ga-2 chatbot-workbench-identity">
+          <VIcon
+            icon="tabler-clock-hour-3"
+            color="primary"
+            size="20"
+            class="chatbot-workbench-icon"
+          />
+          <span class="text-sm font-weight-medium chatbot-workbench-title">{{
+            t('chatbot_hours')
+          }}</span>
         </div>
         <VIcon
           v-if="(props.data as HoursData)?.onRemove"
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
-        <VLabel class="text-body-2 mb-2">{{ t('chatbot_hours_intervals') }}</VLabel>
+      <VCardText class="pa-3 chatbot-workbench-body">
+        <VLabel class="text-body-2 mb-2">{{
+          t('chatbot_hours_intervals')
+        }}</VLabel>
 
         <div class="interval-list nodrag">
           <div
@@ -302,7 +325,9 @@ watch(
               density="compact"
               hide-details
               class="interval-time-field"
-              @update:model-value="updateIntervalStart(option.id, $event as string)"
+              @update:model-value="
+                updateIntervalStart(option.id, $event as string)
+              "
             />
 
             <VIcon icon="tabler-arrow-right" size="16" class="interval-arrow" />
@@ -314,10 +339,16 @@ watch(
               density="compact"
               hide-details
               class="interval-time-field"
-              @update:model-value="updateIntervalEnd(option.id, $event as string)"
+              @update:model-value="
+                updateIntervalEnd(option.id, $event as string)
+              "
             />
 
-            <IconBtn size="small" class="interval-remove-btn" @click="removeInterval(option.id)">
+            <IconBtn
+              size="small"
+              class="interval-remove-btn"
+              @click="removeInterval(option.id)"
+            >
               <VIcon icon="tabler-trash" size="16" />
             </IconBtn>
 

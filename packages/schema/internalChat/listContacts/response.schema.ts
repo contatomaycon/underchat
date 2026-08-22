@@ -1,5 +1,6 @@
 import { Static, Type } from '@sinclair/typebox';
 import { pagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
+import { contactValidationStatusSchema } from '@core/schema/contact/contactValidationStatus.schema';
 
 const internalChatContactLabelTemplateSchema = Type.Object({
   label_template_id: Type.String({ format: 'uuid' }),
@@ -16,6 +17,7 @@ export const internalChatContactSchema = Type.Object({
   phone_ddi: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  validation_status: Type.Optional(contactValidationStatusSchema),
   label_templates: Type.Array(internalChatContactLabelTemplateSchema),
 });
 

@@ -23,6 +23,13 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
+import { managerApiErrorHandler } from '@core/common/functions/managerApiErrorHandler';
+import planEntitlementTelemetryPlugin from '@core/plugins/planEntitlementTelemetry';
+import workerCommandQueuedReconcilerPlugin from '@/plugins/workerCommandQueuedReconciler';
+import messageSendRecoveryDrainerPlugin from '@/plugins/messageSendRecoveryDrainer';
+import workerCommandDeferredRelayPlugin from '@/plugins/workerCommandDeferredRelay';
+import workerCommandDeadlineReconcilerPlugin from '@/plugins/workerCommandDeadlineReconciler';
+import workerCommandTelemetryPlugin from '@/plugins/workerCommandTelemetry';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -35,6 +42,8 @@ const server = fastify({
   logger: true,
 });
 
+server.setErrorHandler(managerApiErrorHandler);
+
 server.decorateRequest('module', ERouteModule.manager);
 
 server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
@@ -42,6 +51,9 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
 });
 server.register(safePlugin(dbConnector, 'database'));
 server.register(safePlugin(redisPlugin, 'redis'));
+server.register(
+  safePlugin(planEntitlementTelemetryPlugin, 'planEntitlementTelemetry')
+);
 server.register(safePlugin(s3Plugin, 's3'));
 server.register(safePlugin(pushDeliveryPlugin, 'pushDelivery'));
 server.register(safePlugin(presenceMonitorPlugin, 'presenceMonitor'));
@@ -63,6 +75,27 @@ server.register(safePlugin(multipartFile, 'multipartFile'), {
 server.register(safePlugin(databaseElasticPlugin, 'databaseElastic'), {
   prefix: ERouteModule.balancer,
 });
+server.register(
+  safePlugin(
+    workerCommandQueuedReconcilerPlugin,
+    'workerCommandQueuedReconciler'
+  )
+);
+server.register(
+  safePlugin(messageSendRecoveryDrainerPlugin, 'messageSendRecoveryDrainer')
+);
+server.register(
+  safePlugin(workerCommandDeferredRelayPlugin, 'workerCommandDeferredRelay')
+);
+server.register(
+  safePlugin(
+    workerCommandDeadlineReconcilerPlugin,
+    'workerCommandDeadlineReconciler'
+  )
+);
+server.register(
+  safePlugin(workerCommandTelemetryPlugin, 'workerCommandTelemetry')
+);
 
 server.register(safePlugin(swaggerPlugin, 'swagger'));
 server.register(safePlugin(routes, 'routes', true), {

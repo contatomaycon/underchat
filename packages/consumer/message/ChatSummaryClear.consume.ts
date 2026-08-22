@@ -7,6 +7,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IClearChatSummaryMessage } from '@core/common/interfaces/IClearChatSummaryMessage';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import { SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS } from '@core/common/functions/serviceApiWhatsappConsumerBindings';
 
 @singleton()
 export class ChatSummaryClearConsume {
@@ -42,10 +43,57 @@ export class ChatSummaryClearConsume {
     }
   }
 
-  private async handleMessage(data: IClearChatSummaryMessage): Promise<void> {
+  private async handleMessage(
+    data: IClearChatSummaryMessage,
+    assertActive: () => void = () => undefined
+  ): Promise<void> {
     if (!data.chat_id || !data.account_id) return;
 
-    await this.chatService.clearChatSummary(data.chat_id, data.account_id);
+    const rawOperationId = data.operation_id?.trim() || null;
+    const operationId =
+      rawOperationId && rawOperationId.length <= 128 ? rawOperationId : null;
+    const hasExpectedSummaryRevision =
+      Object.prototype.hasOwnProperty.call(data, 'expected_summary_revision') &&
+      typeof data.expected_summary_revision === 'number' &&
+      Number.isSafeInteger(data.expected_summary_revision) &&
+      data.expected_summary_revision >= 0;
+    const rawExpectedLastMessageId = data.expected_last_message_id;
+    const expectedLastMessageId =
+      typeof rawExpectedLastMessageId === 'string'
+        ? rawExpectedLastMessageId.trim()
+        : rawExpectedLastMessageId;
+    const hasExpectedLastMessageId =
+      Object.prototype.hasOwnProperty.call(data, 'expected_last_message_id') &&
+      (expectedLastMessageId === null ||
+        (typeof expectedLastMessageId === 'string' &&
+          expectedLastMessageId.length > 0 &&
+          expectedLastMessageId.length <= 1_000));
+
+    // Clearing unread state is destructive. Every accepted command must carry
+    // the complete identity and OCC snapshot emitted by the current producer.
+    // Old/partial commands are intentionally discarded instead of guessing.
+    if (
+      operationId === null ||
+      !hasExpectedSummaryRevision ||
+      !hasExpectedLastMessageId
+    ) {
+      return;
+    }
+
+    assertActive();
+    const cleared = await this.chatService.clearChatSummary(
+      data.chat_id,
+      data.account_id,
+      {
+        operationId,
+        enforceExpectedSummaryRevision: true,
+        expectedSummaryRevision: data.expected_summary_revision,
+        enforceExpectedLastMessageId: true,
+        expectedLastMessageId,
+        assertActive,
+      }
+    );
+    if (!cleared) return;
 
     const updatedChat = await this.chatService.findChatByChatId(
       data.account_id,
@@ -56,9 +104,11 @@ export class ChatSummaryClearConsume {
 
     const channelAccountId = updatedChat.account.id;
 
+    assertActive();
     await this.centrifugoService.publishSub(
       chatAccountCentrifugo(channelAccountId),
-      updatedChat
+      updatedChat,
+      assertActive
     );
   }
 
@@ -69,11 +119,12 @@ export class ChatSummaryClearConsume {
     this.runner = new KafkaConsumerRunner<IClearChatSummaryMessage>({
       kafka: this.kafka,
       topic,
-      groupId: 'group-underchat-chat-summary-clear',
+      groupId: SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS.chatSummaryClear,
       parse: (message) => this.parseMessage(message.value),
       resolveEntityKey: (data) =>
         `${data.account_id ?? 'unknown-account'}:${data.chat_id ?? 'unknown-chat'}`,
-      handle: (data) => this.handleMessage(data),
+      preserveEntityOrder: true,
+      handle: (data, context) => this.handleMessage(data, context.assertActive),
       logger: console,
     });
 

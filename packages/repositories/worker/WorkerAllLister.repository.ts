@@ -1,11 +1,20 @@
 import * as schema from '@core/models';
-import { worker, workerStatus, account } from '@core/models';
+import {
+  worker,
+  workerRuntime,
+  workerStatus,
+  account,
+  whatsappSessionLease,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { TransferWorker } from '@core/schema/chat/listTransferOptions/response.schema';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import {
+  effectiveWorkerOnlinePredicate,
+  liveWhatsappSessionLeaseJoinCondition,
+} from './workerEffectiveOnline.sql';
 
 @injectable()
 export class WorkerAllListerRepository {
@@ -31,11 +40,13 @@ export class WorkerAllListerRepository {
         eq(workerStatus.worker_status_id, worker.worker_status_id)
       )
       .innerJoin(account, eq(account.account_id, worker.account_id))
+      .leftJoin(workerRuntime, eq(workerRuntime.worker_id, worker.worker_id))
+      .leftJoin(whatsappSessionLease, liveWhatsappSessionLeaseJoinCondition())
       .where(
         and(
           eq(account.account_id, accountId),
           isNull(worker.deleted_at),
-          eq(workerStatus.worker_status_id, EWorkerStatus.online)
+          effectiveWorkerOnlinePredicate()
         )
       )
       .orderBy(asc(worker.name))

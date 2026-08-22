@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { PushDeliveryQueueService } from '@core/services/pushDeliveryQueue.service';
 
 class FakeRedis {
+  status = 'ready';
   strings = new Map<string, string>();
   zsets = new Map<string, Map<string, number>>();
 
@@ -134,6 +135,41 @@ function makeService(input?: {
 describe('PushDeliveryQueueService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('contains drain failures and keeps the scheduled worker running', async () => {
+    jest.useFakeTimers();
+    const { service } = makeService();
+    const drainError = new Error('Command timed out');
+    const onDrainError = jest.fn();
+    const drain = jest
+      .spyOn(service, 'drain')
+      .mockRejectedValueOnce(drainError)
+      .mockResolvedValue(undefined);
+
+    service.start(onDrainError);
+    await Promise.resolve();
+
+    expect(onDrainError).toHaveBeenCalledWith(drainError);
+
+    await jest.advanceTimersByTimeAsync(100);
+    service.stop();
+
+    expect(drain).toHaveBeenCalledTimes(2);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('does not issue queue commands before Redis is ready', async () => {
+    const { service, redis } = makeService();
+    redis.status = 'connecting';
+
+    await service.drain();
+
+    expect(redis.set).not.toHaveBeenCalled();
   });
 
   it('enqueues and drains expo jobs', async () => {

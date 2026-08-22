@@ -6,7 +6,7 @@ import {
   labelTemplateUpdatePermissions,
   labelTemplateViewPermissions,
 } from '@/permissions';
-import LabelTemplateController from '@/controllers/labelTemplate';
+import LabelTemplateController from '@core/controllers/labelTemplate';
 import { listLabelTemplateSchema } from '@core/schema/labelTemplate/listLabelTemplate';
 import { createLabelTemplateSchema } from '@core/schema/labelTemplate/createLabelTemplate';
 import { viewLabelTemplateSchema } from '@core/schema/labelTemplate/viewLabelTemplate';

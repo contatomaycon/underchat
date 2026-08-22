@@ -7,17 +7,20 @@ import {
   toRef,
   watch,
 } from 'vue';
-import {
-  fetchRecentHistoryAndProcess,
-  onMessage,
-  unsubscribe,
-} from '@/@webcore/centrifugo';
+import { fetchRecentHistoryAndProcess } from '@/@webcore/centrifugo';
 import { useChannelsStore } from '@/@webcore/stores/channels';
+import {
+  canonicalSnapshotIncludesPublication,
+  isSessionRemovalTerminalPublication,
+  type ChannelStatusPresentationSnapshot,
+  useChannelStatusPresentationStore,
+} from '@/@webcore/stores/channelStatusPresentation';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { EWhatsappConnectionStatus } from '@core/common/enums/EWhatsappConnectionStatus';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { WorkerSecureConnectionSessionResponse } from '@core/schema/worker/secureConnection/response.schema';
@@ -26,6 +29,12 @@ import {
   type WorkerConnectionModalState,
 } from '@core/common/functions/normalizeWorkerConnectionModalState';
 import { reduceWorkerConnectionState } from '@core/common/functions/reduceWorkerConnectionState';
+import { isWorkerConnectionResetGenerationHandoff } from '@core/common/functions/isWorkerConnectionResetGenerationHandoff';
+import {
+  isWhatsappQrCredentialConsumedState,
+  isWhatsappQrCredentialPendingState,
+} from '@core/common/functions/isWhatsappQrCredentialConsumedState';
+import { isWhatsappQrAttemptExhaustedState } from '@core/common/functions/isWhatsappQrAttemptExhaustedState';
 import {
   createConnectionLifecycleDebugTraceId,
   isConnectionLifecycleDebugEnabled,
@@ -34,12 +43,35 @@ import {
 import { logLocalConnectionStatus } from '@/@webcore/utils/localConnectionStatusLog';
 import ConnectionMethodChooser from './ConnectionMethodChooser.vue';
 import ConnectionAuthenticatorInstallPanel from './ConnectionAuthenticatorInstallPanel.vue';
+import ConnectionChromeExtensionPanel from './ConnectionChromeExtensionPanel.vue';
 import ConnectionSecurePanel from './ConnectionSecurePanel.vue';
+import ChannelMigrationProgress from './ChannelMigrationProgress.vue';
+import ConnectionLifecycleStage from './ConnectionLifecycleStage.vue';
+import { IWhatsappConnectionStatus } from '@core/common/interfaces/IWhatsappConnectionStatus';
+import { WhatsappConnectionStatusProvider } from '@core/common/interfaces/IWhatsappConnectionStatus';
+import { applyWhatsappConnectionStatus } from '@core/common/functions/applyWhatsappConnectionStatus';
+import {
+  isWhatsappConnectionOnline,
+  projectWhatsappChannelDisplayStatus,
+} from '@core/common/functions/whatsappConnectionStatus';
+import {
+  evaluateConnectionModalPublication,
+  shouldClearConnectionModalQr,
+  useWhatsappConnectionStatus,
+  type WhatsappConnectionStatusResolution,
+} from '@/composables/useWhatsappConnectionStatus';
+import { useResilientCentrifugoSubscription } from '@/composables/useResilientCentrifugoSubscription';
+import type { DisconnectWorkerConnectionResponse } from '@core/schema/worker/disconnectWorkerConnection/response.schema';
 
 const channelStore = useChannelsStore();
+const channelStatusPresentationStore = useChannelStatusPresentationStore();
 
 type ConnectionMethod =
-  'authenticator_install' | 'method_selection' | 'qrcode' | 'secure';
+  | 'authenticator_install'
+  | 'chrome_extension'
+  | 'method_selection'
+  | 'qrcode'
+  | 'secure';
 type AuthenticatorPlatform = 'linux' | 'macos' | 'windows';
 
 type WorkerSecureConnectionPublication = {
@@ -56,9 +88,33 @@ const props = defineProps<{
   initialStatusId?: string | null;
   initialPhone?: string | null;
   debugTraceId?: string | null;
+  initialConnectionStatus?: IWhatsappConnectionStatus | null;
+  initialConnectionStatusSourceId?: string | null;
+  initialConnectionStatusOrder?: string | null;
+  initialConnectionOnlineAcknowledged?: boolean;
+  /** A brand-new worker is bootstrapping; no previous session was removed. */
+  isInitialCreation?: boolean;
+  /** The source session is being preserved while a PostgreSQL handoff runs. */
+  isSessionMigration?: boolean;
+  /** Original connection type shown while a preserved-session handoff runs. */
+  migrationSourceType?: string | null;
+  /** Optional source server label for an administrative server migration. */
+  migrationSourceServerName?: string | null;
+  /** Optional target server label for an administrative server migration. */
+  migrationTargetServerName?: string | null;
+  /** This lifecycle request intentionally removed the previous session. */
+  isDestructiveReset?: boolean;
+  /** Uses the project dialog radius without changing shared channel screens. */
+  standardAppearance?: boolean;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', v: boolean) => void>();
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: boolean): void;
+  (e: 'sessionRemoved', result: DisconnectWorkerConnectionResponse): void;
+  (e: 'connectionStarted', workerId: string): void;
+  (e: 'migrationCancelRequested'): void;
+  (e: 'migrationTimedOut'): void;
+}>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -72,12 +128,49 @@ const activeWorkerTypeId = shallowRef<string | null>(props.channelType ?? null);
 const activeDebugTraceId = shallowRef<string | undefined>(
   props.debugTraceId ?? undefined
 );
+const {
+  status: nativeConnectionStatus,
+  sourceId: nativeConnectionStatusSourceId,
+  order: nativeConnectionStatusOrder,
+  accept: acceptNativeConnectionStatus,
+  reset: resetNativeConnectionStatus,
+} = useWhatsappConnectionStatus();
+
+function connectionStatusProvider(
+  workerTypeId: string | null | undefined
+): WhatsappConnectionStatusProvider | undefined {
+  if (workerTypeId === EWorkerType.baileys) return 'baileys';
+  if (workerTypeId === EWorkerType.wwebjs) return 'wwebjs';
+  if (workerTypeId === EWorkerType.whatsmeow) return 'whatsmeow';
+  return undefined;
+}
+
+function acceptInitialNativeConnectionStatus(): void {
+  if (!props.initialConnectionStatus) return;
+  acceptNativeConnectionStatus({
+    snapshot: props.initialConnectionStatus,
+    sourceId: props.initialConnectionStatusSourceId,
+    order: props.initialConnectionStatusOrder,
+    expectedProvider: connectionStatusProvider(props.channelType),
+  });
+}
+
+acceptInitialNativeConnectionStatus();
+const nativeConnectionOnlineAcknowledged = shallowRef(
+  props.initialConnectionOnlineAcknowledged === true &&
+    isWhatsappConnectionOnline(nativeConnectionStatus.value)
+);
 const workerConnectionChannel = computed(() =>
   accountId.value ? workerCentrifugoQueue(accountId.value) : ''
 );
+const canonicalPresentationSnapshot = computed(() =>
+  channelId.value
+    ? channelStatusPresentationStore.snapshot(channelId.value)
+    : undefined
+);
 
-const MIN_PAIRING_STAGE_MS = 900;
 const QR_MAX_AGE_MS = 120_000;
+const QR_REQUEST_TIMEOUT_MS = 30_000;
 const QR_HISTORY_RECOVERY_LIMIT = 250;
 const SECURE_CONNECTION_POLL_INTERVAL_MS = 8_000;
 const SECURE_CONNECTION_POLLABLE_STATUSES = new Set<string>([
@@ -87,12 +180,37 @@ const SECURE_CONNECTION_POLLABLE_STATUSES = new Set<string>([
   'connected',
 ]);
 const QR_HISTORY_RECOVERY_DELAYS_MS = [
-  1_500, 5_000, 10_000, 20_000, 40_000, 80_000, 120_000, 180_000, 240_000,
+  1_500, 5_000, 10_000, 20_000, 40_000, 80_000, 120_000,
 ] as const;
 const QR_REQUESTABLE_WORKER_STATUSES = new Set<string>([
   EWorkerStatus.disponible,
-  EWorkerStatus.creating,
-  EWorkerStatus.recreating,
+  EWorkerStatus.offline,
+  EWorkerStatus.mismatched,
+  EWorkerStatus.error,
+]);
+const QR_ATTEMPT_TERMINAL_WORKER_STATUSES = new Set<string>([
+  EWorkerStatus.blocked,
+  EWorkerStatus.delete,
+  EWorkerStatus.deleting,
+  EWorkerStatus.stopped,
+]);
+const QR_ATTEMPT_TERMINAL_NATIVE_STATUSES = new Set<string>([
+  EWhatsappConnectionStatus.conflict,
+  EWhatsappConnectionStatus.error,
+  EWhatsappConnectionStatus.invalidSession,
+  EWhatsappConnectionStatus.leaseLost,
+  EWhatsappConnectionStatus.loggedOut,
+  EWhatsappConnectionStatus.offline,
+]);
+const QR_ATTEMPT_PROGRESS_CODES = new Set<ECodeMessage>([
+  ECodeMessage.newLoginAttempt,
+  ECodeMessage.awaitingReadQrCode,
+  ECodeMessage.awaitConnection,
+  ECodeMessage.awaitingPairingCode,
+  ECodeMessage.pairingInProgress,
+  ECodeMessage.awaitingPasskey,
+  ECodeMessage.awaitingPasskeyConfirmation,
+  ECodeMessage.info,
 ]);
 const qrHistoryRecoveryTimeouts = new Set<number>();
 let qrHistoryRecoveryAttemptId: string | undefined;
@@ -116,9 +234,15 @@ const isRequestingQr = shallowRef(false);
 const isPasskeyRunning = shallowRef(false);
 const isPasskeyConfirming = shallowRef(false);
 const phoneNumber = shallowRef<string | null>(null);
-const sessionReady = shallowRef(props.initialStatusId === EWorkerStatus.online);
+const sessionReady = shallowRef(
+  props.initialStatusId === EWorkerStatus.online &&
+    nativeConnectionOnlineAcknowledged.value &&
+    isWhatsappConnectionOnline(nativeConnectionStatus.value)
+);
 const disconnectedByUser = shallowRef(false);
 const isResetting = shallowRef(false);
+const isRemovingSession = shallowRef(false);
+const connectionStartedEmitted = shallowRef(false);
 const pairingCodePrimary = shallowRef('');
 const pairingCodeSecondary = shallowRef('');
 const externalConnectionUrl = shallowRef('');
@@ -130,9 +254,11 @@ const selectedConnectionMethod =
 const secureSession = shallowRef<WorkerSecureConnectionSessionResponse | null>(
   null
 );
+const secureConnectionLifecycleFence = shallowRef(false);
 const isSecureSessionLoading = shallowRef(false);
 const isOpeningSecureHelper = shallowRef(false);
 const isDownloadingAuthenticator = shallowRef(false);
+const isDownloadingChromeExtension = shallowRef(false);
 const secureHelperOpenTimeoutId = shallowRef<number | null>(null);
 const securePollingIntervalId = shallowRef<number | null>(null);
 const securePollingInFlight = shallowRef(false);
@@ -142,6 +268,7 @@ const intervalIdNextAttempt = shallowRef<number | null>(null);
 const pairingStartedAt = shallowRef<number | null>(null);
 const connectedStateDelayTimeout = shallowRef<number | null>(null);
 const lastConnectionPublicationOffset = shallowRef(0);
+let qrRequestGeneration = 0;
 
 const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   status: statusConnection.value,
@@ -170,36 +297,111 @@ const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   session_ready: sessionReady.value,
   disconnected_user: disconnectedByUser.value,
   debug_trace_id: activeDebugTraceId.value,
+  connection_status: nativeConnectionStatus.value,
+  connection_status_source_id: nativeConnectionStatusSourceId.value,
+  connection_status_order: nativeConnectionStatusOrder.value,
+  connection_online_acknowledged:
+    sessionReady.value &&
+    isWhatsappConnectionOnline(nativeConnectionStatus.value),
 }));
 
-const modalState = computed<WorkerConnectionModalState>(() =>
+// A completed handoff and its ONLINE provider projection can arrive through
+// different reactive sources in the same frame. Keep the migration surface
+// mounted until the local canonical state has consumed a terminal proof;
+// otherwise `method_selection` or `recreating` can flash for one render.
+const isMigrationOutcomePending = shallowRef(props.isSessionMigration === true);
+const canOfferNewConnection = computed(
+  () => props.isSessionMigration !== true && !isMigrationOutcomePending.value
+);
+
+const isQrAttemptActive = computed(() =>
+  Boolean(
+    canOfferNewConnection.value &&
+    selectedConnectionMethod.value === 'qrcode' &&
+    (isRequestingQr.value ||
+      (connectionAttemptId.value &&
+        (qrPending.value ||
+          qrcode.value ||
+          pairingStartedAt.value !== null ||
+          pairingCodePrimary.value ||
+          pairingCodeSecondary.value ||
+          passkeyPublicKey.value ||
+          passkeyConfirmationPrimary.value ||
+          passkeyConfirmationSecondary.value)))
+  )
+);
+
+const baseModalState = computed<WorkerConnectionModalState>(() =>
   normalizeWorkerConnectionModalState(connectionState.value, {
     isResetting: isResetting.value,
+    isSessionMigration: false,
+    isDestructiveReset: props.isDestructiveReset === true,
+    isQrAttemptActive: isQrAttemptActive.value,
   })
+);
+
+const releaseMigrationOutcomeFence = () => {
+  if (
+    props.isSessionMigration !== true &&
+    isMigrationOutcomePending.value &&
+    (baseModalState.value === 'connected' ||
+      (props.initialStatusId === EWorkerStatus.error &&
+        baseModalState.value === 'disconnected'))
+  ) {
+    isMigrationOutcomePending.value = false;
+  }
+};
+
+watch(
+  [() => props.isSessionMigration, () => props.initialStatusId, baseModalState],
+  ([isSessionMigration]) => {
+    if (isSessionMigration) {
+      isMigrationOutcomePending.value = true;
+      return;
+    }
+    releaseMigrationOutcomeFence();
+  },
+  { flush: 'sync', immediate: true }
+);
+
+const modalState = computed<WorkerConnectionModalState>(() =>
+  props.isSessionMigration === true || isMigrationOutcomePending.value
+    ? 'migrating'
+    : baseModalState.value
 );
 
 const isConnected = computed(() => modalState.value === 'connected');
 const dialogMaxWidth = computed(() => {
+  if (!canOfferNewConnection.value) {
+    return 900;
+  }
+
   if (selectedConnectionMethod.value === 'authenticator_install') {
     return 820;
+  }
+
+  if (selectedConnectionMethod.value === 'chrome_extension') {
+    return 780;
   }
 
   if (
     selectedConnectionMethod.value === 'method_selection' &&
     !isConnected.value
   ) {
-    return 760;
+    return 960;
   }
 
-  return 640;
+  return 860;
 });
 const isQrAttemptsExpired = computed(
   () => qrMaxAttempts.value > 0 && qrAttempt.value > qrMaxAttempts.value
 );
 const isBlockingOperation = computed(
   () =>
+    isRemovingSession.value ||
     modalState.value === 'loggingOut' ||
     modalState.value === 'resetting' ||
+    modalState.value === 'migrating' ||
     modalState.value === 'pairingInProgress'
 );
 const isConnectionPreparing = computed(
@@ -230,8 +432,31 @@ const isActionLocked = computed(
 const isQrConnectionSelected = computed(
   () => selectedConnectionMethod.value === 'qrcode'
 );
+const isChromeExtensionConnectionAvailable = computed(() => {
+  const workerTypeId = activeWorkerTypeId.value ?? channelType.value;
+
+  return (
+    workerTypeId === EWorkerType.baileys ||
+    workerTypeId === EWorkerType.wwebjs ||
+    workerTypeId === EWorkerType.whatsmeow
+  );
+});
+const chromeExtensionStoreUrl = computed(
+  () => import.meta.env.VITE_UNDERCHAT_CHROME_EXTENSION_URL?.trim() ?? ''
+);
+const chromeExtensionPackageUrl = computed(() =>
+  channelStore.getChromeExtensionPackageUrl()
+);
+const authenticatorDownloadUrls = computed<
+  Record<AuthenticatorPlatform, string>
+>(() => ({
+  linux: channelStore.getAuthenticatorInstallerUrl('linux'),
+  macos: channelStore.getAuthenticatorInstallerUrl('macos'),
+  windows: channelStore.getAuthenticatorInstallerUrl('windows'),
+}));
 const showConnectionChooser = computed(
   () =>
+    canOfferNewConnection.value &&
     selectedConnectionMethod.value === 'method_selection' &&
     !isConnected.value &&
     !isBlockingOperation.value
@@ -304,6 +529,15 @@ const stageMeta = computed(() => {
       color: 'info',
       loading: true,
     },
+    migrating: {
+      title: 'connection_migrating_title',
+      description: 'connection_migrating_description',
+      // Keep this in the generated Iconify catalogue. `arrows-exchange` was
+      // not emitted in icons.css, which left the migration spinner blank.
+      icon: 'tabler-arrows-right-left',
+      color: 'info',
+      loading: true,
+    },
     disconnected: {
       title: isQrAttemptsExpired.value
         ? 'qrcode_attempts_expired_title'
@@ -354,22 +588,35 @@ const stageMeta = computed(() => {
   return meta[modalState.value];
 });
 
-const showPrimaryActions = computed(() => modalState.value !== 'pairing');
-const showQrRetryOnly = computed(
-  () =>
-    modalState.value === 'disconnected' &&
-    isQrAttemptsExpired.value &&
-    isWorkerReadyForQr.value
+const visibleStageMeta = computed(() =>
+  isRemovingSession.value
+    ? {
+        title: 'connection_removing_session_title',
+        description: 'connection_removing_session_description',
+        icon: 'tabler-logout',
+        color: 'warning',
+        loading: true,
+      }
+    : stageMeta.value
 );
-const showReconnectAction = computed(
+
+const showQrRestartAction = computed(
+  () => modalState.value === 'disconnected' && isWorkerReadyForQr.value
+);
+const showPrimaryActions = computed(
   () =>
+    canOfferNewConnection.value &&
+    !isRemovingSession.value &&
+    (isConnected.value ||
+      showQrRestartAction.value ||
+      modalState.value === 'passkeyRequired' ||
+      modalState.value === 'passkeyConfirmation')
+);
+const showExternalConnectionLink = computed(
+  () =>
+    canOfferNewConnection.value &&
     !isConnected.value &&
-    isWorkerReadyForQr.value &&
-    !showQrRetryOnly.value &&
-    !isBlockingOperation.value &&
-    modalState.value !== 'pairing' &&
-    modalState.value !== 'passkeyRequired' &&
-    modalState.value !== 'passkeyConfirmation'
+    selectedConnectionMethod.value === 'qrcode'
 );
 
 const externalConnectionExpiresAtFormatted = computed(() => {
@@ -389,7 +636,7 @@ const externalConnectionExpiresAtFormatted = computed(() => {
 });
 
 async function loadExternalConnectionLink() {
-  if (!channelId.value) {
+  if (!showExternalConnectionLink.value || !channelId.value) {
     externalConnectionUrl.value = '';
     externalConnectionExpiresAt.value = null;
     return;
@@ -403,6 +650,12 @@ async function loadExternalConnectionLink() {
       channelId.value
     );
 
+    if (!showExternalConnectionLink.value) {
+      externalConnectionUrl.value = '';
+      externalConnectionExpiresAt.value = null;
+      return;
+    }
+
     externalConnectionUrl.value = link?.url ?? '';
     externalConnectionExpiresAt.value = link?.expires_at ?? null;
   } finally {
@@ -411,7 +664,7 @@ async function loadExternalConnectionLink() {
 }
 
 async function copyExternalConnectionLink() {
-  if (!externalConnectionUrl.value) {
+  if (!showExternalConnectionLink.value || !externalConnectionUrl.value) {
     return;
   }
 
@@ -441,7 +694,7 @@ function isSecureConnectionTerminal(
 function hasSecureConnectionCredentials(
   session: WorkerSecureConnectionSessionResponse | null
 ): boolean {
-  return Boolean(session?.token && session.deep_link);
+  return Boolean(session?.token);
 }
 
 function shouldPollSecureConnectionSession(
@@ -467,8 +720,22 @@ function hasReusableSecureConnectionAttempt(): boolean {
 function isSecureConnectionMethodActive(): boolean {
   return (
     selectedConnectionMethod.value === 'secure' ||
-    selectedConnectionMethod.value === 'authenticator_install'
+    selectedConnectionMethod.value === 'authenticator_install' ||
+    selectedConnectionMethod.value === 'chrome_extension'
   );
+}
+
+function beginSecureConnectionLifecycleFence(): void {
+  secureConnectionLifecycleFence.value = true;
+  qrRequestGeneration += 1;
+  isRequestingQr.value = false;
+  qrcode.value = undefined;
+  qrPending.value = false;
+  clearQrHistoryRecovery();
+}
+
+function releaseSecureConnectionLifecycleFence(): void {
+  secureConnectionLifecycleFence.value = false;
 }
 
 function shouldApplySecureConnectionPublication(
@@ -511,10 +778,33 @@ function stopSecureConnectionPolling() {
   }
 }
 
+function suspendConnectionOfferSideEffects() {
+  stopSecureConnectionPolling();
+  clearSecureHelperOpenTimeout();
+  clearQrHistoryRecovery();
+  clearNextAttemptCountdown();
+  selectedConnectionMethod.value = 'method_selection';
+  secureSession.value = null;
+  externalConnectionUrl.value = '';
+  externalConnectionExpiresAt.value = null;
+  isExternalConnectionCopied.value = false;
+  isOpeningSecureHelper.value = false;
+  qrcode.value = undefined;
+  qrPending.value = false;
+  isRequestingQr.value = false;
+  resetQrAttempts();
+  resetPairingCodes();
+  resetPasskeyState();
+}
+
 function startSecureConnectionPolling() {
   stopSecureConnectionPolling();
 
-  if (!channelId.value || !secureSession.value?.token) {
+  if (
+    !canOfferNewConnection.value ||
+    !channelId.value ||
+    !secureSession.value?.token
+  ) {
     return;
   }
 
@@ -526,6 +816,10 @@ function startSecureConnectionPolling() {
 function applySecureConnectionSession(
   session: WorkerSecureConnectionSessionResponse
 ) {
+  if (!canOfferNewConnection.value) {
+    return;
+  }
+
   const previous = secureSession.value;
   const nextSession: WorkerSecureConnectionSessionResponse = {
     ...previous,
@@ -536,12 +830,22 @@ function applySecureConnectionSession(
       session.helper_download_url ?? previous?.helper_download_url,
   };
 
+  if (['failed', 'expired', 'cancelled'].includes(nextSession.status)) {
+    releaseSecureConnectionLifecycleFence();
+  } else {
+    beginSecureConnectionLifecycleFence();
+  }
+
   secureSession.value = nextSession;
   connectionAttemptId.value = nextSession.connection_attempt_id;
   connectionRuntimeGeneration.value =
     nextSession.runtime_generation ?? connectionRuntimeGeneration.value;
 
-  if (nextSession.status === 'connected_confirmed') {
+  if (
+    nextSession.status === 'connected_confirmed' &&
+    nativeConnectionOnlineAcknowledged.value &&
+    isWhatsappConnectionOnline(nativeConnectionStatus.value)
+  ) {
     statusConnection.value = EBaileysConnectionStatus.connected;
     statusCode.value = ECodeMessage.connectionEstablished;
     workerStatusId.value = EWorkerStatus.online;
@@ -552,6 +856,12 @@ function applySecureConnectionSession(
       ? formatPhoneBR(nextSession.phone)
       : null;
     clearQrHistoryRecovery();
+  } else if (nextSession.status === 'connected_confirmed') {
+    // The secure helper confirms that the handoff finished, but only the
+    // provider itself can confirm that the WhatsApp socket is online.
+    statusConnection.value = EBaileysConnectionStatus.connecting;
+    statusCode.value = ECodeMessage.awaitConnection;
+    sessionReady.value = false;
   }
 
   if (['failed', 'expired', 'cancelled'].includes(nextSession.status)) {
@@ -577,7 +887,11 @@ function applySecureConnectionSession(
 }
 
 async function pollSecureConnectionSession() {
-  if (!channelId.value || !secureSession.value?.token) {
+  if (
+    !canOfferNewConnection.value ||
+    !channelId.value ||
+    !secureSession.value?.token
+  ) {
     stopSecureConnectionPolling();
     return;
   }
@@ -595,7 +909,7 @@ async function pollSecureConnectionSession() {
       { silent: true }
     );
 
-    if (session) {
+    if (canOfferNewConnection.value && session) {
       applySecureConnectionSession(session);
     }
   } finally {
@@ -604,7 +918,7 @@ async function pollSecureConnectionSession() {
 }
 
 function openSecureHelper() {
-  if (!secureSession.value?.deep_link) {
+  if (!canOfferNewConnection.value || !secureSession.value?.deep_link) {
     return;
   }
 
@@ -617,12 +931,23 @@ function openSecureHelper() {
   }, 1400);
 }
 
-async function startSecureConnection(options: { openHelper?: boolean } = {}) {
-  if (!channelId.value || isSecureSessionLoading.value) {
+async function startSecureConnection(
+  options: {
+    method?: Extract<ConnectionMethod, 'chrome_extension' | 'secure'>;
+    openHelper?: boolean;
+  } = {}
+) {
+  if (
+    !canOfferNewConnection.value ||
+    !channelId.value ||
+    isSecureSessionLoading.value
+  ) {
     return;
   }
 
-  selectedConnectionMethod.value = 'secure';
+  emitConnectionStarted();
+  beginSecureConnectionLifecycleFence();
+  selectedConnectionMethod.value = options.method ?? 'secure';
 
   if (hasReusableSecureConnectionAttempt()) {
     if (options.openHelper !== false) {
@@ -645,7 +970,7 @@ async function startSecureConnection(options: { openHelper?: boolean } = {}) {
       }
     );
 
-    if (!session) {
+    if (!canOfferNewConnection.value || !session) {
       return;
     }
 
@@ -661,10 +986,31 @@ async function startSecureConnection(options: { openHelper?: boolean } = {}) {
 }
 
 async function continueAuthenticatorConnection() {
-  await startSecureConnection();
+  await startSecureConnection({ method: 'secure' });
+}
+
+async function startChromeExtensionConnection() {
+  if (!canOfferNewConnection.value) {
+    return;
+  }
+
+  if (!isChromeExtensionConnectionAvailable.value) {
+    selectedConnectionMethod.value = 'authenticator_install';
+    void channelStore.getConnectionDownloadArtifacts({ silent: true });
+    return;
+  }
+
+  await startSecureConnection({
+    method: 'chrome_extension',
+    openHelper: false,
+  });
 }
 
 async function downloadAuthenticatorInstaller(platform: AuthenticatorPlatform) {
+  if (!canOfferNewConnection.value) {
+    return;
+  }
+
   isDownloadingAuthenticator.value = true;
 
   try {
@@ -674,7 +1020,25 @@ async function downloadAuthenticatorInstaller(platform: AuthenticatorPlatform) {
   }
 }
 
+async function downloadChromeExtensionPackage() {
+  if (!canOfferNewConnection.value) {
+    return;
+  }
+
+  isDownloadingChromeExtension.value = true;
+
+  try {
+    await channelStore.downloadChromeExtensionPackage();
+  } finally {
+    isDownloadingChromeExtension.value = false;
+  }
+}
+
 async function cancelSecureConnection() {
+  if (!canOfferNewConnection.value) {
+    return;
+  }
+
   if (!channelId.value || !secureSession.value?.token) {
     selectedConnectionMethod.value = 'method_selection';
     return;
@@ -696,25 +1060,60 @@ function returnToConnectionMethodSelection() {
   selectedConnectionMethod.value = 'method_selection';
   qrcode.value = undefined;
   qrPending.value = false;
+  connectionAttemptId.value = undefined;
+  pairingStartedAt.value = null;
+  resetQrAttempts();
   stopSecureConnectionPolling();
   clearSecureHelperOpenTimeout();
   clearQrHistoryRecovery();
 }
 
-async function selectConnectionMethod(method: 'secure' | 'qrcode') {
+function emitConnectionStarted(): void {
+  if (!channelId.value || connectionStartedEmitted.value) return;
+  connectionStartedEmitted.value = true;
+  emit('connectionStarted', channelId.value);
+}
+
+async function selectConnectionMethod(
+  method: 'chrome_extension' | 'secure' | 'qrcode'
+) {
+  if (!canOfferNewConnection.value) {
+    return;
+  }
+
   if (method === 'secure') {
+    void channelStore.getConnectionDownloadArtifacts({ silent: true });
     selectedConnectionMethod.value = 'authenticator_install';
     return;
   }
 
+  if (method === 'chrome_extension') {
+    if (!isChromeExtensionConnectionAvailable.value) {
+      void channelStore.getConnectionDownloadArtifacts({ silent: true });
+      selectedConnectionMethod.value = 'authenticator_install';
+      return;
+    }
+
+    void channelStore.getConnectionDownloadArtifacts({ silent: true });
+    await startChromeExtensionConnection();
+    return;
+  }
+
   selectedConnectionMethod.value = 'qrcode';
-  await requestQrCodeIfReady({ force: true });
+  await Promise.all([
+    loadExternalConnectionLink(),
+    requestQrCodeIfReady({ force: true }),
+  ]);
 }
 
 function handleSecureConnectionPublication(
   data: WorkerSecureConnectionPublication
 ) {
-  if (!data.secure_connection || data.worker_id !== channelId.value) {
+  if (
+    !canOfferNewConnection.value ||
+    !data.secure_connection ||
+    data.worker_id !== channelId.value
+  ) {
     return;
   }
 
@@ -740,6 +1139,10 @@ function handleSecureConnectionPublication(
 }
 
 async function switchToSecureConnectionFromPasskeyRequirement() {
+  if (!canOfferNewConnection.value) {
+    return;
+  }
+
   if (
     selectedConnectionMethod.value === 'secure' ||
     selectedConnectionMethod.value === 'authenticator_install'
@@ -788,6 +1191,13 @@ function hasExceededQrAttempts(data: Partial<IBaileysConnectionState>) {
     typeof data.max_attempts === 'number' &&
     data.max_attempts > 0 &&
     data.attempt > data.max_attempts
+  );
+}
+
+function hasExhaustedQrAttemptOverlay(): boolean {
+  return Boolean(
+    selectedConnectionMethod.value === 'qrcode' &&
+    hasExceededQrAttempts(connectionState.value)
   );
 }
 
@@ -1012,11 +1422,22 @@ function shouldIgnoreConnectionPayloadIdentity(
     return true;
   }
 
+  const currentRuntimeGeneration = connectionRuntimeGeneration.value;
   if (
     data.runtime_generation !== undefined &&
-    connectionRuntimeGeneration.value !== undefined &&
-    data.runtime_generation !== connectionRuntimeGeneration.value
+    currentRuntimeGeneration !== undefined &&
+    data.runtime_generation !== currentRuntimeGeneration
   ) {
+    if (
+      isWorkerConnectionResetGenerationHandoff(data, {
+        currentCode: statusCode.value,
+        currentRuntimeGeneration,
+        isResetting: isResetting.value,
+      })
+    ) {
+      return false;
+    }
+
     return true;
   }
 
@@ -1035,38 +1456,18 @@ function isConnectedPayload(data: Partial<IBaileysConnectionState>): boolean {
   );
 }
 
-function hasConfirmedSessionReady(
-  data: Partial<IBaileysConnectionState>
-): boolean {
-  return (
-    data.status === EBaileysConnectionStatus.connected &&
-    data.code === ECodeMessage.connectionEstablished &&
-    data.worker_status_id === EWorkerStatus.online &&
-    data.session_ready === true &&
-    data.authenticated === true &&
-    data.can_send === true &&
-    data.can_receive_runtime === true &&
-    !data.degraded_reason &&
-    (!data.provider_state ||
-      data.provider_state.toLowerCase() === 'connected') &&
-    Boolean(data.phone?.trim())
-  );
-}
-
-function shouldIgnoreConnectedPayload(
+function shouldIgnoreConnectionPayload(
   data: Partial<IBaileysConnectionState>,
-  options: { directResponse?: boolean } = {}
+  nativeResolution: WhatsappConnectionStatusResolution
 ): boolean {
-  if (!isConnectedPayload(data)) {
-    return false;
-  }
-
   if (
+    canOfferNewConnection.value &&
+    isConnectedPayload(data) &&
     hasActiveSecureConnectionAttempt() &&
     (isSecureConnectionMethodActive() ||
       data.connection_attempt_id === secureSession.value?.connection_attempt_id)
   ) {
-    logLocalConnectionStatus('web.connection_modal.connected_ignored', {
+    logLocalConnectionStatus('web.connection_modal.publication_ignored', {
       layer: 'web.connection_modal',
       worker_id: data.worker_id ?? channelId.value ?? undefined,
       account_id: data.account_id ?? accountId.value ?? undefined,
@@ -1090,8 +1491,15 @@ function shouldIgnoreConnectedPayload(
     return true;
   }
 
-  if (!hasConfirmedSessionReady(data)) {
-    logLocalConnectionStatus('web.connection_modal.connected_ignored', {
+  const decision = evaluateConnectionModalPublication({
+    currentAttemptId: connectionAttemptId.value,
+    currentConnected: isConnected.value,
+    hasDurableNativeOrder: Boolean(nativeConnectionStatusOrder.value),
+    incoming: data,
+    nativeResolution,
+  });
+  if (!decision.accepted) {
+    logLocalConnectionStatus('web.connection_modal.publication_ignored', {
       layer: 'web.connection_modal',
       worker_id: data.worker_id ?? channelId.value ?? undefined,
       account_id: data.account_id ?? accountId.value ?? undefined,
@@ -1105,62 +1513,22 @@ function shouldIgnoreConnectedPayload(
       authenticated: data.authenticated,
       provider_state: data.provider_state,
       degraded_reason: data.degraded_reason,
-      reason: 'connected_without_confirmed_session_ready',
+      reason: decision.reason,
       phone: data.phone,
-      connection_attempt_id: data.connection_attempt_id,
-      runtime_generation: data.runtime_generation,
-    });
-    return true;
-  }
-
-  if (
-    connectionAttemptId.value &&
-    data.connection_attempt_id !== connectionAttemptId.value
-  ) {
-    logLocalConnectionStatus('web.connection_modal.connected_ignored', {
-      layer: 'web.connection_modal',
-      worker_id: data.worker_id ?? channelId.value ?? undefined,
-      account_id: data.account_id ?? accountId.value ?? undefined,
-      worker_type_id: data.worker_type_id ?? activeWorkerTypeId.value,
-      worker_status_id: data.worker_status_id,
-      status: data.status,
-      code: data.code,
-      session_ready: data.session_ready,
-      reason: 'stale_connection_attempt',
       expected_connection_attempt_id: connectionAttemptId.value,
       connection_attempt_id: data.connection_attempt_id,
       runtime_generation: data.runtime_generation,
-    });
-    return true;
-  }
-
-  const ignored =
-    !options.directResponse &&
-    !connectionAttemptId.value &&
-    props.initialStatusId !== EWorkerStatus.online;
-  if (ignored) {
-    logLocalConnectionStatus('web.connection_modal.connected_ignored', {
-      layer: 'web.connection_modal',
-      worker_id: data.worker_id ?? channelId.value ?? undefined,
-      account_id: data.account_id ?? accountId.value ?? undefined,
-      worker_type_id: data.worker_type_id ?? activeWorkerTypeId.value,
-      worker_status_id: data.worker_status_id,
-      status: data.status,
-      code: data.code,
-      session_ready: data.session_ready,
-      reason: 'terminal_connected_without_active_attempt',
-      phone: data.phone,
-      connection_attempt_id: data.connection_attempt_id,
-      runtime_generation: data.runtime_generation,
-      initial_worker_status_id: props.initialStatusId,
+      connection_status_order: data.connection_status_order,
+      native_resolution: nativeResolution,
     });
   }
 
-  return ignored;
+  return !decision.accepted;
 }
 
 function canRecoverQrFromRecentHistory(): boolean {
   return (
+    canOfferNewConnection.value &&
     isQrConnectionSelected.value &&
     isVisible.value &&
     Boolean(channelId.value) &&
@@ -1173,7 +1541,7 @@ function canRecoverQrFromRecentHistory(): boolean {
 }
 
 async function recoverQrFromRecentHistory(reason: string): Promise<number> {
-  if (!workerConnectionChannel.value) {
+  if (!canRecoverQrFromRecentHistory() || !workerConnectionChannel.value) {
     return 0;
   }
 
@@ -1189,7 +1557,8 @@ async function recoverQrFromRecentHistory(reason: string): Promise<number> {
     const processed = await fetchRecentHistoryAndProcess(
       workerConnectionChannel.value,
       handleWorkerConnectionMessage,
-      QR_HISTORY_RECOVERY_LIMIT
+      QR_HISTORY_RECOVERY_LIMIT,
+      { commitCursor: false }
     );
     logConnectionLifecycleDebug('web.qr_history_recovery.done', {
       trace_id: activeDebugTraceId.value,
@@ -1216,71 +1585,6 @@ async function recoverQrFromRecentHistory(reason: string): Promise<number> {
   }
 }
 
-async function recoverQrFromCachedRequest(reason: string): Promise<boolean> {
-  if (!channelId.value || !canRecoverQrFromRecentHistory()) {
-    return false;
-  }
-
-  const currentConnectionAttemptId = connectionAttemptId.value;
-  const startedAt = Date.now();
-
-  try {
-    logConnectionLifecycleDebug('web.qr_cache_recovery.request', {
-      trace_id: ensureDebugTraceId('web_qr_cache_recovery'),
-      layer: 'web',
-      worker_id: channelId.value,
-      account_id: accountId.value ?? undefined,
-      connection_attempt_id: currentConnectionAttemptId,
-      reason,
-    });
-    const state = await channelStore.requestConnectionQrCode(channelId.value, {
-      silent: true,
-      debugTraceId: activeDebugTraceId.value,
-    });
-
-    if (state) {
-      applyDirectConnectionResponse(state);
-    }
-
-    if (!qrcode.value && state?.qr_pending === true) {
-      scheduleQrHistoryRecovery('cache_recovery_pending');
-    }
-
-    logConnectionLifecycleDebug('web.qr_cache_recovery.response', {
-      trace_id: activeDebugTraceId.value,
-      layer: 'web',
-      worker_id: channelId.value,
-      account_id: accountId.value ?? undefined,
-      connection_attempt_id:
-        state?.connection_attempt_id ?? currentConnectionAttemptId,
-      runtime_generation: state?.runtime_generation,
-      status: state?.status,
-      code: state?.code,
-      reason: state?.reason ?? reason,
-      duration_ms: Date.now() - startedAt,
-      qrcode: state?.qrcode,
-      pairing_code: state?.pairing_code,
-      has_passkey_public_key: Boolean(state?.passkey_public_key),
-      has_passkey_confirmation_code: Boolean(state?.passkey_confirmation_code),
-      qr_pending: state?.qr_pending === true,
-    });
-
-    return hasActiveConnectionCode.value;
-  } catch (error) {
-    logConnectionLifecycleDebug('web.qr_cache_recovery.error', {
-      trace_id: activeDebugTraceId.value,
-      layer: 'web',
-      worker_id: channelId.value,
-      account_id: accountId.value ?? undefined,
-      connection_attempt_id: currentConnectionAttemptId,
-      reason,
-      duration_ms: Date.now() - startedAt,
-      error,
-    });
-    return false;
-  }
-}
-
 function scheduleQrHistoryRecovery(reason = 'pending_ack') {
   const attemptId = connectionAttemptId.value;
 
@@ -1303,6 +1607,8 @@ function scheduleQrHistoryRecovery(reason = 'pending_ack') {
     reason,
   });
 
+  const finalDelayMs =
+    QR_HISTORY_RECOVERY_DELAYS_MS[QR_HISTORY_RECOVERY_DELAYS_MS.length - 1];
   for (const delayMs of QR_HISTORY_RECOVERY_DELAYS_MS) {
     const timeoutId = window.setTimeout(() => {
       qrHistoryRecoveryTimeouts.delete(timeoutId);
@@ -1315,8 +1621,12 @@ function scheduleQrHistoryRecovery(reason = 'pending_ack') {
         const recoveryReason = `${reason}:${delayMs}ms`;
         await recoverQrFromRecentHistory(recoveryReason);
 
-        if (!qrcode.value && canRecoverQrFromRecentHistory()) {
-          await recoverQrFromCachedRequest(recoveryReason);
+        if (
+          !qrcode.value &&
+          delayMs === finalDelayMs &&
+          canRecoverQrFromRecentHistory()
+        ) {
+          restoreModalAfterRejectedQrRequest();
         }
       })().catch((error) => {});
     }, delayMs);
@@ -1340,7 +1650,9 @@ function startNextAttemptCountdown() {
   }, 1000);
 }
 
-function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
+function prepareConnectionStart(
+  options: { awaitingQr?: boolean; preserveQr?: boolean } = {}
+) {
   clearQrHistoryRecovery();
 
   const shouldPreserveQr = options.preserveQr === true && Boolean(qrcode.value);
@@ -1350,10 +1662,13 @@ function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
   const currentQrPending = qrPending.value;
   const currentQrAttempt = qrAttempt.value;
   const currentQrMaxAttempts = qrMaxAttempts.value;
+  const isAwaitingQr = options.awaitingQr === true;
 
   isResetting.value = false;
   statusConnection.value = EBaileysConnectionStatus.connecting;
-  statusCode.value = ECodeMessage.awaitConnection;
+  statusCode.value = isAwaitingQr
+    ? ECodeMessage.awaitingReadQrCode
+    : ECodeMessage.awaitConnection;
   qrcode.value = shouldPreserveQr ? currentQrCode : undefined;
   connectionAttemptId.value = shouldPreserveQr
     ? currentConnectionAttemptId
@@ -1361,8 +1676,11 @@ function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
   connectionRuntimeGeneration.value = shouldPreserveQr
     ? currentRuntimeGeneration
     : undefined;
-  qrPending.value = shouldPreserveQr ? currentQrPending : true;
+  // Selecting the QR method is enough to present the pre-read QR stage. It is
+  // not evidence that the credential was consumed or that pairing started.
+  qrPending.value = shouldPreserveQr ? currentQrPending : isAwaitingQr;
   sessionReady.value = false;
+  nativeConnectionOnlineAcknowledged.value = false;
   if (shouldPreserveQr) {
     qrAttempt.value = currentQrAttempt;
     qrMaxAttempts.value = currentQrMaxAttempts;
@@ -1379,48 +1697,270 @@ function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
   clearConnectedStateDelay();
 }
 
-function prepareInitialModalState() {
-  workerStatusId.value = props.initialStatusId ?? null;
+function applyInitialNativeStatusProjection(): boolean {
+  const snapshot = nativeConnectionStatus.value;
+  if (!snapshot) return false;
 
-  if (props.initialStatusId !== EWorkerStatus.online) {
+  if (props.initialStatusId === EWorkerStatus.disponible) {
+    // A persisted AVAILABLE worker is ready for a new method selection. Its
+    // last native client may legitimately have ended as `client_destroyed`,
+    // but that diagnostic cannot open the modal in a disconnected state.
+    resetNativeConnectionStatus();
     prepareConnectionStart();
-    return;
+    return true;
   }
 
-  isResetting.value = false;
-  statusConnection.value = EBaileysConnectionStatus.connected;
-  statusCode.value = ECodeMessage.connectionEstablished;
-  qrcode.value = undefined;
-  connectionAttemptId.value = undefined;
-  connectionRuntimeGeneration.value = undefined;
-  qrPending.value = false;
-  sessionReady.value = true;
-  resetQrAttempts();
+  const centrallyAcknowledgedOnline =
+    props.initialStatusId === EWorkerStatus.online &&
+    props.initialConnectionOnlineAcknowledged === true &&
+    isWhatsappConnectionOnline(snapshot) &&
+    Boolean(props.initialPhone?.trim());
+  const projected = applyWhatsappConnectionStatus(
+    {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitConnection,
+      worker_id: channelId.value ?? '',
+      account_id: accountId.value ?? '',
+      worker_type_id: activeWorkerTypeId.value as EWorkerType | undefined,
+      worker_status_id: props.initialStatusId as EWorkerStatus | undefined,
+      phone: props.initialPhone ?? undefined,
+      session_ready: centrallyAcknowledgedOnline,
+      can_send: centrallyAcknowledgedOnline,
+      can_receive_runtime: centrallyAcknowledgedOnline,
+      authenticated: centrallyAcknowledgedOnline,
+      connection_online_acknowledged: centrallyAcknowledgedOnline,
+      connection_status_source_id:
+        nativeConnectionStatusSourceId.value ?? undefined,
+      connection_status_order: nativeConnectionStatusOrder.value,
+    },
+    snapshot
+  );
+
+  statusConnection.value =
+    projected.status ?? EBaileysConnectionStatus.connecting;
+  statusCode.value = projected.code ?? ECodeMessage.awaitConnection;
+  sessionReady.value = centrallyAcknowledgedOnline;
+  disconnectedByUser.value = projected.disconnected_user === true;
+  qrPending.value = projected.qr_pending === true;
+  if (snapshot.status !== EWhatsappConnectionStatus.qr) {
+    qrcode.value = undefined;
+    clearQrHistoryRecovery();
+  }
   phoneNumber.value = props.initialPhone
     ? formatPhoneBR(props.initialPhone)
     : null;
-  disconnectedByUser.value = false;
-  secondsNextAttempt.value = 0;
+  return true;
+}
+
+function applyAuthoritativeInitialOnlineProjection(): boolean {
+  const snapshot = nativeConnectionStatus.value;
+  const phone = props.initialPhone?.trim();
+  const centrallyAcknowledgedOnline =
+    props.initialStatusId === EWorkerStatus.online &&
+    props.initialConnectionOnlineAcknowledged === true &&
+    Boolean(phone) &&
+    isWhatsappConnectionOnline(snapshot);
+  if (!snapshot || !centrallyAcknowledgedOnline) {
+    return false;
+  }
+
+  nativeConnectionOnlineAcknowledged.value = true;
+  applyConnectedState({
+    status: EBaileysConnectionStatus.connected,
+    code: ECodeMessage.connectionEstablished,
+    worker_id: channelId.value ?? '',
+    account_id: accountId.value ?? '',
+    worker_type_id: activeWorkerTypeId.value as EWorkerType | undefined,
+    worker_status_id: EWorkerStatus.online,
+    phone,
+    session_ready: true,
+    can_send: true,
+    can_receive_runtime: true,
+    authenticated: true,
+    provider_state: snapshot.status,
+    connection_attempt_id: connectionAttemptId.value,
+    runtime_generation: connectionRuntimeGeneration.value,
+    connection_status: snapshot,
+    connection_status_source_id:
+      nativeConnectionStatusSourceId.value ?? undefined,
+    connection_status_order: nativeConnectionStatusOrder.value,
+    connection_online_acknowledged: true,
+  });
+  logConnectionLifecycleDebug(
+    'web.connection_modal.authoritative_projection_applied',
+    {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web.connection_modal',
+      worker_id: channelId.value ?? undefined,
+      account_id: accountId.value ?? undefined,
+      worker_type_id: activeWorkerTypeId.value ?? undefined,
+      connection_attempt_id: connectionAttemptId.value,
+      runtime_generation: connectionRuntimeGeneration.value,
+      connection_status_order: nativeConnectionStatusOrder.value,
+      status: EBaileysConnectionStatus.connected,
+      code: ECodeMessage.connectionEstablished,
+    }
+  );
+  return true;
+}
+
+function prepareInitialModalState() {
+  workerStatusId.value = props.initialStatusId ?? null;
+
+  if (canonicalPresentationSnapshot.value) {
+    synchronizeModalWithCanonicalSnapshot(canonicalPresentationSnapshot.value);
+    return;
+  }
+
+  if (applyAuthoritativeInitialOnlineProjection()) {
+    return;
+  }
+
+  prepareConnectionStart();
+  applyInitialNativeStatusProjection();
+}
+
+function prepareConnectionAfterCompletedReset(
+  statusId: string | null | undefined
+) {
+  if (statusId === EWorkerStatus.disponible) {
+    if (hasExhaustedQrAttemptOverlay()) {
+      // The fifth credential expired and the provider published the terminal
+      // attempt (6/5). AVAILABLE remains the durable worker truth, but a
+      // passive list/status refresh must keep the restart affordance visible.
+      workerStatusId.value = EWorkerStatus.disponible;
+      isResetting.value = false;
+      statusConnection.value = EBaileysConnectionStatus.disconnected;
+      statusCode.value = ECodeMessage.connectionClosed;
+      sessionReady.value = false;
+      disconnectedByUser.value = false;
+      nativeConnectionOnlineAcknowledged.value = false;
+      return;
+    }
+
+    if (hasActiveQrAttemptOverlay()) {
+      // The list can move from a stale `offline` projection to the durable
+      // `disponible` truth after the manager has already accepted this QR
+      // attempt. That prop reconciliation is not a terminal event and must
+      // not erase the attempt before the provider publishes its first QR.
+      workerStatusId.value = EWorkerStatus.disponible;
+      isResetting.value = false;
+      sessionReady.value = false;
+      disconnectedByUser.value = false;
+      logConnectionLifecycleDebug(
+        'web.connection_modal.available_projection_preserved',
+        {
+          trace_id: activeDebugTraceId.value,
+          layer: 'web',
+          worker_id: channelId.value ?? undefined,
+          account_id: accountId.value ?? undefined,
+          connection_attempt_id: connectionAttemptId.value,
+        }
+      );
+      return;
+    }
+
+    logConnectionLifecycleDebug(
+      'web.connection_modal.available_projection_applied',
+      {
+        trace_id: activeDebugTraceId.value,
+        layer: 'web',
+        worker_id: channelId.value ?? undefined,
+        account_id: accountId.value ?? undefined,
+        connection_attempt_id: connectionAttemptId.value,
+      }
+    );
+    isResetting.value = false;
+    statusConnection.value = EBaileysConnectionStatus.connecting;
+    statusCode.value = ECodeMessage.awaitConnection;
+    sessionReady.value = false;
+    disconnectedByUser.value = false;
+    nativeConnectionOnlineAcknowledged.value = false;
+    resetNativeConnectionStatus();
+  }
+}
+
+function restoreModalAfterRejectedQrRequest(): void {
+  logConnectionLifecycleDebug('web.connection_modal.qr_rejection_restored', {
+    trace_id: activeDebugTraceId.value,
+    layer: 'web',
+    worker_id: channelId.value ?? undefined,
+    account_id: accountId.value ?? undefined,
+    connection_attempt_id: connectionAttemptId.value,
+  });
+  qrPending.value = false;
+  qrcode.value = undefined;
+  connectionAttemptId.value = undefined;
+  resetQrAttempts();
+  clearQrHistoryRecovery();
+
+  const snapshot = canonicalPresentationSnapshot.value;
+  if (snapshot) {
+    synchronizeModalWithCanonicalSnapshot(snapshot);
+  }
+
+  // A rejected request is not an attempt-scoped terminal publication. Return
+  // to the connection method chooser and let the operator start a fresh
+  // request; "Canal desconectado" and "Reiniciar QR Code" are reserved for an
+  // explicitly correlated terminal after the provider exhausts the attempt.
+  returnToConnectionMethodSelection();
+  if (!snapshot) {
+    resetNativeConnectionStatus();
+    statusConnection.value = EBaileysConnectionStatus.connecting;
+    statusCode.value = ECodeMessage.awaitConnection;
+    sessionReady.value = false;
+  }
+}
+
+function releaseQrAttemptOnClose(): void {
+  if (!isQrConnectionSelected.value) {
+    return;
+  }
+
+  // A QR is short lived and the component may also be kept mounted by another
+  // caller. Always discard the local credential/attempt on close. Reopening
+  // then asks the manager for the current cached credential or a new attempt;
+  // it never reuses an expired bitmap or a local pending flag.
+  qrRequestGeneration += 1;
+  isRequestingQr.value = false;
+  qrcode.value = undefined;
+  qrPending.value = false;
+  connectionAttemptId.value = undefined;
   pairingStartedAt.value = null;
+  resetQrAttempts();
   resetPairingCodes();
   resetPasskeyState();
-  clearNextAttemptCountdown();
-  clearConnectedStateDelay();
+  clearQrHistoryRecovery();
 }
 
 async function requestQrCodeIfReady(
   options: { force?: boolean; preserveQr?: boolean; silent?: boolean } = {}
 ) {
-  if (!channelId.value) return;
+  if (!canOfferNewConnection.value || !channelId.value) return;
 
   if (
     selectedConnectionMethod.value !== 'qrcode' ||
     !isVisible.value ||
     !isWorkerReadyForQr.value ||
     isConnected.value ||
+    secureConnectionLifecycleFence.value ||
     isBlockingOperation.value ||
     isRequestingQr.value
   ) {
+    logConnectionLifecycleDebug('web.qr_request_modal.blocked', {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: channelId.value,
+      account_id: accountId.value ?? undefined,
+      reason: 'request_precondition',
+      selected_method: selectedConnectionMethod.value,
+      visible: isVisible.value,
+      worker_status_id: workerStatusId.value ?? undefined,
+      connected: isConnected.value,
+      secure_connection_lifecycle_fenced: secureConnectionLifecycleFence.value,
+      blocking_operation: isBlockingOperation.value,
+      requesting_qr: isRequestingQr.value,
+    });
     return;
   }
 
@@ -1433,6 +1973,8 @@ async function requestQrCodeIfReady(
   }
 
   isRequestingQr.value = true;
+  const requestGeneration = ++qrRequestGeneration;
+  const requestedWorkerId = channelId.value;
   const debugTraceId = ensureDebugTraceId('web_qr_request_modal');
   logConnectionLifecycleDebug('web.qr_request_modal.start', {
     trace_id: debugTraceId,
@@ -1444,14 +1986,48 @@ async function requestQrCodeIfReady(
     preserve_qr: options.preserveQr === true,
     silent: options.silent === true,
   });
-  prepareConnectionStart({ preserveQr: options.preserveQr });
+  prepareConnectionStart({
+    awaitingQr: true,
+    preserveQr: options.preserveQr,
+  });
 
   try {
-    const state = await channelStore.requestConnectionQrCode(channelId.value, {
-      silent: options.silent,
-      debugTraceId,
-    });
-    if (state) {
+    const state = await channelStore.requestConnectionQrCode(
+      requestedWorkerId,
+      {
+        silent: options.silent,
+        timeoutMs: QR_REQUEST_TIMEOUT_MS,
+        debugTraceId,
+      }
+    );
+    if (
+      requestGeneration !== qrRequestGeneration ||
+      !isVisible.value ||
+      channelId.value !== requestedWorkerId ||
+      !isQrConnectionSelected.value
+    ) {
+      return;
+    }
+    if (!state) {
+      // The optimistic pre-read stage must never outlive a rejected request.
+      // Reapply the canonical DB/realtime projection and return to the method
+      // chooser. A 409/503 (or a lost response) is not proof that the current
+      // provider attempt reached its terminal boundary.
+      restoreModalAfterRejectedQrRequest();
+      return;
+    }
+
+    if (!isAcceptedQrAttemptResponse(state)) {
+      applyDirectConnectionResponse(state);
+      restoreModalAfterRejectedQrRequest();
+      return;
+    }
+
+    if (canOfferNewConnection.value) {
+      // Release a previous session-removal presentation fence only after the
+      // manager accepted the new attempt. A rejected request must not make
+      // subsequent stale runtime publications look like a new connection.
+      emitConnectionStarted();
       activeDebugTraceId.value = state.debug_trace_id ?? debugTraceId;
       applyDirectConnectionResponse(state);
 
@@ -1470,20 +2046,30 @@ async function requestQrCodeIfReady(
       has_qr: Boolean(qrcode.value),
       qr_pending: qrPending.value,
     });
-    isRequestingQr.value = false;
+    if (requestGeneration === qrRequestGeneration) {
+      isRequestingQr.value = false;
+    }
   }
 }
 
 async function reconnectChannel() {
-  await requestQrCodeIfReady({ force: true, preserveQr: true });
+  await requestQrCodeIfReady({ force: true, preserveQr: false });
 }
 
 async function restartQrCodeAttempt() {
-  await reconnectChannel();
+  // A disconnected provider does not require a new container. Reopen the QR
+  // attempt on the current fenced runtime and release only the session-removal
+  // presentation fence once this new attempt is explicitly requested.
+  selectedConnectionMethod.value = 'qrcode';
+  await Promise.all([loadExternalConnectionLink(), reconnectChannel()]);
 }
 
 async function continuePasskeyPairing() {
-  if (!channelId.value || !passkeyPublicKey.value) {
+  if (
+    !canOfferNewConnection.value ||
+    !channelId.value ||
+    !passkeyPublicKey.value
+  ) {
     return;
   }
 
@@ -1530,6 +2116,10 @@ async function continuePasskeyPairing() {
       }
     );
 
+    if (!canOfferNewConnection.value) {
+      return;
+    }
+
     if (!state) {
       passkeyError.value = 'passkey_failed';
       return;
@@ -1547,7 +2137,7 @@ async function continuePasskeyPairing() {
 }
 
 async function confirmPasskeyPairing() {
-  if (!channelId.value) {
+  if (!canOfferNewConnection.value || !channelId.value) {
     return;
   }
 
@@ -1563,82 +2153,86 @@ async function confirmPasskeyPairing() {
     }
   );
 
-  if (state) {
+  if (canOfferNewConnection.value && state) {
     applyDirectConnectionResponse(state);
   }
 
   isPasskeyConfirming.value = false;
 }
 
-async function recreateChannelWithFullCleanup() {
-  if (!channelId.value) return;
+async function disconnectChannelSession(): Promise<void> {
+  if (
+    !canOfferNewConnection.value ||
+    !channelId.value ||
+    !isConnected.value ||
+    isRemovingSession.value
+  ) {
+    return;
+  }
 
-  statusConnection.value = EBaileysConnectionStatus.connecting;
-  statusCode.value = ECodeMessage.logoutInProgress;
-  disconnectedByUser.value = true;
-  qrcode.value = undefined;
-  qrPending.value = false;
-  connectionAttemptId.value = undefined;
-  connectionRuntimeGeneration.value = undefined;
-  clearQrHistoryRecovery();
-  resetQrAttempts();
-  resetPairingCodes();
-  resetPasskeyState();
-  clearNextAttemptCountdown();
-  clearConnectedStateDelay();
-  pairingStartedAt.value = null;
-
-  const debugTraceId = ensureDebugTraceId('web_reset_recreate_modal');
-  logConnectionLifecycleDebug('web.connection_reset.submit', {
+  isRemovingSession.value = true;
+  suspendConnectionOfferSideEffects();
+  const debugTraceId = ensureDebugTraceId('web_disconnect_connection_modal');
+  logConnectionLifecycleDebug('web.connection_disconnect.submit', {
     trace_id: debugTraceId,
     layer: 'web',
     worker_id: channelId.value,
     account_id: accountId.value ?? undefined,
   });
 
-  const reseted = await channelStore.resetConnectionChannel(channelId.value, {
-    debugTraceId,
-  });
-
-  if (!reseted) {
-    statusConnection.value = EBaileysConnectionStatus.disconnected;
-    statusCode.value = ECodeMessage.connectionClosed;
+  const result = await channelStore.disconnectConnectionChannel(
+    channelId.value,
+    { debugTraceId }
+  );
+  if (!result) {
+    isRemovingSession.value = false;
+    if (isVisible.value) {
+      void loadExternalConnectionLink();
+    }
     return;
   }
-  logConnectionLifecycleDebug('web.connection_reset.accepted', {
-    trace_id: activeDebugTraceId.value,
-    layer: 'web',
-    worker_id: channelId.value,
-    account_id: accountId.value ?? undefined,
-  });
 
-  isResetting.value = true;
-  statusConnection.value = EBaileysConnectionStatus.connecting;
-  statusCode.value = ECodeMessage.awaitConnection;
+  releaseSecureConnectionLifecycleFence();
+  workerStatusId.value = EWorkerStatus.disponible;
+  statusConnection.value = EBaileysConnectionStatus.disconnected;
+  statusCode.value = ECodeMessage.connectionClosed;
+  disconnectedByUser.value = true;
+  connectionStartedEmitted.value = false;
+  sessionReady.value = false;
+  phoneNumber.value = null;
+  isResetting.value = false;
+  connectionRuntimeGeneration.value = result.runtime_generation;
+  resetNativeConnectionStatus();
+  nativeConnectionOnlineAcknowledged.value = false;
+  logConnectionLifecycleDebug('web.connection_disconnect.completed', {
+    trace_id: result.debug_trace_id ?? debugTraceId,
+    layer: 'web',
+    worker_id: result.worker_id,
+    account_id: accountId.value ?? undefined,
+    runtime_generation: result.runtime_generation,
+    status: 'session_removed',
+  });
+  emit('sessionRemoved', result);
 }
 
 function scheduleConnectedState(data: IBaileysConnectionState) {
-  const startedAt = pairingStartedAt.value;
-  if (!startedAt) {
-    applyConnectedState(data);
-    return;
-  }
-
-  const remaining = MIN_PAIRING_STAGE_MS - (Date.now() - startedAt);
-  if (remaining <= 0) {
-    applyConnectedState(data);
-    return;
-  }
-
-  clearConnectedStateDelay();
-  connectedStateDelayTimeout.value = (
-    globalThis as Window & typeof globalThis
-  ).setTimeout(() => {
-    applyConnectedState(data);
-  }, remaining);
+  // The central/native readiness envelope is already the fail-closed proof of
+  // connection. Delaying it for presentation left the QR authoritative in the
+  // modal while the channel list was already connected, and allowed a queued
+  // QR recovery callback to cancel the pending terminal state.
+  applyConnectedState(data);
 }
 
 function applyConnectedState(data: IBaileysConnectionState) {
+  if (
+    data.connection_online_acknowledged !== true ||
+    !isWhatsappConnectionOnline(data.connection_status)
+  ) {
+    statusConnection.value = EBaileysConnectionStatus.connecting;
+    statusCode.value = ECodeMessage.awaitConnection;
+    sessionReady.value = false;
+    return;
+  }
   logLocalConnectionStatus('web.connection_modal.connected_applied', {
     layer: 'web.connection_modal',
     worker_id: data.worker_id,
@@ -1667,6 +2261,8 @@ function applyConnectedState(data: IBaileysConnectionState) {
   isRequestingQr.value = false;
   qrcode.value = undefined;
   qrPending.value = false;
+  externalConnectionUrl.value = '';
+  externalConnectionExpiresAt.value = null;
   connectionAttemptId.value =
     data.connection_attempt_id ?? connectionAttemptId.value;
   connectionRuntimeGeneration.value =
@@ -1681,6 +2277,381 @@ function applyConnectedState(data: IBaileysConnectionState) {
   clearConnectedStateDelay();
 }
 
+function clearCanonicalConnectionArtifacts(): void {
+  qrcode.value = undefined;
+  qrPending.value = false;
+  connectionAttemptId.value = undefined;
+  isRequestingQr.value = false;
+  phoneNumber.value = null;
+  pairingStartedAt.value = null;
+  resetQrAttempts();
+  resetPairingCodes();
+  resetPasskeyState();
+  clearQrHistoryRecovery();
+  clearNextAttemptCountdown();
+  clearConnectedStateDelay();
+}
+
+function applyCanonicalDisconnectedProjection(
+  snapshot: ChannelStatusPresentationSnapshot,
+  sessionRemoved: boolean
+): void {
+  logConnectionLifecycleDebug(
+    'web.connection_modal.canonical_disconnect_applied',
+    {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: channelId.value ?? undefined,
+      account_id: accountId.value ?? undefined,
+      connection_attempt_id: connectionAttemptId.value,
+      runtime_generation: snapshot.runtimeGeneration ?? undefined,
+      worker_status_id: snapshot.workerStatusId,
+      source: snapshot.source,
+      session_removed: sessionRemoved,
+    }
+  );
+  workerStatusId.value = snapshot.workerStatusId;
+  isResetting.value = false;
+  statusConnection.value = EBaileysConnectionStatus.disconnected;
+  statusCode.value = ECodeMessage.connectionClosed;
+  sessionReady.value = false;
+  disconnectedByUser.value = sessionRemoved;
+  if (sessionRemoved) {
+    connectionStartedEmitted.value = false;
+    releaseSecureConnectionLifecycleFence();
+  }
+  nativeConnectionOnlineAcknowledged.value = false;
+  resetNativeConnectionStatus();
+  clearCanonicalConnectionArtifacts();
+}
+
+function restoreExhaustedQrAttemptTerminal(
+  event: IBaileysConnectionState,
+  maxAttempts: number
+): void {
+  qrMaxAttempts.value = maxAttempts;
+  qrAttempt.value = maxAttempts + 1;
+  connectionAttemptId.value = event.connection_attempt_id;
+  connectionRuntimeGeneration.value =
+    event.runtime_generation ?? connectionRuntimeGeneration.value;
+  statusConnection.value = EBaileysConnectionStatus.disconnected;
+  statusCode.value = ECodeMessage.connectionClosed;
+  qrcode.value = undefined;
+  qrPending.value = false;
+  isRequestingQr.value = false;
+}
+
+function applyCanonicalConnectedProjection(
+  snapshot: ChannelStatusPresentationSnapshot,
+  event?: IBaileysConnectionState
+): void {
+  if (!isWhatsappConnectionOnline(nativeConnectionStatus.value)) {
+    // A lifecycle completion can carry the durable ONLINE acknowledgement
+    // without repeating the provider envelope. The canonical snapshot is the
+    // authority in that case; an older local QR/offline envelope must not win.
+    resetNativeConnectionStatus();
+  }
+  workerStatusId.value = EWorkerStatus.online;
+  isResetting.value = false;
+  statusConnection.value = EBaileysConnectionStatus.connected;
+  statusCode.value = ECodeMessage.connectionEstablished;
+  sessionReady.value = true;
+  disconnectedByUser.value = false;
+  nativeConnectionOnlineAcknowledged.value = true;
+  connectionRuntimeGeneration.value = snapshot.runtimeGeneration ?? undefined;
+  const phone = event?.phone?.trim() || props.initialPhone?.trim();
+  if (phone) {
+    phoneNumber.value = formatPhoneBR(phone);
+  }
+  qrcode.value = undefined;
+  qrPending.value = false;
+  externalConnectionUrl.value = '';
+  externalConnectionExpiresAt.value = null;
+  isRequestingQr.value = false;
+  resetQrAttempts();
+  resetPairingCodes();
+  resetPasskeyState();
+  clearQrHistoryRecovery();
+  clearNextAttemptCountdown();
+  clearConnectedStateDelay();
+}
+
+function hasActiveQrAttemptOverlay(): boolean {
+  return isQrAttemptActive.value;
+}
+
+function shouldPreserveActiveQrAttemptOverlay(
+  event?: IBaileysConnectionState
+): boolean {
+  return Boolean(
+    hasActiveQrAttemptOverlay() &&
+    (!event || !isCurrentQrAttemptTerminalPublication(event))
+  );
+}
+
+function isQrAttemptTerminalPublication(
+  data: Partial<IBaileysConnectionState>
+): boolean {
+  return Boolean(
+    data.status === EBaileysConnectionStatus.disconnected ||
+    hasExceededQrAttempts(data) ||
+    (data.worker_status_id !== undefined &&
+      QR_ATTEMPT_TERMINAL_WORKER_STATUSES.has(data.worker_status_id)) ||
+    (data.connection_status?.status !== undefined &&
+      QR_ATTEMPT_TERMINAL_NATIVE_STATUSES.has(data.connection_status.status) &&
+      !isCurrentQrAttemptProgressPublication(data)) ||
+    (data.event_type === 'status' &&
+      data.session_removed === true &&
+      data.disconnected_user === true)
+  );
+}
+
+function isCurrentQrAttemptTerminalPublication(
+  data: Partial<IBaileysConnectionState>
+): boolean {
+  return Boolean(
+    connectionAttemptId.value &&
+    data.connection_attempt_id === connectionAttemptId.value &&
+    isQrAttemptTerminalPublication(data)
+  );
+}
+
+function shouldIgnoreQrTerminalFromAnotherAttempt(
+  data: Partial<IBaileysConnectionState>
+): boolean {
+  return Boolean(
+    hasActiveQrAttemptOverlay() &&
+    isQrAttemptTerminalPublication(data) &&
+    !isCurrentQrAttemptTerminalPublication(data)
+  );
+}
+
+function applyCanonicalAvailableProjection(
+  snapshot: ChannelStatusPresentationSnapshot
+): void {
+  workerStatusId.value = EWorkerStatus.disponible;
+  isResetting.value = false;
+  statusConnection.value = EBaileysConnectionStatus.connecting;
+  statusCode.value = ECodeMessage.awaitConnection;
+  sessionReady.value = false;
+  disconnectedByUser.value = false;
+  nativeConnectionOnlineAcknowledged.value = false;
+  resetNativeConnectionStatus();
+  clearCanonicalConnectionArtifacts();
+  connectionRuntimeGeneration.value =
+    snapshot.runtimeGeneration ?? connectionRuntimeGeneration.value;
+}
+
+/**
+ * Status copy, row badge and header badge all derive from this snapshot. The
+ * modal keeps QR/passkey payloads locally, but never owns lifecycle ordering
+ * or the final customer-facing connection state.
+ */
+function synchronizeModalWithCanonicalSnapshot(
+  snapshot: ChannelStatusPresentationSnapshot,
+  event?: IBaileysConnectionState
+): void {
+  if (!channelId.value || snapshot.workerId !== channelId.value) return;
+
+  const projectsInitialCreation =
+    props.isInitialCreation === true &&
+    props.initialStatusId === EWorkerStatus.creating &&
+    (snapshot.workerStatusId === EWorkerStatus.creating ||
+      snapshot.workerStatusId === EWorkerStatus.recreating);
+  const modalWorkerStatusId = projectsInitialCreation
+    ? EWorkerStatus.creating
+    : snapshot.workerStatusId;
+
+  workerStatusId.value = modalWorkerStatusId;
+  activeWorkerTypeId.value = snapshot.workerTypeId ?? activeWorkerTypeId.value;
+  connectionRuntimeGeneration.value =
+    snapshot.runtimeGeneration ?? connectionRuntimeGeneration.value;
+  nativeConnectionOnlineAcknowledged.value =
+    snapshot.connectionOnlineAcknowledged === true;
+
+  const display = projectWhatsappChannelDisplayStatus({
+    workerTypeId: snapshot.workerTypeId,
+    workerStatusId: modalWorkerStatusId,
+    recreatePhase: projectsInitialCreation ? null : snapshot.recreatePhase,
+    connectionStatus: snapshot.connectionStatus,
+    connectionOnlineAcknowledged: snapshot.connectionOnlineAcknowledged,
+  });
+
+  if (display.kind === 'worker') {
+    if (display.workerStatusId === EWorkerStatus.creating) {
+      isResetting.value = false;
+      statusConnection.value = EBaileysConnectionStatus.connecting;
+      statusCode.value = ECodeMessage.awaitConnection;
+      sessionReady.value = false;
+      disconnectedByUser.value = false;
+      nativeConnectionOnlineAcknowledged.value = false;
+      return;
+    }
+
+    if (display.workerStatusId === EWorkerStatus.recreating) {
+      isResetting.value = props.isSessionMigration !== true;
+      statusConnection.value = EBaileysConnectionStatus.connecting;
+      statusCode.value = ECodeMessage.awaitConnection;
+      sessionReady.value = false;
+      disconnectedByUser.value = false;
+      nativeConnectionOnlineAcknowledged.value = false;
+      resetNativeConnectionStatus();
+      clearCanonicalConnectionArtifacts();
+      return;
+    }
+
+    if (display.workerStatusId === EWorkerStatus.disponible) {
+      const sessionRemoved = event
+        ? isSessionRemovalTerminalPublication(event)
+        : snapshot.source === 'session_removal_ack' &&
+          !connectionStartedEmitted.value;
+      const currentAttemptTerminal = event
+        ? isCurrentQrAttemptTerminalPublication(event)
+        : false;
+      const exhaustedQrMaxAttempts =
+        currentAttemptTerminal &&
+        qrMaxAttempts.value > 0 &&
+        qrAttempt.value >= qrMaxAttempts.value
+          ? qrMaxAttempts.value
+          : undefined;
+      if (hasExhaustedQrAttemptOverlay() && !event) {
+        // Preserve the terminal UX produced after the fifth QR expires. The
+        // DB correctly stays AVAILABLE so the user can start another attempt;
+        // it is not a command to erase the current modal's restart state.
+        isResetting.value = false;
+        statusConnection.value = EBaileysConnectionStatus.disconnected;
+        statusCode.value = ECodeMessage.connectionClosed;
+        sessionReady.value = false;
+        disconnectedByUser.value = false;
+        nativeConnectionOnlineAcknowledged.value = false;
+        return;
+      }
+      if (shouldPreserveActiveQrAttemptOverlay(event)) {
+        // `disponible` is the durable DB truth while an empty session waits
+        // for a QR. It is compatible with the modal's attempt-scoped payload
+        // and must not erase an accepted pending ACK/QR during a list refresh
+        // or because the previous internal client published a late terminal.
+        isResetting.value = false;
+        sessionReady.value = false;
+        disconnectedByUser.value = false;
+        nativeConnectionOnlineAcknowledged.value = false;
+        return;
+      }
+      if (sessionRemoved || currentAttemptTerminal) {
+        applyCanonicalDisconnectedProjection(snapshot, sessionRemoved);
+        if (event && exhaustedQrMaxAttempts !== undefined) {
+          // The central worker-status projection intentionally carries only
+          // the lifecycle terminal. The modal already observed 5/5 on this
+          // exact attempt, so restore 6/5 locally and keep Restart visible.
+          restoreExhaustedQrAttemptTerminal(event, exhaustedQrMaxAttempts);
+        }
+        return;
+      }
+      applyCanonicalAvailableProjection(snapshot);
+      return;
+    }
+
+    if (display.workerStatusId === EWorkerStatus.connecting) {
+      isResetting.value = false;
+      statusConnection.value = EBaileysConnectionStatus.connecting;
+      statusCode.value = ECodeMessage.pairingInProgress;
+      qrPending.value = false;
+      sessionReady.value = false;
+      disconnectedByUser.value = false;
+      nativeConnectionOnlineAcknowledged.value = false;
+      return;
+    }
+
+    if (
+      display.workerStatusId === EWorkerStatus.offline ||
+      display.workerStatusId === EWorkerStatus.error ||
+      display.workerStatusId === EWorkerStatus.mismatched
+    ) {
+      if (shouldPreserveActiveQrAttemptOverlay(event)) {
+        // These durable states can legitimately start a fresh connection.
+        // A list refresh must not replace an accepted attempt-scoped pending
+        // ACK/QR with the older disconnected projection underneath it.
+        isResetting.value = false;
+        sessionReady.value = false;
+        disconnectedByUser.value = false;
+        nativeConnectionOnlineAcknowledged.value = false;
+        return;
+      }
+      applyCanonicalDisconnectedProjection(snapshot, false);
+      return;
+    }
+
+    if (
+      display.workerStatusId === EWorkerStatus.stopped ||
+      display.workerStatusId === EWorkerStatus.blocked ||
+      display.workerStatusId === EWorkerStatus.deleting ||
+      display.workerStatusId === EWorkerStatus.delete
+    ) {
+      applyCanonicalDisconnectedProjection(snapshot, false);
+      return;
+    }
+
+    if (display.workerStatusId === EWorkerStatus.online) {
+      applyCanonicalConnectedProjection(snapshot, event);
+      return;
+    }
+
+    return;
+  }
+
+  if (display.connectionStatus === 'online') {
+    applyCanonicalConnectedProjection(snapshot, event);
+    return;
+  }
+
+  if (
+    display.connectionStatus === 'offline' ||
+    display.connectionStatus === 'reconnect_required' ||
+    display.connectionStatus === 'error'
+  ) {
+    if (
+      display.connectionStatus !== 'error' &&
+      shouldPreserveActiveQrAttemptOverlay(event)
+    ) {
+      // A canonical-store refresh can still expose the provider's last
+      // terminal checkpoint while the new attempt is bootstrapping. Preserve
+      // the attempt both for passive refreshes and for non-terminal events
+      // fenced to its exact connection_attempt_id. A terminal publication is
+      // deliberately not attempt-scoped and still replaces the overlay.
+      isResetting.value = false;
+      sessionReady.value = false;
+      disconnectedByUser.value = false;
+      nativeConnectionOnlineAcknowledged.value = false;
+      return;
+    }
+    applyCanonicalDisconnectedProjection(snapshot, false);
+    return;
+  }
+
+  isResetting.value = false;
+  statusConnection.value = EBaileysConnectionStatus.connecting;
+  sessionReady.value = false;
+  disconnectedByUser.value = false;
+  nativeConnectionOnlineAcknowledged.value = false;
+
+  if (display.connectionStatus === 'qr') {
+    if (nativeConnectionStatus.value?.status !== EWhatsappConnectionStatus.qr) {
+      resetNativeConnectionStatus();
+    }
+    statusCode.value = ECodeMessage.awaitingReadQrCode;
+    qrPending.value = !qrcode.value;
+    return;
+  }
+
+  if (
+    statusCode.value === ECodeMessage.connectionEstablished ||
+    statusCode.value === ECodeMessage.logoutInProgress ||
+    statusCode.value === ECodeMessage.connectionClosed
+  ) {
+    statusCode.value = ECodeMessage.awaitConnection;
+  }
+}
+
 function shouldIgnorePhoneUnavailableState(
   data: IBaileysConnectionState
 ): boolean {
@@ -1692,6 +2663,18 @@ function shouldIgnorePhoneUnavailableState(
 
   return (
     statusCode.value === ECodeMessage.phoneNotAvailable && !isIncomingConnected
+  );
+}
+
+function shouldPreserveCurrentQrDuringAttemptProgress(
+  data: Partial<IBaileysConnectionState>
+): boolean {
+  return Boolean(
+    qrcode.value &&
+    connectionAttemptId.value &&
+    data.connection_attempt_id === connectionAttemptId.value &&
+    isCurrentQrAttemptProgressPublication(data) &&
+    !isWhatsappQrCredentialConsumedState(data)
   );
 }
 
@@ -1723,7 +2706,25 @@ function applyReducedConnectionState(
     return;
   }
 
-  if (shouldIgnoreConnectedPayload(data, options)) {
+  const resolved = resolveIncomingConnectionStatus(data);
+  if (!resolved) {
+    logConnectionLifecycleDebug('web.connection_state.native_ignored', {
+      trace_id: data.debug_trace_id ?? activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      status: data.status,
+      code: data.code,
+      reason: 'native_connection_status_invalid_or_stale',
+    });
+    return;
+  }
+  data = resolved.data;
+
+  if (shouldIgnoreConnectionPayload(data, resolved.nativeResolution)) {
     logConnectionLifecycleDebug('web.connection_state.connected_ignored', {
       trace_id: data.debug_trace_id ?? activeDebugTraceId.value,
       layer: 'web',
@@ -1740,6 +2741,24 @@ function applyReducedConnectionState(
       reason: data.reason,
     });
     return;
+  }
+
+  if (resolved.nativeResolution === 'none') {
+    nativeConnectionOnlineAcknowledged.value = false;
+  }
+
+  const preserveCurrentQr = shouldPreserveCurrentQrDuringAttemptProgress(data);
+
+  if (
+    shouldClearConnectionModalQr({
+      nativeResolution: resolved.nativeResolution,
+      snapshot: data.connection_status,
+      preserveCurrentQr,
+    })
+  ) {
+    qrcode.value = undefined;
+    qrPending.value = false;
+    clearQrHistoryRecovery();
   }
 
   if (options.directResponse && shouldClearPasskeyForDirectResponse(data)) {
@@ -1760,7 +2779,10 @@ function applyReducedConnectionState(
     return;
   }
 
-  const reduced = reduceWorkerConnectionState(connectionState.value, data);
+  const reduced = reduceWorkerConnectionState(connectionState.value, data, {
+    authoritativeNativeTransition: resolved.nativeResolution === 'accepted',
+    preserveQrDuringActiveAttempt: preserveCurrentQr,
+  });
   if (reduced.ignored) {
     logConnectionLifecycleDebug('web.connection_state.reduced_ignored', {
       trace_id: data.debug_trace_id ?? activeDebugTraceId.value,
@@ -1778,6 +2800,50 @@ function applyReducedConnectionState(
   }
 
   const next = reduced.state;
+
+  if (data.worker_status_id === EWorkerStatus.recreating) {
+    workerStatusId.value = EWorkerStatus.recreating;
+    const isTargetNativeMigrationState =
+      props.isSessionMigration === true &&
+      data.connection_status?.status !== undefined &&
+      data.connection_status.status !== EWhatsappConnectionStatus.handoff;
+
+    if (!isTargetNativeMigrationState) {
+      isResetting.value = props.isSessionMigration !== true;
+      statusConnection.value = EBaileysConnectionStatus.connecting;
+      statusCode.value = ECodeMessage.awaitConnection;
+      qrcode.value = undefined;
+      qrPending.value = false;
+      connectionAttemptId.value = data.connection_attempt_id;
+      connectionRuntimeGeneration.value = data.runtime_generation;
+      pairingStartedAt.value = null;
+      resetPairingCodes();
+      resetPasskeyState();
+      clearQrHistoryRecovery();
+      clearConnectedStateDelay();
+      return;
+    }
+
+    isResetting.value = false;
+  }
+
+  if (data.worker_status_id === EWorkerStatus.creating) {
+    if (hasActiveConnectionCode.value || qrPending.value) {
+      return;
+    }
+
+    workerStatusId.value = EWorkerStatus.creating;
+    isResetting.value = false;
+    prepareConnectionStart();
+    return;
+  }
+
+  if (data.worker_status_id) {
+    workerStatusId.value = data.worker_status_id;
+    isResetting.value = false;
+    prepareConnectionAfterCompletedReset(data.worker_status_id);
+  }
+
   applyQrAttempts(next);
 
   const incomingStatus = data.status as EBaileysConnectionStatus | undefined;
@@ -1793,10 +2859,14 @@ function applyReducedConnectionState(
 
   clearConnectedStateDelay();
 
-  if (
-    incomingCode === ECodeMessage.pairingInProgress ||
-    incomingCode === ECodeMessage.newLoginAttempt
-  ) {
+  const qrCredentialConsumed = isWhatsappQrCredentialConsumedState(data);
+  const keepAwaitingQrCredential =
+    canOfferNewConnection.value &&
+    isQrConnectionSelected.value &&
+    pairingStartedAt.value === null &&
+    isWhatsappQrCredentialPendingState(data);
+
+  if (canOfferNewConnection.value && qrCredentialConsumed) {
     pairingStartedAt.value = Date.now();
     resetPasskeyState();
   }
@@ -1809,7 +2879,9 @@ function applyReducedConnectionState(
     connectionRuntimeGeneration.value = next.runtime_generation;
   }
 
-  qrPending.value = next.qr_pending === true;
+  qrPending.value = keepAwaitingQrCredential
+    ? !qrcode.value
+    : next.qr_pending === true;
 
   if (next.disconnected_user !== undefined) {
     disconnectedByUser.value = next.disconnected_user;
@@ -1823,7 +2895,14 @@ function applyReducedConnectionState(
     sessionReady.value = false;
   }
 
-  if (hasExceededQrAttempts(next)) {
+  if (!canOfferNewConnection.value) {
+    qrcode.value = undefined;
+    qrPending.value = false;
+    isRequestingQr.value = false;
+    resetPairingCodes();
+    resetPasskeyState();
+    clearQrHistoryRecovery();
+  } else if (hasExceededQrAttempts(next)) {
     qrcode.value = undefined;
     resetPasskeyState();
     qrPending.value = false;
@@ -1853,7 +2932,6 @@ function applyReducedConnectionState(
     isRequestingQr.value = false;
     clearQrHistoryRecovery();
   } else if (next.qrcode) {
-    const hadRecoveryScheduled = qrHistoryRecoveryTimeouts.size > 0;
     qrcode.value = next.qrcode;
     resetPasskeyState();
     isRequestingQr.value = false;
@@ -1885,11 +2963,17 @@ function applyReducedConnectionState(
     statusCode.value = incomingCode;
   }
 
+  if (keepAwaitingQrCredential) {
+    statusConnection.value = EBaileysConnectionStatus.connecting;
+    statusCode.value = ECodeMessage.awaitingReadQrCode;
+    qrPending.value = !qrcode.value;
+  }
+
   if (next.phone) {
     phoneNumber.value = formatPhoneBR(next.phone);
   }
 
-  if (next.pairing_code) {
+  if (canOfferNewConnection.value && next.pairing_code) {
     const [primary, secondary] = splitCode(next.pairing_code);
     pairingCodePrimary.value = primary;
     pairingCodeSecondary.value = secondary;
@@ -1899,7 +2983,7 @@ function applyReducedConnectionState(
     passkeyError.value = null;
   }
 
-  if (next.seconds_until_next_attempt) {
+  if (canOfferNewConnection.value && next.seconds_until_next_attempt) {
     secondsNextAttempt.value = next.seconds_until_next_attempt;
     startNextAttemptCountdown();
   }
@@ -1924,8 +3008,257 @@ function applyReducedConnectionState(
   });
 }
 
+function resolveIncomingConnectionStatus(data: IBaileysConnectionState):
+  | {
+      data: IBaileysConnectionState;
+      nativeResolution: WhatsappConnectionStatusResolution;
+    }
+  | undefined {
+  if (!data.connection_status) {
+    const claimsOnline =
+      data.worker_status_id === EWorkerStatus.online ||
+      data.status === EBaileysConnectionStatus.connected ||
+      data.code === ECodeMessage.connectionEstablished;
+    if (claimsOnline) return undefined;
+    return { data, nativeResolution: 'none' };
+  }
+
+  if (
+    QR_ATTEMPT_TERMINAL_NATIVE_STATUSES.has(data.connection_status.status) &&
+    isCurrentQrAttemptProgressPublication(data)
+  ) {
+    // Status envelopes can carry the last persisted native snapshot alongside
+    // a newer attempt-scoped progress event. WhatsMeow exposes this race as
+    // `pairingInProgress + native stopped/disconnected` for a few hundred
+    // milliseconds before its new socket publishes `connecting/qr`. Keep the
+    // progress event and wait for that ordered native transition.
+    return {
+      data: {
+        ...data,
+        connection_status: undefined,
+        connection_status_source_id: undefined,
+        connection_status_order: undefined,
+      },
+      nativeResolution: 'none',
+    };
+  }
+
+  const acceptance = acceptNativeConnectionStatus({
+    snapshot: data.connection_status,
+    sourceId: data.connection_status_source_id,
+    order: data.connection_status_order,
+    expectedProvider: connectionStatusProvider(
+      data.worker_type_id ?? activeWorkerTypeId.value
+    ),
+  });
+
+  if (
+    acceptance.outcome === 'stale' &&
+    isCurrentQrAttemptProgressPublication(data)
+  ) {
+    // A QR rotation is attempt-scoped progress even when the provider has not
+    // changed its native `qr` snapshot. WWebJS legitimately emits several
+    // distinct credentials under the same native source/sequence while its
+    // internal client is recycled. Ignore only the duplicate native evidence;
+    // never discard the newer credential carried by the same envelope.
+    return {
+      data: {
+        ...data,
+        connection_status: undefined,
+        connection_status_source_id: undefined,
+        connection_status_order: undefined,
+      },
+      nativeResolution: 'none',
+    };
+  }
+
+  if (
+    !acceptance.snapshot ||
+    acceptance.outcome === 'invalid' ||
+    acceptance.outcome === 'stale'
+  ) {
+    return undefined;
+  }
+  nativeConnectionOnlineAcknowledged.value =
+    data.connection_online_acknowledged === true &&
+    isWhatsappConnectionOnline(acceptance.snapshot);
+  return {
+    data: applyWhatsappConnectionStatus(
+      {
+        ...data,
+        connection_status_source_id: nativeConnectionStatusSourceId.value,
+      },
+      acceptance.snapshot
+    ),
+    nativeResolution: acceptance.outcome,
+  };
+}
+
+function isCurrentQrAttemptProgressPublication(
+  data: Partial<IBaileysConnectionState>
+): boolean {
+  if (
+    !canOfferNewConnection.value ||
+    !isQrConnectionSelected.value ||
+    !data.connection_attempt_id
+  ) {
+    return false;
+  }
+
+  const currentAttemptId = connectionAttemptId.value;
+  const ownsAttempt = currentAttemptId
+    ? data.connection_attempt_id === currentAttemptId
+    : isRequestingQr.value;
+  if (!ownsAttempt) return false;
+
+  if (
+    data.status === EBaileysConnectionStatus.disconnected ||
+    hasExceededQrAttempts(data) ||
+    (data.worker_status_id !== undefined &&
+      QR_ATTEMPT_TERMINAL_WORKER_STATUSES.has(data.worker_status_id)) ||
+    (data.event_type === 'status' &&
+      data.session_removed === true &&
+      data.disconnected_user === true)
+  ) {
+    return false;
+  }
+
+  return Boolean(
+    data.status === EBaileysConnectionStatus.connecting ||
+    (data.code !== undefined && QR_ATTEMPT_PROGRESS_CODES.has(data.code)) ||
+    data.qr_pending === true ||
+    data.qrcode ||
+    data.pairing_code ||
+    data.passkey_public_key ||
+    data.passkey_confirmation_code
+  );
+}
+
+function isAttemptScopedConnectionPayload(
+  data: Partial<IBaileysConnectionState>
+): boolean {
+  if (!data.connection_attempt_id) return false;
+
+  const currentAttemptId = connectionAttemptId.value;
+  if (currentAttemptId && data.connection_attempt_id !== currentAttemptId) {
+    return false;
+  }
+
+  if (isQrAttemptTerminalPublication(data)) {
+    // QR exhaustion deliberately does not mutate the durable worker status:
+    // the runtime remains AVAILABLE for the next request. It is nevertheless
+    // an authoritative terminal for this exact modal attempt and must reach
+    // the local reducer so Restart becomes available without a page reload.
+    return Boolean(currentAttemptId && isWhatsappQrAttemptExhaustedState(data));
+  }
+
+  return (
+    data.connection_attempt_id === currentAttemptId ||
+    data.qr_pending === true ||
+    Boolean(data.qrcode) ||
+    Boolean(data.pairing_code) ||
+    Boolean(data.passkey_public_key) ||
+    Boolean(data.passkey_confirmation_code) ||
+    data.code === ECodeMessage.awaitingReadQrCode ||
+    data.code === ECodeMessage.awaitingPairingCode ||
+    data.code === ECodeMessage.awaitingPasskey ||
+    data.code === ECodeMessage.awaitingPasskeyConfirmation ||
+    data.code === ECodeMessage.pairingInProgress ||
+    data.code === ECodeMessage.newLoginAttempt
+  );
+}
+
+function isAcceptedQrAttemptResponse(data: IBaileysConnectionState): boolean {
+  return Boolean(
+    data.connection_attempt_id &&
+    (data.qr_pending === true ||
+      data.qrcode ||
+      data.pairing_code ||
+      data.passkey_public_key ||
+      data.passkey_confirmation_code ||
+      (data.connection_online_acknowledged === true &&
+        isWhatsappConnectionOnline(data.connection_status)))
+  );
+}
+
+function shouldProjectConnectionPublicationToCanonical(
+  data: IBaileysConnectionState
+): boolean {
+  return Boolean(
+    data.connection_status ||
+    (data.event_type === 'status' && data.worker_status_id) ||
+    data.worker_status_observed_at ||
+    data.lifecycle_operation_id ||
+    data.recreate_phase ||
+    data.recreate_phase_observed_at ||
+    data.recreate_completed_at ||
+    isSessionRemovalTerminalPublication(data)
+  );
+}
+
+function applyConnectionPublication(
+  data: IBaileysConnectionState,
+  options: { directResponse?: boolean } = {}
+): boolean {
+  const attemptScoped = isAttemptScopedConnectionPayload(data);
+  const ignoredQrTerminal = shouldIgnoreQrTerminalFromAnotherAttempt(data);
+  let presentationAccepted = false;
+  if (shouldProjectConnectionPublicationToCanonical(data)) {
+    presentationAccepted =
+      channelStatusPresentationStore.applyRealtimeEvent(data);
+  }
+
+  const presentationSnapshot = channelStatusPresentationStore.snapshot(
+    data.worker_id
+  );
+  const presentationObserved = Boolean(
+    presentationSnapshot &&
+    (presentationAccepted ||
+      canonicalSnapshotIncludesPublication(presentationSnapshot, data))
+  );
+  if (!presentationObserved && !attemptScoped) {
+    return false;
+  }
+
+  if (presentationObserved && presentationSnapshot) {
+    synchronizeModalWithCanonicalSnapshot(presentationSnapshot, data);
+  }
+
+  if (ignoredQrTerminal) {
+    logConnectionLifecycleDebug(
+      'web.connection_state.previous_attempt_terminal_ignored',
+      {
+        trace_id: data.debug_trace_id ?? activeDebugTraceId.value,
+        layer: 'web',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type_id: data.worker_type_id,
+        connection_attempt_id: data.connection_attempt_id,
+        expected_connection_attempt_id: connectionAttemptId.value,
+        runtime_generation: data.runtime_generation,
+        status: data.status,
+        code: data.code,
+        reason: data.reason,
+      }
+    );
+    return true;
+  }
+
+  // Credentials and pending ACKs are attempt-scoped modal data, not global
+  // lifecycle truth. Apply them after the canonical projection so an ordinary
+  // DB refresh to `disponible` cannot erase a valid QR attempt. For terminal
+  // lifecycle events, reapply the canonical snapshot last as a fail-closed
+  // guard against legacy fields in the same envelope.
+  applyReducedConnectionState(data, options);
+  if (presentationObserved && presentationSnapshot && !attemptScoped) {
+    synchronizeModalWithCanonicalSnapshot(presentationSnapshot, data);
+  }
+
+  return true;
+}
+
 function applyDirectConnectionResponse(data: IBaileysConnectionState) {
-  applyReducedConnectionState(data, { directResponse: true });
+  applyConnectionPublication(data, { directResponse: true });
 }
 
 function shouldClearPasskeyForDirectResponse(
@@ -2033,68 +3366,81 @@ function handleWorkerConnectionMessage(
     return;
   }
 
-  if (shouldIgnoreConnectedPayload(connectionData)) {
-    logConnectionLifecycleDebug('web.centrifugo.connected_ignored', {
-      trace_id: connectionData.debug_trace_id ?? activeDebugTraceId.value,
-      layer: 'web',
-      worker_id: connectionData.worker_id,
-      account_id: connectionData.account_id,
-      worker_type_id: connectionData.worker_type_id,
-      connection_attempt_id: connectionData.connection_attempt_id,
-      runtime_generation: connectionData.runtime_generation,
-      status: connectionData.status,
-      code: connectionData.code,
-      worker_status_id: connectionData.worker_status_id,
-      session_ready: connectionData.session_ready,
-      phone: connectionData.phone,
-      offset: ctx?.offset,
-    });
+  if (!applyConnectionPublication(connectionData)) {
+    logLocalConnectionStatus(
+      'web.connection_modal.rejected_by_canonical_projection',
+      {
+        layer: 'web.connection_modal',
+        worker_id: connectionData.worker_id,
+        account_id: connectionData.account_id,
+        worker_type_id: connectionData.worker_type_id,
+        worker_status_id: connectionData.worker_status_id,
+        runtime_generation: connectionData.runtime_generation,
+        offset: ctx?.offset,
+      }
+    );
     return;
   }
 
-  if (connectionData.worker_status_id) {
-    workerStatusId.value = connectionData.worker_status_id;
-  }
-
-  if (connectionData.worker_status_id === EWorkerStatus.recreating) {
-    isResetting.value = true;
-    statusConnection.value = EBaileysConnectionStatus.connecting;
-    statusCode.value = ECodeMessage.awaitConnection;
-    qrcode.value = undefined;
-    qrPending.value = false;
-    connectionAttemptId.value = connectionData.connection_attempt_id;
-    connectionRuntimeGeneration.value = connectionData.runtime_generation;
-    pairingStartedAt.value = null;
-    resetPairingCodes();
-    resetPasskeyState();
-    clearQrHistoryRecovery();
-    clearConnectedStateDelay();
-    return;
-  }
-
-  if (connectionData.worker_status_id === EWorkerStatus.creating) {
-    if (hasActiveConnectionCode.value || qrPending.value) {
-      return;
-    }
-
-    isResetting.value = false;
-    prepareConnectionStart();
-    return;
-  }
-
-  if (connectionData.worker_status_id) {
-    isResetting.value = false;
-  }
-
-  applyReducedConnectionState(connectionData);
+  const presentationSnapshot = channelStatusPresentationStore.snapshot(
+    connectionData.worker_id
+  );
 
   if (
-    connectionData.worker_status_id === EWorkerStatus.disponible &&
-    isQrConnectionSelected.value
+    presentationSnapshot?.workerStatusId === EWorkerStatus.disponible &&
+    (presentationSnapshot.source !== 'session_removal_ack' ||
+      connectionStartedEmitted.value) &&
+    isQrConnectionSelected.value &&
+    !connectionData.connection_attempt_id &&
+    !connectionAttemptId.value
   ) {
+    // Attempt-scoped terminal/transient publications belong to the request
+    // that produced them. Starting another request here creates a feedback
+    // loop (terminal -> new QR -> terminal) and can replace a QR that the same
+    // attempt publishes milliseconds later. Canonical lifecycle availability
+    // without an attempt id still auto-starts QR after create/recreate.
     void requestQrCodeIfReady({ silent: true });
   }
 }
+
+useResilientCentrifugoSubscription({
+  channel: workerConnectionChannel,
+  handler: handleWorkerConnectionMessage,
+  onSubscribed: async () => {
+    if (canRecoverQrFromRecentHistory()) {
+      await recoverQrFromRecentHistory('subscription_ready');
+    }
+  },
+  debugContext: () => ({
+    trace_id: activeDebugTraceId.value,
+    account_id: accountId.value ?? undefined,
+    worker_id: channelId.value ?? undefined,
+    worker_type_id: activeWorkerTypeId.value ?? channelType.value ?? undefined,
+    connection_attempt_id: connectionAttemptId.value,
+    runtime_generation: connectionRuntimeGeneration.value,
+    layer: 'web.connection_modal',
+  }),
+});
+
+watch(
+  canOfferNewConnection,
+  (canOffer) => {
+    if (!canOffer) {
+      suspendConnectionOfferSideEffects();
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  canonicalPresentationSnapshot,
+  (snapshot) => {
+    if (snapshot) {
+      synchronizeModalWithCanonicalSnapshot(snapshot);
+    }
+  },
+  { immediate: true }
+);
 
 onMounted(async () => {
   if (!channelId.value || !accountId.value) {
@@ -2111,18 +3457,25 @@ onMounted(async () => {
     status: props.initialStatusId ?? undefined,
   });
   prepareInitialModalState();
-  await loadExternalConnectionLink();
+  if (!canOfferNewConnection.value) {
+    suspendConnectionOfferSideEffects();
+  }
 
   globalThis.addEventListener(
     'centrifugo-recovery-failed',
     handleCentrifugoRecoveryFailed as EventListener
   );
 
-  await onMessage(workerConnectionChannel.value, handleWorkerConnectionMessage);
-  await fetchRecentHistoryAndProcess(
-    workerConnectionChannel.value,
-    handleWorkerConnectionMessage
-  );
+  if (showExternalConnectionLink.value) {
+    await loadExternalConnectionLink();
+  }
+
+  // Do not replay the whole account history before a connection attempt is
+  // known. A terminal event from a previous runtime generation (for example,
+  // logoutInProgress) can otherwise replace the authoritative list status and
+  // leave a currently available channel stuck in a blocking modal state.
+  // QR history recovery is started after the direct QR response supplies the
+  // current connection_attempt_id and runtime_generation.
 });
 
 watch(isVisible, (visible) => {
@@ -2137,6 +3490,7 @@ watch(isVisible, (visible) => {
       status: statusConnection.value,
       code: statusCode.value,
     });
+    releaseQrAttemptOnClose();
     clearQrHistoryRecovery();
     clearSecureHelperOpenTimeout();
     stopSecureConnectionPolling();
@@ -2156,14 +3510,26 @@ watch(isVisible, (visible) => {
     worker_id: channelId.value ?? undefined,
     account_id: accountId.value ?? undefined,
   });
-  void loadExternalConnectionLink();
+  if (!canOfferNewConnection.value) {
+    suspendConnectionOfferSideEffects();
+    return;
+  }
+
+  if (showExternalConnectionLink.value) {
+    void loadExternalConnectionLink();
+  }
+  void channelStore.getConnectionDownloadArtifacts({ silent: true });
 
   if (isQrConnectionSelected.value) {
     void recoverQrFromRecentHistory('dialog_visible');
     void requestQrCodeIfReady({ silent: true });
   }
 
-  if (selectedConnectionMethod.value === 'secure' && secureSession.value) {
+  if (
+    (selectedConnectionMethod.value === 'secure' ||
+      selectedConnectionMethod.value === 'chrome_extension') &&
+    secureSession.value
+  ) {
     startSecureConnectionPolling();
     void pollSecureConnectionSession();
   }
@@ -2177,10 +3543,65 @@ watch(
 );
 
 watch(
-  () => props.channelType,
-  (workerTypeId) => {
+  [
+    () => props.channelId,
+    () => props.channelType,
+    () => props.initialConnectionStatus,
+    () => props.initialConnectionStatusSourceId,
+    () => props.initialConnectionStatusOrder,
+    () => props.initialConnectionOnlineAcknowledged,
+    () => props.initialStatusId,
+  ],
+  (
+    [
+      channelID,
+      workerTypeId,
+      initialConnectionStatus,
+      sourceID,
+      statusOrder,
+      onlineAcknowledged,
+      statusID,
+    ],
+    [previousChannelID, previousWorkerTypeID]
+  ) => {
+    const channelChanged =
+      channelID !== previousChannelID || workerTypeId !== previousWorkerTypeID;
+    if (channelChanged) {
+      releaseSecureConnectionLifecycleFence();
+      resetNativeConnectionStatus();
+      nativeConnectionOnlineAcknowledged.value = false;
+      connectionRuntimeGeneration.value = undefined;
+    }
     activeWorkerTypeId.value = workerTypeId ?? null;
-    connectionRuntimeGeneration.value = undefined;
+    if (initialConnectionStatus) {
+      const acceptance = acceptNativeConnectionStatus({
+        snapshot: initialConnectionStatus,
+        sourceId: sourceID,
+        order: statusOrder,
+        expectedProvider: connectionStatusProvider(workerTypeId),
+      });
+      if (
+        !channelChanged &&
+        (acceptance.outcome === 'stale' || acceptance.outcome === 'invalid')
+      ) {
+        return;
+      }
+    }
+    nativeConnectionOnlineAcknowledged.value =
+      onlineAcknowledged === true &&
+      isWhatsappConnectionOnline(nativeConnectionStatus.value);
+    const presentationSnapshot = canonicalPresentationSnapshot.value;
+    if (presentationSnapshot) {
+      synchronizeModalWithCanonicalSnapshot(presentationSnapshot);
+      return;
+    }
+    if (statusID === EWorkerStatus.online) {
+      if (!applyAuthoritativeInitialOnlineProjection()) {
+        sessionReady.value = false;
+      }
+    } else if (nativeConnectionStatus.value) {
+      applyInitialNativeStatusProjection();
+    }
   }
 );
 
@@ -2188,6 +3609,20 @@ watch(
   () => props.initialStatusId,
   (statusId) => {
     if (!isVisible.value || !statusId) {
+      return;
+    }
+
+    const presentationSnapshot = canonicalPresentationSnapshot.value;
+    if (presentationSnapshot) {
+      synchronizeModalWithCanonicalSnapshot(presentationSnapshot);
+      if (
+        presentationSnapshot.workerStatusId === EWorkerStatus.disponible &&
+        presentationSnapshot.source !== 'session_removal_ack' &&
+        isQrConnectionSelected.value &&
+        !connectionAttemptId.value
+      ) {
+        void requestQrCodeIfReady({ silent: true });
+      }
       return;
     }
 
@@ -2200,14 +3635,14 @@ watch(
     }
 
     if (statusId === EWorkerStatus.recreating) {
-      isResetting.value = true;
+      isResetting.value = props.isSessionMigration !== true;
       prepareConnectionStart();
       return;
     }
 
     if (statusId === EWorkerStatus.disponible) {
-      isResetting.value = false;
-      if (isQrConnectionSelected.value) {
+      prepareConnectionAfterCompletedReset(statusId);
+      if (isQrConnectionSelected.value && !connectionAttemptId.value) {
         void requestQrCodeIfReady({ silent: true });
       }
     }
@@ -2215,6 +3650,7 @@ watch(
 );
 
 onUnmounted(() => {
+  releaseQrAttemptOnClose();
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
   clearQrHistoryRecovery();
@@ -2225,33 +3661,50 @@ onUnmounted(() => {
     'centrifugo-recovery-failed',
     handleCentrifugoRecoveryFailed as EventListener
   );
-
-  if (accountId.value) {
-    void unsubscribe(
-      workerConnectionChannel.value,
-      handleWorkerConnectionMessage
-    );
-  }
 });
 </script>
 
 <template>
   <VDialog v-model="isVisible" :max-width="dialogMaxWidth">
-    <DialogCloseBtn @click="isVisible = false" />
+    <DialogCloseBtn
+      v-if="modalState !== 'migrating'"
+      @click="isVisible = false"
+    />
 
-    <VCard data-testid="connection-dialog">
+    <VCard
+      :class="[
+        'connection-dialog-card',
+        { 'connection-dialog-card--standard': standardAppearance },
+      ]"
+      data-testid="connection-dialog"
+    >
+      <ChannelMigrationProgress
+        v-if="modalState === 'migrating'"
+        :source-type="migrationSourceType"
+        :target-type="channelType"
+        :source-server-name="migrationSourceServerName"
+        :target-server-name="migrationTargetServerName"
+        :live-status="nativeConnectionStatus?.status"
+        @cancel="emit('migrationCancelRequested')"
+        @timeout="emit('migrationTimedOut')"
+      />
+
       <ConnectionMethodChooser
-        v-if="showConnectionChooser"
+        v-else-if="showConnectionChooser"
         :disabled="channelStore.loading || isSecureSessionLoading"
+        :show-chrome-extension="isChromeExtensionConnectionAvailable"
         @select="selectConnectionMethod"
       />
 
       <ConnectionAuthenticatorInstallPanel
         v-else-if="
-          selectedConnectionMethod === 'authenticator_install' && !isConnected
+          canOfferNewConnection &&
+          selectedConnectionMethod === 'authenticator_install' &&
+          !isConnected
         "
         :disabled="isSecureSessionLoading"
         :downloading="isDownloadingAuthenticator"
+        :download-urls="authenticatorDownloadUrls"
         @download="downloadAuthenticatorInstaller"
         @continue="continueAuthenticatorConnection"
         @back="returnToConnectionMethodSelection"
@@ -2259,7 +3712,11 @@ onUnmounted(() => {
       />
 
       <ConnectionSecurePanel
-        v-else-if="selectedConnectionMethod === 'secure' && !isConnected"
+        v-else-if="
+          canOfferNewConnection &&
+          selectedConnectionMethod === 'secure' &&
+          !isConnected
+        "
         :session="secureSession"
         :loading="isSecureSessionLoading"
         :opening="isOpeningSecureHelper"
@@ -2269,217 +3726,124 @@ onUnmounted(() => {
         @cancel="cancelSecureConnection"
       />
 
-      <VRow v-else no-gutters>
-        <VCol cols="12" sm="8" md="12" lg="7" order="2" order-lg="1">
-          <VCardItem>
-            <VCardTitle>{{ $t('conection') }}</VCardTitle>
-          </VCardItem>
+      <ConnectionChromeExtensionPanel
+        v-else-if="
+          canOfferNewConnection &&
+          selectedConnectionMethod === 'chrome_extension' &&
+          !isConnected
+        "
+        :session="secureSession"
+        :loading="isSecureSessionLoading"
+        :downloading="isDownloadingChromeExtension"
+        :disabled="channelStore.loading"
+        :download-url="chromeExtensionPackageUrl"
+        :extension-url="chromeExtensionStoreUrl"
+        @start="startChromeExtensionConnection"
+        @download="downloadChromeExtensionPackage"
+        @back="returnToConnectionMethodSelection"
+        @cancel="cancelSecureConnection"
+      />
 
-          <VCardText class="connection-stage">
-            <div class="connection-visual">
-              <VImg
-                v-if="modalState === 'qrReady' && qrcode"
-                :src="qrcode"
-                max-width="240"
-                width="240"
-                data-testid="connection-qr-image"
+      <div v-else class="connection-stage-shell">
+        <VCardText v-if="canOfferNewConnection" class="pt-0">
+          <ConnectionLifecycleStage
+            :state="modalState"
+            :title-key="visibleStageMeta.title"
+            :description-key="visibleStageMeta.description"
+            :icon="visibleStageMeta.icon"
+            :loading="visibleStageMeta.loading"
+            :qr-code="canOfferNewConnection ? qrcode : undefined"
+            :channel-type="activeWorkerTypeId ?? channelType"
+            :phone-number="
+              isConnected && !isRemovingSession ? phoneNumber : null
+            "
+            :qr-attempt="qrAttempt"
+            :qr-max-attempts="qrMaxAttempts"
+            :secondary-value="
+              modalState === 'phoneUnavailable' ? formattedTime : null
+            "
+          />
+
+          <div
+            v-if="canOfferNewConnection && modalState === 'pairing'"
+            class="pairing-code connection-stage-shell__code"
+          >
+            <template v-if="pairingCodePrimary && pairingCodeSecondary">
+              <VOtpInput
+                v-model="pairingCodePrimary"
+                disabled
+                length="4"
+                type="text"
+                class="pa-0"
+                :focused="false"
               />
-              <VProgressCircular
-                v-else-if="stageMeta.loading"
-                indeterminate
-                :color="stageMeta.color"
-                size="112"
-                width="4"
-              >
-                <VIcon
-                  :icon="stageMeta.icon"
-                  :color="stageMeta.color"
-                  size="52"
-                />
-              </VProgressCircular>
-              <VIcon
-                v-else
-                :icon="stageMeta.icon"
-                :color="stageMeta.color"
-                size="124"
+              <VOtpInput
+                v-model="pairingCodeSecondary"
+                disabled
+                length="4"
+                type="text"
+                class="pa-0"
+                :focused="false"
               />
-            </div>
+            </template>
+            <VProgressLinear v-else indeterminate color="primary" />
+          </div>
 
-            <div class="connection-copy text-center">
-              <h4 class="text-h6 mb-2" data-testid="connection-stage-title">
-                {{ $t(stageMeta.title) }}
-              </h4>
-              <p class="text-body-2 mb-0">
-                {{ $t(stageMeta.description) }}
-              </p>
-              <small v-if="isConnected && phoneNumber" class="d-block mt-1">
-                {{ phoneNumber }}
-              </small>
-              <template v-if="modalState === 'phoneUnavailable'">
-                <strong class="d-block text-h5 mt-3">{{
-                  formattedTime
-                }}</strong>
-                <small>{{ $t('seconds_until_next_attempt') }}</small>
-              </template>
-            </div>
+          <div
+            v-if="canOfferNewConnection && modalState === 'passkeyConfirmation'"
+            class="pairing-code connection-stage-shell__code"
+          >
+            <template
+              v-if="passkeyConfirmationPrimary && passkeyConfirmationSecondary"
+            >
+              <VOtpInput
+                v-model="passkeyConfirmationPrimary"
+                disabled
+                length="4"
+                type="text"
+                class="pa-0"
+                :focused="false"
+              />
+              <VOtpInput
+                v-model="passkeyConfirmationSecondary"
+                disabled
+                length="4"
+                type="text"
+                class="pa-0"
+                :focused="false"
+              />
+            </template>
+            <VProgressLinear v-else indeterminate color="primary" />
+          </div>
 
-            <div v-if="modalState === 'pairing'" class="pairing-code">
-              <template v-if="pairingCodePrimary && pairingCodeSecondary">
-                <VOtpInput
-                  v-model="pairingCodePrimary"
-                  disabled
-                  length="4"
-                  type="text"
-                  class="pa-0"
-                  :focused="false"
-                />
-                <VOtpInput
-                  v-model="pairingCodeSecondary"
-                  disabled
-                  length="4"
-                  type="text"
-                  class="pa-0"
-                  :focused="false"
-                />
-              </template>
-              <VProgressLinear v-else indeterminate color="primary" />
-            </div>
+          <VAlert
+            v-if="canOfferNewConnection && passkeyError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="connection-stage-shell__alert"
+          >
+            {{ $t(passkeyError) }}
+          </VAlert>
 
+          <div
+            v-if="showPrimaryActions || canOfferNewConnection"
+            class="connection-stage-shell__footer"
+          >
             <div
-              v-if="modalState === 'passkeyConfirmation'"
-              class="pairing-code"
+              v-if="showExternalConnectionLink"
+              class="external-connection-box"
             >
-              <template
-                v-if="
-                  passkeyConfirmationPrimary && passkeyConfirmationSecondary
-                "
-              >
-                <VOtpInput
-                  v-model="passkeyConfirmationPrimary"
-                  disabled
-                  length="4"
-                  type="text"
-                  class="pa-0"
-                  :focused="false"
-                />
-                <VOtpInput
-                  v-model="passkeyConfirmationSecondary"
-                  disabled
-                  length="4"
-                  type="text"
-                  class="pa-0"
-                  :focused="false"
-                />
-              </template>
-              <VProgressLinear v-else indeterminate color="primary" />
-            </div>
-
-            <VAlert
-              v-if="passkeyError"
-              type="error"
-              variant="tonal"
-              density="compact"
-              class="mt-4"
-            >
-              {{ $t(passkeyError) }}
-            </VAlert>
-
-            <VProgressLinear
-              v-if="modalState === 'qrReady'"
-              indeterminate
-              color="primary"
-              class="connection-progress"
-            />
-          </VCardText>
-
-          <VCardText v-if="showPrimaryActions" class="d-flex justify-center">
-            <div class="d-flex gap-2">
-              <VBtn
-                v-if="modalState === 'passkeyRequired'"
-                color="primary"
-                :disabled="isPasskeyRunning || !passkeyPublicKey"
-                :loading="isPasskeyRunning"
-                @click="continuePasskeyPairing"
-              >
-                <VIcon icon="tabler-key" start />
-                {{ $t('passkey_continue') }}
-              </VBtn>
-
-              <VBtn
-                v-else-if="modalState === 'passkeyConfirmation'"
-                color="primary"
-                :disabled="isPasskeyConfirming"
-                :loading="isPasskeyConfirming"
-                @click="confirmPasskeyPairing"
-              >
-                <VIcon icon="tabler-shield-check" start />
-                {{ $t('confirm') }}
-              </VBtn>
-
-              <VBtn
-                v-else-if="showQrRetryOnly"
-                color="primary"
-                :disabled="isActionLocked"
-                :loading="channelStore.loading"
-                @click="restartQrCodeAttempt"
-              >
-                <VIcon icon="tabler-refresh" start />
-                {{ $t('retry_qrcode') }}
-              </VBtn>
-
-              <VBtn
-                v-else
-                :disabled="isActionLocked"
-                :loading="channelStore.loading && modalState === 'loggingOut'"
-                :color="isConnected ? 'error' : 'primary'"
-                @click="recreateChannelWithFullCleanup"
-              >
-                <VTooltip
-                  location="top"
-                  activator="parent"
-                  transition="scroll-x-transition"
-                >
-                  <span>{{
-                    isConnected ? $t('disconnect') : $t('recreate')
-                  }}</span>
-                </VTooltip>
-                <VIcon
-                  :icon="isConnected ? 'tabler-circle-off' : 'tabler-reload'"
-                />
-              </VBtn>
-
-              <VBtn
-                v-if="showReconnectAction"
-                :disabled="isActionLocked"
-                :loading="channelStore.loading && modalState === 'starting'"
-                color="warning"
-                data-testid="connection-reconnect"
-                @click="reconnectChannel"
-              >
-                <VTooltip
-                  location="top"
-                  activator="parent"
-                  transition="scroll-x-transition"
-                >
-                  <span>{{ $t('reconnect') }}</span>
-                </VTooltip>
-                <VIcon icon="tabler-refresh" />
-              </VBtn>
-            </div>
-          </VCardText>
-
-          <VCardText class="pt-0">
-            <div class="external-connection-box">
               <div class="external-connection-header">
-                <VIcon icon="tabler-link" color="primary" size="22" />
+                <span class="external-connection-header__icon">
+                  <VIcon icon="tabler-link" size="20" />
+                </span>
                 <div>
-                  <p class="text-body-2 font-weight-medium mb-0">
-                    {{ $t('external_connection_link') }}
-                  </p>
-                  <small class="text-medium-emphasis">
+                  <p>{{ $t('external_connection_link') }}</p>
+                  <small>
                     {{ $t('external_connection_link_validity') }}
                     <template v-if="externalConnectionExpiresAtFormatted">
-                      - {{ externalConnectionExpiresAtFormatted }}
+                      · {{ externalConnectionExpiresAtFormatted }}
                     </template>
                   </small>
                 </div>
@@ -2511,11 +3875,7 @@ onUnmounted(() => {
                           : 'tabler-copy'
                       "
                     />
-                    <VTooltip
-                      activator="parent"
-                      location="top"
-                      transition="scroll-x-transition"
-                    >
+                    <VTooltip activator="parent" location="top">
                       <span>
                         {{
                           isExternalConnectionCopied
@@ -2528,130 +3888,73 @@ onUnmounted(() => {
                 </template>
               </AppTextField>
             </div>
-          </VCardText>
-        </VCol>
 
-        <VCol
-          cols="12"
-          sm="4"
-          md="12"
-          lg="5"
-          order="1"
-          order-lg="2"
-          class="member-pricing-bg"
-        >
-          <VCardText class="d-flex">
-            <VTimeline
-              side="end"
-              align="start"
-              line-inset="8"
-              truncate-line="start"
-              density="compact"
-              class="v-timeline--variant-outlined"
+            <div
+              v-if="showPrimaryActions"
+              class="connection-stage-shell__actions"
             >
-              <VTimelineItem
-                dot-color="rgb(var(--v-theme-surface))"
-                size="x-small"
+              <VBtn
+                v-if="modalState === 'passkeyRequired'"
+                color="primary"
+                :disabled="isPasskeyRunning || !passkeyPublicKey"
+                :loading="isPasskeyRunning"
+                @click="continuePasskeyPairing"
               >
-                <template #icon>
-                  <VIcon icon="tabler-circle" color="primary" size="16" />
-                </template>
-                <div class="connection-step">
-                  <span class="app-timeline-title">
-                    {{ $t('open_whatsapp') }}
-                  </span>
-                  <span class="app-timeline-meta">
-                    {{ $t('certify_latest_version') }}
-                  </span>
-                </div>
-              </VTimelineItem>
+                <VIcon icon="tabler-key" start />
+                {{ $t('passkey_continue') }}
+              </VBtn>
 
-              <VTimelineItem
-                dot-color="rgb(var(--v-theme-surface))"
-                size="x-small"
+              <VBtn
+                v-else-if="modalState === 'passkeyConfirmation'"
+                color="primary"
+                :disabled="isPasskeyConfirming"
+                :loading="isPasskeyConfirming"
+                @click="confirmPasskeyPairing"
               >
-                <template #icon>
-                  <VIcon icon="tabler-circle" color="warning" size="16" />
-                </template>
-                <div class="connection-step">
-                  <span class="app-timeline-title">{{
-                    $t('tap_settings')
-                  }}</span>
-                  <span class="app-timeline-meta">
-                    {{ $t('you_top_right_corner') }}
-                  </span>
-                </div>
-              </VTimelineItem>
+                <VIcon icon="tabler-shield-check" start />
+                {{ $t('confirm') }}
+              </VBtn>
 
-              <VTimelineItem
-                dot-color="rgb(var(--v-theme-surface))"
-                size="x-small"
+              <VBtn
+                v-else-if="showQrRestartAction"
+                color="primary"
+                :disabled="isActionLocked"
+                :loading="channelStore.loading"
+                data-testid="connection-restart-qrcode"
+                @click="restartQrCodeAttempt"
               >
-                <template #icon>
-                  <VIcon icon="tabler-circle" color="info" size="16" />
-                </template>
-                <div class="connection-step">
-                  <span class="app-timeline-title">
-                    {{ $t('select_connected_devices') }}
-                  </span>
-                  <span class="app-timeline-meta">
-                    {{ $t('access_connect_device') }}
-                  </span>
-                </div>
-              </VTimelineItem>
+                <VIcon icon="tabler-refresh" start />
+                {{ $t('restart_qrcode') }}
+              </VBtn>
 
-              <VTimelineItem
-                dot-color="rgb(var(--v-theme-surface))"
-                size="x-small"
+              <VBtn
+                v-else-if="isConnected"
+                :disabled="isActionLocked"
+                :loading="channelStore.loading && isRemovingSession"
+                color="error"
+                variant="tonal"
+                data-testid="connection-disconnect"
+                @click="disconnectChannelSession"
               >
-                <template #icon>
-                  <VIcon icon="tabler-circle" color="success" size="16" />
-                </template>
-                <div class="connection-step">
-                  <span class="app-timeline-title">
-                    {{ $t('point_camera_screen') }}
-                  </span>
-                  <span class="app-timeline-meta">{{
-                    $t('scan_qr_code')
-                  }}</span>
-                </div>
-              </VTimelineItem>
-            </VTimeline>
-          </VCardText>
-        </VCol>
-      </VRow>
+                <VIcon icon="tabler-circle-off" start />
+                {{ $t('disconnect') }}
+              </VBtn>
+            </div>
+          </div>
+        </VCardText>
+      </div>
     </VCard>
   </VDialog>
 </template>
 
 <style lang="scss" scoped>
-.connection-stage {
-  display: flex;
-  min-block-size: 320px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-}
-
-.connection-visual {
+.connection-stage-shell {
   display: grid;
-  min-inline-size: 172px;
-  min-block-size: 172px;
-  place-items: center;
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  border-radius: 8px;
-  background-color: rgb(var(--v-theme-surface));
-  box-shadow: inset 0 0 0 12px rgba(var(--v-theme-primary), 0.05);
+  background: rgb(var(--v-theme-surface));
 }
 
-.connection-copy {
-  max-inline-size: 300px;
-  margin-inline: auto;
-}
-
-.connection-progress {
-  max-inline-size: 240px;
+.connection-stage-shell > :deep(.v-card-text) {
+  padding: 0 !important;
 }
 
 .pairing-code {
@@ -2660,29 +3963,102 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+.connection-stage-shell__code,
+.connection-stage-shell__alert {
+  margin-block-start: 18px;
+  margin-inline: auto;
+}
+
+.connection-stage-shell__alert {
+  inline-size: calc(100% - 60px);
+}
+
+.connection-stage-shell__footer {
+  display: grid;
+  align-items: end;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 20px 30px 26px;
+  border-block-start: 1px solid rgba(var(--v-border-color), 0.12);
+  background: rgba(var(--v-theme-on-surface), 0.018);
+}
+
 .external-connection-box {
   display: grid;
-  gap: 10px;
+  max-inline-size: 520px;
+  gap: 11px;
 }
 
 .external-connection-header {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
 }
 
-.connection-step {
+.external-connection-header__icon {
+  display: grid;
+  flex: 0 0 36px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-primary), 0.09);
+  block-size: 36px;
+  color: rgb(var(--v-theme-primary));
+  inline-size: 36px;
+  place-items: center;
+}
+
+.external-connection-header p {
+  margin: 0;
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.external-connection-header small {
+  display: block;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+  font-size: 0.71rem;
+  line-height: 1.4;
+}
+
+.connection-stage-shell__actions {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.member-pricing-bg {
-  position: relative;
-  background-color: rgba(var(--v-theme-on-surface), var(--v-hover-opacity));
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .v-btn {
   transform: none;
+}
+
+.connection-dialog-card {
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-border-color), 0.14);
+  border-radius: 22px;
+  box-shadow: 0 30px 90px rgba(24, 39, 75, 0.18);
+}
+
+.connection-dialog-card--standard {
+  border-radius: 6px;
+}
+
+@media (max-width: 720px) {
+  .connection-stage-shell__footer {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+
+  .connection-stage-shell__actions {
+    justify-content: stretch;
+  }
+
+  .connection-stage-shell__actions :deep(.v-btn) {
+    flex: 1 1 auto;
+  }
+
+  .connection-stage-shell__alert {
+    inline-size: calc(100% - 40px);
+  }
 }
 </style>

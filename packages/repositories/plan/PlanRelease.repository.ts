@@ -1,12 +1,25 @@
 import * as schema from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull, ne, or } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import {
   accountPayment,
   planAccount,
   accountPaymentCrossSell,
+  accountPlanProductEntitlementRevision,
   planCrossSellAccount,
+  planCrossSell,
+  planItems,
   plan,
   nfse,
   account,
@@ -16,6 +29,8 @@ import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { currentTime } from '@core/common/functions/currentTime';
 import { EAccountPaymentReleaseStatus } from '@core/common/enums/EAccountPaymentReleaseStatus';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
+import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 
 @injectable()
 export class PlanReleaseRepository {
@@ -23,6 +38,59 @@ export class PlanReleaseRepository {
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
+
+  private readonly isSuccessfulPaymentStatus = (statusId: string): boolean =>
+    statusId === EPaymentStatus.received ||
+    statusId === EPaymentStatus.confirmed ||
+    statusId === EPaymentStatus.received_in_cash;
+
+  private readonly isRevokingPaymentStatus = (statusId: string): boolean =>
+    statusId === EPaymentStatus.refunded ||
+    statusId === EPaymentStatus.refund_requested ||
+    statusId === EPaymentStatus.refund_in_progress ||
+    statusId === EPaymentStatus.chargeback_requested ||
+    statusId === EPaymentStatus.chargeback_dispute ||
+    statusId === EPaymentStatus.awaiting_chargeback_reversal;
+
+  private readonly isIncomingStatusObservationNewer = (input: {
+    currentObservedAt: string | null;
+    currentEventId: string | null;
+    currentStatusId: string;
+    incomingObservedAt?: string;
+    incomingEventId?: string;
+    incomingStatusId: string;
+  }): boolean => {
+    if (!input.incomingObservedAt && !input.incomingEventId) {
+      return input.currentObservedAt === null;
+    }
+    if (!input.incomingObservedAt || !input.incomingEventId) {
+      throw new Error('payment_status_event_order_invalid');
+    }
+
+    const incomingTimestamp = Date.parse(input.incomingObservedAt);
+    const currentTimestamp = input.currentObservedAt
+      ? Date.parse(input.currentObservedAt)
+      : Number.NEGATIVE_INFINITY;
+    if (!Number.isFinite(incomingTimestamp) || Number.isNaN(currentTimestamp)) {
+      throw new Error('payment_status_event_order_invalid');
+    }
+    if (incomingTimestamp !== currentTimestamp) {
+      return incomingTimestamp > currentTimestamp;
+    }
+
+    const statusRank = (statusId: string): number => {
+      if (this.isRevokingPaymentStatus(statusId)) return 3;
+      if (this.isSuccessfulPaymentStatus(statusId)) return 2;
+      return 1;
+    };
+    const currentRank = statusRank(input.currentStatusId);
+    const incomingRank = statusRank(input.incomingStatusId);
+    if (currentRank !== incomingRank) {
+      return incomingRank > currentRank;
+    }
+
+    return input.incomingEventId > (input.currentEventId ?? '');
+  };
 
   findAccountPaymentByBilling = async (
     billing: string
@@ -37,6 +105,8 @@ export class PlanReleaseRepository {
     payment_date: string | null;
     payment_status_id: string;
     release_status: string | null;
+    payment_status_observed_at: string | null;
+    payment_status_event_id: string | null;
   } | null> => {
     const payment = await this.dbRw.query.accountPayment.findFirst({
       where: eq(accountPayment.billing, billing),
@@ -51,6 +121,8 @@ export class PlanReleaseRepository {
         payment_date: true,
         payment_status_id: true,
         release_status: true,
+        payment_status_observed_at: true,
+        payment_status_event_id: true,
       },
     });
 
@@ -71,6 +143,8 @@ export class PlanReleaseRepository {
     payment_status_id: string;
     billing: string;
     release_status: string | null;
+    payment_status_observed_at: string | null;
+    payment_status_event_id: string | null;
   } | null> => {
     const payment = await this.dbRw.query.accountPayment.findFirst({
       where: eq(accountPayment.account_payment_id, accountPaymentId),
@@ -86,6 +160,8 @@ export class PlanReleaseRepository {
         payment_status_id: true,
         billing: true,
         release_status: true,
+        payment_status_observed_at: true,
+        payment_status_event_id: true,
       },
     });
 
@@ -104,6 +180,8 @@ export class PlanReleaseRepository {
       releaseStatus?: string | null;
       releaseProcessedAt?: string | null;
       releaseLastError?: string | null;
+      statusObservedAt?: string;
+      statusEventId?: string;
     }
   ): Promise<void> => {
     const updateData: {
@@ -113,6 +191,8 @@ export class PlanReleaseRepository {
       release_status?: string | null;
       release_processed_at?: string | null;
       release_last_error?: string | null;
+      payment_status_observed_at?: string;
+      payment_status_event_id?: string;
       updated_at: string;
     } = {
       payment_status_id: paymentStatusId,
@@ -136,10 +216,278 @@ export class PlanReleaseRepository {
       updateData.release_last_error = releaseUpdate.releaseLastError;
     }
 
+    if (
+      releaseUpdate?.statusObservedAt !== undefined ||
+      releaseUpdate?.statusEventId !== undefined
+    ) {
+      if (!releaseUpdate.statusObservedAt || !releaseUpdate.statusEventId) {
+        throw new Error('payment_status_event_order_invalid');
+      }
+      updateData.payment_status_observed_at = releaseUpdate.statusObservedAt;
+      updateData.payment_status_event_id = releaseUpdate.statusEventId;
+    }
+
     await tx
       .update(accountPayment)
       .set(updateData)
       .where(eq(accountPayment.account_payment_id, accountPaymentId));
+  };
+
+  private readonly buildPaymentRevocationProjectionQuery = (data: {
+    accountId: string;
+    accountPaymentId: string;
+    planProductId: string;
+  }): SQL<{ projected_allowed: boolean }> => sql<{
+    projected_allowed: boolean;
+  }>`
+      WITH latest_plan AS MATERIALIZED (
+        SELECT
+          current_plan.plan_account_id,
+          current_plan.plan_id,
+          current_plan.account_payment_id,
+          current_plan.last_payment_date,
+          current_plan.next_payment_date
+        FROM ${planAccount} current_plan
+        WHERE current_plan.account_id = ${data.accountId}::uuid
+        ORDER BY
+          current_plan.updated_at DESC NULLS LAST,
+          current_plan.created_at DESC NULLS LAST,
+          current_plan.plan_account_id DESC
+        LIMIT 1
+      )
+      SELECT COALESCE((
+        owner.account_id IS NOT NULL
+        AND owner.deleted_at IS NULL
+        AND owner.account_status_id <> ${EAccountStatus.blocked}::uuid
+        AND current_plan.plan_account_id IS NOT NULL
+        AND current_plan.account_payment_id IS DISTINCT FROM
+          ${data.accountPaymentId}::uuid
+        AND selected_plan.deleted_at IS NULL
+        AND selected_plan.status = ${EPlanStatus.active}
+        AND current_plan.next_payment_date > clock_timestamp()
+        AND (
+          EXISTS (
+            SELECT 1
+            FROM ${planItems} item
+            WHERE item.plan_id = current_plan.plan_id
+              AND item.plan_product_id = ${data.planProductId}::uuid
+              AND item.quantity > 0
+              AND item.deleted_at IS NULL
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM ${planCrossSellAccount} assignment
+            INNER JOIN ${planCrossSell} addon
+              ON addon.plan_cross_sell_id = assignment.plan_cross_sell_id
+            WHERE assignment.account_id = ${data.accountId}::uuid
+              AND assignment.account_payment_id IS DISTINCT FROM
+                ${data.accountPaymentId}::uuid
+              AND assignment.deleted_at IS NULL
+              AND addon.deleted_at IS NULL
+              AND addon.plan_product_id = ${data.planProductId}::uuid
+              AND addon.quantity > 0
+              AND (
+                assignment.cancellation_date IS NULL
+                OR current_plan.last_payment_date IS NULL
+                OR assignment.cancellation_date >=
+                  current_plan.last_payment_date
+              )
+          )
+        )
+      ), FALSE) AS projected_allowed
+      FROM (SELECT 1) requested
+      LEFT JOIN ${account} owner
+        ON owner.account_id = ${data.accountId}::uuid
+      LEFT JOIN latest_plan current_plan ON TRUE
+      LEFT JOIN ${plan} selected_plan
+        ON selected_plan.plan_id = current_plan.plan_id
+    `;
+
+  willGrantIntegrationAfterPaymentRevocation = async (data: {
+    accountId: string;
+    accountPaymentId: string;
+    planProductId: string;
+  }): Promise<boolean> => {
+    const result = await this.dbRw.execute(
+      this.buildPaymentRevocationProjectionQuery(data)
+    );
+
+    return result.rows[0]?.projected_allowed === true;
+  };
+
+  processPaymentRevocation = async (data: {
+    accountPaymentId: string;
+    accountId: string;
+    paymentStatusId: string;
+    paymentDate: string | null;
+    pixTransaction: string | null | undefined;
+    planProductId: string;
+    denyFenceOwnerToken?: string;
+    statusObservedAt: string;
+    statusEventId: string;
+  }): Promise<{
+    applied: boolean;
+    requiresDenyFence: boolean;
+    ignoredAsStale: boolean;
+  }> => {
+    return this.dbRw.transaction(async (tx) => {
+      const lockedPayments = await tx
+        .select({
+          account_id: accountPayment.account_id,
+          payment_status_id: accountPayment.payment_status_id,
+          payment_status_observed_at: accountPayment.payment_status_observed_at,
+          payment_status_event_id: accountPayment.payment_status_event_id,
+        })
+        .from(accountPayment)
+        .where(
+          and(
+            eq(accountPayment.account_payment_id, data.accountPaymentId),
+            eq(accountPayment.account_id, data.accountId)
+          )
+        )
+        .limit(1)
+        .for('update');
+
+      if (lockedPayments.length === 0) {
+        throw new Error(
+          `Pagamento não encontrado para revogação: ${data.accountPaymentId}`
+        );
+      }
+
+      const lockedPayment = lockedPayments[0];
+      if (
+        !this.isIncomingStatusObservationNewer({
+          currentObservedAt: lockedPayment.payment_status_observed_at,
+          currentEventId: lockedPayment.payment_status_event_id,
+          currentStatusId: lockedPayment.payment_status_id,
+          incomingObservedAt: data.statusObservedAt,
+          incomingEventId: data.statusEventId,
+          incomingStatusId: data.paymentStatusId,
+        })
+      ) {
+        return {
+          applied: false,
+          requiresDenyFence: false,
+          ignoredAsStale: true,
+        };
+      }
+
+      // Every account with an effective entitlement has one deterministic
+      // current plan row. Payment release already writes this row after the
+      // account_payment row, so taking the locks in that same order avoids an
+      // advisory/row-lock inversion and serializes refunds from distinct
+      // add-on payments of the same account.
+      await tx
+        .select({ plan_account_id: planAccount.plan_account_id })
+        .from(planAccount)
+        .where(eq(planAccount.account_id, data.accountId))
+        .orderBy(
+          sql`${planAccount.updated_at} DESC NULLS LAST`,
+          sql`${planAccount.created_at} DESC NULLS LAST`,
+          sql`${planAccount.plan_account_id} DESC`
+        )
+        .limit(1)
+        .for('update');
+
+      const projection = await tx.execute(
+        this.buildPaymentRevocationProjectionQuery(data)
+      );
+      const projectedAllowed = projection.rows[0]?.projected_allowed === true;
+
+      if (!projectedAllowed) {
+        const fenceState = await tx
+          .select({
+            allowed: accountPlanProductEntitlementRevision.allowed,
+            deny_fence_token:
+              accountPlanProductEntitlementRevision.deny_fence_token,
+            deny_fence_created_at:
+              accountPlanProductEntitlementRevision.deny_fence_created_at,
+            deny_fence_released_at:
+              accountPlanProductEntitlementRevision.deny_fence_released_at,
+          })
+          .from(accountPlanProductEntitlementRevision)
+          .where(
+            and(
+              eq(
+                accountPlanProductEntitlementRevision.account_id,
+                data.accountId
+              ),
+              eq(
+                accountPlanProductEntitlementRevision.plan_product_id,
+                data.planProductId
+              )
+            )
+          )
+          .limit(1);
+        const persisted = fenceState[0];
+        const hasOwnedActiveFence =
+          data.denyFenceOwnerToken !== undefined &&
+          persisted?.deny_fence_token === data.denyFenceOwnerToken &&
+          persisted.deny_fence_created_at !== null &&
+          persisted.deny_fence_released_at === null;
+        const wasAlreadyDenied = persisted?.allowed === false;
+
+        if (!hasOwnedActiveFence && !wasAlreadyDenied) {
+          return {
+            applied: false,
+            requiresDenyFence: true,
+            ignoredAsStale: false,
+          };
+        }
+      }
+
+      await this.updateAccountPaymentStatus(
+        tx,
+        data.accountPaymentId,
+        data.paymentStatusId,
+        data.paymentDate,
+        data.pixTransaction,
+        {
+          releaseStatus: EAccountPaymentReleaseStatus.pending,
+          releaseProcessedAt: null,
+          releaseLastError: null,
+          statusObservedAt: data.statusObservedAt,
+          statusEventId: data.statusEventId,
+        }
+      );
+
+      await tx
+        .update(planAccount)
+        .set({
+          next_payment_date: sql`clock_timestamp()`,
+          cancellation_date: sql`clock_timestamp()`,
+        })
+        .where(
+          and(
+            eq(planAccount.account_id, data.accountId),
+            eq(planAccount.account_payment_id, data.accountPaymentId),
+            or(
+              isNull(planAccount.next_payment_date),
+              gt(planAccount.next_payment_date, sql`clock_timestamp()`)
+            )
+          )
+        );
+
+      await tx
+        .update(planCrossSellAccount)
+        .set({
+          deleted_at: sql`clock_timestamp()`,
+          updated_at: sql`clock_timestamp()`,
+        })
+        .where(
+          and(
+            eq(planCrossSellAccount.account_id, data.accountId),
+            eq(planCrossSellAccount.account_payment_id, data.accountPaymentId),
+            isNull(planCrossSellAccount.deleted_at)
+          )
+        );
+
+      return {
+        applied: true,
+        requiresDenyFence: false,
+        ignoredAsStale: false,
+      };
+    });
   };
 
   findPlanAccountByAccountId = async (
@@ -166,7 +514,11 @@ export class PlanReleaseRepository {
         last_payment_date: true,
         cancellation_date: true,
       },
-      orderBy: (planAccount, { desc }) => [desc(planAccount.updated_at)],
+      orderBy: (planAccount, { desc }) => [
+        desc(planAccount.updated_at),
+        desc(planAccount.created_at),
+        desc(planAccount.plan_account_id),
+      ],
     });
 
     return planAcc || null;
@@ -186,7 +538,11 @@ export class PlanReleaseRepository {
         plan_id: true,
         next_payment_date: true,
       },
-      orderBy: (planAccount, { desc }) => [desc(planAccount.updated_at)],
+      orderBy: (planAccount, { desc }) => [
+        desc(planAccount.updated_at),
+        desc(planAccount.created_at),
+        desc(planAccount.plan_account_id),
+      ],
     });
 
     return planAcc || null;
@@ -211,7 +567,11 @@ export class PlanReleaseRepository {
         next_payment_date: true,
         billing_period_id: true,
       },
-      orderBy: (planAccount, { desc }) => [desc(planAccount.updated_at)],
+      orderBy: (planAccount, { desc }) => [
+        desc(planAccount.updated_at),
+        desc(planAccount.created_at),
+        desc(planAccount.plan_account_id),
+      ],
     });
 
     return planAcc || null;
@@ -368,14 +728,83 @@ export class PlanReleaseRepository {
     releaseStatus?: string | null;
     releaseProcessedAt?: string | null;
     releaseLastError?: string | null;
-  }): Promise<void> => {
-    await this.dbRw.transaction(async (tx) => {
-      const currentPayment = await tx.query.accountPayment.findFirst({
-        where: eq(accountPayment.account_payment_id, data.accountPaymentId),
-        columns: {
-          release_status: true,
-        },
+    allowFinancialReversal?: boolean;
+    statusObservedAt?: string;
+    statusEventId?: string;
+  }): Promise<boolean> => {
+    return this.dbRw.transaction(async (tx) => {
+      const currentPayments = await tx
+        .select({
+          release_status: accountPayment.release_status,
+          payment_status_id: accountPayment.payment_status_id,
+          payment_status_observed_at: accountPayment.payment_status_observed_at,
+          payment_status_event_id: accountPayment.payment_status_event_id,
+        })
+        .from(accountPayment)
+        .where(eq(accountPayment.account_payment_id, data.accountPaymentId))
+        .limit(1)
+        .for('update');
+      const currentPayment = currentPayments[0];
+
+      if (!currentPayment) {
+        throw new Error(`Pagamento não encontrado: ${data.accountPaymentId}`);
+      }
+
+      const isNewerObservation = this.isIncomingStatusObservationNewer({
+        currentObservedAt: currentPayment.payment_status_observed_at,
+        currentEventId: currentPayment.payment_status_event_id,
+        currentStatusId: currentPayment.payment_status_id,
+        incomingObservedAt: data.statusObservedAt,
+        incomingEventId: data.statusEventId,
+        incomingStatusId: data.paymentStatusId,
       });
+      if (!isNewerObservation) {
+        return false;
+      }
+
+      if (
+        this.isRevokingPaymentStatus(currentPayment.payment_status_id) &&
+        this.isSuccessfulPaymentStatus(data.paymentStatusId) &&
+        data.allowFinancialReversal !== true
+      ) {
+        // A delayed local credit-card response cannot overwrite a newer
+        // refund/chargeback. Only the authoritative webhook reversal path may
+        // materialize the payment again.
+        return false;
+      }
+
+      if (data.allowFinancialReversal === true && data.shouldReleasePlan) {
+        const currentPlanAccounts = await tx
+          .select({ account_payment_id: planAccount.account_payment_id })
+          .from(planAccount)
+          .where(eq(planAccount.account_id, data.accountId))
+          .orderBy(
+            sql`${planAccount.updated_at} DESC NULLS LAST`,
+            sql`${planAccount.created_at} DESC NULLS LAST`,
+            sql`${planAccount.plan_account_id} DESC`
+          )
+          .limit(1)
+          .for('update');
+        if (
+          currentPlanAccounts[0]?.account_payment_id !== data.accountPaymentId
+        ) {
+          await this.updateAccountPaymentStatus(
+            tx,
+            data.accountPaymentId,
+            data.paymentStatusId,
+            data.paymentDate,
+            data.pixTransaction,
+            {
+              releaseStatus: data.releaseStatus,
+              releaseProcessedAt: data.releaseProcessedAt,
+              releaseLastError: data.releaseLastError,
+              statusObservedAt: data.statusObservedAt,
+              statusEventId: data.statusEventId,
+            }
+          );
+          return false;
+        }
+      }
 
       const isReleaseAlreadyProcessed =
         currentPayment?.release_status ===
@@ -391,6 +820,8 @@ export class PlanReleaseRepository {
           releaseStatus: data.releaseStatus,
           releaseProcessedAt: data.releaseProcessedAt,
           releaseLastError: data.releaseLastError,
+          statusObservedAt: data.statusObservedAt,
+          statusEventId: data.statusEventId,
         }
       );
 
@@ -420,7 +851,7 @@ export class PlanReleaseRepository {
           });
         }
 
-        return;
+        return true;
       }
 
       if (data.isAddonOnly && !isReleaseAlreadyProcessed) {
@@ -429,6 +860,8 @@ export class PlanReleaseRepository {
           accountPaymentId: data.accountPaymentId,
         });
       }
+
+      return true;
     });
   };
 
@@ -480,7 +913,10 @@ export class PlanReleaseRepository {
     accountPaymentId: string
   ): Promise<Array<{ plan_cross_sell_id: string }>> => {
     const crossSells = await tx.query.accountPaymentCrossSell.findMany({
-      where: eq(accountPaymentCrossSell.account_payment_id, accountPaymentId),
+      where: and(
+        eq(accountPaymentCrossSell.account_payment_id, accountPaymentId),
+        gt(accountPaymentCrossSell.quantity, 0)
+      ),
       columns: {
         plan_cross_sell_id: true,
       },
@@ -523,22 +959,18 @@ export class PlanReleaseRepository {
     }
 
     const now = new Date().toISOString();
-    const updatePromises = accounts.map((existing) =>
-      tx
-        .update(planCrossSellAccount)
-        .set({
-          deleted_at: now,
-          updated_at: now,
-        })
-        .where(
-          eq(
-            planCrossSellAccount.plan_cross_sell_account_id,
-            existing.plan_cross_sell_account_id
-          )
+    await tx
+      .update(planCrossSellAccount)
+      .set({
+        deleted_at: now,
+        updated_at: now,
+      })
+      .where(
+        inArray(
+          planCrossSellAccount.plan_cross_sell_account_id,
+          accounts.map((existing) => existing.plan_cross_sell_account_id)
         )
-    );
-
-    await Promise.all(updatePromises);
+      );
   };
 
   private readonly createPlanCrossSellAccounts = async (
@@ -546,6 +978,7 @@ export class PlanReleaseRepository {
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
     accountId: string,
+    accountPaymentId: string,
     paymentCrossSells: Array<{ plan_cross_sell_id: string }>
   ): Promise<void> => {
     if (paymentCrossSells.length === 0) {
@@ -557,6 +990,7 @@ export class PlanReleaseRepository {
       plan_cross_sell_account_id: randomUUID(),
       plan_cross_sell_id: crossSell.plan_cross_sell_id,
       account_id: accountId,
+      account_payment_id: accountPaymentId,
       created_at: now,
       updated_at: now,
       cancellation_date: null,
@@ -589,6 +1023,7 @@ export class PlanReleaseRepository {
     await this.createPlanCrossSellAccounts(
       tx,
       data.accountId,
+      data.accountPaymentId,
       paymentCrossSells
     );
   };
@@ -614,6 +1049,7 @@ export class PlanReleaseRepository {
     await this.createPlanCrossSellAccounts(
       tx,
       data.accountId,
+      data.accountPaymentId,
       paymentCrossSells
     );
   };

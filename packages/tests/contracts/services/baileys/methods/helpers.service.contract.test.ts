@@ -60,12 +60,14 @@ jest.mock('@core/services/typingSimulationRuntime.service', () => ({
   TypingSimulationRuntimeService: class {},
 }));
 
-import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { BaileysHelpersService } from '@core/services/baileys/methods/helpers.service';
+import { resolveBaileysSendMessageTimeoutMs } from '@core/services/baileys/util/providerSendTimeout';
 
 describe('BaileysHelpersService', () => {
   const originalWorkerId = process.env.WORKER_ID;
   const originalAccountId = process.env.ACCOUNT_ID;
+  const originalSendMessageTimeoutMs =
+    process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS;
 
   const makeService = () => {
     const socket = {
@@ -92,6 +94,9 @@ describe('BaileysHelpersService', () => {
     const connection = {
       getSocket: jest.fn(() => socket),
       connected: true,
+      reportOutboundSendSuccess: jest.fn(),
+      reportOutboundSendFailure: jest.fn(() => false),
+      ensureOutboundSendRecovery: jest.fn(),
     };
 
     const deliveryConfirmation = {
@@ -124,6 +129,12 @@ describe('BaileysHelpersService', () => {
     jest.clearAllMocks();
     process.env.WORKER_ID = 'worker-1';
     process.env.ACCOUNT_ID = 'account-1';
+    if (originalSendMessageTimeoutMs === undefined) {
+      delete process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS;
+    } else {
+      process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS =
+        originalSendMessageTimeoutMs;
+    }
 
     mockOnlyDigits.mockImplementation((value: string) =>
       value.replace(/\D/g, '')
@@ -156,6 +167,13 @@ describe('BaileysHelpersService', () => {
     } else {
       process.env.ACCOUNT_ID = originalAccountId;
     }
+
+    if (originalSendMessageTimeoutMs === undefined) {
+      delete process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS;
+    } else {
+      process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS =
+        originalSendMessageTimeoutMs;
+    }
   });
 
   it('validates socket access and readiness guards', async () => {
@@ -175,6 +193,20 @@ describe('BaileysHelpersService', () => {
     expect(() => sut.assertSocketReadyForSend(socket)).toThrow(
       'Baileys connection unavailable: auth state is not ready yet'
     );
+  });
+
+  it('uses the bounded production-safe provider deadline without requiring an env override', () => {
+    delete process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS;
+    expect(resolveBaileysSendMessageTimeoutMs()).toBe(45_000);
+
+    process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS = 'invalid';
+    expect(resolveBaileysSendMessageTimeoutMs()).toBe(45_000);
+
+    process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS = '100';
+    expect(resolveBaileysSendMessageTimeoutMs()).toBe(5_000);
+
+    process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS = '999999';
+    expect(resolveBaileysSendMessageTimeoutMs()).toBe(120_000);
   });
 
   it('sends text message with jid resolution and delivery confirmation', async () => {
@@ -199,7 +231,12 @@ describe('BaileysHelpersService', () => {
       {
         text: 'hello',
       },
-      50
+      50,
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        checkpoint: expect.any(Function),
+        sleep: expect.any(Function),
+      })
     );
     expect(typingSimulationRuntime.getConfig).toHaveBeenCalledWith(
       'worker-1',
@@ -214,6 +251,543 @@ describe('BaileysHelpersService', () => {
       'message-1',
       20_000
     );
+  });
+
+  it('crosses the idempotency boundary only after preflight and immediately before send', async () => {
+    const { service, socket } = makeService();
+    const order: string[] = [];
+    jest
+      .spyOn(service as any, 'simulateHumanTyping')
+      .mockImplementation(async () => {
+        order.push('typing');
+      });
+    socket.sendMessage.mockImplementationOnce(async () => {
+      order.push('provider');
+      return { key: { id: 'message-boundary' } };
+    });
+    const beforeProviderInvoke = jest.fn(async () => {
+      order.push('provider_invoked');
+    });
+
+    await service.send(
+      '55119999@c.us',
+      { text: 'hello' },
+      undefined,
+      beforeProviderInvoke
+    );
+
+    expect(order).toEqual(['typing', 'provider_invoked', 'provider']);
+    expect(beforeProviderInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not invoke the provider when the boundary fails', async () => {
+    const { service, socket } = makeService();
+    const boundaryError = new Error('redis_transition_uncertain');
+
+    await expect(
+      service.send('55119999@c.us', { text: 'hello' }, undefined, async () => {
+        throw boundaryError;
+      })
+    ).rejects.toBe(boundaryError);
+
+    expect(socket.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('rechecks a resolved boundary synchronously and reverses a microtask revocation before the SDK starts', async () => {
+    const { service, socket } = makeService();
+    const boundaryError = new Error('dispatch_revoked_after_boundary');
+    let active = true;
+    const onStartRejected = jest.fn(async () => undefined);
+    const boundary = Object.assign(
+      jest.fn(() => {
+        const alreadyResolved = Promise.resolve();
+        queueMicrotask(() => {
+          active = false;
+        });
+        return alreadyResolved;
+      }),
+      {
+        assertActive: () => {
+          if (!active) {
+            throw boundaryError;
+          }
+        },
+        onStartRejected,
+      }
+    );
+
+    await expect(
+      service.send('55119999@c.us', { text: 'hello' }, undefined, boundary)
+    ).rejects.toBe(boundaryError);
+
+    expect(boundary).toHaveBeenCalledTimes(1);
+    expect(onStartRejected).toHaveBeenCalledWith(boundaryError);
+    expect(socket.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects excess provider concurrency before crossing the durable boundary or starting another SDK call', async () => {
+    const { service, socket, connection } = makeService();
+    const resolvers: Array<(result: { key: { id: string } }) => void> = [];
+    socket.sendMessage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        })
+    );
+    const admittedBoundaries = Array.from({ length: 4 }, () =>
+      jest.fn(async () => undefined)
+    );
+    const admitted = admittedBoundaries.map((boundary) =>
+      service.send(
+        '55119999@c.us',
+        { image: Buffer.from('image') },
+        undefined,
+        boundary
+      )
+    );
+
+    while (socket.sendMessage.mock.calls.length < 4) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+
+    const rejectedBoundary = jest.fn(async () => undefined);
+    await expect(
+      service.send(
+        '55119999@c.us',
+        { image: Buffer.from('excess') },
+        undefined,
+        rejectedBoundary
+      )
+    ).rejects.toMatchObject({
+      code: 'OUTBOUND_PROVIDER_CALL_IN_FLIGHT',
+    });
+
+    expect(rejectedBoundary).not.toHaveBeenCalled();
+    expect(socket.sendMessage).toHaveBeenCalledTimes(4);
+    expect(connection.ensureOutboundSendRecovery).not.toHaveBeenCalled();
+
+    resolvers.forEach((resolve, index) =>
+      resolve({ key: { id: `bounded-${index}` } })
+    );
+    await expect(Promise.all(admitted)).resolves.toHaveLength(4);
+  });
+
+  it('caps long typing, clears presence, and leaves no simulation running after send', async () => {
+    const previousTimeout = process.env.TYPING_SIMULATION_MAX_DELAY_MS;
+    process.env.TYPING_SIMULATION_MAX_DELAY_MS = '1000';
+    jest.useFakeTimers();
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const { service, socket } = makeService();
+      const send = service.send('55119999@c.us', {
+        text: 'texto muito longo '.repeat(2_000),
+      });
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      await expect(send).resolves.toEqual({ key: { id: 'message-1' } });
+      expect(socket.sendMessage).toHaveBeenCalledTimes(1);
+      expect(socket.sendPresenceUpdate).toHaveBeenCalledWith(
+        'composing',
+        '55119999@c.us'
+      );
+      expect(socket.sendPresenceUpdate).toHaveBeenLastCalledWith(
+        'paused',
+        '55119999@c.us'
+      );
+      expect(console.warn).toHaveBeenCalledWith(
+        '[BaileysTypingSimulation] deadline exceeded',
+        expect.objectContaining({ timeout_ms: 1_000 })
+      );
+
+      const presenceCallsAfterSend =
+        socket.sendPresenceUpdate.mock.calls.length;
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(socket.sendPresenceUpdate).toHaveBeenCalledTimes(
+        presenceCallsAfterSend
+      );
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.TYPING_SIMULATION_MAX_DELAY_MS;
+      } else {
+        process.env.TYPING_SIMULATION_MAX_DELAY_MS = previousTimeout;
+      }
+      jest.useRealTimers();
+    }
+  });
+
+  it('honors the hard typing cap when runtime configuration never settles', async () => {
+    const previousTimeout = process.env.TYPING_SIMULATION_MAX_DELAY_MS;
+    process.env.TYPING_SIMULATION_MAX_DELAY_MS = '1000';
+    jest.useFakeTimers();
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const { service, socket, typingSimulationRuntime } = makeService();
+      typingSimulationRuntime.getConfig.mockReturnValueOnce(
+        new Promise(() => undefined)
+      );
+
+      const send = service.send('55119999@c.us', { text: 'hello' });
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      await expect(send).resolves.toEqual({ key: { id: 'message-1' } });
+      await expect(
+        service.send('55119999@c.us', { text: 'second' })
+      ).resolves.toEqual({ key: { id: 'message-1' } });
+      await expect(
+        service.send('55119999@c.us', { text: 'third' })
+      ).resolves.toEqual({ key: { id: 'message-1' } });
+      expect(socket.sendPresenceUpdate).not.toHaveBeenCalled();
+      expect(socket.sendMessage).toHaveBeenCalledTimes(3);
+      expect(typingSimulationRuntime.getConfig).toHaveBeenCalledTimes(1);
+      expect(console.warn).toHaveBeenCalledWith(
+        '[BaileysTypingSimulation] deadline exceeded',
+        expect.objectContaining({ timeout_ms: 1_000 })
+      );
+      expect(console.warn).toHaveBeenCalledWith(
+        '[BaileysTypingSimulation] skipped while previous operation is still pending'
+      );
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.TYPING_SIMULATION_MAX_DELAY_MS;
+      } else {
+        process.env.TYPING_SIMULATION_MAX_DELAY_MS = previousTimeout;
+      }
+      jest.useRealTimers();
+    }
+  });
+
+  it('honors the hard typing cap when the presence SDK call never settles', async () => {
+    const previousTimeout = process.env.TYPING_SIMULATION_MAX_DELAY_MS;
+    process.env.TYPING_SIMULATION_MAX_DELAY_MS = '1000';
+    jest.useFakeTimers();
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const { service, socket } = makeService();
+      socket.sendPresenceUpdate.mockImplementationOnce(
+        () => new Promise(() => undefined)
+      );
+
+      const send = service.send('55119999@c.us', {
+        text: 'texto muito longo '.repeat(2_000),
+      });
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      await expect(send).resolves.toEqual({ key: { id: 'message-1' } });
+      expect(socket.sendPresenceUpdate).toHaveBeenCalledTimes(1);
+      expect(socket.sendMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.TYPING_SIMULATION_MAX_DELAY_MS;
+      } else {
+        process.env.TYPING_SIMULATION_MAX_DELAY_MS = previousTimeout;
+      }
+      jest.useRealTimers();
+    }
+  });
+
+  it('cancels typing cleanly and never invokes the provider after parent revocation', async () => {
+    const previousTimeout = process.env.TYPING_SIMULATION_MAX_DELAY_MS;
+    process.env.TYPING_SIMULATION_MAX_DELAY_MS = '60000';
+    jest.useFakeTimers();
+    const { service, socket } = makeService();
+    const revoked = new Error('parent dispatch revoked');
+    let active = true;
+    const boundary = Object.assign(
+      jest.fn(async () => undefined),
+      {
+        assertActive: jest.fn(() => {
+          if (!active) {
+            throw revoked;
+          }
+        }),
+      }
+    );
+
+    try {
+      const send = service.send(
+        '55119999@c.us',
+        { text: 'texto muito longo '.repeat(2_000) },
+        undefined,
+        boundary
+      );
+      const rejection = expect(send).rejects.toBe(revoked);
+      await jest.advanceTimersByTimeAsync(500);
+      expect(socket.sendPresenceUpdate).toHaveBeenCalledWith(
+        'composing',
+        '55119999@c.us'
+      );
+
+      active = false;
+      await jest.advanceTimersByTimeAsync(50);
+
+      await rejection;
+      expect(socket.sendPresenceUpdate).toHaveBeenLastCalledWith(
+        'paused',
+        '55119999@c.us'
+      );
+      expect(boundary).not.toHaveBeenCalled();
+      expect(socket.sendMessage).not.toHaveBeenCalled();
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.TYPING_SIMULATION_MAX_DELAY_MS;
+      } else {
+        process.env.TYPING_SIMULATION_MAX_DELAY_MS = previousTimeout;
+      }
+      jest.useRealTimers();
+    }
+  });
+
+  it('fails a stuck provider send at the application deadline and observes a late rejection', async () => {
+    jest.useFakeTimers();
+    process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS = '5000';
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    let rejectProvider: (reason: Error) => void = () => undefined;
+
+    try {
+      const { service, socket, deliveryConfirmation } = makeService();
+      socket.sendMessage.mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectProvider = reject;
+          })
+      );
+
+      const sendPromise = service.send('55119999@c.us', {
+        edit: { id: 'x' },
+      } as never);
+      const rejection = expect(sendPromise).rejects.toMatchObject({
+        name: 'BaileysSendMessageTimeoutError',
+        code: 'BAILEYS_SEND_MESSAGE_TIMEOUT',
+        message: 'Baileys provider send timed out after 5000ms',
+      });
+
+      await jest.advanceTimersByTimeAsync(5000);
+      await rejection;
+
+      expect(deliveryConfirmation.waitForOutcome).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[BaileysSend] provider_send_timeout',
+        expect.objectContaining({
+          operation: 'send_message',
+          timeout_ms: 5000,
+        })
+      );
+
+      rejectProvider(new Error('late provider failure'));
+      await Promise.resolve();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[BaileysSend] provider_send_rejected_after_application_timeout',
+        expect.objectContaining({
+          operation: 'send_message',
+          timeout_ms: 5000,
+          error: {
+            name: 'Error',
+            message: 'late provider failure',
+          },
+        })
+      );
+    } finally {
+      jest.useRealTimers();
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+      delete process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS;
+    }
+  });
+
+  it('keeps healthy provider calls concurrent', async () => {
+    const { service, socket } = makeService();
+    const resolvers: Array<(value: { key: { id: string } }) => void> = [];
+    socket.sendMessage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        })
+    );
+    const boundary = jest.fn(async () => undefined);
+
+    const first = service.send(
+      '55119999@c.us',
+      { edit: { id: 'first' } } as never,
+      undefined,
+      boundary
+    );
+    const second = service.send(
+      '55119999@c.us',
+      { edit: { id: 'second' } } as never,
+      undefined,
+      boundary
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(socket.sendMessage).toHaveBeenCalledTimes(2);
+    expect(boundary).toHaveBeenCalledTimes(2);
+
+    resolvers[0]?.({ key: { id: 'provider-first' } });
+    resolvers[1]?.({ key: { id: 'provider-second' } });
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { key: { id: 'provider-first' } },
+      { key: { id: 'provider-second' } },
+    ]);
+  });
+
+  it('fences a timed-out socket before the boundary, ignores late settlement, and accepts a recreated socket', async () => {
+    jest.useFakeTimers();
+    process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS = '5000';
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation();
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+    try {
+      const { service, socket, connection } = makeService();
+      let resolveLate!: (value: { key: { id: string } }) => void;
+      socket.sendMessage.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveLate = resolve;
+          })
+      );
+      const boundary = jest.fn(async () => undefined);
+      const first = service.send(
+        '55119999@c.us',
+        { edit: { id: 'timeout' } } as never,
+        undefined,
+        boundary
+      );
+      const firstRejection = expect(first).rejects.toMatchObject({
+        code: 'BAILEYS_SEND_MESSAGE_TIMEOUT',
+      });
+
+      await jest.advanceTimersByTimeAsync(5000);
+      await firstRejection;
+
+      await expect(
+        service.send(
+          '55119999@c.us',
+          { edit: { id: 'fenced' } } as never,
+          undefined,
+          boundary
+        )
+      ).rejects.toMatchObject({
+        code: 'OUTBOUND_PROVIDER_CALL_IN_FLIGHT',
+        retryable: true,
+      });
+      expect(socket.sendMessage).toHaveBeenCalledTimes(1);
+      expect(boundary).toHaveBeenCalledTimes(1);
+      expect(connection.ensureOutboundSendRecovery).toHaveBeenCalledWith(
+        socket
+      );
+
+      resolveLate({ key: { id: 'provider-late' } });
+      await Promise.resolve();
+      await Promise.resolve();
+      await expect(
+        service.send(
+          '55119999@c.us',
+          { edit: { id: 'still-fenced' } } as never,
+          undefined,
+          boundary
+        )
+      ).rejects.toMatchObject({
+        code: 'OUTBOUND_PROVIDER_CALL_IN_FLIGHT',
+      });
+      expect(socket.sendMessage).toHaveBeenCalledTimes(1);
+      expect(connection.ensureOutboundSendRecovery).toHaveBeenCalledTimes(2);
+
+      const freshSocket = {
+        ...socket,
+        sendMessage: jest.fn<
+          Promise<{ key: { id: string } }>,
+          [string, unknown, unknown?]
+        >(async () => ({
+          key: { id: 'provider-fresh' },
+        })),
+      };
+      connection.getSocket.mockReturnValue(freshSocket);
+      await expect(
+        service.send(
+          '55119999@c.us',
+          { edit: { id: 'fresh' } } as never,
+          undefined,
+          boundary
+        )
+      ).resolves.toEqual({ key: { id: 'provider-fresh' } });
+      expect(freshSocket.sendMessage).toHaveBeenCalledTimes(1);
+      expect(boundary).toHaveBeenCalledTimes(2);
+      expect(connection.reportOutboundSendFailure).toHaveBeenCalledWith(
+        socket,
+        expect.objectContaining({ code: 'BAILEYS_SEND_MESSAGE_TIMEOUT' }),
+        { timedOut: true }
+      );
+      expect(connection.reportOutboundSendSuccess).toHaveBeenCalledWith(
+        freshSocket
+      );
+    } finally {
+      jest.useRealTimers();
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+      delete process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS;
+    }
+  });
+
+  it('clears the provider deadline timer after a successful send', async () => {
+    jest.useFakeTimers();
+    process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS = '5000';
+
+    try {
+      const { service } = makeService();
+
+      await expect(
+        service.send('55119999@c.us', { edit: { id: 'x' } } as never)
+      ).resolves.toEqual({ key: { id: 'message-1' } });
+
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      delete process.env.BAILEYS_SEND_MESSAGE_TIMEOUT_MS;
+    }
+  });
+
+  it('keeps view-once audio generation before the provider boundary', async () => {
+    const { service, socket } = makeService();
+    const order: string[] = [];
+    mockGenerateWAMessageContent.mockImplementationOnce(async () => {
+      order.push('media_upload');
+      return {
+        audioMessage: { id: 'audio-message' },
+        messageContextInfo: { ctx: true },
+      };
+    });
+    mockGenerateWAMessageFromContent.mockImplementationOnce(() => {
+      order.push('message_build');
+      return {
+        key: { id: 'vo-msg-boundary' },
+        message: { content: true },
+      };
+    });
+    socket.relayMessage.mockImplementationOnce(async () => {
+      order.push('provider');
+    });
+
+    await service.send(
+      'jid@c.us',
+      { audio: { url: 'x' }, viewOnce: true } as never,
+      undefined,
+      async () => {
+        order.push('provider_invoked');
+      }
+    );
+
+    expect(order).toEqual([
+      'media_upload',
+      'message_build',
+      'provider_invoked',
+      'provider',
+    ]);
   });
 
   it('does not simulate typing when channel setting is disabled', async () => {
@@ -236,37 +810,84 @@ describe('BaileysHelpersService', () => {
     expect(simulateTypingSpy).not.toHaveBeenCalled();
   });
 
-  it('handles send failures for unresolved number, missing id and failed/timeout confirmation', async () => {
+  it('fails pre-acceptance errors but preserves an accepted provider result when confirmation fails or times out', async () => {
+    const { service, socket, connection, deliveryConfirmation } = makeService();
+    const warnSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+
+    try {
+      mockBuildCandidates.mockReturnValueOnce(['5511000']);
+      socket.onWhatsApp.mockResolvedValueOnce([{ exists: false, jid: null }]);
+
+      await expect(service.send('5511000', { text: 'x' })).rejects.toThrow(
+        'Number not found on WhatsApp: 5511000'
+      );
+
+      socket.sendMessage.mockResolvedValueOnce({ key: {} });
+      await expect(
+        service.send('55119999@c.us', { text: 'x' })
+      ).rejects.toThrow('Failed to send message: missing key.id');
+      expect(connection.reportOutboundSendFailure).toHaveBeenCalledWith(
+        socket,
+        expect.objectContaining({
+          code: 'BAILEYS_PROVIDER_PROTOCOL_FAILURE',
+        })
+      );
+
+      socket.sendMessage.mockResolvedValue({ key: { id: 'message-2' } });
+      deliveryConfirmation.waitForOutcome.mockResolvedValueOnce('failed');
+
+      await expect(
+        service.send('55119999@c.us', { text: 'x' })
+      ).resolves.toEqual({ key: { id: 'message-2' } });
+
+      deliveryConfirmation.waitForOutcome.mockResolvedValueOnce('timeout');
+
+      await expect(
+        service.send('55119999@c.us', { text: 'x' })
+      ).resolves.toEqual({ key: { id: 'message-2' } });
+      await Promise.resolve();
+
+      expect(socket.sendMessage).toHaveBeenCalledTimes(3);
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[BaileysSend] delivery_confirmation_unconfirmed_after_provider_accept',
+        {
+          message_id_hash: expect.stringMatching(/^sha256:/),
+          outcome: 'failed',
+        }
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[BaileysSend] delivery_confirmation_unconfirmed_after_provider_accept',
+        {
+          message_id_hash: expect.stringMatching(/^sha256:/),
+          outcome: 'timeout',
+        }
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('returns the provider message id without waiting for a stuck delivery observer', async () => {
     const { service, socket, deliveryConfirmation } = makeService();
-
-    mockBuildCandidates.mockReturnValueOnce(['5511000']);
-    socket.onWhatsApp.mockResolvedValueOnce([{ exists: false, jid: null }]);
-
-    await expect(service.send('5511000', { text: 'x' })).rejects.toThrow(
-      'Number not found on WhatsApp: 5511000'
+    deliveryConfirmation.waitForOutcome.mockReturnValueOnce(
+      new Promise(() => undefined)
     );
 
-    socket.sendMessage.mockResolvedValueOnce({ key: {} });
-    await expect(service.send('55119999@c.us', { text: 'x' })).rejects.toThrow(
-      'Failed to send message to 55119999@c.us: missing key.id'
+    await expect(
+      service.send('55119999@c.us', { text: 'accepted once' })
+    ).resolves.toEqual({ key: { id: 'message-1' } });
+
+    expect(socket.sendMessage).toHaveBeenCalledTimes(1);
+    expect(deliveryConfirmation.waitForOutcome).toHaveBeenCalledWith(
+      'message-1',
+      20_000
     );
-
-    socket.sendMessage.mockResolvedValue({ key: { id: 'message-2' } });
-    deliveryConfirmation.waitForOutcome.mockResolvedValueOnce('failed');
-
-    await expect(
-      service.send('55119999@c.us', { text: 'x' })
-    ).rejects.toBeInstanceOf(MessageDeliveryConfirmationFailedError);
-
-    deliveryConfirmation.waitForOutcome.mockResolvedValueOnce('timeout');
-
-    await expect(
-      service.send('55119999@c.us', { text: 'x' })
-    ).rejects.toBeInstanceOf(MessageDeliveryConfirmationFailedError);
   });
 
   it('bypasses delivery confirmation for edit messages and validates sendOnce branches', async () => {
-    const { service, socket, deliveryConfirmation } = makeService();
+    const { service, socket, connection, deliveryConfirmation } = makeService();
     const sut = service as any;
 
     const sendAudioViewOnceMessageSpy = jest
@@ -309,6 +930,20 @@ describe('BaileysHelpersService', () => {
 
     expect(deliveryConfirmation.waitForOutcome).not.toHaveBeenCalled();
     expect(sendAudioViewOnceMessageSpy).toHaveBeenCalledTimes(2);
+    expect(connection.reportOutboundSendFailure).toHaveBeenNthCalledWith(
+      1,
+      socket,
+      expect.objectContaining({
+        code: 'BAILEYS_PROVIDER_PROTOCOL_FAILURE',
+      })
+    );
+    expect(connection.reportOutboundSendFailure).toHaveBeenNthCalledWith(
+      2,
+      socket,
+      expect.objectContaining({
+        code: 'BAILEYS_PROVIDER_PROTOCOL_FAILURE',
+      })
+    );
   });
 
   it('builds and relays view-once audio payload and handles payload errors', async () => {
@@ -538,5 +1173,96 @@ describe('BaileysHelpersService', () => {
       throw new Error('socket fail');
     });
     expect(service.addOwnJidToStatusList(['x@c.us'])).toEqual(['x@c.us']);
+  });
+
+  it('runs profile preflight before the boundary and blocks mutation on boundary failure', async () => {
+    const { service, socket, connection } = makeService();
+    const order: string[] = [];
+    socket.updateProfilePicture.mockImplementationOnce(async () => {
+      order.push('provider');
+    });
+
+    await service.updateProfilePicture('https://image', async () => {
+      order.push('provider_invoked');
+    });
+    expect(order).toEqual(['provider_invoked', 'provider']);
+
+    const boundary = jest.fn(async () => undefined);
+    connection.getSocket.mockReturnValueOnce(undefined as never);
+    await expect(service.updateProfileName('Name', boundary)).rejects.toThrow(
+      'Socket not connected'
+    );
+    expect(boundary).not.toHaveBeenCalled();
+
+    const boundaryError = new Error('redis_transition_uncertain');
+    await expect(
+      service.updateProfileStatus('Status', async () => {
+        throw boundaryError;
+      })
+    ).rejects.toBe(boundaryError);
+    expect(socket.updateProfileStatus).not.toHaveBeenCalled();
+  });
+
+  it('fences a timed-out profile mutation and never invokes it again after late completion', async () => {
+    const previousTimeout = process.env.WHATSAPP_PROVIDER_AUXILIARY_TIMEOUT_MS;
+    process.env.WHATSAPP_PROVIDER_AUXILIARY_TIMEOUT_MS = '1000';
+    jest.useFakeTimers();
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      const { service, socket, connection } = makeService();
+      let resolveLate!: (value: undefined) => void;
+      socket.updateProfileStatus.mockImplementationOnce(
+        () =>
+          new Promise<undefined>((resolve) => {
+            resolveLate = resolve;
+          })
+      );
+      const boundary = jest.fn(async () => undefined);
+      const first = service.updateProfileStatus('stalled', boundary);
+      const rejection = expect(first).rejects.toMatchObject({
+        code: 'WHATSAPP_PROVIDER_AUXILIARY_TIMEOUT',
+        operation: 'update_profile_status',
+      });
+
+      await jest.advanceTimersByTimeAsync(1_000);
+      await rejection;
+
+      expect(boundary).toHaveBeenCalledTimes(1);
+      expect(socket.updateProfileStatus).toHaveBeenCalledTimes(1);
+      expect(connection.reportOutboundSendFailure).toHaveBeenCalledWith(
+        socket,
+        expect.objectContaining({
+          code: 'WHATSAPP_PROVIDER_AUXILIARY_TIMEOUT',
+        }),
+        { timedOut: true }
+      );
+
+      await expect(
+        service.updateProfileStatus('must-not-replay', boundary)
+      ).rejects.toMatchObject({ code: 'OUTBOUND_PROVIDER_CALL_IN_FLIGHT' });
+      expect(socket.updateProfileStatus).toHaveBeenCalledTimes(1);
+      expect(boundary).toHaveBeenCalledTimes(1);
+
+      resolveLate(undefined);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await expect(
+        service.updateProfileStatus('still-fenced', boundary)
+      ).rejects.toMatchObject({ code: 'OUTBOUND_PROVIDER_CALL_IN_FLIGHT' });
+      expect(socket.updateProfileStatus).toHaveBeenCalledTimes(1);
+      expect(connection.ensureOutboundSendRecovery).toHaveBeenCalledWith(
+        socket
+      );
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.WHATSAPP_PROVIDER_AUXILIARY_TIMEOUT_MS;
+      } else {
+        process.env.WHATSAPP_PROVIDER_AUXILIARY_TIMEOUT_MS = previousTimeout;
+      }
+      jest.useRealTimers();
+    }
   });
 });

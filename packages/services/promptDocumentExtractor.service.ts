@@ -1,22 +1,19 @@
 import { injectable } from 'tsyringe';
 import mammoth from 'mammoth';
-import { PDFParse } from 'pdf-parse';
 import WordExtractor from 'word-extractor';
+import {
+  executeSafeOutboundHttp,
+  SAFE_OUTBOUND_HTTP_MAX_RESPONSE_BYTES,
+} from '@core/common/functions/safeOutboundHttp';
 
 export type TPromptDocumentExtractionSource =
-  | 'text'
-  | 'json'
-  | 'markdown'
-  | 'csv'
-  | 'pdf'
-  | 'docx'
-  | 'doc'
-  | 'fallback';
+  'text' | 'json' | 'markdown' | 'csv' | 'pdf' | 'docx' | 'doc' | 'fallback';
 
 export interface IPromptDocumentExtractionResult {
   text: string;
   contentType: string | null;
   source: TPromptDocumentExtractionSource;
+  buffer: Buffer;
 }
 
 @injectable()
@@ -43,24 +40,54 @@ export class PromptDocumentExtractorService {
     );
     const extension = this.getExtensionFromUrl(fileUrl);
     const buffer = await response.arrayBuffer();
+    const extraction = await this.extractTextFromBuffer(
+      buffer,
+      contentType,
+      extension,
+      {
+        allowLegacyOfficeFormats,
+      }
+    );
 
-    return this.extractTextFromBuffer(buffer, contentType, extension, {
-      allowLegacyOfficeFormats,
-    });
+    return {
+      ...extraction,
+      buffer: Buffer.from(buffer),
+    };
   }
 
   private async fetchWithTimeout(
     url: string,
     timeoutMs: number
   ): Promise<Response> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const appEnvironment = process.env.APP_ENVIRONMENT?.trim().toLowerCase();
+    const isProduction = appEnvironment
+      ? !['local', 'dev', 'development', 'test'].includes(appEnvironment)
+      : process.env.NODE_ENV?.trim().toLowerCase() === 'production';
+    const result = await executeSafeOutboundHttp({
+      url,
+      method: 'GET',
+      isProduction,
+      allowLocalhostHttp: !isProduction,
+      timeoutMs,
+      responseLimitBytes: SAFE_OUTBOUND_HTTP_MAX_RESPONSE_BYTES,
+    });
 
-    try {
-      return await fetch(url, { signal: controller.signal });
-    } finally {
-      clearTimeout(timeout);
+    if (result.kind === 'failure') {
+      throw new Error(`Falha segura ao baixar arquivo: ${result.code}`);
     }
+
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(result.headers)) {
+      headers.set(name, Array.isArray(value) ? value.join(', ') : value);
+    }
+
+    const responseBody = new Uint8Array(result.body.byteLength);
+    responseBody.set(result.body);
+
+    return new Response(responseBody.buffer, {
+      status: result.statusCode,
+      headers,
+    });
   }
 
   private async extractTextFromBuffer(
@@ -68,7 +95,7 @@ export class PromptDocumentExtractorService {
     contentType: string | null,
     extension: string | null,
     options: { allowLegacyOfficeFormats: boolean }
-  ): Promise<IPromptDocumentExtractionResult> {
+  ): Promise<Omit<IPromptDocumentExtractionResult, 'buffer'>> {
     if (this.isPlainTextContent(contentType, extension)) {
       return {
         text: this.decodeText(buffer),
@@ -259,6 +286,9 @@ export class PromptDocumentExtractorService {
   }
 
   private async extractTextFromPdf(buffer: ArrayBuffer): Promise<string> {
+    // pdf-parse loads a native canvas binding. Keep it lazy so API and worker
+    // processes that do not extract PDFs avoid the startup cost and GC handle.
+    const { PDFParse } = await import('pdf-parse');
     const parser = new PDFParse({ data: Buffer.from(buffer) });
     try {
       const result = await parser.getText();

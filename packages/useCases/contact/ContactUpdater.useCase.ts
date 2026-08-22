@@ -20,6 +20,65 @@ import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { ContactUpdaterRepository } from '@core/repositories/contact/ContactUpdater.repository';
+import { createHash } from 'node:crypto';
+import { v7 as uuidv7 } from 'uuid';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
+import { ContactPhoneValidationPolicyService } from '@core/services/contactPhoneValidationPolicy.service';
+import {
+  CONTACT_VALIDATION_ORIGINS,
+  type ContactValidationOrigin,
+} from '@core/common/types/ContactValidationOrigin';
+
+function stringifyContactUpdateMutationPayload(
+  payload: Record<string, unknown>
+): string {
+  const visited = new WeakSet<object>();
+
+  return JSON.stringify(payload, (_key, value: unknown) => {
+    if (typeof value !== 'object' || value === null) {
+      return value;
+    }
+
+    if (!Array.isArray(value) && 'value' in value && 'fields' in value) {
+      return (value as { value: unknown }).value;
+    }
+
+    if (visited.has(value)) {
+      return undefined;
+    }
+
+    visited.add(value);
+    return value;
+  });
+}
+
+export function buildContactUpdateWebhookMutationId(
+  contactId: string,
+  revision: string,
+  bodyToUpdate: UpdateContactRequest
+): string {
+  const {
+    photo: photoUpload,
+    image_url: rawImageUrl,
+    ...scalarUpdate
+  } = bodyToUpdate;
+  return createHash('sha256')
+    .update(
+      [
+        contactId,
+        revision,
+        stringifyContactUpdateMutationPayload({
+          ...scalarUpdate,
+          image_url: extractFieldValue(rawImageUrl as FieldValue),
+          // Multipart streams may be circular and must never be traversed.
+          // A unique token also separates uploads on the same row revision.
+          photo_upload_operation: photoUpload ? uuidv7() : null,
+        }),
+      ].join('\u001f')
+    )
+    .digest('hex');
+}
 
 @injectable()
 export class ContactUpdaterUseCase {
@@ -35,7 +94,20 @@ export class ContactUpdaterUseCase {
     @inject(ChatService)
     private readonly chatService: ChatService,
     @inject(CentrifugoService)
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    @inject(ContactUpdaterRepository)
+    private readonly contactUpdaterRepository: ContactUpdaterRepository,
+    @inject(ContactPhoneValidationPolicyService)
+    private readonly contactPhoneValidationPolicyService: Pick<
+      ContactPhoneValidationPolicyService,
+      'resolve'
+    > = {
+      resolve: async () => ({
+        channelIds: [],
+        isOfficialOnly: false,
+        areAllChannelsResolved: true,
+      }),
+    }
   ) {}
 
   private handlePhoneValidationError(
@@ -84,8 +156,23 @@ export class ContactUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     phone: string,
-    phoneDdi?: string | null
-  ): Promise<{ phone: string; phoneDdi: string | null; isValidated: boolean }> {
+    phoneDdi: string | null | undefined,
+    isOfficialOnly: boolean
+  ): Promise<{
+    phone: string;
+    phoneDdi: string | null;
+    isValidated: boolean;
+    validationOrigin: ContactValidationOrigin | null;
+  }> {
+    if (isOfficialOnly) {
+      return {
+        phone,
+        phoneDdi: phoneDdi ?? null,
+        isValidated: true,
+        validationOrigin: CONTACT_VALIDATION_ORIGINS.officialAssumed,
+      };
+    }
+
     try {
       const validationResult = await this.phoneValidationService.validatePhone(
         accountId,
@@ -100,7 +187,12 @@ export class ContactUpdaterUseCase {
       }
 
       if (!validationResult.phone) {
-        return { phone, phoneDdi: phoneDdi ?? null, isValidated: true };
+        return {
+          phone,
+          phoneDdi: phoneDdi ?? null,
+          isValidated: true,
+          validationOrigin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
+        };
       }
 
       const normalizedPhone = extractPhoneAndDdi(validationResult.phone);
@@ -109,14 +201,25 @@ export class ContactUpdaterUseCase {
           phone: normalizedPhone.phone,
           phoneDdi: normalizedPhone.phone_ddi,
           isValidated: true,
+          validationOrigin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
         };
       }
 
-      return { phone, phoneDdi: phoneDdi ?? null, isValidated: true };
+      return {
+        phone,
+        phoneDdi: phoneDdi ?? null,
+        isValidated: true,
+        validationOrigin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
+      };
     } catch (error) {
       const validationResult = this.handlePhoneValidationError(error);
       if (validationResult.shouldSkipValidation) {
-        return { phone, phoneDdi: phoneDdi ?? null, isValidated: false };
+        return {
+          phone,
+          phoneDdi: phoneDdi ?? null,
+          isValidated: false,
+          validationOrigin: null,
+        };
       }
 
       throw error;
@@ -128,9 +231,16 @@ export class ContactUpdaterUseCase {
     accountId: string,
     contactId: string,
     phone?: string | null,
-    phoneDdi?: string | null
+    phoneDdi?: string | null,
+    isOfficialOnly: boolean = false
   ): Promise<
-    { phone: string; phoneDdi: string | null; isValidated: boolean } | undefined
+    | {
+        phone: string;
+        phoneDdi: string | null;
+        isValidated: boolean;
+        validationOrigin: ContactValidationOrigin | null;
+      }
+    | undefined
   > {
     const normalizedPhone = this.normalizePhoneDigits(phone);
     const normalizedPhoneDdi = this.normalizePhoneDdi(phoneDdi);
@@ -190,13 +300,11 @@ export class ContactUpdaterUseCase {
         t,
         accountId,
         phoneToValidate,
-        normalizedPhoneDdi
+        normalizedPhoneDdi,
+        isOfficialOnly
       );
 
-      return {
-        ...normalized,
-        isValidated: true,
-      };
+      return normalized;
     } catch (error) {
       const validationResult = this.handlePhoneValidationError(error);
       if (validationResult.shouldSkipValidation) {
@@ -204,6 +312,7 @@ export class ContactUpdaterUseCase {
           phone: phoneToValidate,
           phoneDdi: normalizedPhoneDdi,
           isValidated: false,
+          validationOrigin: null,
         };
       }
 
@@ -335,14 +444,27 @@ export class ContactUpdaterUseCase {
     accountId: string,
     contactId: string,
     body: UpdateContactRequest,
-    allowedChannelIds: string[] = []
+    allowedChannelIds: string[] = [],
+    actorUserId?: string,
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<boolean> {
     const normalizedBody = normalizeContactRequest(body);
 
-    const contactExists =
-      await this.contactService.existsContactById(contactId);
+    const previousContact = await this.contactService.getContactById(
+      contactId,
+      accountId
+    );
 
-    if (!contactExists) {
+    if (!previousContact) {
+      throw new Error(t('contact_not_found'));
+    }
+
+    const contactMutationRevision =
+      await this.contactUpdaterRepository.viewContactMutationRevision(
+        contactId,
+        accountId
+      );
+    if (!contactMutationRevision) {
       throw new Error(t('contact_not_found'));
     }
 
@@ -397,8 +519,22 @@ export class ContactUpdaterUseCase {
 
     this.validateBirthDate(t, birthday);
 
+    const validationPolicy =
+      await this.contactPhoneValidationPolicyService.resolve({
+        accountId,
+        contactId,
+        requestedChannelIds: hasChannelIds ? (channelIds ?? []) : undefined,
+      });
+
     const [normalizedPhone] = await Promise.all([
-      this.validatePhone(t, accountId, contactId, phone, phoneDdi),
+      this.validatePhone(
+        t,
+        accountId,
+        contactId,
+        phone,
+        phoneDdi,
+        validationPolicy.isOfficialOnly
+      ),
       this.validateEmail(t, accountId, contactId, email),
     ]);
 
@@ -434,18 +570,41 @@ export class ContactUpdaterUseCase {
       bodyToUpdate.document = shouldClearDocument ? null : document;
     }
 
+    const mutationId = buildContactUpdateWebhookMutationId(
+      contactId,
+      contactMutationRevision.revision,
+      bodyToUpdate
+    );
+
+    const validationState = normalizedPhone
+      ? {
+          isValidated: normalizedPhone.isValidated,
+          origin: normalizedPhone.validationOrigin,
+        }
+      : previousContact.is_valided !== true && validationPolicy.isOfficialOnly
+        ? {
+            isValidated: true,
+            origin: CONTACT_VALIDATION_ORIGINS.officialAssumed,
+          }
+        : undefined;
+
     const contactUpdater = await this.contactService.updateContactById(
       bodyToUpdate,
       contactId,
-      accountId
+      accountId,
+      {
+        source: webhookSource,
+        idempotencyKey: `contact-updated:${contactId}:${mutationId}`,
+        actor: actorUserId
+          ? { type: 'user', id: actorUserId }
+          : { type: 'system' },
+        changes: { origin: webhookSource },
+      },
+      validationState
     );
 
     if (!contactUpdater) {
       throw new Error(t('contact_update_error'));
-    }
-
-    if (normalizedPhone && normalizedPhone.isValidated === false) {
-      await this.contactService.updateContactIsValided(contactId, false);
     }
 
     const chatId = extractFieldValue(normalizedBody.chat_id as FieldValue);
@@ -454,12 +613,12 @@ export class ContactUpdaterUseCase {
       await this.updateSpecificChatWithContactData(
         accountId,
         chatId,
-        contactId
+        contactId,
+        mutationId
       );
-      return true;
+    } else {
+      await this.updateChatsWithContactData(accountId, contactId, mutationId);
     }
-
-    await this.updateChatsWithContactData(accountId, contactId);
 
     return true;
   }
@@ -467,7 +626,8 @@ export class ContactUpdaterUseCase {
   private async updateSpecificChatWithContactData(
     accountId: string,
     chatId: string,
-    contactId: string
+    contactId: string,
+    mutationId: string
   ): Promise<void> {
     const chat = await this.chatService.findChatByChatId(accountId, chatId);
 
@@ -495,7 +655,16 @@ export class ContactUpdaterUseCase {
       },
     };
 
-    const saved = await this.chatService.saveChat(updatedChat);
+    const saved = await this.chatService.saveChat(updatedChat, {
+      outboundWebhook: {
+        eventTypes: ['chat.updated'],
+        idempotencyKey: `chat-contact-updated:${chat.chat_id}:${contactId}:${mutationId}`,
+        source: 'contact_service',
+        previousChat: chat,
+        actor: { type: 'system' },
+        changes: { contact_id: contactId },
+      },
+    });
 
     if (!saved) {
       return;
@@ -517,7 +686,8 @@ export class ContactUpdaterUseCase {
 
   private async updateChatsWithContactData(
     accountId: string,
-    contactId: string
+    contactId: string,
+    mutationId: string
   ): Promise<void> {
     const updatedContact = await this.contactService.getContactById(
       contactId,
@@ -568,7 +738,25 @@ export class ContactUpdaterUseCase {
         label: contactLabels,
       };
 
-      const saved = await this.chatService.saveChat(updatedChat);
+      const labelsChanged =
+        JSON.stringify(chat.label ?? []) !==
+        JSON.stringify(contactLabels ?? []);
+      const saved = await this.chatService.saveChat(updatedChat, {
+        outboundWebhook: {
+          eventTypes: [
+            'chat.updated',
+            ...(labelsChanged ? (['chat.labels.changed'] as const) : []),
+          ],
+          idempotencyKey: `chat-contact-updated:${chat.chat_id}:${contactId}:${mutationId}`,
+          source: 'contact_service',
+          previousChat: chat,
+          actor: { type: 'system' },
+          changes: {
+            contact_id: contactId,
+            labels_changed: labelsChanged,
+          },
+        },
+      });
 
       if (!saved) {
         return null;

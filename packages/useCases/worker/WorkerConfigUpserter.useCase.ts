@@ -42,6 +42,7 @@ export class WorkerConfigUpserterUseCase {
 
     return this.workerConfigService.upsertWorkerConfig(
       t,
+      accountId,
       workerId,
       body as IUpdateWorkerConfig
     );

@@ -5,6 +5,8 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import type { IContent } from '@core/common/interfaces/IChatMessage';
 import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { StorageService } from '@core/services/storage.service';
+import { extractWwebjsMessageId } from '../util/wwebjsMessageId';
+import { invokeProviderAuxiliaryWithTimeout } from '@core/common/functions/providerAuxiliaryInvocation';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000;
 const LOTTIE_STICKER_EXT = 'was';
@@ -56,7 +58,11 @@ export class WwebjsUpsertMediaEnricher {
     private readonly storageService: StorageService
   ) {}
 
-  async enrich(upsert: IUpsertMessage, msg: Message): Promise<void> {
+  async enrich(
+    upsert: IUpsertMessage,
+    msg: Message,
+    invokeProvider?: <T>(invoke: () => Promise<T>) => Promise<T>
+  ): Promise<void> {
     const type = upsert.type;
     const content: Partial<IContent> = { type };
     this.enrichAlbum(content, msg, upsert);
@@ -70,22 +76,17 @@ export class WwebjsUpsertMediaEnricher {
       return;
     }
 
-    const downloadPromise = msg.downloadMedia();
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error('Download timeout')),
-        MEDIA_DOWNLOAD_TIMEOUT_MS
-      )
-    );
-
     let media:
-      | { data: string; mimetype?: string; filename?: string | null }
-      | undefined;
+      { data: string; mimetype?: string; filename?: string | null } | undefined;
     try {
-      media = (await Promise.race([
-        downloadPromise,
-        timeoutPromise,
-      ])) as typeof media;
+      media = (await (invokeProvider
+        ? invokeProvider(() => msg.downloadMedia())
+        : invokeProviderAuxiliaryWithTimeout({
+            provider: 'wwebjs',
+            operation: 'incoming_media_download',
+            timeoutMs: MEDIA_DOWNLOAD_TIMEOUT_MS,
+            invoke: () => msg.downloadMedia(),
+          }))) as typeof media;
     } catch {
       content.media_download_failed = true;
       upsert.content = { ...upsert.content, ...content } as IContent;
@@ -479,26 +480,9 @@ export class WwebjsUpsertMediaEnricher {
   }
 
   private getSerializedId(value: unknown): string | null {
-    if (!value) return null;
-
-    if (typeof value === 'string') {
-      return this.getNonEmptyString(value) ?? null;
-    }
-
-    if (typeof value !== 'object') {
-      return null;
-    }
-
-    const objectValue = value as Record<string, unknown>;
-    const directKeys = ['_serialized', 'id', 'ID', 'stanzaId', 'stanzaID'];
-    for (const key of directKeys) {
-      const normalized = this.getNonEmptyString(objectValue[key]);
-      if (normalized) {
-        return normalized;
-      }
-    }
-
-    return null;
+    return (
+      extractWwebjsMessageId(value, { allowStanzaIdFallback: true }) ?? null
+    );
   }
 
   private resolveCaption(

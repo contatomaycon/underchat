@@ -2,6 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { VoiceIaService } from '@core/services/voiceIa.service';
 import { UpdateVoiceIaRequest } from '@core/schema/voiceIa/updateVoiceIa/request.schema';
+import { prepareVoiceIaUpdateConfiguration } from '@core/common/functions/voiceIaProviderConfiguration';
 
 @injectable()
 export class VoiceIaUpdaterUseCase {
@@ -22,6 +23,26 @@ export class VoiceIaUpdaterUseCase {
       throw new Error(t('voice_ia_not_found'));
     }
 
-    return this.voiceIaService.updateVoiceIa(voiceIaId, accountId, input);
+    const providerChanged =
+      input.voice_ia_type !== null &&
+      input.voice_ia_type !== undefined &&
+      input.voice_ia_type !== exists.voice_ia_type;
+    if (
+      providerChanged &&
+      (!input.api_key?.trim() || !input.voice_id?.trim())
+    ) {
+      return false;
+    }
+
+    const normalizedInput = prepareVoiceIaUpdateConfiguration({
+      current: exists,
+      input,
+    });
+
+    return this.voiceIaService.updateVoiceIa(
+      voiceIaId,
+      accountId,
+      normalizedInput
+    );
   }
 }

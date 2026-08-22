@@ -1,5 +1,16 @@
 import { injectable } from 'tsyringe';
 import { ISummaryProvider } from './ISummaryProvider';
+import { executeSummaryOutboundHttp } from './summaryOutboundHttp.service';
+
+interface GeminiSummaryResponse {
+  readonly candidates?: ReadonlyArray<{
+    readonly content?: {
+      readonly parts?: ReadonlyArray<{
+        readonly text?: unknown;
+      }>;
+    };
+  }>;
+}
 
 @injectable()
 export class GeminiSummaryProvider implements ISummaryProvider {
@@ -9,23 +20,14 @@ export class GeminiSummaryProvider implements ISummaryProvider {
     apiKey: string,
     model: string
   ): Promise<string> {
-    let apiVersion = baseUrl;
-    if (baseUrl.includes('/v1/')) {
-      apiVersion = baseUrl.replace('/v1/', '/v1beta/');
-    } else if (baseUrl.includes('/v1')) {
-      apiVersion = baseUrl.replace('/v1', '/v1beta');
-    } else if (!baseUrl.includes('/v1beta')) {
-      apiVersion = baseUrl.replace(/\/$/, '') + '/v1beta';
-    }
+    const url = this.buildGenerateContentUrl(baseUrl, model);
 
-    const url = `${apiVersion}/models/${encodeURIComponent(
-      model
-    )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-    const response = await this.fetchWithRetry(url, {
-      method: 'POST',
+    const response = await executeSummaryOutboundHttp({
+      providerName: 'Gemini',
+      url,
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify({
         contents: [
@@ -36,63 +38,89 @@ export class GeminiSummaryProvider implements ISummaryProvider {
         ],
         generationConfig: {
           maxOutputTokens: 2048,
-          temperature: 0.3,
         },
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
+    if (response.statusCode < 200 || response.statusCode > 299) {
       throw new Error(
-        `Gemini API error: ${response.status} - ${errorText} (URL: ${url.replace(apiKey, '***')})`
+        `Gemini API request failed with status ${response.statusCode}.`
       );
     }
 
-    const data = (await response.json()) as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{ text?: string }>;
-        };
-      }>;
-    };
-
-    return (
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      'Erro ao gerar sumário.'
-    );
-  }
-
-  private async fetchWithRetry(
-    url: string,
-    options: RequestInit,
-    maxRetries = 3,
-    timeoutMs = 30000
-  ): Promise<Response> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    const fetchOptions: RequestInit = {
-      ...options,
-      signal: controller.signal,
-    };
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await fetch(url, fetchOptions);
-        clearTimeout(timeoutId);
-        return response;
-      } catch (error) {
-        clearTimeout(timeoutId);
-
-        if (attempt === maxRetries) {
-          throw error;
-        }
-
-        const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
+    let data: GeminiSummaryResponse;
+    try {
+      data = JSON.parse(
+        response.body.toString('utf8')
+      ) as GeminiSummaryResponse;
+    } catch {
+      throw new Error('Gemini API returned an invalid response.');
     }
 
-    throw new Error('Max retries exceeded');
+    const summary = (data.candidates?.[0]?.content?.parts ?? [])
+      .map((part) => (typeof part.text === 'string' ? part.text.trim() : ''))
+      .filter((text) => text.length > 0)
+      .join('\n')
+      .trim();
+
+    if (!summary) {
+      throw new Error('Gemini API returned an empty summary.');
+    }
+
+    return summary;
+  }
+
+  private buildGenerateContentUrl(baseUrl: string, model: string): string {
+    let parsedBaseUrl: URL;
+
+    try {
+      parsedBaseUrl = new URL(baseUrl.trim());
+    } catch {
+      throw new Error('Gemini API base URL is invalid.');
+    }
+
+    if (!['http:', 'https:'].includes(parsedBaseUrl.protocol)) {
+      throw new Error('Gemini API base URL is invalid.');
+    }
+
+    const normalizedModel = this.normalizeModel(model);
+    const pathSegments = parsedBaseUrl.pathname
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+    let versionIndex = -1;
+    for (let index = pathSegments.length - 1; index >= 0; index -= 1) {
+      if (/^v1(?:beta)+$|^v1$/i.test(pathSegments[index])) {
+        versionIndex = index;
+        break;
+      }
+    }
+    const basePathSegments =
+      versionIndex >= 0 ? pathSegments.slice(0, versionIndex) : pathSegments;
+
+    parsedBaseUrl.pathname = `/${[
+      ...basePathSegments,
+      'v1beta',
+      'models',
+      `${encodeURIComponent(normalizedModel)}:generateContent`,
+    ].join('/')}`;
+    parsedBaseUrl.search = '';
+    parsedBaseUrl.hash = '';
+
+    return parsedBaseUrl.toString();
+  }
+
+  private normalizeModel(model: string): string {
+    let normalizedModel = model.trim().replace(/^\/+/, '');
+
+    while (/^models\//i.test(normalizedModel)) {
+      normalizedModel = normalizedModel.slice('models/'.length);
+    }
+
+    if (!normalizedModel) {
+      throw new Error('Gemini API model is required.');
+    }
+
+    return normalizedModel;
   }
 }

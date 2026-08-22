@@ -58,7 +58,7 @@ async function resolveZipAnimationJson(bytes: Uint8Array): Promise<string> {
 function resolveRawAnimationJson(bytes: Uint8Array): string {
   const maybeGzip = bytes.length > 1 && bytes[0] === 0x1f && bytes[1] === 0x8b;
   if (maybeGzip) {
-    return inflate(bytes, { to: 'string' });
+    return inflate(bytes, { toText: true });
   }
 
   return decodeUtf8(bytes);

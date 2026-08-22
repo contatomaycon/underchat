@@ -7,6 +7,8 @@ export interface IWorkerConnectionQrCodeQueueMessage {
   account_id: string;
   worker_type_id: string;
   runtime_generation?: number;
+  /** Manager-owned epoch that identifies this exact connection attempt. */
+  authorized_connection_epoch?: string;
   debug_trace_id?: string;
   source: WorkerConnectionQrCodeQueueSource;
   requested_at: string;

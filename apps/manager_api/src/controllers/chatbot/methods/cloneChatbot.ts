@@ -1,6 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { handleControllerError } from '@core/common/functions/handleControllerError';
+import { handleChatbotFlowControllerError } from '@core/common/functions/handleChatbotFlowControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { CloneChatbotRequest } from '@core/schema/chatbot/cloneChatbot/request.schema';
@@ -21,7 +21,8 @@ export const cloneChatbot = async (
     const response = await chatbotClonerUseCase.execute(
       t,
       request.body,
-      accountIdToUse
+      accountIdToUse,
+      tokenJwtData.actions
     );
 
     if (response) {
@@ -37,6 +38,6 @@ export const cloneChatbot = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    handleControllerError(error, reply, t);
+    handleChatbotFlowControllerError(error, reply, t);
   }
 };

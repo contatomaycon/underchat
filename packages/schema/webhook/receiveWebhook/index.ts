@@ -6,6 +6,11 @@ import {
   receiveWebhookRequestSchema,
 } from './request.schema';
 import { receiveWebhookResponseSchema } from './response.schema';
+import {
+  integrationEntitlementEpochMismatchResponseSchema,
+  integrationPlanRequiredResponseSchema,
+  planEntitlementUnavailableResponseSchema,
+} from '@core/schema/integration/planEntitlementError.schema';
 
 export const receiveWebhookSchema = {
   description: 'Integração de webhook para iniciar um atendimento',
@@ -41,6 +46,9 @@ export const receiveWebhookSchema = {
       },
       { description: 'Unauthorized' }
     ),
+    402: integrationPlanRequiredResponseSchema,
+    409: integrationEntitlementEpochMismatchResponseSchema,
+    503: planEntitlementUnavailableResponseSchema,
     500: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

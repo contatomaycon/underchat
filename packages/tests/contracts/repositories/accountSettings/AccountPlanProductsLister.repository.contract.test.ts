@@ -143,6 +143,15 @@ describe('AccountPlanProductsListerRepository', () => {
                     },
                   },
                   {
+                    plan_item_id: 'item-9',
+                    quantity: 8,
+                    deleted_at: null,
+                    ppr: {
+                      plan_product_id: EPlanProduct.integration,
+                      ppd: { name: 'Integration' },
+                    },
+                  },
+                  {
                     plan_item_id: 'item-invalid',
                     quantity: 1,
                     deleted_at: '2026-01-01',
@@ -172,6 +181,15 @@ describe('AccountPlanProductsListerRepository', () => {
                   ppt: {
                     plan_product_id: 'unknown-product',
                     ppd: { name: 'Other' },
+                  },
+                },
+              },
+              {
+                pca: {
+                  quantity: 4,
+                  ppt: {
+                    plan_product_id: EPlanProduct.integration,
+                    ppd: { name: 'Integration' },
                   },
                 },
               },
@@ -248,6 +266,14 @@ describe('AccountPlanProductsListerRepository', () => {
         expect.objectContaining({
           plan_product_id: EPlanProduct.ai_agent,
           quantity_used: 9,
+        }),
+        expect.objectContaining({
+          plan_product_id: EPlanProduct.integration,
+          quantity_plan: 1,
+          quantity_addon: 1,
+          quantity_total: 1,
+          quantity_used: 1,
+          source: 'plan',
         }),
         expect.objectContaining({
           plan_product_id: 'unknown-product',

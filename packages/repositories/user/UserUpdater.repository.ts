@@ -1,8 +1,10 @@
 import * as schema from '@core/models';
 import { user } from '@core/models';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, ExtractTablesWithRelations } from 'drizzle-orm';
+import { and, eq, ExtractTablesWithRelations, sql } from 'drizzle-orm';
 import { IUpdateUser } from '@core/common/interfaces/IUpdateUser';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import { EUserStatus } from '@core/common/enums/EUserStatus';
 import {
   NodePgDatabase,
   NodePgQueryResultHKT,
@@ -54,7 +56,18 @@ export class UserUpdaterRepository {
 
     const whereCondition = and(
       eq(user.user_id, userId),
-      eq(user.account_id, accountId)
+      eq(user.account_id, accountId),
+      input.user_status_id === EUserStatus.blocked
+        ? sql`NOT EXISTS (
+            SELECT 1
+            FROM "permission_assignment" pa
+            WHERE pa.user_id = ${user.user_id}
+              AND pa.permission_role_id IN (
+                ${EPermissionRole.master},
+                ${EPermissionRole.administrator}
+              )
+          )`
+        : undefined
     );
 
     const result = await this.dbRw
@@ -80,7 +93,18 @@ export class UserUpdaterRepository {
 
     const whereCondition = and(
       eq(user.user_id, userId),
-      eq(user.account_id, accountId)
+      eq(user.account_id, accountId),
+      input.user_status_id === EUserStatus.blocked
+        ? sql`NOT EXISTS (
+            SELECT 1
+            FROM "permission_assignment" pa
+            WHERE pa.user_id = ${user.user_id}
+              AND pa.permission_role_id IN (
+                ${EPermissionRole.master},
+                ${EPermissionRole.administrator}
+              )
+          )`
+        : undefined
     );
 
     const result = await tx

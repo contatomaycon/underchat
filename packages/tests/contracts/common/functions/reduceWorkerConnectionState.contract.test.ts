@@ -1,5 +1,6 @@
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { EWhatsappConnectionStatus } from '@core/common/enums/EWhatsappConnectionStatus';
 import { reduceWorkerConnectionState } from '@core/common/functions/reduceWorkerConnectionState';
 
 describe('reduceWorkerConnectionState', () => {
@@ -21,6 +22,114 @@ describe('reduceWorkerConnectionState', () => {
 
     expect(result.ignored).toBe(true);
     expect(result.state.qrcode).toBe(current.qrcode);
+  });
+
+  it('clears an old QR for an ordered provider-native non-QR transition', () => {
+    const result = reduceWorkerConnectionState(
+      {
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingReadQrCode,
+        qrcode: 'data:image/png;base64,old',
+        qr_pending: false,
+        connection_attempt_id: 'attempt-1',
+      },
+      {
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.pairingInProgress,
+        qr_pending: false,
+        connection_attempt_id: 'attempt-1',
+        connection_status: {
+          provider: 'wwebjs',
+          status: EWhatsappConnectionStatus.connecting,
+          connected: false,
+          authenticated: true,
+          sessionValid: true,
+          recoverable: true,
+          qrAvailable: false,
+          sequence: 4,
+          changedAt: '2026-08-04T23:06:06.205Z',
+        },
+      },
+      { authoritativeNativeTransition: true }
+    );
+
+    expect(result.ignored).toBe(false);
+    expect(result.state.code).toBe(ECodeMessage.pairingInProgress);
+    expect(result.state.qrcode).toBeUndefined();
+    expect(result.state.qr_pending).toBe(false);
+  });
+
+  it('preserves the current QR across an ordered internal-client recycle', () => {
+    const current = {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
+      qrcode: 'data:image/png;base64,current',
+      qr_pending: false,
+      connection_attempt_id: 'attempt-1',
+    };
+    const result = reduceWorkerConnectionState(
+      current,
+      {
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingReadQrCode,
+        qr_pending: true,
+        connection_attempt_id: 'attempt-1',
+        connection_status: {
+          provider: 'wwebjs',
+          status: EWhatsappConnectionStatus.restoring,
+          connected: false,
+          authenticated: false,
+          sessionValid: false,
+          recoverable: true,
+          qrAvailable: false,
+          sequence: 5,
+          changedAt: '2026-08-10T21:10:00.000Z',
+        },
+      },
+      {
+        authoritativeNativeTransition: true,
+        preserveQrDuringActiveAttempt: true,
+      }
+    );
+
+    expect(result.ignored).toBe(false);
+    expect(result.state.qrcode).toBe(current.qrcode);
+  });
+
+  it('does not let an ordered native transition cross a pairing-attempt fence', () => {
+    const current = {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
+      qrcode: 'data:image/png;base64,current',
+      connection_attempt_id: 'attempt-current',
+    };
+    const result = reduceWorkerConnectionState(
+      current,
+      {
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.pairingInProgress,
+        qr_pending: false,
+        connection_attempt_id: 'attempt-old',
+        connection_status: {
+          provider: 'wwebjs',
+          status: EWhatsappConnectionStatus.connecting,
+          connected: false,
+          authenticated: true,
+          sessionValid: true,
+          recoverable: true,
+          qrAvailable: false,
+          sequence: 5,
+          changedAt: '2026-08-04T23:06:07.205Z',
+        },
+      },
+      { authoritativeNativeTransition: true }
+    );
+
+    expect(result).toEqual({
+      state: current,
+      ignored: true,
+      reason: 'attempt_mismatch_terminal_without_qr',
+    });
   });
 
   it('ignores pending without QR after a QR for the same attempt', () => {
@@ -128,6 +237,29 @@ describe('reduceWorkerConnectionState', () => {
     expect(result.state.qrcode).toBe(current.qrcode);
     expect(result.state.connection_attempt_id).toBe('attempt-1');
   });
+
+  it.each([ECodeMessage.newLoginAttempt, ECodeMessage.pairingInProgress])(
+    'clears the QR when the same attempt enters pairing code %s',
+    (code) => {
+      const result = reduceWorkerConnectionState(
+        {
+          status: EBaileysConnectionStatus.connecting,
+          code: ECodeMessage.awaitingReadQrCode,
+          qrcode: 'data:image/png;base64,qr',
+          connection_attempt_id: 'attempt-1',
+        },
+        {
+          status: EBaileysConnectionStatus.connecting,
+          code,
+          connection_attempt_id: 'attempt-1',
+        }
+      );
+
+      expect(result.ignored).toBe(false);
+      expect(result.state.code).toBe(code);
+      expect(result.state.qrcode).toBeUndefined();
+    }
+  );
 
   it('preserves passkey request against delayed startup without credentials', () => {
     const current = {

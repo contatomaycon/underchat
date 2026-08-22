@@ -10,14 +10,15 @@ import {
   workerCentrifugoQueue,
   channelsConfigCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
-import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import { IViewChannelContext } from '@core/common/interfaces/IViewChannelContext';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { WorkerLifecycleQueueService } from '@core/services/workerLifecycleQueue.service';
+import { enqueuePermanentWorkerDeletion } from '@core/common/functions/workerPermanentDeletionLifecycle';
+import { ChatbotInactivityAlertChannelDeactivatorService } from '@core/services/chatbotInactivityAlertChannelDeactivator.service';
 
 @injectable()
 export class ChannelDeleterUseCase {
@@ -28,14 +29,12 @@ export class ChannelDeleterUseCase {
     private readonly configService: ConfigService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
-    @inject(WorkerGrpcClientService)
-    private readonly workerGrpcClientService: WorkerGrpcClientService,
+    @inject(WorkerLifecycleQueueService)
+    private readonly workerLifecycleQueueService: WorkerLifecycleQueueService,
     @inject(ChatService)
     private readonly chatService: ChatService,
-    @inject(WorkerWhatsappOfficialConnectionRepository)
-    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository = {
-      softDeleteByWorkerId: async () => false,
-    } as unknown as WorkerWhatsappOfficialConnectionRepository
+    @inject(ChatbotInactivityAlertChannelDeactivatorService)
+    private readonly inactivityAlertChannelDeactivator: ChatbotInactivityAlertChannelDeactivatorService
   ) {}
 
   private async validate(
@@ -65,12 +64,6 @@ export class ChannelDeleterUseCase {
     return channelContext;
   }
 
-  private async onChannelDeleted(payload: IWorkerPayload): Promise<void> {
-    void this.workerGrpcClientService.deleteWorker(payload).catch((err) => {
-      console.error('Failed to request channel deletion via gRPC:', err);
-    });
-  }
-
   async execute(
     t: TFunction<'translation', undefined>,
     channelId: string
@@ -86,12 +79,14 @@ export class ChannelDeleterUseCase {
       );
 
       if (deleted) {
-        await this.workerWhatsappOfficialConnectionRepository.softDeleteByWorkerId(
+        await this.inactivityAlertChannelDeactivator.deactivateByChannel(
+          channelContext.account_id,
           channelId
         );
       }
 
       const statusPayload: IBaileysConnectionState = {
+        event_type: 'status',
         code: ECodeMessage.info,
         status: EBaileysConnectionStatus.info,
         worker_id: channelId,
@@ -115,18 +110,38 @@ export class ChannelDeleterUseCase {
       return deleted;
     }
 
-    const viewWorkerBalancer =
-      await this.configService.viewChannelBalancer(channelId);
-
-    if (!viewWorkerBalancer) {
-      throw new Error(t('worker_balancer_not_available'));
+    const deletionMessage = await enqueuePermanentWorkerDeletion(
+      {
+        workerService: this.workerService,
+        workerLifecycleQueueService: this.workerLifecycleQueueService,
+      },
+      {
+        account_id: channelContext.account_id,
+        worker_id: channelId,
+        source: 'channel_delete',
+      }
+    );
+    if (!deletionMessage) {
+      return false;
     }
 
-    const inputDeleter: IWorkerPayload = {
+    await this.inactivityAlertChannelDeactivator.deactivateByChannel(
+      channelContext.account_id,
+      channelId
+    );
+
+    const inputDeleter: IWorkerPayload & IBaileysConnectionState = {
+      event_type: 'status',
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
       action: EWorkerAction.delete,
       worker_id: channelId,
-      server_id: viewWorkerBalancer.server_id,
+      server_id: deletionMessage.server_id,
       account_id: channelContext.account_id,
+      worker_status_id: EWorkerStatus.deleting,
+      worker_type_id: deletionMessage.worker_type_id,
+      lifecycle_operation_id: deletionMessage.operation_id,
+      debug_trace_id: deletionMessage.debug_trace_id,
     };
 
     await Promise.all([
@@ -137,13 +152,6 @@ export class ChannelDeleterUseCase {
       this.centrifugoService.publish(channelsConfigCentrifugo(), inputDeleter),
     ]);
 
-    const deleted = await this.workerService.deleteWorkerById(
-      channelContext.account_id,
-      channelId
-    );
-
-    this.onChannelDeleted(inputDeleter);
-
-    return deleted;
+    return true;
   }
 }

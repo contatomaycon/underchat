@@ -1,6 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { handleControllerError } from '@core/common/functions/handleControllerError';
+import { handleChatbotFlowControllerError } from '@core/common/functions/handleChatbotFlowControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { SaveChatbotFlowRequest } from '@core/schema/chatbot/saveChatbotFlow/request.schema';
@@ -21,7 +21,8 @@ export const saveChatbotFlow = async (
     const chatbotFlowId = await chatbotFlowSaverUseCase.execute(
       t,
       request.body as SaveChatbotFlowRequest & Record<string, unknown>,
-      accountIdToUse
+      accountIdToUse,
+      tokenJwtData.actions
     );
 
     if (chatbotFlowId) {
@@ -39,6 +40,6 @@ export const saveChatbotFlow = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    handleControllerError(error, reply, t);
+    handleChatbotFlowControllerError(error, reply, t);
   }
 };

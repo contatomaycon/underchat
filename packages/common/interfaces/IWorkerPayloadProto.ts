@@ -10,6 +10,22 @@ export interface IWorkerPayloadProto {
   previous_worker_status_id?: string;
   remove_session?: boolean;
   remove_volume?: boolean;
+  _remove_session?: 'remove_session';
+  _remove_volume?: 'remove_volume';
   lifecycle_operation_id?: string;
+  recovery_without_journal?: boolean;
+  expected_container_id?: string;
+  expected_container_started_at?: string;
+  expected_container_restart_count?: number;
+  expected_container_health_status?: string;
+  expected_container_paused?: boolean;
+  expected_runtime_generation?: number;
+  lifecycle_semantic_fingerprint?: string;
+  session_storage?: string;
+  previous_session_storage?: string;
+  previous_server_id?: string;
+  session_storage_migration_id?: string;
+  legacy_session_volume_name?: string;
+  legacy_session_checksum?: string;
   debug_trace_id?: string;
 }

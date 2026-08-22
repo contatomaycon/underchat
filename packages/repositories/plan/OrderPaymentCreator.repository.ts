@@ -18,6 +18,38 @@ import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 import { EAccountPaymentReleaseStatus } from '@core/common/enums/EAccountPaymentReleaseStatus';
 
+export interface ICreateAccountPaymentInput {
+  accountId: string;
+  userCustomerId: string;
+  planId: string;
+  billing: string;
+  paymentBillingTypeId: string;
+  value: string;
+  netValue: string;
+  pixTransaction: string | null;
+  paymentStatusId: string;
+  billingPeriodId: string | null;
+  invoiceUrl: string | null;
+  recurringPayment: boolean;
+  isAddonOnly: boolean;
+  userCardId?: string | null;
+  installment?: string | null;
+  boleto?: string | null;
+  boletoNumber?: string | null;
+  boletoPdf?: string | null;
+}
+
+export interface ICreateAccountPaymentCrossSellsInput {
+  accountPaymentId: string;
+  addons: Array<{ plan_cross_sell_id: string; value?: number }>;
+  billingPeriod: 'monthly' | 'annual';
+}
+
+type PaymentDatabaseExecutor = Pick<
+  NodePgDatabase<typeof schema>,
+  'insert' | 'select' | 'query'
+>;
+
 @injectable()
 export class OrderPaymentCreatorRepository {
   constructor(
@@ -95,29 +127,13 @@ export class OrderPaymentCreatorRepository {
     };
   };
 
-  createAccountPayment = async (data: {
-    accountId: string;
-    userCustomerId: string;
-    planId: string;
-    billing: string;
-    paymentBillingTypeId: string;
-    value: string;
-    netValue: string;
-    pixTransaction: string | null;
-    paymentStatusId: string;
-    billingPeriodId: string | null;
-    invoiceUrl: string | null;
-    recurringPayment: boolean;
-    isAddonOnly: boolean;
-    userCardId?: string | null;
-    installment?: string | null;
-    boleto?: string | null;
-    boletoNumber?: string | null;
-    boletoPdf?: string | null;
-  }): Promise<string> => {
+  private readonly createAccountPaymentUsing = async (
+    database: PaymentDatabaseExecutor,
+    data: ICreateAccountPaymentInput
+  ): Promise<string> => {
     const accountPaymentId = randomUUID();
 
-    const inserted = await this.dbRw
+    const inserted = await database
       .insert(accountPayment)
       .values({
         account_payment_id: accountPaymentId,
@@ -150,7 +166,7 @@ export class OrderPaymentCreatorRepository {
       return inserted[0].account_payment_id;
     }
 
-    const existing = await this.dbRw.query.accountPayment.findFirst({
+    const existing = await database.query.accountPayment.findFirst({
       where: eq(accountPayment.billing, data.billing),
       columns: {
         account_payment_id: true,
@@ -164,17 +180,22 @@ export class OrderPaymentCreatorRepository {
     return existing.account_payment_id;
   };
 
-  createAccountPaymentCrossSells = async (data: {
-    accountPaymentId: string;
-    addons: Array<{ plan_cross_sell_id: string; value?: number }>;
-    billingPeriod: 'monthly' | 'annual';
-  }): Promise<void> => {
+  createAccountPayment = async (
+    data: ICreateAccountPaymentInput
+  ): Promise<string> => {
+    return this.createAccountPaymentUsing(this.dbRw, data);
+  };
+
+  private readonly createAccountPaymentCrossSellsUsing = async (
+    database: PaymentDatabaseExecutor,
+    data: ICreateAccountPaymentCrossSellsInput
+  ): Promise<void> => {
     if (!data.addons || data.addons.length === 0) {
       return;
     }
 
     const hasExistingCrossSells =
-      await this.dbRw.query.accountPaymentCrossSell.findFirst({
+      await database.query.accountPaymentCrossSell.findFirst({
         where: eq(
           accountPaymentCrossSell.account_payment_id,
           data.accountPaymentId
@@ -190,7 +211,7 @@ export class OrderPaymentCreatorRepository {
 
     const crossSellIds = data.addons.map((a) => a.plan_cross_sell_id);
 
-    const crossSells = await this.dbRw
+    const crossSells = await database
       .select({
         plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
         quantity: planCrossSell.quantity,
@@ -242,8 +263,40 @@ export class OrderPaymentCreatorRepository {
     }
 
     if (crossSellRecords.length > 0) {
-      await this.dbRw.insert(accountPaymentCrossSell).values(crossSellRecords);
+      await database.insert(accountPaymentCrossSell).values(crossSellRecords);
     }
+  };
+
+  createAccountPaymentCrossSells = async (
+    data: ICreateAccountPaymentCrossSellsInput
+  ): Promise<void> => {
+    await this.createAccountPaymentCrossSellsUsing(this.dbRw, data);
+  };
+
+  /**
+   * Publishes the payment intent and its immutable add-on selection in one
+   * PostgreSQL commit. Payment webhooks can therefore observe either the
+   * complete order or no order, never a payment without its purchased items.
+   */
+  createAccountPaymentWithCrossSells = async (data: {
+    payment: ICreateAccountPaymentInput;
+    addons: Array<{ plan_cross_sell_id: string; value?: number }>;
+    billingPeriod: 'monthly' | 'annual';
+  }): Promise<string> => {
+    return this.dbRw.transaction(async (tx) => {
+      const accountPaymentId = await this.createAccountPaymentUsing(
+        tx,
+        data.payment
+      );
+
+      await this.createAccountPaymentCrossSellsUsing(tx, {
+        accountPaymentId,
+        addons: data.addons,
+        billingPeriod: data.billingPeriod,
+      });
+
+      return accountPaymentId;
+    });
   };
 
   getPlan = async (planId: string) => {

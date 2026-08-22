@@ -3,9 +3,11 @@ import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { ChatService } from '@core/services/chat.service';
 import {
+  META_WHATSAPP_REQUIRED_SCOPES,
   MetaGraphApiError,
   MetaWhatsappEmbeddedService,
 } from '@core/services/metaWhatsappEmbedded.service';
+import { WhatsappEmbeddedService } from '@core/services/whatsappEmbedded.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import {
@@ -20,6 +22,13 @@ type MetaSection<T> = {
   error: WhatsappOfficialHealthSectionError | null;
 };
 
+type TokenDiagnostic = NonNullable<
+  WhatsappOfficialHealthResponse['diagnostics']['token']['data']
+>;
+type WebhookSubscriptionDiagnostic = NonNullable<
+  WhatsappOfficialHealthResponse['diagnostics']['webhook_subscription']['data']
+>;
+
 @injectable()
 export class WhatsappOfficialHealthViewerUseCase {
   constructor(
@@ -29,6 +38,8 @@ export class WhatsappOfficialHealthViewerUseCase {
     private readonly chatService: ChatService,
     @inject(MetaWhatsappEmbeddedService)
     private readonly metaWhatsappEmbeddedService: MetaWhatsappEmbeddedService,
+    @inject(WhatsappEmbeddedService)
+    private readonly whatsappEmbeddedService: WhatsappEmbeddedService,
     @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
     @inject(WorkerWhatsappOfficialConnectionRepository)
@@ -63,6 +74,10 @@ export class WhatsappOfficialHealthViewerUseCase {
       connection.access_token_encrypted
     );
     const period = this.createPeriod();
+    const embeddedConfig = await this.resolveSection(() =>
+      this.whatsappEmbeddedService.viewInternalConfig(t)
+    );
+    const internalConfig = embeddedConfig.data;
 
     const [
       openConversations,
@@ -71,6 +86,8 @@ export class WhatsappOfficialHealthViewerUseCase {
       waba,
       messageAnalytics,
       conversationAnalytics,
+      tokenDiagnostic,
+      webhookSubscription,
     ] = await Promise.all([
       this.chatService.countOpenChatsByWorkerId(accountId, workerId),
       this.resolveSection(() =>
@@ -117,7 +134,81 @@ export class WhatsappOfficialHealthViewerUseCase {
           end: period.endUnix,
         })
       ),
+      internalConfig
+        ? this.resolveSection<TokenDiagnostic>(async () => {
+            const token =
+              await this.metaWhatsappEmbeddedService.debugAccessToken({
+                apiVersion: connection.api_version,
+                accessToken,
+                appId: internalConfig.app_id,
+                appSecret: internalConfig.app_secret,
+              });
+            const scopes = new Set(token.scopes);
+            const requiredScopes = [...META_WHATSAPP_REQUIRED_SCOPES];
+
+            return {
+              valid: token.is_valid,
+              app_matches_config: token.app_id === internalConfig.app_id,
+              type: token.type,
+              issued_at: this.unixTimestampToIso(token.issued_at),
+              expires_at: this.unixTimestampToIso(token.expires_at),
+              data_access_expires_at: this.unixTimestampToIso(
+                token.data_access_expires_at
+              ),
+              does_not_expire:
+                token.expires_at === 0 && token.data_access_expires_at === 0,
+              scopes: [...scopes].sort(),
+              required_scopes: requiredScopes,
+              missing_scopes: requiredScopes.filter(
+                (scope) => !scopes.has(scope)
+              ),
+            };
+          })
+        : this.unavailableSection<TokenDiagnostic>(embeddedConfig.error),
+      internalConfig
+        ? this.resolveSection<WebhookSubscriptionDiagnostic>(() =>
+            this.metaWhatsappEmbeddedService.viewWabaWebhookSubscription({
+              apiVersion: connection.api_version,
+              accessToken,
+              wabaId: connection.waba_id,
+              appId: internalConfig.app_id,
+            })
+          )
+        : this.unavailableSection<WebhookSubscriptionDiagnostic>(
+            embeddedConfig.error
+          ),
     ]);
+
+    const metaSections = [
+      phoneNumbers,
+      phoneNumber,
+      waba,
+      messageAnalytics,
+      conversationAnalytics,
+      tokenDiagnostic,
+      webhookSubscription,
+    ];
+    const hasMetaAccessError = metaSections.some((section) =>
+      this.isAuthenticationOrAccessError(section.error)
+    );
+    const reauthenticationRequired = Boolean(
+      hasMetaAccessError ||
+      (tokenDiagnostic.data &&
+        (!tokenDiagnostic.data.valid ||
+          !tokenDiagnostic.data.app_matches_config ||
+          tokenDiagnostic.data.missing_scopes.length > 0))
+    );
+    const warnings = [
+      ...(reauthenticationRequired
+        ? ['meta_health_warning_reauthentication_required']
+        : []),
+      ...(webhookSubscription.data?.subscribed === false
+        ? ['meta_health_warning_webhook_not_subscribed']
+        : []),
+      ...(metaSections.some((section) => !section.available)
+        ? ['meta_health_warning_partial_data']
+        : []),
+    ];
 
     return {
       worker_id: workerId,
@@ -143,8 +234,50 @@ export class WhatsappOfficialHealthViewerUseCase {
         messages: messageAnalytics,
         conversations: conversationAnalytics,
       },
-      warnings: [],
+      diagnostics: {
+        reauthentication_required: reauthenticationRequired,
+        token: tokenDiagnostic,
+        webhook_subscription: webhookSubscription,
+      },
+      warnings,
     };
+  }
+
+  private unavailableSection<T>(
+    error: WhatsappOfficialHealthSectionError | null
+  ): MetaSection<T> {
+    return {
+      available: false,
+      data: null,
+      error: error ?? {
+        message: 'Meta Embedded Signup configuration is unavailable',
+        type: null,
+        code: null,
+        error_subcode: null,
+      },
+    };
+  }
+
+  private unixTimestampToIso(value: number | null): string | null {
+    if (!value || value <= 0) {
+      return null;
+    }
+
+    return new Date(value * 1000).toISOString();
+  }
+
+  private isAuthenticationOrAccessError(
+    error: WhatsappOfficialHealthSectionError | null
+  ): boolean {
+    if (!error) {
+      return false;
+    }
+
+    return (
+      error.code === 190 ||
+      error.code === 200 ||
+      (error.code === 100 && error.error_subcode === 33)
+    );
   }
 
   private createPeriod(): {

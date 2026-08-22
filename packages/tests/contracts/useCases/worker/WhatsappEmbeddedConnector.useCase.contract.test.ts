@@ -4,6 +4,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { OfficialWhatsappPhoneAlreadyConnectedError } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 
 const t = ((key: string) => key) as never;
 
@@ -51,7 +52,14 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
   };
   const officialConnectionRepository = {
     findActiveByPhoneNumberId: jest.fn(async () => null),
-    createWithWorker: jest.fn(async () => true),
+    createWithWorkerAndMigrateChannelAccess: jest.fn(async () => ({
+      created: true,
+      migrated_user_ids: [],
+      migrated_user_channels: [],
+    })),
+  };
+  const redis = {
+    del: jest.fn(async () => 1),
   };
 
   const deps = {
@@ -62,6 +70,7 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
     metaWhatsappEmbeddedService,
     passwordEncryptorService,
     officialConnectionRepository,
+    redis,
     ...overrides,
   };
 
@@ -72,7 +81,8 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
     deps.whatsappEmbeddedService as never,
     deps.metaWhatsappEmbeddedService as never,
     deps.passwordEncryptorService as never,
-    deps.officialConnectionRepository as never
+    deps.officialConnectionRepository as never,
+    deps.redis as never
   );
 
   return { useCase, deps };
@@ -121,7 +131,7 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
     );
 
     expect(
-      deps.officialConnectionRepository.createWithWorker
+      deps.officialConnectionRepository.createWithWorkerAndMigrateChannelAccess
     ).not.toHaveBeenCalled();
   });
 
@@ -148,7 +158,7 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
     );
 
     expect(
-      deps.officialConnectionRepository.createWithWorker
+      deps.officialConnectionRepository.createWithWorkerAndMigrateChannelAccess
     ).not.toHaveBeenCalled();
   });
 
@@ -168,7 +178,7 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
     });
 
     expect(
-      deps.officialConnectionRepository.createWithWorker
+      deps.officialConnectionRepository.createWithWorkerAndMigrateChannelAccess
     ).toHaveBeenCalledWith(
       expect.objectContaining({
         worker_status_id: EWorkerStatus.online,
@@ -192,8 +202,8 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
       deps.metaWhatsappEmbeddedService.subscribeWabaApp.mock
         .invocationCallOrder[0]
     ).toBeLessThan(
-      deps.officialConnectionRepository.createWithWorker.mock
-        .invocationCallOrder[0]
+      deps.officialConnectionRepository.createWithWorkerAndMigrateChannelAccess
+        .mock.invocationCallOrder[0]
     );
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
@@ -206,6 +216,133 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
         phone: '5561999990000',
       })
     );
+  });
+
+  it('invalidates every migrated user scope after reconnecting a phone', async () => {
+    const { useCase, deps } = buildUseCase({
+      officialConnectionRepository: {
+        findActiveByPhoneNumberId: jest.fn(async () => null),
+        createWithWorkerAndMigrateChannelAccess: jest.fn(async () => ({
+          created: true,
+          migrated_user_ids: ['legacy-user-id'],
+          migrated_user_channels: [
+            {
+              user_id: 'user-1',
+              channels: [{ id: 'worker-new', name: 'Worker for user-1' }],
+            },
+            {
+              user_id: 'user-2',
+              channels: [{ id: 'worker-new', name: 'Worker for user-2' }],
+            },
+          ],
+        })),
+      },
+    });
+
+    await expect(useCase.execute(t, 'account-1', request)).resolves.toEqual(
+      expect.objectContaining({ phone_number_id: 'phone-1' })
+    );
+
+    expect(deps.redis.del).toHaveBeenCalledTimes(2);
+    expect(deps.redis.del).toHaveBeenCalledWith('userAccessScope:user-1');
+    expect(deps.redis.del).toHaveBeenCalledWith('userAccessScope:user-2');
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'chat:account#account-1',
+      {
+        event: 'user_channels_updated',
+        user_id: 'user-1',
+        channels: [{ id: 'worker-new', name: 'Worker for user-1' }],
+      }
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'chat:account#account-1',
+      {
+        event: 'user_channels_updated',
+        user_id: 'user-2',
+        channels: [{ id: 'worker-new', name: 'Worker for user-2' }],
+      }
+    );
+    expect(deps.redis.del).not.toHaveBeenCalledWith(
+      'userAccessScope:legacy-user-id'
+    );
+    const publishedCalls = deps.centrifugoService.publishSub.mock
+      .calls as unknown as Array<[string, unknown]>;
+    const workerConnectedIndex = publishedCalls.findIndex(
+      ([channel]) => channel === 'worker:account#account-1'
+    );
+    expect(workerConnectedIndex).toBeGreaterThanOrEqual(0);
+    for (const [index, [channel]] of publishedCalls.entries()) {
+      if (channel === 'chat:account#account-1') {
+        expect(
+          deps.centrifugoService.publishSub.mock.invocationCallOrder[index]
+        ).toBeLessThan(
+          deps.centrifugoService.publishSub.mock.invocationCallOrder[
+            workerConnectedIndex
+          ]
+        );
+      }
+    }
+  });
+
+  it('keeps a successful reconnect when access-scope cache or realtime updates fail', async () => {
+    const { useCase, deps } = buildUseCase({
+      officialConnectionRepository: {
+        findActiveByPhoneNumberId: jest.fn(async () => null),
+        createWithWorkerAndMigrateChannelAccess: jest.fn(async () => ({
+          created: true,
+          migrated_user_ids: ['user-1'],
+          migrated_user_channels: [
+            {
+              user_id: 'user-1',
+              channels: [{ id: 'worker-new', name: 'Worker new' }],
+            },
+          ],
+        })),
+      },
+      redis: {
+        del: jest.fn(async () => {
+          throw new Error('redis temporarily unavailable');
+        }),
+      },
+      centrifugoService: {
+        publishSub: jest.fn(async (channel: string) => {
+          if (channel === 'chat:account#account-1') {
+            throw new Error('realtime temporarily unavailable');
+          }
+        }),
+      },
+    });
+
+    await expect(
+      useCase.execute(t, 'account-1', request)
+    ).resolves.toMatchObject({ phone_number_id: 'phone-1' });
+
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        code: ECodeMessage.connectionEstablished,
+      })
+    );
+  });
+
+  it('returns the duplicate-phone message when another connection wins the race', async () => {
+    const { useCase, deps } = buildUseCase({
+      officialConnectionRepository: {
+        findActiveByPhoneNumberId: jest.fn(async () => null),
+        createWithWorkerAndMigrateChannelAccess: jest.fn(async () => {
+          throw new OfficialWhatsappPhoneAlreadyConnectedError();
+        }),
+      },
+    });
+
+    await expect(useCase.execute(t, 'account-1', request)).rejects.toThrow(
+      'whatsapp_official_phone_already_connected'
+    );
+
+    expect(
+      deps.officialConnectionRepository.createWithWorkerAndMigrateChannelAccess
+    ).toHaveBeenCalledTimes(1);
+    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
   });
 
   it('fails before creating worker when WABA webhook subscription fails', async () => {
@@ -232,7 +369,7 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
     );
 
     expect(
-      deps.officialConnectionRepository.createWithWorker
+      deps.officialConnectionRepository.createWithWorkerAndMigrateChannelAccess
     ).not.toHaveBeenCalled();
     expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
   });
@@ -262,7 +399,7 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
       deps.officialConnectionRepository.findActiveByPhoneNumberId
     ).toHaveBeenCalledWith('phone-1');
     expect(
-      deps.officialConnectionRepository.createWithWorker
+      deps.officialConnectionRepository.createWithWorkerAndMigrateChannelAccess
     ).toHaveBeenCalledWith(
       expect.objectContaining({
         phone_number_id: 'phone-1',

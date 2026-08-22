@@ -1,6 +1,12 @@
 import { EChatStatus } from '../enums/EChatStatus';
+import { IOfficialWhatsappConversationWindowSnapshot } from './IOfficialWhatsappConversationWindow';
 
 interface ISummary {
+  /**
+   * Monotonic revision of mutations that can change the visible summary or
+   * unread state. Missing values in legacy documents are interpreted as zero.
+   */
+  revision?: number | null;
   last_message: string | null;
   last_date: string | null;
   last_date_epoch_millis?: number | null;
@@ -56,8 +62,28 @@ interface IMessageKey {
   remote_jid_alt?: string | null;
 }
 
+export interface IChatMeta {
+  status_epoch?: number | null;
+  status_event_id?: string | null;
+  status_source?: string | null;
+  assignment_epoch?: number | null;
+  assignment_event_id?: string | null;
+  labels_epoch?: number | null;
+  labels_event_id?: string | null;
+  outbound_webhook_event_ids?: string[] | null;
+  clear_summary_operation_ids?: string[] | null;
+}
+
+export interface IChatSatisfactionResponse {
+  question: string;
+  options: { id: string; text: string }[];
+  response: { id: string; text: string };
+  analyst?: { id: string; name: string | null } | null;
+}
+
 export interface IChat {
   chat_id: string;
+  meta?: IChatMeta | null;
   message_key?: IMessageKey | null;
   summary?: ISummary | null;
   account: IAccount;
@@ -82,4 +108,6 @@ export interface IChat {
   chatbot_schedule_id?: string | null;
   chatbot_webhook_id?: string | null;
   chatbot_transfer_id?: string | null;
+  official_window?: IOfficialWhatsappConversationWindowSnapshot | null;
+  satisfaction_response?: IChatSatisfactionResponse | null;
 }

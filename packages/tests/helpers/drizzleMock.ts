@@ -11,6 +11,7 @@ type QueryChain = {
   values: jest.Mock;
   set: jest.Mock;
   returning: jest.Mock;
+  for: jest.Mock;
   execute: jest.Mock;
 };
 
@@ -29,6 +30,7 @@ function createQueryChain<T>(result: T): QueryChain {
   chain.values = jest.fn(() => chain);
   chain.set = jest.fn(() => chain);
   chain.returning = jest.fn(() => chain);
+  chain.for = jest.fn(() => chain);
   chain.execute = jest.fn(async () => result);
 
   return chain;

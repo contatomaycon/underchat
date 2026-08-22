@@ -1,6 +1,7 @@
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import {
   chatAccountCentrifugo,
@@ -28,58 +29,6 @@ export class LeaveChatUseCase {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  private normalizeUserId(value: unknown): string | null {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return String(value);
-    }
-
-    if (typeof value === 'string') {
-      const normalized = value.trim();
-      return normalized.length > 0 ? normalized : null;
-    }
-
-    return null;
-  }
-
-  private resolveChatUserId(user: unknown): string | null {
-    if (!user || typeof user !== 'object') {
-      return null;
-    }
-
-    const parsed = user as { id?: unknown; user_id?: unknown };
-    return (
-      this.normalizeUserId(parsed.id) ?? this.normalizeUserId(parsed.user_id)
-    );
-  }
-
-  private buildUpdatedSecondaryUsers(
-    chat: IChat,
-    userId: string
-  ): IChat['secondary_users'] {
-    const primaryUserId = this.resolveChatUserId(chat.user);
-    const existingSecondaryUsers = Array.isArray(chat.secondary_users)
-      ? chat.secondary_users
-      : [];
-
-    return existingSecondaryUsers.filter((secondaryUser) => {
-      const secondaryUserId = this.resolveChatUserId(secondaryUser);
-
-      if (!secondaryUserId) {
-        return false;
-      }
-
-      if (secondaryUserId === userId) {
-        return false;
-      }
-
-      if (primaryUserId && secondaryUserId === primaryUserId) {
-        return false;
-      }
-
-      return true;
-    });
-  }
-
   private async publishChatUpdate(
     chat: IChat,
     accountId: string
@@ -106,7 +55,8 @@ export class LeaveChatUseCase {
     userId: string,
     actions: IJwtGroupHierarchy[],
     userSectors: string[],
-    userChannels: { id: string; name: string }[] = []
+    userChannels: { id: string; name: string }[] = [],
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<IChat> {
     void body;
 
@@ -139,13 +89,37 @@ export class LeaveChatUseCase {
       throw new Error(t('chat_only_secondary_can_leave'));
     }
 
-    const updatedChat: IChat = {
-      ...chat,
-      secondary_users: this.buildUpdatedSecondaryUsers(chat, userId),
-    };
+    const leavingUser = chat.secondary_users?.find(
+      (secondaryUser) => secondaryUser.id === userId
+    );
+    if (!leavingUser) {
+      throw new Error(t('chat_only_secondary_can_leave'));
+    }
 
-    const saved = await this.chatService.saveChat(updatedChat);
-    if (!saved) {
+    const participantRevision =
+      leavingUser.entered_at ??
+      chat.meta?.assignment_event_id ??
+      chat.meta?.outbound_webhook_event_ids?.at(-1) ??
+      chat.started_at ??
+      chat.date;
+
+    const updatedChat = await this.chatService.mutateSecondaryUserAtomically({
+      accountId,
+      chat,
+      operation: 'leave',
+      user: leavingUser,
+      outboundWebhook: {
+        eventTypes: ['chat.left'],
+        idempotencyKey: `chat-leave:${chat.chat_id}:${userId}:${participantRevision}`,
+        source: webhookSource,
+        previousChat: chat,
+        actor: { type: 'user', id: userId },
+        changes: {
+          left_user_id: userId,
+        },
+      },
+    });
+    if (!updatedChat) {
       throw new Error(t('chat_leave_failed'));
     }
 

@@ -44,6 +44,12 @@ export const chatbotFlowMappings = () => {
                 selected_sector_user: {
                   type: 'keyword',
                 },
+                selected_channel: {
+                  type: 'keyword',
+                },
+                selected_chatbot: {
+                  type: 'keyword',
+                },
               },
             },
             redirect_failed_attempts: {
@@ -164,7 +170,18 @@ export const chatbotFlowMappings = () => {
             },
             data: {
               type: 'nested',
+              // Node payloads evolve frequently (for example official CTA,
+              // template and Flow fields). Keep undeclared values in _source
+              // without allocating a new Elasticsearch field for every key.
+              dynamic: false,
               properties: {
+                outputKey: {
+                  type: 'keyword',
+                },
+                underchatLookup: {
+                  type: 'object',
+                  enabled: false,
+                },
                 title: {
                   type: 'text',
                 },
@@ -182,6 +199,15 @@ export const chatbotFlowMappings = () => {
                   enabled: false,
                 },
                 attachmentUrl: {
+                  type: 'keyword',
+                },
+                attachmentSource: {
+                  type: 'keyword',
+                },
+                attachmentVariable: {
+                  type: 'text',
+                },
+                attachmentFileName: {
                   type: 'keyword',
                 },
                 attachmentMimetype: {
@@ -320,6 +346,16 @@ export const chatbotFlowMappings = () => {
                 action: {
                   type: 'object',
                   enabled: false,
+                },
+                apiRequest: {
+                  type: 'object',
+                  enabled: false,
+                },
+                conditionalOperand: {
+                  type: 'keyword',
+                },
+                conditionalVariable: {
+                  type: 'text',
                 },
                 annotation: {
                   type: 'text',

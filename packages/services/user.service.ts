@@ -32,6 +32,10 @@ import { UserSensitiveDataRepository } from '@core/repositories/user/UserSensiti
 import { AccountSettingsAdditionalInfoViewerRepository } from '@core/repositories/accountSettings/AccountSettingsAdditionalInfoViewer.repository';
 import { ViewAdditionalInfoResponse } from '@core/schema/accountSettings/viewAdditionalInfo/response.schema';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
+import {
+  isCnpjFormat,
+  normalizeCnpj,
+} from '@core/common/functions/validateCnpj';
 import { UserPasswordViewerRepository } from '@core/repositories/user/UserPasswordViewer.repository';
 import { PermissionAssignmentCreatorRepository } from '@core/repositories/permission/PermissionAssignmentCreator.repository';
 import { PermissionAssignmentExistsRepository } from '@core/repositories/permission/PermissionAssignmentExists.repository';
@@ -72,6 +76,7 @@ import { calculateUserAttendanceGuardStatus } from '@core/common/functions/userA
 import { UserAttendanceHoursRulesViewerRepository } from '@core/repositories/user/UserAttendanceHoursRulesViewer.repository';
 import { UserAttendanceHoursRulesUpdaterTransactionRepository } from '@core/repositories/user/UserAttendanceHoursRulesUpdaterTransaction.repository';
 import Redis from 'ioredis';
+import type { WhatsappRuntimeDatabaseFence } from '@core/repositories/worker/WhatsappRuntimeDatabaseFence.repository';
 
 @injectable()
 export class UserService {
@@ -232,8 +237,13 @@ export class UserService {
     query: ListUserRequest,
     accountId: string | null
   ): Promise<[ListUserResponse[], number]> => {
-    const searchHashes = query.search
-      ? this.encryptService.encrypt(query.search)
+    const searchTerm = query.search
+      ? isCnpjFormat(query.search)
+        ? normalizeCnpj(query.search)
+        : query.search
+      : null;
+    const searchHashes = searchTerm
+      ? this.encryptService.encrypt(searchTerm)
       : null;
 
     const [result, total] = await Promise.all([
@@ -1016,13 +1026,19 @@ export class UserService {
 
   updateUserPhoneJid = async (
     userId: string,
-    phoneJid: string
+    phoneJid: string,
+    runtimeFence: WhatsappRuntimeDatabaseFence,
+    assertActive?: () => void | Promise<void>
   ): Promise<boolean> => {
+    await assertActive?.();
     const phoneJidEncrypted = this.passwordEncryptorService.encrypt(phoneJid);
+    await assertActive?.();
 
     return this.userInfoUpdaterRepository.updatePhoneJidById(
       userId,
-      phoneJidEncrypted
+      phoneJidEncrypted,
+      runtimeFence,
+      assertActive
     );
   };
 

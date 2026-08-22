@@ -15,9 +15,9 @@ describe('ContactGroupViewerUseCase', () => {
     const useCase = new ContactGroupViewerUseCase(service as never);
     const t = jest.fn((key: string) => key);
 
-    await expect(useCase.execute(t as never, 'cg-1')).rejects.toThrow(
-      'contact_group_not_found'
-    );
+    await expect(
+      useCase.execute(t as never, 'cg-1', 'account-1')
+    ).rejects.toThrow('contact_group_not_found');
     expect(service.viewContactGroupById).not.toHaveBeenCalled();
   });
 
@@ -29,8 +29,8 @@ describe('ContactGroupViewerUseCase', () => {
     };
     const useCase = new ContactGroupViewerUseCase(service as never);
 
-    await expect(useCase.execute(jest.fn() as never, 'cg-1')).resolves.toEqual(
-      result
-    );
+    await expect(
+      useCase.execute(jest.fn() as never, 'cg-1', 'account-1')
+    ).resolves.toEqual(result);
   });
 });

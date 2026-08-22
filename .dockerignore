@@ -1,8 +1,47 @@
 node_modules
+**/node_modules
 .git
 .turbo
+**/.turbo
 .cache
+**/.cache
+.pnpm-store
 coverage
+**/dist
+
+# Worker build/runtime artifacts must never leak from the host into an image.
+# Each worker image compiles its own clean output in its builder stage.
+apps/worker_whatsmeow/bin
+apps/worker_wwebjs/.wwebjs_cache
+apps/mobile/.expo
+apps/mobile/dist
+apps/mobile/dist.*
+
+# Local Android/Gradle outputs can grow to several gigabytes and are unrelated
+# to the server workers built from this monorepo.
+apps/mobile/android/.gradle
+apps/mobile/android/.kotlin
+apps/mobile/android/app/.cxx
+apps/mobile/android/app/build
+apps/mobile/android/build
+
+# Local Codex validation artifacts and Go build caches are never part of a
+# production image context.
+.codex-*
+.go-cache-*
+.go-modcache-*
+.go-tmp-*
+
+# Never send local runtime secrets to the Docker daemon or remote builders.
+# Re-include only the two applications whose checked-in build profiles contain
+# public compile-time settings. Generic environment templates are unnecessary
+# to these images and remain outside every Docker build context.
+.env*
+**/.env*
+!apps/underchat_authenticator/.env.development
+!apps/underchat_authenticator/.env.production
+!apps/underchat_chrome_extension/.env.development
+!apps/underchat_chrome_extension/.env.production
 
 apps/underchat_authenticator/build
 apps/underchat_authenticator/release

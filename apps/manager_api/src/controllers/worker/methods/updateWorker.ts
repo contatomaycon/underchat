@@ -37,6 +37,7 @@ export const updateWorker = async (
     ...request.params,
     worker_type: request.body?.worker_type,
     server_id: request.body?.server_id,
+    connection_strategy: request.body?.connection_strategy,
   };
 
   try {

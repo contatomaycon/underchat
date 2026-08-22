@@ -5,6 +5,7 @@ import { isAxiosError } from 'axios';
 import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
@@ -18,6 +19,22 @@ import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/extern
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { subscribeExternalConnection } from '@/@webcore/centrifugoExternalConnection';
 import { logLocalConnectionStatus } from '@/@webcore/utils/localConnectionStatusLog';
+import {
+  evaluateConnectionModalPublication,
+  shouldClearConnectionModalQr,
+  useWhatsappConnectionStatus,
+  type WhatsappConnectionStatusResolution,
+} from '@/composables/useWhatsappConnectionStatus';
+import { applyWhatsappConnectionStatus } from '@core/common/functions/applyWhatsappConnectionStatus';
+import { isWhatsappConnectionOnline } from '@core/common/functions/whatsappConnectionStatus';
+import {
+  isWhatsappQrCredentialConsumedState,
+  isWhatsappQrCredentialPendingState,
+} from '@core/common/functions/isWhatsappQrCredentialConsumedState';
+import type {
+  IWhatsappConnectionStatus,
+  WhatsappConnectionStatusProvider,
+} from '@core/common/interfaces/IWhatsappConnectionStatus';
 
 definePage({
   meta: {
@@ -57,11 +74,64 @@ const qrMaxAttempts = shallowRef(0);
 const phoneNumber = shallowRef<string | null>(null);
 const sessionReady = shallowRef(false);
 const disconnectedByUser = shallowRef(false);
+const qrCredentialConsumed = shallowRef(false);
+const nativeConnectionWorkerId = shallowRef<string>();
 const expiryTimeout = shallowRef<number | null>(null);
 const isPasskeyRunning = shallowRef(false);
 const isPasskeyConfirming = shallowRef(false);
+const {
+  status: nativeConnectionStatus,
+  sourceId: nativeConnectionStatusSourceId,
+  order: nativeConnectionStatusOrder,
+  accept: acceptNativeConnectionStatus,
+  reset: resetNativeConnectionStatus,
+} = useWhatsappConnectionStatus();
+
+function nativeProvider(): WhatsappConnectionStatusProvider | undefined {
+  const type = externalConnection.value?.type?.id;
+  if (type === EWorkerType.baileys) return 'baileys';
+  if (type === EWorkerType.wwebjs) return 'wwebjs';
+  if (type === EWorkerType.whatsmeow) return 'whatsmeow';
+  return undefined;
+}
 
 let unsubscribeExternalConnection: (() => void) | null = null;
+let externalSubscriptionRetryTimer: number | null = null;
+let externalSubscriptionRetryAttempt = 0;
+let externalSubscriptionStopped = false;
+let externalSubscriptionGeneration = 0;
+const EXTERNAL_SUBSCRIPTION_RETRY_MAX_DELAY_MS = 15_000;
+
+function clearExternalSubscriptionRetry() {
+  if (externalSubscriptionRetryTimer !== null) {
+    window.clearTimeout(externalSubscriptionRetryTimer);
+    externalSubscriptionRetryTimer = null;
+  }
+}
+
+function scheduleExternalSubscriptionRetry() {
+  if (
+    externalSubscriptionStopped ||
+    externalSubscriptionRetryTimer !== null ||
+    isInvalid.value ||
+    isExpired.value
+  ) {
+    return;
+  }
+
+  const delay = Math.min(
+    1_000 * 2 ** externalSubscriptionRetryAttempt,
+    EXTERNAL_SUBSCRIPTION_RETRY_MAX_DELAY_MS
+  );
+  externalSubscriptionRetryAttempt = Math.min(
+    externalSubscriptionRetryAttempt + 1,
+    10
+  );
+  externalSubscriptionRetryTimer = window.setTimeout(() => {
+    externalSubscriptionRetryTimer = null;
+    void loadExternalConnection(false);
+  }, delay);
+}
 
 const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   status: statusConnection.value,
@@ -85,6 +155,12 @@ const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
     : undefined,
   session_ready: sessionReady.value,
   disconnected_user: disconnectedByUser.value,
+  connection_status: nativeConnectionStatus.value,
+  connection_status_source_id: nativeConnectionStatusSourceId.value,
+  connection_status_order: nativeConnectionStatusOrder.value,
+  connection_online_acknowledged:
+    sessionReady.value &&
+    isWhatsappConnectionOnline(nativeConnectionStatus.value),
 }));
 
 const modalState = computed<WorkerConnectionModalState>(() =>
@@ -197,6 +273,13 @@ const stageMeta = computed(() => {
       title: 'connection_resetting_title',
       description: 'connection_resetting_description',
       icon: 'tabler-refresh',
+      color: 'info',
+      loading: true,
+    },
+    migrating: {
+      title: 'connection_migrating_title',
+      description: 'connection_migrating_description',
+      icon: 'tabler-arrows-right-left',
       color: 'info',
       loading: true,
     },
@@ -428,27 +511,19 @@ function isConnectedPayload(data: Partial<IBaileysConnectionState>): boolean {
   );
 }
 
-function hasConfirmedSessionReady(
-  data: Partial<IBaileysConnectionState>
+function shouldIgnoreConnectionPayload(
+  data: Partial<IBaileysConnectionState>,
+  nativeResolution: WhatsappConnectionStatusResolution
 ): boolean {
-  return (
-    data.status === EBaileysConnectionStatus.connected &&
-    data.code === ECodeMessage.connectionEstablished &&
-    data.worker_status_id === EWorkerStatus.online &&
-    data.session_ready === true &&
-    Boolean(data.phone?.trim())
-  );
-}
-
-function shouldIgnoreConnectedPayload(
-  data: Partial<IBaileysConnectionState>
-): boolean {
-  if (!isConnectedPayload(data)) {
-    return false;
-  }
-
-  if (!hasConfirmedSessionReady(data)) {
-    logLocalConnectionStatus('web.external_connection.connected_ignored', {
+  const decision = evaluateConnectionModalPublication({
+    currentAttemptId: connectionAttemptId.value,
+    currentConnected: isConnected.value,
+    hasDurableNativeOrder: Boolean(nativeConnectionStatusOrder.value),
+    incoming: data,
+    nativeResolution,
+  });
+  if (!decision.accepted) {
+    logLocalConnectionStatus('web.external_connection.publication_ignored', {
       layer: 'web.external_connection',
       worker_id: data.worker_id ?? externalConnection.value?.worker_id,
       account_id: data.account_id ?? externalConnection.value?.account_id,
@@ -462,47 +537,95 @@ function shouldIgnoreConnectedPayload(
       authenticated: data.authenticated,
       provider_state: data.provider_state,
       degraded_reason: data.degraded_reason,
-      reason: 'connected_without_confirmed_session_ready',
+      reason: decision.reason,
       phone: data.phone,
-      connection_attempt_id: data.connection_attempt_id,
-    });
-    return true;
-  }
-
-  const ignored =
-    Boolean(connectionAttemptId.value) &&
-    data.connection_attempt_id !== connectionAttemptId.value;
-  if (ignored) {
-    logLocalConnectionStatus('web.external_connection.connected_ignored', {
-      layer: 'web.external_connection',
-      worker_id: data.worker_id ?? externalConnection.value?.worker_id,
-      account_id: data.account_id ?? externalConnection.value?.account_id,
-      worker_type_id: data.worker_type_id,
-      worker_status_id: data.worker_status_id,
-      status: data.status,
-      code: data.code,
-      session_ready: data.session_ready,
-      reason: 'stale_connection_attempt',
       expected_connection_attempt_id: connectionAttemptId.value,
       connection_attempt_id: data.connection_attempt_id,
+      connection_status_order: data.connection_status_order,
+      native_resolution: nativeResolution,
     });
   }
 
-  return ignored;
+  return !decision.accepted;
 }
 
 function setInitialStateFromWorker(data: WorkerExternalConnectionViewResponse) {
+  const hadCurrentNativeState =
+    nativeConnectionWorkerId.value === data.worker_id &&
+    nativeConnectionStatus.value !== undefined;
+  if (!hadCurrentNativeState) {
+    resetNativeConnectionStatus();
+    nativeConnectionWorkerId.value = data.worker_id;
+  }
+  let acceptedNativeStatus: IWhatsappConnectionStatus | undefined =
+    nativeConnectionStatus.value;
+  let nativeResolution: WhatsappConnectionStatusResolution = 'none';
+  if (data.connection_status) {
+    const acceptance = acceptNativeConnectionStatus({
+      snapshot: data.connection_status,
+      sourceId: data.connection_status_source_id,
+      order: data.connection_status_order,
+      expectedProvider: nativeProvider(),
+    });
+    if (acceptance.outcome === 'invalid' || acceptance.outcome === 'stale') {
+      return;
+    }
+    acceptedNativeStatus = acceptance.snapshot ?? nativeConnectionStatus.value;
+    nativeResolution = acceptance.outcome;
+  }
+
+  const centrallyAcknowledgedOnline =
+    data.status?.id === EWorkerStatus.online &&
+    data.connection_online_acknowledged === true &&
+    isWhatsappConnectionOnline(acceptedNativeStatus) &&
+    Boolean(data.number?.trim());
+  if (
+    hadCurrentNativeState &&
+    (!data.connection_status ||
+      (nativeResolution === 'duplicate' && !centrallyAcknowledgedOnline))
+  ) {
+    // A fallback HTTP response may race a newer Centrifugo publication. The
+    // native outbox cursor wins. A duplicate snapshot may still carry the
+    // later central ONLINE acknowledgement; otherwise it cannot replace an
+    // active QR/terminal state.
+    return;
+  }
   workerStatusId.value = data.status?.id ?? null;
   phoneNumber.value = data.number ? formatPhoneBR(data.number) : null;
   resetQrAttempts();
   connectionAttemptId.value = undefined;
   qrPending.value = false;
+  qrCredentialConsumed.value = false;
   resetPasskeyState();
 
-  if (data.status?.id === EWorkerStatus.online) {
-    statusConnection.value = EBaileysConnectionStatus.connected;
-    statusCode.value = ECodeMessage.connectionEstablished;
-    sessionReady.value = true;
+  if (acceptedNativeStatus) {
+    const projected = applyWhatsappConnectionStatus(
+      {
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitConnection,
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type_id: data.type?.id as EWorkerType | undefined,
+        worker_status_id: data.status?.id as EWorkerStatus | undefined,
+        phone: data.number ?? undefined,
+        session_ready: centrallyAcknowledgedOnline,
+        can_send: centrallyAcknowledgedOnline,
+        can_receive_runtime: centrallyAcknowledgedOnline,
+        authenticated: centrallyAcknowledgedOnline,
+        connection_online_acknowledged: centrallyAcknowledgedOnline,
+        connection_status_source_id:
+          nativeConnectionStatusSourceId.value ?? undefined,
+        connection_status_order: nativeConnectionStatusOrder.value,
+      },
+      acceptedNativeStatus
+    );
+    statusConnection.value =
+      projected.status ?? EBaileysConnectionStatus.connecting;
+    statusCode.value = projected.code ?? ECodeMessage.awaitConnection;
+    sessionReady.value = centrallyAcknowledgedOnline;
+    disconnectedByUser.value = projected.disconnected_user === true;
+    qrPending.value = projected.qr_pending === true;
+    qrCredentialConsumed.value = isWhatsappQrCredentialConsumedState(projected);
     qrcode.value = undefined;
     return;
   }
@@ -510,6 +633,8 @@ function setInitialStateFromWorker(data: WorkerExternalConnectionViewResponse) {
   statusConnection.value = EBaileysConnectionStatus.connecting;
   statusCode.value = ECodeMessage.awaitConnection;
   sessionReady.value = false;
+  disconnectedByUser.value = false;
+  qrCredentialConsumed.value = false;
   qrcode.value = undefined;
   resetPasskeyState();
 }
@@ -545,6 +670,7 @@ function applyConnectedState(data: IBaileysConnectionState) {
     ? formatPhoneBR(data.phone)
     : phoneNumber.value;
   disconnectedByUser.value = false;
+  qrCredentialConsumed.value = true;
   isRequestingQr.value = false;
   resetQrAttempts();
 }
@@ -558,11 +684,50 @@ function applyConnectionState(data: IBaileysConnectionState) {
     return;
   }
 
-  if (shouldIgnoreConnectedPayload(data)) {
+  let nativeResolution: WhatsappConnectionStatusResolution = 'none';
+  if (data.connection_status) {
+    const accepted = acceptNativeConnectionStatus({
+      snapshot: data.connection_status,
+      sourceId: data.connection_status_source_id,
+      order: data.connection_status_order,
+      expectedProvider: nativeProvider(),
+    });
+    if (
+      !accepted.snapshot ||
+      accepted.outcome === 'invalid' ||
+      accepted.outcome === 'stale'
+    ) {
+      return;
+    }
+    nativeResolution = accepted.outcome;
+    data = applyWhatsappConnectionStatus(
+      {
+        ...data,
+        connection_status_source_id: nativeConnectionStatusSourceId.value,
+      },
+      accepted.snapshot
+    );
+  } else if (isConnectedPayload(data)) {
     return;
   }
 
-  const reduced = reduceWorkerConnectionState(connectionState.value, data);
+  if (shouldIgnoreConnectionPayload(data, nativeResolution)) {
+    return;
+  }
+
+  if (
+    shouldClearConnectionModalQr({
+      nativeResolution,
+      snapshot: data.connection_status,
+    })
+  ) {
+    qrcode.value = undefined;
+    qrPending.value = false;
+  }
+
+  const reduced = reduceWorkerConnectionState(connectionState.value, data, {
+    authoritativeNativeTransition: nativeResolution === 'accepted',
+  });
   if (reduced.ignored) {
     return;
   }
@@ -583,13 +748,21 @@ function applyConnectionState(data: IBaileysConnectionState) {
     return;
   }
 
+  if (isWhatsappQrCredentialConsumedState(data)) {
+    qrCredentialConsumed.value = true;
+  }
+  const keepAwaitingQrCredential =
+    !qrCredentialConsumed.value && isWhatsappQrCredentialPendingState(data);
+
   applyQrAttempts(next);
 
   if (next.connection_attempt_id) {
     connectionAttemptId.value = next.connection_attempt_id;
   }
 
-  qrPending.value = next.qr_pending === true;
+  qrPending.value = keepAwaitingQrCredential
+    ? !qrcode.value
+    : next.qr_pending === true;
 
   if (next.disconnected_user !== undefined) {
     disconnectedByUser.value = next.disconnected_user;
@@ -647,6 +820,12 @@ function applyConnectionState(data: IBaileysConnectionState) {
 
   if (incomingCode && incomingCode !== ECodeMessage.info) {
     statusCode.value = incomingCode;
+  }
+
+  if (keepAwaitingQrCredential) {
+    statusConnection.value = EBaileysConnectionStatus.connecting;
+    statusCode.value = ECodeMessage.awaitingReadQrCode;
+    qrPending.value = !qrcode.value;
   }
 
   if (
@@ -733,9 +912,10 @@ async function requestQrCode(
   }
 
   isRequestingQr.value = true;
+  qrCredentialConsumed.value = false;
   statusConnection.value = EBaileysConnectionStatus.connecting;
   if (!qrcode.value) {
-    statusCode.value = ECodeMessage.awaitConnection;
+    statusCode.value = ECodeMessage.awaitingReadQrCode;
     qrPending.value = true;
   }
   if (!connectionAttemptId.value) {
@@ -840,13 +1020,14 @@ async function confirmPasskeyPairing() {
 async function subscribeToExternalConnection(
   data: WorkerExternalConnectionViewResponse
 ) {
+  const generation = ++externalSubscriptionGeneration;
   if (unsubscribeExternalConnection) {
     unsubscribeExternalConnection();
     unsubscribeExternalConnection = null;
   }
 
   try {
-    unsubscribeExternalConnection = await subscribeExternalConnection(
+    const cleanup = await subscribeExternalConnection(
       {
         url: data.centrifugo_url,
         connectionToken: data.centrifugo_connection_token,
@@ -855,8 +1036,36 @@ async function subscribeToExternalConnection(
       },
       handleWorkerConnectionMessage
     );
+    if (
+      externalSubscriptionStopped ||
+      generation !== externalSubscriptionGeneration
+    ) {
+      cleanup();
+      return;
+    }
+    unsubscribeExternalConnection = cleanup;
+    externalSubscriptionRetryAttempt = 0;
+    clearExternalSubscriptionRetry();
   } catch (error) {
-    console.error('Failed to subscribe to external connection events', error);
+    if (
+      externalSubscriptionStopped ||
+      generation !== externalSubscriptionGeneration
+    ) {
+      return;
+    }
+    logLocalConnectionStatus('web.external_connection.subscription_failed', {
+      layer: 'web.external_connection',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.type?.id,
+      connection_attempt_id: connectionAttemptId.value,
+      reason:
+        error instanceof Error
+          ? error.name || 'external_subscription_failed'
+          : 'external_subscription_failed',
+      retry_attempt: externalSubscriptionRetryAttempt,
+    });
+    scheduleExternalSubscriptionRetry();
   }
 }
 
@@ -918,6 +1127,9 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  externalSubscriptionStopped = true;
+  externalSubscriptionGeneration += 1;
+  clearExternalSubscriptionRetry();
   clearExpiryTimeout();
 
   if (unsubscribeExternalConnection) {

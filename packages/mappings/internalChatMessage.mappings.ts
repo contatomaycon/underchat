@@ -3,6 +3,7 @@ export const internalChatMessageMappings = () => {
     mappings: {
       properties: {
         message_id: { type: 'keyword' },
+        inbound_event_ids: { type: 'keyword' },
         conversation_id: { type: 'keyword' },
         account_id: { type: 'keyword' },
         type_user: { type: 'keyword' },

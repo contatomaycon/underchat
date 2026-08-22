@@ -9,6 +9,7 @@ export const getDashboardStats = async (
   request: FastifyRequest,
   reply: FastifyReply
 ) => {
+  reply.header('Cache-Control', 'no-store, max-age=0');
   const dashboardStatsViewerUseCase = container.resolve(
     DashboardStatsViewerUseCase
   );

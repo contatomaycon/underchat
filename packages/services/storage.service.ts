@@ -442,6 +442,57 @@ export class StorageService {
     };
   }
 
+  public async uploadTemporaryChatbotApiFile(
+    buffer: Buffer<ArrayBufferLike>,
+    accountId: string,
+    options?: { fileName?: string; mimetype?: string }
+  ): Promise<(UploadFileResponse & { expires_at: string }) | null> {
+    if (buffer.byteLength > 16 * 1024 * 1024) {
+      throw new Error('Chatbot API media exceeds 16 MiB');
+    }
+    const detected = await this.fileProcessor.detectFileType(buffer);
+    const providedName = options?.fileName?.trim();
+    const providedExtension = providedName
+      ? this.fileProcessor.getFileExtension(providedName)
+      : '';
+    const extension =
+      detected.ext ||
+      providedExtension ||
+      this.fileProcessor.extFromMime(options?.mimetype ?? '') ||
+      'bin';
+    const mimetype =
+      detected.mime || options?.mimetype || 'application/octet-stream';
+    const fileName = this.fileProcessor.normalizeFileNameWithExtension(
+      providedName || `api-response-${Date.now()}`,
+      extension
+    );
+    const key = this.fileProcessor.generateUniqueObjectKey(
+      fileName,
+      'chatbot-api-temporary'
+    );
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const bucketId = await this.ensureBucket(accountId);
+    const { usedBackup } = await this.uploader.uploadWithRetry({
+      bucket: bucketId,
+      key,
+      body: buffer,
+      contentType: mimetype,
+      accountId: bucketId,
+      expiresAt,
+      tagging: 'underchat-temporary=true&retention-days=7',
+    });
+    return {
+      url: this.createUrl(key, bucketId, usedBackup),
+      name: fileName,
+      extension,
+      size: buffer.byteLength,
+      mimetype,
+      width: null,
+      height: null,
+      expires_at: expiresAt.toISOString(),
+    };
+  }
+
   public async uploadPdf(
     buffer: Buffer | Uint8Array,
     accountId: string,

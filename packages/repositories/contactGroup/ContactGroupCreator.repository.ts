@@ -23,9 +23,10 @@ export class ContactGroupCreatorRepository {
       ExtractTablesWithRelations<typeof schema>
     >,
     input: CreateContactGroupRequest,
-    accountId: string
+    accountId: string,
+    requestedContactGroupId?: string
   ): Promise<string | null> => {
-    const contactGroupId = uuidv7();
+    const contactGroupId = requestedContactGroupId ?? uuidv7();
 
     const result = await tx
       .insert(contactGroup)

@@ -6,11 +6,12 @@ import { ulid } from 'ulid';
 import { IPendingMessageWithTimestamp } from '@core/common/interfaces/IPendingMessageWithTimestamp';
 import { IQueuedMessage } from '@core/common/interfaces/IQueuedMessage';
 import { IDeferred } from '@core/common/interfaces/IDeferred';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import {
+  durableWorkerIdFromKafkaTopic,
   isRecoverableKafkaTopicError,
-  resolveKafkaTopicConfig,
 } from '@core/common/functions/kafkaTopicConfig';
+import { getKafkaDispatchGuard } from '@core/common/functions/kafkaDispatchFenceContext';
+import { recoverKafkaTopicForProduce } from '@core/common/functions/kafkaTopicRecoveryPolicy';
 
 @singleton()
 export class StreamProducerService {
@@ -575,14 +576,7 @@ export class StreamProducerService {
   }
 
   private async ensureTopicForProduce(topic: string): Promise<void> {
-    const topicConfig = resolveKafkaTopicConfig(topic);
-
-    await ensureKafkaTopic(
-      this.kafka,
-      topic,
-      topicConfig.numPartitions,
-      topicConfig.replicationFactor
-    );
+    await recoverKafkaTopicForProduce(this.kafka, topic);
   }
 
   private async produceMessage(
@@ -590,7 +584,8 @@ export class StreamProducerService {
     topic: string,
     value: Buffer,
     keyBuffer: Buffer | undefined,
-    headers?: MessageHeader[]
+    headers?: MessageHeader[],
+    assertActive?: () => void | Promise<void>
   ): Promise<void> {
     if (this.closing) {
       throw new Error('Cannot produce message during shutdown');
@@ -604,6 +599,11 @@ export class StreamProducerService {
     if (!currentProducer || currentProducer !== producer) {
       throw new Error('Producer was invalidated');
     }
+
+    // The producer queue can outlive a Kafka assignment. Revalidate at the
+    // actual provider boundary, after every awaited preparation and
+    // immediately before librdkafka accepts the record.
+    await assertActive?.();
 
     return new Promise<void>((resolve, reject) => {
       if (this.closing || this.producer !== producer) {
@@ -780,6 +780,7 @@ export class StreamProducerService {
     value: Buffer,
     keyBuffer: Buffer | undefined,
     headers: MessageHeader[] | undefined,
+    assertActive?: () => void | Promise<void>,
     attempt = 0
   ): Promise<void> {
     if (this.closing) {
@@ -787,7 +788,15 @@ export class StreamProducerService {
     }
 
     try {
-      await this.produceMessage(producer, topic, value, keyBuffer, headers);
+      await assertActive?.();
+      await this.produceMessage(
+        producer,
+        topic,
+        value,
+        keyBuffer,
+        headers,
+        assertActive
+      );
     } catch (error) {
       if (this.closing) {
         throw new Error('Producer is closing');
@@ -812,6 +821,8 @@ export class StreamProducerService {
       );
       await this.delay(backoffMs);
 
+      await assertActive?.();
+
       if (this.closing) {
         throw new Error('Producer is closing');
       }
@@ -826,6 +837,7 @@ export class StreamProducerService {
         value,
         keyBuffer,
         headers,
+        assertActive,
         attempt + 1
       );
     }
@@ -896,17 +908,20 @@ export class StreamProducerService {
     return Buffer.isBuffer(key) ? key : Buffer.from(key, 'utf-8');
   }
 
-  private enqueueSend(
+  private async enqueueSend(
     topic: string,
     value: Buffer,
     keyBuffer: Buffer | undefined,
-    headers?: MessageHeader[]
+    headers?: MessageHeader[],
+    assertActive?: () => void | Promise<void>
   ): Promise<void> {
     if (!topic || typeof topic !== 'string' || topic.trim().length === 0) {
       return Promise.reject(
         new Error('Invalid topic: topic must be a non-empty string')
       );
     }
+
+    await assertActive?.();
 
     return new Promise((resolve, reject) => {
       if (this.closing) {
@@ -930,6 +945,7 @@ export class StreamProducerService {
         value,
         keyBuffer,
         headers,
+        assertActive,
         resolve,
         reject,
       });
@@ -984,10 +1000,22 @@ export class StreamProducerService {
 
   private async runFlushLoop(): Promise<void> {
     while (this.sendQueue.length > 0 && !this.closing) {
-      const batch = this.sendQueue.splice(
+      const queuedBatch = this.sendQueue.splice(
         0,
         StreamProducerService.MAX_BATCH_SIZE
       );
+      const batch: IQueuedMessage[] = [];
+      for (const message of queuedBatch) {
+        try {
+          await message.assertActive?.();
+          batch.push(message);
+        } catch (error) {
+          message.reject(toError(error));
+        }
+      }
+      if (batch.length === 0) {
+        continue;
+      }
 
       let producer: Producer;
       try {
@@ -1028,7 +1056,19 @@ export class StreamProducerService {
           return;
         }
 
-        this.sendQueue.unshift(...batch);
+        const retryableBatch: IQueuedMessage[] = [];
+        for (const message of batch) {
+          try {
+            await message.assertActive?.();
+            retryableBatch.push(message);
+          } catch (error) {
+            message.reject(toError(error));
+          }
+        }
+        if (retryableBatch.length === 0) {
+          continue;
+        }
+        this.sendQueue.unshift(...retryableBatch);
 
         const backoffMs = this.calculateBackoff(
           Math.min(
@@ -1085,6 +1125,7 @@ export class StreamProducerService {
           message.value,
           message.keyBuffer,
           message.headers,
+          message.assertActive,
           0,
           producer
         )
@@ -1125,6 +1166,7 @@ export class StreamProducerService {
           message.value,
           message.keyBuffer,
           message.headers,
+          message.assertActive,
           0,
           producer
         )
@@ -1148,6 +1190,7 @@ export class StreamProducerService {
     value: Buffer,
     keyBuffer: Buffer | undefined,
     headers: MessageHeader[] | undefined,
+    assertActive?: () => void | Promise<void>,
     attempt = 0,
     producer?: Producer,
     topicRecoveryAttempted = false
@@ -1162,14 +1205,18 @@ export class StreamProducerService {
       );
     }
 
+    await assertActive?.();
+
     try {
       const resolvedProducer = producer ?? (await this.ensureProducer());
+      await assertActive?.();
       await this.produceWithQueueFullRetry(
         resolvedProducer,
         topic,
         value,
         keyBuffer,
-        headers
+        headers,
+        assertActive
       );
     } catch (error) {
       if (this.closing) {
@@ -1180,9 +1227,33 @@ export class StreamProducerService {
       const isRecoverableTopicError = isRecoverableKafkaTopicError(error);
 
       if (isRecoverableTopicError && !topicRecoveryAttempted) {
+        const durableWorkerId = durableWorkerIdFromKafkaTopic(topic);
+        if (durableWorkerId) {
+          console.error(
+            '[worker-kafka-topic-audit]',
+            JSON.stringify({
+              type: 'worker_kafka_topic_audit',
+              event: 'worker_topics.producer_recovery.denied',
+              timestamp: new Date().toISOString(),
+              worker_id: durableWorkerId,
+              topic,
+              reason: 'authoritative_lifecycle_provisioning_required',
+              error: getErrorMessage(error),
+            })
+          );
+          throw new Error(
+            `durable_worker_topic_missing_recovery_disabled:${topic}`,
+            { cause: error }
+          );
+        }
+        await assertActive?.();
         await this.ensureTopicForProduce(topic);
 
+        await assertActive?.();
+
         const recoveredProducer = await this.reconnectProducer();
+
+        await assertActive?.();
 
         if (this.closing) {
           throw new Error('Producer is closing');
@@ -1193,6 +1264,7 @@ export class StreamProducerService {
           value,
           keyBuffer,
           headers,
+          assertActive,
           attempt + 1,
           recoveredProducer,
           true
@@ -1204,7 +1276,10 @@ export class StreamProducerService {
         throw error;
       }
 
+      await assertActive?.();
       const reconnectedProducer = await this.reconnectProducer();
+
+      await assertActive?.();
 
       if (this.closing) {
         throw new Error('Producer is closing');
@@ -1221,6 +1296,8 @@ export class StreamProducerService {
       );
       await this.delay(backoffMs);
 
+      await assertActive?.();
+
       if (this.closing) {
         throw new Error('Producer is closing');
       }
@@ -1230,6 +1307,7 @@ export class StreamProducerService {
         value,
         keyBuffer,
         headers,
+        assertActive,
         attempt + 1,
         reconnectedProducer,
         topicRecoveryAttempted
@@ -1241,11 +1319,13 @@ export class StreamProducerService {
     topic: string,
     payload: unknown,
     key?: string | Buffer,
-    headers?: MessageHeader[]
+    headers?: MessageHeader[],
+    assertActive:
+      (() => void | Promise<void>) | undefined = getKafkaDispatchGuard()
   ): Promise<void> {
     const value = this.serializePayload(payload);
     const keyBuffer = this.serializeKey(key);
-    return this.enqueueSend(topic, value, keyBuffer, headers);
+    return this.enqueueSend(topic, value, keyBuffer, headers, assertActive);
   }
 
   async close(): Promise<boolean[]> {

@@ -1,0 +1,16 @@
+{
+  "name": "webhook_dispatcher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.12.0"
+  },
+  "scripts": {
+    "dev": "tsx watch --tsconfig tsconfig.tsx.json src/index.ts",
+    "start": "node dist/apps/webhook_dispatcher/src/index.js",
+    "build": "tsc && tsc-alias -p tsconfig.json -f -fe .js",
+    "lint": "eslint . --config eslint.config.mjs",
+    "typecheck": "tsc --noEmit"
+  }
+}

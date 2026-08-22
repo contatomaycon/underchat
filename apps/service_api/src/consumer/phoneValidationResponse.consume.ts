@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { PhoneValidationResponseConsume } from '@core/consumer/phoneValidation/PhoneValidationResponse.consume';
+import { launchServiceApiConsumerStartup } from './startupAttempt';
 
 export function startPhoneValidationResponseConsume(
   server: FastifyInstance
@@ -9,12 +10,13 @@ export function startPhoneValidationResponseConsume(
     PhoneValidationResponseConsume
   );
 
-  phoneValidationResponseConsume.execute().catch((error: unknown) => {
-    server.log.error(
-      { err: error },
-      'Error starting phone validation response consume'
-    );
-  });
-
-  return phoneValidationResponseConsume;
+  return launchServiceApiConsumerStartup(
+    phoneValidationResponseConsume,
+    () => phoneValidationResponseConsume.execute(),
+    (error) =>
+      server.log.error(
+        { err: error },
+        'Error starting phone validation response consume'
+      )
+  );
 }

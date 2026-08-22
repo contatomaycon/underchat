@@ -9,6 +9,7 @@ import {
   desc,
   eq,
   ilike,
+  isNotNull,
   isNull,
   SQL,
   SQLWrapper,
@@ -28,7 +29,10 @@ export class IntegrationListerRepository {
     accountId: string,
     query: ListIntegrationsRequest
   ): SQLWrapper[] => {
-    const filters: SQLWrapper[] = [eq(apiKey.account_id, accountId)];
+    const filters: SQLWrapper[] = [
+      eq(apiKey.account_id, accountId),
+      isNotNull(apiKey.worker_id),
+    ];
 
     if (query.search) {
       filters.push(ilike(apiKey.name, `%${query.search}%`) as SQLWrapper);

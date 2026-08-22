@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsx watch --tsconfig tsconfig.tsx.json src/index.ts",
     "build": "tsc && tsc-alias -p tsconfig.json -f -fe .js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "pnpx eslint . --fix",
     "sonar": "sonar-scanner -X",
     "generate:openapi": "export GENERATE_OPENAPI=true && pnpm run build && node dist/apps/public_api/src/docs.js"

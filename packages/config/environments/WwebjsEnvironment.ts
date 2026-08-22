@@ -7,6 +7,9 @@ interface RuntimeActivationInput {
   runtime_generation?: number | string;
   warm_pool_id?: string;
   session_volume_name?: string;
+  session_storage?: string;
+  runtime_capability?: string;
+  writer_epoch?: string;
 }
 
 export class WwebjsEnvironment {
@@ -78,13 +81,67 @@ export class WwebjsEnvironment {
     );
   }
 
-  public activateRuntime(input: RuntimeActivationInput): {
-    alreadyActive: boolean;
-  } {
+  public validateRuntimeActivation(input: RuntimeActivationInput): void {
     if (this.runtimeActivation) {
       if (
         this.runtimeActivation.worker_id !== input.worker_id ||
-        this.runtimeActivation.account_id !== input.account_id
+        this.runtimeActivation.account_id !== input.account_id ||
+        this.runtimeActivation.runtime_generation !==
+          input.runtime_generation ||
+        this.runtimeActivation.warm_pool_id !== input.warm_pool_id ||
+        this.runtimeActivation.session_storage !== input.session_storage ||
+        this.runtimeActivation.runtime_capability !==
+          input.runtime_capability ||
+        this.runtimeActivation.writer_epoch !== input.writer_epoch
+      ) {
+        throw new InvalidConfigurationError(
+          'Runtime is already active for another identity.'
+        );
+      }
+      return;
+    }
+    if (
+      process.env.WORKER_ID &&
+      process.env.ACCOUNT_ID &&
+      (process.env.WORKER_ID !== input.worker_id ||
+        process.env.ACCOUNT_ID !== input.account_id)
+    ) {
+      throw new InvalidConfigurationError(
+        'Container environment is already bound to another worker.'
+      );
+    }
+    const runtimeGeneration = Number(input.runtime_generation);
+    if (
+      process.env.WARM_STANDBY?.trim().toLowerCase() === 'true' &&
+      (input.session_storage !== 'postgres' ||
+        input.warm_pool_id !== process.env.WARM_POOL_ID?.trim() ||
+        !Number.isSafeInteger(runtimeGeneration) ||
+        runtimeGeneration <= 0 ||
+        input.runtime_capability !==
+          process.env.WORKER_RUNTIME_CAPABILITY?.trim() ||
+        input.writer_epoch !== process.env.WORKER_WRITER_EPOCH?.trim())
+    ) {
+      throw new InvalidConfigurationError(
+        'PostgreSQL warm runtime activation identity is invalid.'
+      );
+    }
+  }
+
+  public activateRuntime(input: RuntimeActivationInput): {
+    alreadyActive: boolean;
+  } {
+    this.validateRuntimeActivation(input);
+    if (this.runtimeActivation) {
+      if (
+        this.runtimeActivation.worker_id !== input.worker_id ||
+        this.runtimeActivation.account_id !== input.account_id ||
+        this.runtimeActivation.runtime_generation !==
+          input.runtime_generation ||
+        this.runtimeActivation.warm_pool_id !== input.warm_pool_id ||
+        this.runtimeActivation.session_storage !== input.session_storage ||
+        this.runtimeActivation.runtime_capability !==
+          input.runtime_capability ||
+        this.runtimeActivation.writer_epoch !== input.writer_epoch
       ) {
         throw new InvalidConfigurationError(
           'Runtime is already active for another worker.'
@@ -105,6 +162,28 @@ export class WwebjsEnvironment {
       );
     }
 
+    const configuredWarmPoolId = process.env.WARM_POOL_ID?.trim();
+    const configuredCapability =
+      process.env.WORKER_RUNTIME_CAPABILITY?.trim() ?? '';
+    const configuredWriterEpoch = process.env.WORKER_WRITER_EPOCH?.trim() ?? '';
+    const runtimeGeneration = Number(input.runtime_generation);
+    if (
+      process.env.WARM_STANDBY?.trim().toLowerCase() === 'true' &&
+      (input.session_storage !== 'postgres' ||
+        !input.warm_pool_id ||
+        input.warm_pool_id !== configuredWarmPoolId ||
+        !Number.isSafeInteger(runtimeGeneration) ||
+        runtimeGeneration <= 0 ||
+        !input.runtime_capability ||
+        input.runtime_capability !== configuredCapability ||
+        !input.writer_epoch ||
+        input.writer_epoch !== configuredWriterEpoch)
+    ) {
+      throw new InvalidConfigurationError(
+        'PostgreSQL warm runtime activation identity is invalid.'
+      );
+    }
+
     this.runtimeActivation = input;
     process.env.WORKER_ID = input.worker_id;
     process.env.ACCOUNT_ID = input.account_id;
@@ -116,6 +195,15 @@ export class WwebjsEnvironment {
     }
     if (input.session_volume_name) {
       process.env.SESSION_VOLUME_NAME = input.session_volume_name;
+    }
+    if (input.session_storage) {
+      process.env.WORKER_SESSION_STORAGE = input.session_storage;
+    }
+    if (input.runtime_capability) {
+      process.env.WORKER_RUNTIME_CAPABILITY = input.runtime_capability;
+    }
+    if (input.writer_epoch) {
+      process.env.WORKER_WRITER_EPOCH = input.writer_epoch;
     }
     process.env.WARM_STANDBY = 'false';
 

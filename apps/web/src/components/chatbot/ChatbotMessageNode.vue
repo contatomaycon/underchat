@@ -1,12 +1,22 @@
 <script setup lang="ts">
+import './chatbot-node-workbench.css';
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { useI18n } from 'vue-i18n';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
+import ApiVariableField from '@/components/chatbot/api-request/ApiVariableField.vue';
+import type { ApiRequestVariable } from '@/components/chatbot/api-request/types';
+import {
+  formatChatbotNodeOutputTag,
+  getChatbotNodeOutputDefinition,
+  normalizeChatbotNodeOutputKey,
+} from '@core/common/functions/chatbotNodeOutputs';
+import CapturableOutputStrip from './CapturableOutputStrip.vue';
 
 interface MessageData {
+  outputKey: string;
   messageType:
     | EMessageType.text
     | EMessageType.image
@@ -16,12 +26,16 @@ interface MessageData {
     | null;
   text: string;
   attachmentFile: File | null;
+  attachmentSource: 'upload' | 'variable';
+  attachmentVariable: string;
+  attachmentFileName: string;
   attachmentUrl?: string | null;
   attachmentMimetype?: string | null;
   attachmentDuration?: number | null;
   attachmentWidth?: number | null;
   attachmentHeight?: number | null;
   continueType: 'automatic' | 'after_response' | null;
+  availableVariables?: ApiRequestVariable[];
   onRemove?: () => void;
 }
 
@@ -62,9 +76,15 @@ const MAX_FILE_SIZE = 16 * 1024 * 1024;
 const getInitialData = (): MessageData => {
   const data = props.data as MessageData | undefined;
   return {
+    outputKey: normalizeChatbotNodeOutputKey('message', data?.outputKey),
     messageType: data?.messageType || null,
     text: data?.text || '',
     attachmentFile: data?.attachmentFile || null,
+    attachmentSource:
+      data?.attachmentSource ||
+      (data?.attachmentVariable ? 'variable' : 'upload'),
+    attachmentVariable: data?.attachmentVariable || '',
+    attachmentFileName: data?.attachmentFileName || '',
     attachmentUrl: data?.attachmentUrl || null,
     attachmentMimetype: data?.attachmentMimetype || null,
     attachmentDuration: data?.attachmentDuration || null,
@@ -132,11 +152,47 @@ const continueOptions = computed(() => [
   },
 ]);
 
+const attachmentSourceOptions = [
+  {
+    value: 'upload' as const,
+    label: 'Arquivo enviado',
+    icon: 'tabler-upload',
+  },
+  {
+    value: 'variable' as const,
+    label: 'Variável',
+    icon: 'tabler-braces',
+  },
+];
+
+const availableMessageVariables = computed(
+  () => (props.data as MessageData)?.availableVariables || []
+);
+const attachmentVariableItems = computed(() =>
+  availableMessageVariables.value
+    .filter((variable) => Boolean(variable.sourceNodeId))
+    .map((variable) => ({
+      value: variable.tag,
+      title: variable.label || variable.tag,
+      subtitle: variable.description || variable.tag,
+      type: variable.type || 'unknown',
+    }))
+);
+
 const maxTextLength = computed(() => {
   return messageData.value.messageType === EMessageType.text ? 2000 : 500;
 });
 
 const textLength = computed(() => messageData.value.text.length);
+const outputTags = computed(
+  () =>
+    getChatbotNodeOutputDefinition({
+      type: 'message',
+      data: messageData.value as unknown as Record<string, unknown>,
+    })?.fields.map((field) =>
+      formatChatbotNodeOutputTag(messageData.value.outputKey, field.path)
+    ) ?? []
+);
 
 const acceptedFileTypes = computed(() => {
   if (messageData.value.messageType === EMessageType.image) {
@@ -186,9 +242,13 @@ const showTextarea = computed(() => {
 const updateNodeData = () => {
   if (props.data) {
     const data = props.data as MessageData;
+    data.outputKey = messageData.value.outputKey;
     data.messageType = messageData.value.messageType;
     data.text = messageData.value.text;
     data.attachmentFile = messageData.value.attachmentFile;
+    data.attachmentSource = messageData.value.attachmentSource;
+    data.attachmentVariable = messageData.value.attachmentVariable;
+    data.attachmentFileName = messageData.value.attachmentFileName;
     data.attachmentUrl = messageData.value.attachmentUrl;
     data.attachmentMimetype = messageData.value.attachmentMimetype;
     data.attachmentDuration = messageData.value.attachmentDuration;
@@ -266,6 +326,7 @@ const onFileChange = (event: Event) => {
   }
 
   messageData.value.attachmentFile = file;
+  messageData.value.attachmentSource = 'upload';
   filePreview.value = URL.createObjectURL(file);
   updateNodeData();
 };
@@ -285,6 +346,41 @@ const removeFile = () => {
   if (fileInputRef.value) {
     fileInputRef.value.value = '';
   }
+  updateNodeData();
+};
+
+const selectAttachmentSource = (source: 'upload' | 'variable'): void => {
+  if (source === messageData.value.attachmentSource) return;
+  messageData.value.attachmentSource = source;
+  fileSizeError.value = null;
+
+  if (source === 'variable') {
+    removeFile();
+  } else {
+    messageData.value.attachmentVariable = '';
+    messageData.value.attachmentFileName = '';
+    messageData.value.attachmentMimetype = null;
+  }
+  updateNodeData();
+};
+
+const updateAttachmentVariable = (value: unknown): void => {
+  if (typeof value === 'string') {
+    messageData.value.attachmentVariable = value;
+  } else if (
+    value &&
+    typeof value === 'object' &&
+    'value' in value &&
+    typeof value.value === 'string'
+  ) {
+    messageData.value.attachmentVariable = value.value;
+  } else {
+    messageData.value.attachmentVariable = '';
+  }
+};
+
+const clearAttachmentVariable = (): void => {
+  messageData.value.attachmentVariable = '';
   updateNodeData();
 };
 
@@ -406,6 +502,9 @@ watch(
   (newType, oldType) => {
     if (oldType !== undefined && oldType !== newType) {
       removeFile();
+      messageData.value.attachmentVariable = '';
+      messageData.value.attachmentFileName = '';
+      messageData.value.attachmentMimetype = null;
     }
     updateNodeData();
   }
@@ -421,7 +520,7 @@ watch(
 </script>
 
 <template>
-  <div class="chatbot-message-node">
+  <div class="chatbot-message-node chatbot-workbench-node">
     <Handle
       id="target"
       type="target"
@@ -435,13 +534,18 @@ watch(
       class="handle-source"
     />
 
-    <VCard class="message-card" elevation="2">
+    <VCard class="message-card chatbot-workbench-card" elevation="2">
       <VCardTitle
-        class="d-flex align-center justify-space-between pa-2 node-drag-handle"
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle chatbot-workbench-header"
       >
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-message" color="primary" size="20" />
-          <span class="text-sm font-weight-medium">{{
+        <div class="d-flex align-center ga-2 chatbot-workbench-identity">
+          <VIcon
+            icon="tabler-message"
+            color="primary"
+            size="20"
+            class="chatbot-workbench-icon"
+          />
+          <span class="text-sm font-weight-medium chatbot-workbench-title">{{
             t('chatbot_message')
           }}</span>
         </div>
@@ -450,12 +554,12 @@ watch(
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
+      <VCardText class="pa-3 chatbot-workbench-body">
         <VSelect
           v-model="messageData.messageType"
           :items="messageTypeOptions"
@@ -467,191 +571,322 @@ watch(
         />
 
         <div v-if="showAttachment" class="mb-3">
-          <VLabel class="mb-1 text-body-2">{{
-            t('chatbot_message_attach_file')
-          }}</VLabel>
-          <input
-            ref="fileInputRef"
-            type="file"
-            :accept="acceptedFileTypes"
-            style="display: none"
-            @change="onFileChange"
-          />
-          <div
-            v-if="!filePreview && !messageData.attachmentUrl"
-            class="d-flex align-center ga-2"
+          <VLabel class="mb-1 text-body-2">Origem do anexo</VLabel>
+          <VBtnToggle
+            :model-value="messageData.attachmentSource"
+            class="attachment-source-toggle mb-3"
+            color="primary"
+            variant="outlined"
+            density="compact"
+            divided
+            mandatory
+            @update:model-value="selectAttachmentSource"
           >
             <VBtn
-              variant="outlined"
-              color="primary"
+              v-for="source in attachmentSourceOptions"
+              :key="source.value"
+              :value="source.value"
               size="small"
-              @click="fileInputRef?.click()"
             >
-              <VIcon icon="tabler-paperclip" size="18" class="me-1" />
-              {{ t('chatbot_message_attach') }}
+              <VIcon :icon="source.icon" size="16" class="me-1" />
+              {{ source.label }}
             </VBtn>
-          </div>
-          <div
-            v-else-if="filePreview || messageData.attachmentUrl"
-            class="d-flex flex-column ga-2"
-          >
+          </VBtnToggle>
+
+          <template v-if="messageData.attachmentSource === 'upload'">
+            <VLabel class="mb-1 text-body-2">{{
+              t('chatbot_message_attach_file')
+            }}</VLabel>
+            <input
+              ref="fileInputRef"
+              type="file"
+              :accept="acceptedFileTypes"
+              style="display: none"
+              @change="onFileChange"
+            />
             <div class="d-flex align-center ga-2">
-              <span class="text-body-2 text-truncate" style="flex: 1">
-                {{ attachmentDisplayName }}
-              </span>
               <VBtn
-                icon
+                v-if="!filePreview && !messageData.attachmentUrl"
+                variant="outlined"
+                color="primary"
                 size="small"
-                variant="text"
-                color="error"
-                @click="removeFile"
+                @click="fileInputRef?.click()"
               >
-                <VIcon icon="tabler-x" size="18" />
+                <VIcon icon="tabler-paperclip" size="18" class="me-1" />
+                {{ t('chatbot_message_attach') }}
               </VBtn>
             </div>
-            <VCard
+            <div
               v-if="filePreview || messageData.attachmentUrl"
-              class="pa-1 cursor-pointer"
-              :style="
-                messageData.messageType === EMessageType.audio
-                  ? 'width: 100%'
-                  : 'max-width: 100px'
-              "
-              @click="openPreview"
+              class="d-flex flex-column ga-2"
             >
-              <VImg
-                v-if="messageData.messageType === EMessageType.image"
-                :src="(filePreview || messageData.attachmentUrl) ?? undefined"
-                max-width="100"
-                max-height="75"
-                aspect-ratio="4/3"
-                cover
-                class="rounded cursor-pointer"
-                style="object-fit: cover"
-              />
-              <div
-                v-else-if="messageData.messageType === EMessageType.video"
-                class="position-relative rounded cursor-pointer"
-                style="
-                  width: 100px;
-                  height: 75px;
-                  background: rgba(var(--v-theme-surface-variant), 0.1);
+              <div class="d-flex align-center ga-2">
+                <span class="text-body-2 text-truncate" style="flex: 1">
+                  {{ attachmentDisplayName }}
+                </span>
+                <VBtn
+                  icon
+                  size="small"
+                  variant="text"
+                  color="error"
+                  @click="removeFile"
+                >
+                  <VIcon icon="tabler-x" size="18" />
+                </VBtn>
+              </div>
+              <VCard
+                class="pa-1 cursor-pointer"
+                :style="
+                  messageData.messageType === EMessageType.audio
+                    ? 'width: 100%'
+                    : 'max-width: 100px'
                 "
+                @click="openPreview"
               >
-                <video
+                <VImg
+                  v-if="messageData.messageType === EMessageType.image"
                   :src="(filePreview || messageData.attachmentUrl) ?? undefined"
-                  class="rounded"
-                  preload="metadata"
-                  muted
-                  playsinline
+                  max-width="100"
+                  max-height="75"
+                  aspect-ratio="4/3"
+                  cover
+                  class="rounded cursor-pointer"
+                  style="object-fit: cover"
+                />
+                <div
+                  v-else-if="messageData.messageType === EMessageType.video"
+                  class="position-relative rounded cursor-pointer"
                   style="
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
-                    pointer-events: none;
+                    width: 100px;
+                    height: 75px;
+                    background: rgba(var(--v-theme-surface-variant), 0.1);
                   "
                 >
-                  <track kind="captions" />
-                </video>
+                  <video
+                    :src="
+                      (filePreview || messageData.attachmentUrl) ?? undefined
+                    "
+                    class="rounded"
+                    preload="metadata"
+                    muted
+                    playsinline
+                    style="
+                      width: 100%;
+                      height: 100%;
+                      object-fit: cover;
+                      pointer-events: none;
+                    "
+                  >
+                    <track kind="captions" />
+                  </video>
+                  <div
+                    class="position-absolute d-flex align-center justify-center"
+                    style="
+                      top: 50%;
+                      left: 50%;
+                      transform: translate(-50%, -50%);
+                      z-index: 1;
+                      pointer-events: none;
+                    "
+                  >
+                    <VIcon
+                      icon="tabler-player-play-filled"
+                      size="20"
+                      color="white"
+                      style="filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5))"
+                    />
+                  </div>
+                </div>
                 <div
-                  class="position-absolute d-flex align-center justify-center"
+                  v-else-if="messageData.messageType === EMessageType.audio"
+                  class="d-flex align-center gap-2 pa-2"
                   style="
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    z-index: 1;
-                    pointer-events: none;
+                    background: rgba(var(--v-theme-surface-variant), 0.1);
+                    border-radius: 8px;
+                    width: 100%;
+                  "
+                >
+                  <VIcon icon="tabler-music" size="20" class="flex-shrink-0" />
+                  <div
+                    class="flex-grow-1 d-flex align-center gap-1"
+                    style="min-width: 0; flex: 1; overflow: hidden"
+                  >
+                    <span
+                      class="text-caption text-truncate"
+                      style="flex: 0 1 auto"
+                    >
+                      {{ attachmentDisplayName }}
+                    </span>
+                    <span
+                      class="text-caption text-medium-emphasis"
+                      style="
+                        font-size: 0.7rem;
+                        white-space: nowrap;
+                        flex-shrink: 0;
+                      "
+                    >
+                      {{ t('chatbot_message_click_to_preview') }}
+                    </span>
+                  </div>
+                  <VIcon
+                    icon="tabler-player-play-filled"
+                    size="18"
+                    class="flex-shrink-0"
+                  />
+                </div>
+                <div
+                  v-else-if="messageData.messageType === EMessageType.document"
+                  class="d-flex align-center gap-2 pa-2"
+                  style="
+                    background: rgba(var(--v-theme-surface-variant), 0.1);
+                    border-radius: 8px;
+                    width: 100%;
                   "
                 >
                   <VIcon
-                    icon="tabler-player-play-filled"
+                    icon="tabler-file-text"
                     size="20"
-                    color="white"
-                    style="filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5))"
+                    class="flex-shrink-0"
                   />
-                </div>
-              </div>
-              <div
-                v-else-if="messageData.messageType === EMessageType.audio"
-                class="d-flex align-center gap-2 pa-2"
-                style="
-                  background: rgba(var(--v-theme-surface-variant), 0.1);
-                  border-radius: 8px;
-                  width: 100%;
-                "
-              >
-                <VIcon icon="tabler-music" size="20" class="flex-shrink-0" />
-                <div
-                  class="flex-grow-1 d-flex align-center gap-1"
-                  style="min-width: 0; flex: 1; overflow: hidden"
-                >
-                  <span
-                    class="text-caption text-truncate"
-                    style="flex: 0 1 auto"
+                  <div
+                    class="flex-grow-1 d-flex align-center gap-1"
+                    style="min-width: 0; flex: 1; overflow: hidden"
                   >
-                    {{ attachmentDisplayName }}
-                  </span>
-                  <span
-                    class="text-caption text-medium-emphasis"
-                    style="
-                      font-size: 0.7rem;
-                      white-space: nowrap;
-                      flex-shrink: 0;
-                    "
-                  >
-                    {{ t('chatbot_message_click_to_preview') }}
-                  </span>
+                    <span
+                      class="text-caption text-truncate"
+                      style="flex: 0 1 auto"
+                    >
+                      {{ attachmentDisplayName }}
+                    </span>
+                  </div>
                 </div>
+              </VCard>
+            </div>
+            <div v-if="fileSizeError" class="text-caption text-error mt-1">
+              {{ fileSizeError }}
+            </div>
+          </template>
+
+          <div v-else class="variable-attachment-editor">
+            <div class="variable-attachment-editor__heading">
+              <span class="variable-attachment-editor__icon">
                 <VIcon
-                  icon="tabler-player-play-filled"
+                  icon="tabler-braces"
                   size="18"
-                  class="flex-shrink-0"
+                  class="variable-attachment-editor__icon-glyph"
                 />
+              </span>
+              <div>
+                <strong>Anexo vindo do fluxo</strong>
+                <p>URL, data URI, base64, binário ou descritor de arquivo.</p>
               </div>
-              <div
-                v-else-if="messageData.messageType === EMessageType.document"
-                class="d-flex align-center gap-2 pa-2"
-                style="
-                  background: rgba(var(--v-theme-surface-variant), 0.1);
-                  border-radius: 8px;
-                  width: 100%;
-                "
-              >
-                <VIcon
-                  icon="tabler-file-text"
-                  size="20"
-                  class="flex-shrink-0"
-                />
-                <div
-                  class="flex-grow-1 d-flex align-center gap-1"
-                  style="min-width: 0; flex: 1; overflow: hidden"
+            </div>
+
+            <div class="variable-attachment-editor__field">
+              <span class="variable-attachment-editor__field-label">
+                Variável do anexo
+              </span>
+              <div class="variable-attachment-editor__field-control">
+                <VCombobox
+                  :model-value="messageData.attachmentVariable"
+                  :items="attachmentVariableItems"
+                  item-title="title"
+                  item-value="value"
+                  :return-object="false"
+                  aria-label="Variável do anexo"
+                  placeholder="{{ api_1.data.document }}"
+                  variant="outlined"
+                  density="compact"
+                  hide-details="auto"
+                  @update:model-value="updateAttachmentVariable"
                 >
-                  <span
-                    class="text-caption text-truncate"
-                    style="flex: 0 1 auto"
-                  >
-                    {{ attachmentDisplayName }}
-                  </span>
-                </div>
+                  <template #item="{ props: itemProps, item }">
+                    <VListItem
+                      v-bind="itemProps"
+                      :title="item.title"
+                      :subtitle="item.subtitle"
+                    >
+                      <template #prepend>
+                        <VIcon icon="tabler-file-code" size="17" color="info" />
+                      </template>
+                      <template #append>
+                        <VChip size="x-small" variant="tonal">
+                          {{ item.type }}
+                        </VChip>
+                      </template>
+                    </VListItem>
+                  </template>
+                </VCombobox>
+
+                <VBtn
+                  v-if="messageData.attachmentVariable"
+                  class="variable-attachment-editor__clear"
+                  icon="tabler-x"
+                  color="error"
+                  variant="text"
+                  size="x-small"
+                  aria-label="Limpar variável do anexo"
+                  title="Limpar variável do anexo"
+                  @mousedown.stop
+                  @click.stop="clearAttachmentVariable"
+                />
               </div>
-            </VCard>
-          </div>
-          <div v-if="fileSizeError" class="text-caption text-error mt-1">
-            {{ fileSizeError }}
+            </div>
+
+            <div class="variable-attachment-editor__overrides">
+              <div class="variable-attachment-editor__field">
+                <span class="variable-attachment-editor__field-label">
+                  Nome do arquivo
+                  <small>opcional</small>
+                </span>
+                <ApiVariableField
+                  v-model="messageData.attachmentFileName"
+                  :variables="availableMessageVariables"
+                  aria-label="Nome do arquivo opcional"
+                  placeholder="documento.pdf"
+                  hide-details
+                />
+              </div>
+
+              <div class="variable-attachment-editor__field">
+                <span class="variable-attachment-editor__field-label">
+                  MIME
+                  <small>opcional</small>
+                </span>
+                <ApiVariableField
+                  :model-value="messageData.attachmentMimetype || ''"
+                  :variables="availableMessageVariables"
+                  aria-label="MIME opcional"
+                  placeholder="application/pdf"
+                  hide-details
+                  @update:model-value="
+                    messageData.attachmentMimetype = $event || null
+                  "
+                />
+              </div>
+            </div>
+
+            <p
+              v-if="!attachmentVariableItems.length"
+              class="variable-attachment-editor__empty"
+            >
+              Conecte uma Chamada de API testada antes deste node para
+              selecionar a saída.
+            </p>
           </div>
         </div>
 
         <div v-if="showTextarea" class="mb-3">
-          <VTextarea
+          <ApiVariableField
             v-model="messageData.text"
+            :variables="availableMessageVariables"
             :placeholder="
               messageData.messageType === EMessageType.text
                 ? t('chatbot_message_text_placeholder')
                 : t('chatbot_message_caption_placeholder')
             "
-            variant="outlined"
-            density="compact"
-            rows="3"
+            multiline
+            :rows="3"
             :counter="maxTextLength"
             :maxlength="maxTextLength"
             hide-details="auto"
@@ -664,7 +899,17 @@ watch(
           :label="t('chatbot_message_continue')"
           variant="outlined"
           density="compact"
+          :class="{ 'mb-3': outputTags.length }"
           hide-details
+        />
+
+        <CapturableOutputStrip
+          v-if="outputTags.length"
+          :title="t('chatbot_captured_output_title')"
+          :description="t('chatbot_captured_output_message_help')"
+          :tags="outputTags"
+          :copy-label="t('chatbot_captured_output_copy')"
+          :copied-label="t('chatbot_captured_output_copied')"
         />
       </VCardText>
     </VCard>
@@ -766,6 +1011,8 @@ watch(
 
 <style scoped>
 .chatbot-message-node {
+  width: 350px;
+  max-width: 350px;
   min-width: 350px;
 }
 
@@ -784,6 +1031,143 @@ watch(
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+.attachment-source-toggle {
+  display: flex;
+  inline-size: 100%;
+}
+
+.attachment-source-toggle :deep(.v-btn) {
+  min-inline-size: 0;
+  flex: 1;
+  letter-spacing: 0;
+}
+
+.variable-attachment-editor {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid rgba(var(--v-theme-info), 0.2);
+  border-radius: 10px;
+  background:
+    linear-gradient(110deg, rgba(var(--v-theme-info), 0.055), transparent 65%),
+    rgb(var(--v-theme-surface));
+}
+
+.variable-attachment-editor__heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.variable-attachment-editor__icon {
+  position: relative;
+  display: grid;
+  block-size: 34px;
+  inline-size: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(var(--v-theme-info), 0.2);
+  border-radius: 8px;
+  background: rgba(var(--v-theme-info), 0.1);
+  color: rgb(var(--v-theme-info));
+}
+
+.variable-attachment-editor__icon::before {
+  position: absolute;
+  inset: 3px;
+  border-radius: 5px;
+  background: rgba(var(--v-theme-surface), 0.42);
+  content: '';
+}
+
+.variable-attachment-editor__icon-glyph {
+  position: relative;
+  z-index: 1;
+}
+
+.variable-attachment-editor__heading strong {
+  display: block;
+  color: rgba(var(--v-theme-on-surface), 0.84);
+  font-size: 0.75rem;
+}
+
+.variable-attachment-editor__heading p,
+.variable-attachment-editor__empty {
+  margin: 2px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.52);
+  font-size: 0.625rem;
+  line-height: 1.35;
+}
+
+.variable-attachment-editor__field {
+  display: grid;
+  min-inline-size: 0;
+  gap: 5px;
+}
+
+.variable-attachment-editor__field-label {
+  color: rgba(var(--v-theme-on-surface), 0.64);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  line-height: 1.2;
+}
+
+.variable-attachment-editor__field-label small {
+  color: rgba(var(--v-theme-on-surface), 0.42);
+  font-size: 0.59375rem;
+  font-weight: 550;
+}
+
+.variable-attachment-editor__field-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.variable-attachment-editor__field :deep(.v-field) {
+  block-size: 44px;
+  min-block-size: 44px;
+}
+
+.variable-attachment-editor__field :deep(.v-field__input) {
+  min-block-size: 44px;
+  padding-block: 0;
+}
+
+.variable-attachment-editor__clear {
+  block-size: 34px !important;
+  inline-size: 34px !important;
+  min-inline-size: 34px !important;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.14);
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.variable-attachment-editor__clear:hover {
+  border-color: rgba(var(--v-theme-error), 0.28);
+  background: rgba(var(--v-theme-error), 0.075);
+  color: rgb(var(--v-theme-error)) !important;
+}
+
+.variable-attachment-editor__overrides {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.variable-attachment-editor__empty {
+  padding: 7px 8px;
+  border: 1px dashed rgba(var(--v-border-color), 0.8);
+  border-radius: 7px;
 }
 
 .audio-preview-container {

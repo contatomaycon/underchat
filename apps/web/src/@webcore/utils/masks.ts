@@ -7,3 +7,13 @@ export const ipMask: MaskInputOptions = {
   },
   eager: true,
 };
+
+export const cnpjAlphanumericMask: MaskInputOptions = {
+  mask: 'SS.SSS.SSS/SSSS-##',
+  tokens: {
+    S: {
+      pattern: /[a-zA-Z0-9]/,
+      transform: (character) => character.toUpperCase(),
+    },
+  },
+};

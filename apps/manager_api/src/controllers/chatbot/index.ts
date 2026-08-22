@@ -23,6 +23,10 @@ import { updateLocalHoliday } from './methods/updateLocalHoliday';
 import { deleteLocalHoliday } from './methods/deleteLocalHoliday';
 import { officialCapabilities } from './methods/officialCapabilities';
 import { officialTemplates } from './methods/officialTemplates';
+import { blockChatbot } from './methods/blockChatbot';
+import { unblockChatbot } from './methods/unblockChatbot';
+import { testApiRequest } from './methods/testApiRequest';
+import { listChannelChatbots } from './methods/listChannelChatbots';
 
 @injectable()
 class ChatbotController {
@@ -33,6 +37,7 @@ class ChatbotController {
   public cloneChatbot = cloneChatbot;
   public listUsers = listUsers;
   public listChannels = listChannels;
+  public listChannelChatbots = listChannelChatbots;
   public listSectors = listSectors;
   public listSectorUsers = listSectorUsers;
   public listChatTags = listChatTags;
@@ -50,6 +55,9 @@ class ChatbotController {
   public deleteLocalHoliday = deleteLocalHoliday;
   public officialCapabilities = officialCapabilities;
   public officialTemplates = officialTemplates;
+  public blockChatbot = blockChatbot;
+  public unblockChatbot = unblockChatbot;
+  public testApiRequest = testApiRequest;
 }
 
 export default ChatbotController;

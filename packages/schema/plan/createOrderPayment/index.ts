@@ -33,6 +33,15 @@ export const createOrderPaymentSchema = {
       },
       { description: 'Successful' }
     ),
+    400: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ default: false }),
+        message: Type.String(),
+        data: Type.Null(),
+      },
+      { description: 'Bad Request' }
+    ),
     401: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -50,6 +59,15 @@ export const createOrderPaymentSchema = {
         data: Type.Null(),
       },
       { description: 'Forbidden' }
+    ),
+    409: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ default: false }),
+        message: Type.String(),
+        data: Type.Null(),
+      },
+      { description: 'Conflict' }
     ),
     500: Type.Object(
       {

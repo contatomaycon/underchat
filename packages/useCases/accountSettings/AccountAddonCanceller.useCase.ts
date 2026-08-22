@@ -3,12 +3,16 @@ import { TFunction } from 'i18next';
 import { currentTime } from '@core/common/functions/currentTime';
 import { AccountAddonCancellerRepository } from '@core/repositories/accountSettings/AccountAddonCanceller.repository';
 import { CancelAccountAddonResponse } from '@core/schema/accountSettings/cancelAccountAddon/response.schema';
+import { PlanEntitlementService } from '@core/services/planEntitlement.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
 export class AccountAddonCancellerUseCase {
   constructor(
     @inject(AccountAddonCancellerRepository)
-    private readonly accountAddonCancellerRepository: AccountAddonCancellerRepository
+    private readonly accountAddonCancellerRepository: AccountAddonCancellerRepository,
+    @inject(PlanEntitlementService)
+    private readonly planEntitlementService: PlanEntitlementService
   ) {}
 
   execute = async (
@@ -32,15 +36,46 @@ export class AccountAddonCancellerUseCase {
       throw new Error(t('addon_cancel_requires_active_cycle'));
     }
 
-    const cancelled =
-      await this.accountAddonCancellerRepository.scheduleAddonCancellation({
-        accountId,
-        planCrossSellAccountId,
-        cancellationDate: currentTime(),
-      });
+    const requiresIntegrationEntitlement =
+      addon.plan_product_id === EPlanProduct.integration;
+    const denyFenceOwnerToken = requiresIntegrationEntitlement
+      ? await this.planEntitlementService.installDenyFenceForCrossSellAccount(
+          planCrossSellAccountId
+        )
+      : null;
+    let mutationCompleted = false;
 
-    if (!cancelled) {
-      throw new Error(t('addon_cancel_failed'));
+    try {
+      const cancelled =
+        await this.accountAddonCancellerRepository.scheduleAddonCancellation({
+          accountId,
+          planCrossSellAccountId,
+          cancellationDate: currentTime(),
+        });
+
+      if (!cancelled) {
+        throw new Error(t('addon_cancel_failed'));
+      }
+      mutationCompleted = true;
+
+      if (requiresIntegrationEntitlement && denyFenceOwnerToken) {
+        await this.planEntitlementService.refreshCrossSellAccount(
+          planCrossSellAccountId,
+          denyFenceOwnerToken
+        );
+      }
+    } catch (error) {
+      if (
+        requiresIntegrationEntitlement &&
+        !mutationCompleted &&
+        denyFenceOwnerToken
+      ) {
+        await this.planEntitlementService.refreshCrossSellAccount(
+          planCrossSellAccountId,
+          denyFenceOwnerToken
+        );
+      }
+      throw error;
     }
 
     return {

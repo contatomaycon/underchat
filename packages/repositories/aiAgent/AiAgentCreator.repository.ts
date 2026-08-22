@@ -28,11 +28,11 @@ export class AiAgentCreatorRepository {
     }
 
     if (aiAgentTypeId === EAiAgentType.gemini) {
-      return 'https://generativelanguage.googleapis.com/v1';
+      return 'https://generativelanguage.googleapis.com/v1beta';
     }
 
     if (aiAgentTypeId === EAiAgentType.deepseek) {
-      return 'https://api.deepseek.com/v1';
+      return 'https://api.deepseek.com';
     }
 
     return null;

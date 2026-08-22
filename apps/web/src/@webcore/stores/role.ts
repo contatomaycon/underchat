@@ -221,6 +221,69 @@ export const useRolesStore = defineStore('roles', {
       }
     },
 
+    async setRolePlanBlockStatus(
+      permissionRoleId: string,
+      action: 'block' | 'unblock'
+    ): Promise<boolean> {
+      const isBlock = action === 'block';
+
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/role/${permissionRoleId}/${action}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ??
+            this.i18n.global.t(
+              isBlock ? 'role_block_error' : 'role_unblock_error'
+            );
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t(
+              isBlock ? 'role_block_success' : 'role_unblock_success'
+            ),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          isBlock ? 'role_block_error' : 'role_unblock_error'
+        );
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async blockRole(permissionRoleId: string): Promise<boolean> {
+      return this.setRolePlanBlockStatus(permissionRoleId, 'block');
+    },
+
+    async unblockRole(permissionRoleId: string): Promise<boolean> {
+      return this.setRolePlanBlockStatus(permissionRoleId, 'unblock');
+    },
+
     async deleteRole(permissionRoleId: string): Promise<boolean> {
       try {
         this.loading = true;

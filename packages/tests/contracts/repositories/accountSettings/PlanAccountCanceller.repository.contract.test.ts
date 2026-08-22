@@ -1,14 +1,33 @@
 import 'reflect-metadata';
-import { currentTime } from '@core/common/functions/currentTime';
 import { PlanAccountCancellerRepository } from '@core/repositories/accountSettings/PlanAccountCanceller.repository';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import {
   createSelectDbMock,
   createUpdateDbMock,
 } from '@core/tests/helpers/drizzleMock';
 
-jest.mock('@core/common/functions/currentTime', () => ({
-  currentTime: jest.fn(),
-}));
+function createCurrentPlanUpdateDb(
+  currentPlans: Array<{
+    plan_account_id: string;
+    cancellation_date: string | null;
+  }>,
+  rowCount: number
+) {
+  const selectMock = createSelectDbMock(currentPlans);
+  const updateMock = createUpdateDbMock({ rowCount });
+  const transaction = jest.fn(async (callback) =>
+    callback({
+      select: selectMock.db.select,
+      update: updateMock.db.update,
+    })
+  );
+
+  return {
+    db: { transaction },
+    selectMock,
+    updateMock,
+  };
+}
 
 describe('PlanAccountCancellerRepository', () => {
   beforeEach(() => {
@@ -20,25 +39,27 @@ describe('PlanAccountCancellerRepository', () => {
       .fn()
       .mockResolvedValueOnce({
         plan_account_id: 'plan-account-1',
+        cancellation_date: null,
       })
       .mockResolvedValueOnce({
         plan_account_id: 'plan-account-2',
       });
     const repository = new PlanAccountCancellerRepository(
-      {} as never,
       {
         query: {
           planAccount: {
             findFirst,
           },
         },
-      } as never
+      } as never,
+      {} as never
     );
 
     await expect(
       repository.findPlanAccountWithPayment('acc-1')
     ).resolves.toEqual({
       plan_account_id: 'plan-account-1',
+      cancellation_date: null,
     });
     await expect(
       repository.findPlanAccountById('plan-account-2')
@@ -83,58 +104,15 @@ describe('PlanAccountCancellerRepository', () => {
     });
   });
 
-  it('cancelPlanAccount handles next payment removal flag', async () => {
-    const withCancelNext = createUpdateDbMock({ rowCount: 1 });
-    const repositoryWithCancelNext = new PlanAccountCancellerRepository(
-      withCancelNext.db as never,
-      {} as never
-    );
-    const currentTimeMock = currentTime as unknown as jest.Mock;
-    currentTimeMock.mockReturnValue('2026-04-21T20:00:00.000Z');
-
-    await expect(
-      repositoryWithCancelNext.cancelPlanAccount(
-        'acc-1',
-        '2026-04-21T20:00:00.000Z',
-        true
-      )
-    ).resolves.toBe(true);
-    expect(withCancelNext.set).toHaveBeenCalledWith({
-      cancellation_date: '2026-04-21T20:00:00.000Z',
-      recurring_payment: false,
-      updated_at: '2026-04-21T20:00:00.000Z',
-      next_payment_date: null,
-    });
-
-    const withoutCancelNext = createUpdateDbMock({ rowCount: 1 });
-    const repositoryWithoutCancelNext = new PlanAccountCancellerRepository(
-      withoutCancelNext.db as never,
-      {} as never
-    );
-    currentTimeMock.mockReturnValue('2026-04-21T20:10:00.000Z');
-
-    await expect(
-      repositoryWithoutCancelNext.cancelPlanAccount(
-        'acc-1',
-        '2026-04-21T20:10:00.000Z',
-        false
-      )
-    ).resolves.toBe(true);
-    expect(withoutCancelNext.set).toHaveBeenCalledWith({
-      cancellation_date: '2026-04-21T20:10:00.000Z',
-      recurring_payment: false,
-      updated_at: '2026-04-21T20:10:00.000Z',
-    });
-  });
-
   it('updatePlanAccountById returns false when no rows are affected', async () => {
-    const updateMock = createUpdateDbMock({ rowCount: 0 });
+    const dbMock = createCurrentPlanUpdateDb(
+      [{ plan_account_id: 'plan-account-1', cancellation_date: null }],
+      0
+    );
     const repository = new PlanAccountCancellerRepository(
-      updateMock.db as never,
+      dbMock.db as never,
       {} as never
     );
-    const currentTimeMock = currentTime as unknown as jest.Mock;
-    currentTimeMock.mockReturnValue('2026-04-21T20:20:00.000Z');
 
     await expect(
       repository.updatePlanAccountById(
@@ -143,6 +121,51 @@ describe('PlanAccountCancellerRepository', () => {
         true
       )
     ).resolves.toBe(false);
+  });
+
+  it('updates only the same deterministic current plan without promoting it', async () => {
+    const dbMock = createCurrentPlanUpdateDb(
+      [{ plan_account_id: 'plan-account-1', cancellation_date: null }],
+      1
+    );
+    const repository = new PlanAccountCancellerRepository(
+      dbMock.db as never,
+      {} as never
+    );
+
+    await expect(
+      repository.updatePlanAccountById(
+        'plan-account-1',
+        '2026-04-21T20:20:00.000Z',
+        true
+      )
+    ).resolves.toBe(true);
+    expect(dbMock.selectMock.for).toHaveBeenCalledWith('update');
+    expect(dbMock.updateMock.set).toHaveBeenCalledWith({
+      cancellation_date: '2026-04-21T20:20:00.000Z',
+      recurring_payment: false,
+      next_payment_date: null,
+    });
+  });
+
+  it('refuses to cancel a plan id that is no longer current', async () => {
+    const dbMock = createCurrentPlanUpdateDb(
+      [{ plan_account_id: 'new-current-plan', cancellation_date: null }],
+      1
+    );
+    const repository = new PlanAccountCancellerRepository(
+      dbMock.db as never,
+      {} as never
+    );
+
+    await expect(
+      repository.updatePlanAccountById(
+        'historical-plan',
+        '2026-04-21T20:20:00.000Z',
+        true
+      )
+    ).resolves.toBe(false);
+    expect(dbMock.updateMock.db.update).not.toHaveBeenCalled();
   });
 
   it('findWorkersByAccountId maps worker ids', async () => {
@@ -214,5 +237,69 @@ describe('PlanAccountCancellerRepository', () => {
     await expect(
       repositoryWithoutResult.findCancelledPlanAccount('acc-1')
     ).resolves.toBeNull();
+  });
+
+  it('does not expose a blocked or deleted account for plan reactivation', async () => {
+    const blockedResult = createSelectDbMock([
+      {
+        plan_account_id: 'plan-account-1',
+        account_id: 'acc-1',
+        cancellation_date: '2026-04-20',
+        next_payment_date: null,
+        account_status_id: EAccountStatus.blocked,
+        account_deleted_at: null,
+      },
+    ]);
+    const blockedRepository = new PlanAccountCancellerRepository(
+      blockedResult.db as never,
+      {} as never
+    );
+    await expect(
+      blockedRepository.findCancelledPlanAccount('acc-1')
+    ).resolves.toBeNull();
+
+    const deletedResult = createSelectDbMock([
+      {
+        plan_account_id: 'plan-account-1',
+        account_id: 'acc-1',
+        cancellation_date: '2026-04-20',
+        next_payment_date: null,
+        account_status_id: EAccountStatus.inactive,
+        account_deleted_at: '2026-04-21',
+      },
+    ]);
+    const deletedRepository = new PlanAccountCancellerRepository(
+      deletedResult.db as never,
+      {} as never
+    );
+    await expect(
+      deletedRepository.findCancelledPlanAccount('acc-1')
+    ).resolves.toBeNull();
+  });
+
+  it('allows an inactive current account to resume an uncancelled plan', async () => {
+    const inactiveResult = createSelectDbMock([
+      {
+        plan_account_id: 'plan-account-1',
+        account_id: 'acc-1',
+        cancellation_date: null,
+        next_payment_date: '2026-05-20',
+        account_status_id: EAccountStatus.inactive,
+        account_deleted_at: null,
+      },
+    ]);
+    const repository = new PlanAccountCancellerRepository(
+      inactiveResult.db as never,
+      {} as never
+    );
+
+    await expect(repository.findCancelledPlanAccount('acc-1')).resolves.toEqual(
+      {
+        plan_account_id: 'plan-account-1',
+        account_id: 'acc-1',
+        cancellation_date: null,
+        next_payment_date: '2026-05-20',
+      }
+    );
   });
 });

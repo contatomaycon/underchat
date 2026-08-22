@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import './chatbot-node-workbench.css';
+import { computed, ref, watch } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { useI18n } from 'vue-i18n';
+import ApiVariableField from './api-request/ApiVariableField.vue';
+import type { ApiRequestVariable } from './api-request/types';
 
 interface AnnotationData {
   annotation: string;
+  availableVariables?: ApiRequestVariable[];
   onRemove?: () => void;
 }
 
@@ -20,6 +24,9 @@ const getInitialData = (): AnnotationData => {
 };
 
 const annotationData = ref<AnnotationData>(getInitialData());
+const availableVariables = computed<ApiRequestVariable[]>(
+  () => (props.data as AnnotationData)?.availableVariables || []
+);
 
 const updateNodeData = () => {
   if (props.data) {
@@ -45,17 +52,32 @@ const handleRemove = () => {
 </script>
 
 <template>
-  <div class="chatbot-annotation-node">
-    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
-    <Handle id="source" type="source" :position="Position.Bottom" class="handle-source" />
+  <div class="chatbot-annotation-node chatbot-workbench-node">
+    <Handle
+      id="target"
+      type="target"
+      :position="Position.Top"
+      class="handle-target"
+    />
+    <Handle
+      id="source"
+      type="source"
+      :position="Position.Bottom"
+      class="handle-source"
+    />
 
-    <VCard class="annotation-card" elevation="2">
+    <VCard class="annotation-card chatbot-workbench-card" elevation="2">
       <VCardTitle
-        class="d-flex align-center justify-space-between pa-2 node-drag-handle"
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle chatbot-workbench-header"
       >
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-note" color="annotation" size="20" />
-          <span class="text-sm font-weight-medium">{{
+        <div class="d-flex align-center ga-2 chatbot-workbench-identity">
+          <VIcon
+            icon="tabler-note"
+            color="annotation"
+            size="20"
+            class="chatbot-workbench-icon"
+          />
+          <span class="text-sm font-weight-medium chatbot-workbench-title">{{
             t('chatbot_annotation_node_title')
           }}</span>
         </div>
@@ -64,21 +86,21 @@ const handleRemove = () => {
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
+      <VCardText class="pa-3 chatbot-workbench-body">
         <VLabel class="text-body-2 mb-1">{{
           t('chatbot_annotation_label')
         }}</VLabel>
-        <VTextarea
+        <ApiVariableField
           v-model="annotationData.annotation"
+          :variables="availableVariables"
           :placeholder="t('chatbot_annotation_placeholder')"
-          variant="outlined"
-          density="compact"
-          rows="4"
+          multiline
+          :rows="4"
           hide-details="auto"
         />
       </VCardText>

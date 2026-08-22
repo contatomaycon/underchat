@@ -17,6 +17,7 @@ export class ChatbotListerRepository {
         chatbot_id: chatbot.chatbot_id,
         name: chatbot.name,
         type: chatbot.type,
+        status: chatbot.status,
         created_at: chatbot.created_at,
       })
       .from(chatbot)
@@ -32,6 +33,7 @@ export class ChatbotListerRepository {
       chatbot_id: chatbot.chatbot_id,
       name: chatbot.name,
       type: chatbot.type || null,
+      status: chatbot.status,
       created_at: chatbot.created_at || '',
     }));
   };

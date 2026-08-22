@@ -88,8 +88,7 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
     const useCase = new WorkerProfileInfoUpserterUseCase(
       deps.workerProfileInfoService as never,
       deps.workerService as never,
-      deps.streamProducerService as never,
-      deps.kafkaBaileysQueueService as never
+      {} as never
     );
 
     await expect(
@@ -119,8 +118,7 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
     const useCase = new WorkerProfileInfoUpserterUseCase(
       deps.workerProfileInfoService as never,
       deps.workerService as never,
-      deps.streamProducerService as never,
-      deps.kafkaBaileysQueueService as never
+      {} as never
     );
 
     await expect(
@@ -141,8 +139,7 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
     const useCase = new WorkerProfileInfoUpserterUseCase(
       deps.workerProfileInfoService as never,
       deps.workerService as never,
-      deps.streamProducerService as never,
-      deps.kafkaBaileysQueueService as never
+      {} as never
     );
 
     await expect(

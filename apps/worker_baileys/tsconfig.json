@@ -13,8 +13,14 @@
     "forceConsistentCasingInFileNames": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "typeRoots": ["./node_modules/@types", "../../packages/common/types"],
+    "typeRoots": ["./node_modules/@types"],
     "paths": {
+      "@core/common/functions/kafkaTopicRecoveryPolicy": [
+        "../../packages/common/functions/workerKafkaTopicRecoveryPolicy.ts"
+      ],
+      "@core/config/environments": [
+        "../../packages/config/environments/WorkerEnvironment.ts"
+      ],
       "@/*": ["./src/*"],
       "@core/*": ["../../packages/*"],
       "@elastic/elasticsearch/lib/api/types": [
@@ -24,8 +30,9 @@
   },
   "include": [
     "src/**/*",
-    "../../packages/common/types/**/*.d.ts",
-    "../../packages/plugins/proto/workerGrpcServer.ts",
+    "../../packages/common/types/fastify.worker.d.ts",
+    "../../packages/common/types/node-forge.d.ts",
+    "../../packages/common/types/wwebjs-canonical-session-bridge.d.ts",
     "../../packages/plugins/proto/workerConnectionGrpcServer.ts"
   ],
   "exclude": ["node_modules"]

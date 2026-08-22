@@ -30,8 +30,53 @@ export class PlanAccountUpdaterRepository {
         cancellation_date: true,
         value: true,
       },
-      orderBy: (planAccount, { desc }) => [desc(planAccount.updated_at)],
+      orderBy: (planAccount, { desc }) => [
+        desc(planAccount.updated_at),
+        desc(planAccount.created_at),
+        desc(planAccount.plan_account_id),
+      ],
     });
+  };
+
+  projectPlanAccountCycle = async (
+    accountId: string,
+    input: UpdatePlanAccountRequest
+  ): Promise<{ lastPaymentDate: string; nextPaymentDate: string }> => {
+    const [existingPlanAccount, planData] = await Promise.all([
+      this.dbRw.query.planAccount.findFirst({
+        where: eq(planAccount.account_id, accountId),
+        columns: {
+          last_payment_date: true,
+        },
+        orderBy: (planAccount, { desc }) => [
+          desc(planAccount.updated_at),
+          desc(planAccount.created_at),
+          desc(planAccount.plan_account_id),
+        ],
+      }),
+      this.dbRw.query.plan.findFirst({
+        where: and(eq(plan.plan_id, input.plan_id), isNull(plan.deleted_at)),
+        columns: {
+          is_test: true,
+          days_trial: true,
+        },
+      }),
+    ]);
+    if (!planData) throw new Error('Plan not found');
+    const lastPaymentDate = this.determineLastPaymentDate(
+      input.last_payment_date,
+      existingPlanAccount?.last_payment_date
+    );
+    const nextPaymentDate = this.calculateNextPaymentDate(
+      input.next_payment_date,
+      lastPaymentDate,
+      planData,
+      input.billing_period_id
+    );
+    return {
+      lastPaymentDate: lastPaymentDate.toISOString(),
+      nextPaymentDate: nextPaymentDate.toISOString(),
+    };
   };
 
   createOrUpdatePlanAccountByAccountId = async (
@@ -117,7 +162,11 @@ export class PlanAccountUpdaterRepository {
         plan_account_id: true,
         last_payment_date: true,
       },
-      orderBy: (planAccount, { desc }) => [desc(planAccount.updated_at)],
+      orderBy: (planAccount, { desc }) => [
+        desc(planAccount.updated_at),
+        desc(planAccount.created_at),
+        desc(planAccount.plan_account_id),
+      ],
     });
   };
 

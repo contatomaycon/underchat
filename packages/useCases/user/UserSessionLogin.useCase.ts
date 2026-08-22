@@ -210,7 +210,9 @@ export class UserSessionLoginUseCase {
       this.accountService.viewAccountInfoByAccountId(userAccountId),
       this.userService.listUserSectors(userAccountId, targetUserId),
       this.userService.listUserChannelsWithNames(userAccountId, targetUserId),
-      this.accountService.listActivePlanProductIds(userAccountId),
+      this.accountService.listActivePlanProductIds(userAccountId, {
+        bypassIntegrationCache: true,
+      }),
     ]);
 
     const planIsActive = await this.accountService.isPlanActive(userAccountId);

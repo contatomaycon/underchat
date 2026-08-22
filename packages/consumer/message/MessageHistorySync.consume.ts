@@ -11,11 +11,21 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IMessageKeyIdContext } from '@core/common/interfaces/IMessageKeyIdContext';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
-import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
+import {
+  MessageHistoryReceiptCacheService,
+  MessageHistoryReceiptReservationBusyError,
+} from '@core/services/messageHistoryReceiptCache.service';
 import { WAMessage } from '@whiskeysockets/baileys';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 import Redis from 'ioredis';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import type { KafkaConsumerRunnerContext } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
+import {
+  IWhatsappRuntimeFence,
+  WhatsappRuntimeFenceService,
+} from '@core/services/whatsappRuntimeFence.service';
+import { SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS } from '@core/common/functions/serviceApiWhatsappConsumerBindings';
+import { resolveHistoryReconciliationConfig } from '@core/common/functions/historyReconciliationConfig';
 
 @singleton()
 export class MessageHistorySyncConsume {
@@ -23,14 +33,14 @@ export class MessageHistorySyncConsume {
   private runner: KafkaConsumerRunner<IUpsertMessage> | null = null;
   private isRunning = false;
 
-  private readonly HISTORY_RECONCILIATION_ENABLED =
-    process.env.HISTORY_RECONCILIATION_ENABLED !== 'false';
+  private readonly historyReconciliationConfig =
+    resolveHistoryReconciliationConfig();
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAYS_MS = [500, 2000, 5000];
-  private readonly HISTORY_WINDOW_MS = 60 * 60 * 1000;
   private readonly WORKER_DATES_CACHE_TTL_MS = 60 * 1000;
   private workerDatesCache: Map<string, ICachedWorkerDates> = new Map();
   private readonly receiptCache: MessageHistoryReceiptCacheService;
+  private readonly runtimeFence: WhatsappRuntimeFenceService;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -45,6 +55,7 @@ export class MessageHistorySyncConsume {
     private readonly streamProducerService: StreamProducerService
   ) {
     this.receiptCache = new MessageHistoryReceiptCacheService(this.redis);
+    this.runtimeFence = new WhatsappRuntimeFenceService(this.redis);
   }
 
   private parseMessage(value: Buffer | null): IUpsertMessage | null {
@@ -85,19 +96,26 @@ export class MessageHistorySyncConsume {
     this.runner = new KafkaConsumerRunner<IUpsertMessage>({
       kafka: this.kafka,
       topic,
-      groupId: 'group-underchat-message-history-sync',
+      groupId: SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS.messageHistorySync,
       parse: (message) => this.parseMessage(message.value),
       resolveEntityKey: (data, message) =>
         buildUpsertMessageKafkaKey(data, message.key?.toString() ?? null),
+      preserveEntityOrder: true,
+      acquireEffectLease: (data) => this.runtimeFence.acquireEffectLease(data),
+      classifyEffectLeaseRejection: async (data) =>
+        (await this.runtimeFence.isCurrent(data)) ? 'retry' : 'terminal',
       handle: (data, context) =>
         this.processHistoryMessageWithLifecycle(
           topic,
           data,
           context.partition,
-          context.offset
+          context.offset,
+          context
         ),
       maxRetries: this.MAX_RETRIES,
       retryDelaysMs: this.RETRY_DELAYS_MS,
+      shouldContinueRetryWithoutCommit: (_data, _context, error) =>
+        error instanceof MessageHistoryReceiptReservationBusyError,
       logger: console,
     });
 
@@ -111,7 +129,8 @@ export class MessageHistorySyncConsume {
     topic: string,
     data: IUpsertMessage,
     partition: number,
-    offset: number
+    offset: number,
+    context: KafkaConsumerRunnerContext<IUpsertMessage>
   ): Promise<void> {
     this.logLifecycle(data, {
       stage: 'message_history_sync.consume.received',
@@ -123,7 +142,25 @@ export class MessageHistorySyncConsume {
     });
 
     try {
-      await this.handleHistoryMessage(data);
+      context.assertActive();
+      const activeFence = await this.resolveActiveRuntimeFence(data);
+      if (
+        WhatsappRuntimeFenceService.requiresFence(data.source_provider) &&
+        !activeFence
+      ) {
+        this.logLifecycle(data, {
+          stage: 'message_history_sync.skip',
+          decision: 'runtime_fence',
+          outcome: 'skipped',
+          reason: 'stale_or_missing_runtime_fence',
+          topic,
+          partition,
+          offset,
+        });
+        return;
+      }
+      context.assertActive();
+      await this.handleHistoryMessage(data, context.assertActive, activeFence);
     } catch (error) {
       this.logLifecycle(data, {
         stage: 'message_history_sync.process.error',
@@ -155,13 +192,32 @@ export class MessageHistorySyncConsume {
     this.consumer = null;
   }
 
-  private async handleHistoryMessage(data: IUpsertMessage): Promise<void> {
-    if (!this.HISTORY_RECONCILIATION_ENABLED) {
+  private async handleHistoryMessage(
+    data: IUpsertMessage,
+    assertActive: () => void = () => undefined,
+    activeFence: IWhatsappRuntimeFence | null = null
+  ): Promise<void> {
+    if (!this.historyReconciliationConfig.enabled) {
       this.logLifecycle(data, {
         stage: 'message_history_sync.skip',
         decision: 'history_reconciliation_enabled',
         outcome: 'skipped',
         reason: 'disabled',
+      });
+      return;
+    }
+
+    const resolvedFence =
+      activeFence ?? (await this.resolveActiveRuntimeFence(data));
+    if (
+      WhatsappRuntimeFenceService.requiresFence(data.source_provider) &&
+      !resolvedFence
+    ) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'runtime_fence',
+        outcome: 'skipped',
+        reason: 'stale_or_missing_runtime_fence',
       });
       return;
     }
@@ -213,6 +269,15 @@ export class MessageHistorySyncConsume {
       data.account_id,
       data.worker_id
     );
+    if (minTimestampMs === null) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'worker_active',
+        outcome: 'skipped',
+        reason: 'worker_missing_or_deleted',
+      });
+      return;
+    }
     if (messageTimestampMs < minTimestampMs) {
       this.logLifecycle(data, {
         stage: 'message_history_sync.skip',
@@ -225,29 +290,33 @@ export class MessageHistorySyncConsume {
       return;
     }
 
-    if (await this.receiptCache.isKnown(data)) {
+    const reservation = await this.receiptCache.reserveForHistory(data);
+    if (reservation.status === 'duplicate') {
+      if (reservation.state === 'reserved') {
+        throw new MessageHistoryReceiptReservationBusyError();
+      }
       this.logLifecycle(data, {
         stage: 'message_history_sync.skip',
-        decision: 'receipt_cache_known',
+        decision: 'receipt_cache_reservation',
         outcome: 'skipped',
         reason: 'already_known',
+        receipt_state: reservation.state,
+        event_id: reservation.eventId,
       });
       return;
     }
 
-    const acquired = await this.receiptCache.acquireInflight(data);
-    if (!acquired) {
-      this.logLifecycle(data, {
-        stage: 'message_history_sync.skip',
-        decision: 'receipt_cache_inflight',
-        outcome: 'skipped',
-        reason: 'already_inflight',
-      });
-      return;
-    }
+    const claim = reservation.claim;
+    await this.receiptCache.withReservation(claim, async (assertClaimOwned) => {
+      const assertProcessingActive = async (): Promise<void> => {
+        assertActive();
+        await assertClaimOwned();
+        assertActive();
+      };
 
-    try {
+      await assertProcessingActive();
       const exists = await this.messageExistsInElastic(data);
+      await assertProcessingActive();
       if (exists) {
         this.logLifecycle(data, {
           stage: 'message_history_sync.skip',
@@ -255,7 +324,14 @@ export class MessageHistorySyncConsume {
           outcome: 'skipped',
           reason: 'message_already_exists',
         });
-        await this.receiptCache.markKnown(data);
+        const knownTransition =
+          await this.receiptCache.markKnownFromReservation(claim);
+        if (
+          knownTransition !== 'transitioned' &&
+          knownTransition !== 'already_completed'
+        ) {
+          throw new Error(`message_history_receipt_known_${knownTransition}`);
+        }
         return;
       }
 
@@ -265,22 +341,82 @@ export class MessageHistorySyncConsume {
       };
       const kafkaKey = buildUpsertMessageKafkaKey(payload, data.message.key.id);
 
-      await this.streamProducerService.send(
-        this.kafkaServiceQueueService.upsertMessage(),
-        payload,
-        kafkaKey
-      );
-      await this.receiptCache.markKnown(data);
+      await assertProcessingActive();
+      if (!(await this.runtimeFence.isCurrent(data))) {
+        this.logLifecycle(data, {
+          stage: 'message_history_sync.skip',
+          decision: 'runtime_fence',
+          outcome: 'skipped',
+          reason: 'runtime_fence_revoked_before_publish',
+        });
+        return;
+      }
+      await assertProcessingActive();
+      const publishingTransition =
+        await this.receiptCache.markPublishing(claim);
+      if (publishingTransition === 'already_completed') {
+        this.logLifecycle(data, {
+          stage: 'message_history_sync.skip',
+          decision: 'receipt_cache_publishing',
+          outcome: 'skipped',
+          reason: 'receipt_already_completed',
+          event_id: claim.eventId,
+        });
+        return;
+      }
+      if (publishingTransition !== 'transitioned') {
+        throw new Error(
+          `message_history_receipt_publishing_${publishingTransition}`
+        );
+      }
+      assertActive();
+      try {
+        await this.streamProducerService.send(
+          this.kafkaServiceQueueService.upsertMessage(),
+          payload,
+          kafkaKey,
+          undefined,
+          assertActive
+        );
+      } catch (error) {
+        const transition = await this.receiptCache.markAmbiguous(claim, error);
+        if (
+          transition !== 'transitioned' &&
+          transition !== 'already_completed'
+        ) {
+          throw new Error(`message_history_receipt_ambiguous_${transition}`, {
+            cause: error,
+          });
+        }
+        throw error;
+      }
+
+      const transition = await this.receiptCache.markPublished(claim);
+      if (transition !== 'transitioned' && transition !== 'already_completed') {
+        throw new Error(`message_history_receipt_published_${transition}`);
+      }
       this.logLifecycle(payload, {
         stage: 'message_history_sync.kafka.publish',
         decision: 'publish_history_upsert',
         outcome: 'published',
         topic: this.kafkaServiceQueueService.upsertMessage(),
         kafka_key: kafkaKey,
+        event_id: claim.eventId,
       });
-    } finally {
-      await this.receiptCache.releaseInflight(data);
+    });
+  }
+
+  private async resolveActiveRuntimeFence(
+    data: IUpsertMessage
+  ): Promise<IWhatsappRuntimeFence | null> {
+    if (!WhatsappRuntimeFenceService.requiresFence(data.source_provider)) {
+      return null;
     }
+    if (!(await this.runtimeFence.isCurrent(data))) {
+      return null;
+    }
+
+    return this.runtimeFence.view(data.worker_id);
   }
 
   private getMessageTimestampMs(
@@ -379,23 +515,33 @@ export class MessageHistorySyncConsume {
   private async getMinAllowedTimestampMs(
     accountId: string,
     workerId: string
-  ): Promise<number> {
+  ): Promise<number | null> {
     const now = Date.now();
-    const historyCutoff = now - this.HISTORY_WINDOW_MS;
+    const historyCutoff = now - this.historyReconciliationConfig.windowMs;
     const dates = await this.getWorkerDatesMs(accountId, workerId);
+    if (!dates.workerActive) {
+      return null;
+    }
 
-    const connectionDateMs = dates.connectionDateMs ?? 0;
     const createdAtMs = dates.createdAtMs ?? 0;
 
-    return Math.max(historyCutoff, connectionDateMs, createdAtMs);
+    // connection_date is advanced by a reconnect. Using it as a lower bound
+    // removes exactly the outage interval that reconciliation must recover.
+    return Math.max(historyCutoff, createdAtMs);
   }
 
   private async getWorkerDatesMs(
     accountId: string,
     workerId: string
-  ): Promise<{ connectionDateMs: number | null; createdAtMs: number | null }> {
+  ): Promise<{
+    workerActive: boolean;
+    createdAtMs: number | null;
+  }> {
     if (!accountId || !workerId) {
-      return { connectionDateMs: null, createdAtMs: null };
+      return {
+        workerActive: false,
+        createdAtMs: null,
+      };
     }
 
     const cacheKey = `${accountId}:${workerId}`;
@@ -404,31 +550,30 @@ export class MessageHistorySyncConsume {
 
     if (cached && cached.expiresAt > now) {
       return {
-        connectionDateMs: cached.connectionDateMs,
+        workerActive: cached.workerActive,
         createdAtMs: cached.createdAtMs,
       };
     }
 
-    const view = await this.workerService.viewWorker(accountId, workerId);
-    const connectionDate = view?.connection_date;
+    const view =
+      await this.workerService.viewWorkerForMonitorConsistent(workerId);
+    const workerActive = Boolean(
+      view && view.account_id === accountId && view.deleted_at === null
+    );
     const createdAt = view?.created_at;
 
-    const connectionDateMs =
-      connectionDate && !Number.isNaN(Date.parse(connectionDate))
-        ? new Date(connectionDate).getTime()
-        : null;
     const createdAtMs =
       createdAt && !Number.isNaN(Date.parse(createdAt))
         ? new Date(createdAt).getTime()
         : null;
 
     this.workerDatesCache.set(cacheKey, {
-      connectionDateMs,
+      workerActive,
       createdAtMs,
       expiresAt: now + this.WORKER_DATES_CACHE_TTL_MS,
     });
 
-    return { connectionDateMs, createdAtMs };
+    return { workerActive, createdAtMs };
   }
 
   private async messageExistsInElastic(data: IUpsertMessage): Promise<boolean> {

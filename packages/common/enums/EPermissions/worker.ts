@@ -8,4 +8,5 @@ export enum EWorkerPermissions {
   recreate_worker = 'recreate_worker',
   profile_status_worker = 'profile_status_worker',
   profile_info_worker = 'profile_info_worker',
+  view_all_channels_for_transfer_and_forwarding = 'view_all_channels_for_transfer_and_forwarding',
 }

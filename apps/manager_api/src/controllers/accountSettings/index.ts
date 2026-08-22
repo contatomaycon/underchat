@@ -27,6 +27,8 @@ import { viewAccountCustomization } from './methods/viewAccountCustomization';
 import { upsertAccountCustomization } from './methods/upsertAccountCustomization';
 import { generateAccountPaymentNfse } from './methods/generateAccountPaymentNfse';
 import { listMethodPayments } from './methods/listMethodPayments';
+import { listArchivedUserCards } from './methods/listArchivedUserCards';
+import { reactivateUserCard } from './methods/reactivateUserCard';
 
 @injectable()
 class AccountSettingsController {
@@ -58,6 +60,8 @@ class AccountSettingsController {
   public viewAccountCustomization = viewAccountCustomization;
   public upsertAccountCustomization = upsertAccountCustomization;
   public listMethodPayments = listMethodPayments;
+  public listArchivedUserCards = listArchivedUserCards;
+  public reactivateUserCard = reactivateUserCard;
 }
 
 export default AccountSettingsController;

@@ -1,9 +1,43 @@
 import 'reflect-metadata';
-import { ContactUpdaterRepository } from '@core/repositories/contact/ContactUpdater.repository';
 
 jest.mock('uuid', () => ({
   v7: jest.fn(() => 'uuid-v7'),
 }));
+
+const mockAssertCurrentWhatsappRuntimeInTransaction = jest.fn(
+  async () => undefined
+);
+
+jest.mock(
+  '@core/repositories/worker/WhatsappRuntimeDatabaseFence.repository',
+  () => {
+    class StaleWhatsappRuntimeDatabaseFenceError extends Error {
+      public readonly reason = 'whatsapp_runtime_database_fence_stale' as const;
+
+      constructor() {
+        super('WhatsApp runtime database fence is stale');
+        this.name = 'StaleWhatsappRuntimeDatabaseFenceError';
+      }
+    }
+
+    return {
+      assertCurrentWhatsappRuntimeInTransaction:
+        mockAssertCurrentWhatsappRuntimeInTransaction,
+      StaleWhatsappRuntimeDatabaseFenceError,
+    };
+  }
+);
+
+import { ContactUpdaterRepository } from '@core/repositories/contact/ContactUpdater.repository';
+import { StaleWhatsappRuntimeDatabaseFenceError } from '@core/repositories/worker/WhatsappRuntimeDatabaseFence.repository';
+
+const runtimeFence = {
+  account_id: 'acc-1',
+  worker_id: 'worker-1',
+  source_provider: 'baileys',
+  runtime_generation: 7,
+  connection_epoch: 'epoch-7',
+};
 
 function createUpdateChain(rowCount: number) {
   const execute = jest.fn(async () => ({ rowCount }));
@@ -20,12 +54,22 @@ function createUpdateChain(rowCount: number) {
 function createRepository(options?: {
   txRowCount?: number;
   dbRowCount?: number;
+  lockedContacts?: Array<{ contact_id: string }>;
 }) {
   const txChain = createUpdateChain(options?.txRowCount ?? 1);
   const dbChain = createUpdateChain(options?.dbRowCount ?? 1);
 
+  const lockExecute = jest.fn(
+    async () => options?.lockedContacts ?? [{ contact_id: 'contact-1' }]
+  );
+  const lockChain = {} as Record<string, jest.Mock>;
+  for (const method of ['from', 'where', 'for', 'limit']) {
+    lockChain[method] = jest.fn(() => lockChain);
+  }
+  lockChain.execute = lockExecute;
   const tx = {
     update: txChain.update,
+    select: jest.fn(() => lockChain),
   };
 
   const dbRw = {
@@ -47,6 +91,7 @@ function createRepository(options?: {
 
   const contactChannelsUpdaterTransactionRepository = {
     updateContactChannels: jest.fn(async () => true),
+    updateContactChannelsInTransaction: jest.fn(async () => true),
   };
 
   return {
@@ -59,6 +104,7 @@ function createRepository(options?: {
     tx,
     dbRw,
     txSet: txChain.set,
+    txUpdate: txChain.update,
     dbSet: dbChain.set,
     contactLabelTemplateDeleterRepository,
     contactLabelTemplateCreatorRepository,
@@ -67,6 +113,11 @@ function createRepository(options?: {
 }
 
 describe('ContactUpdaterRepository', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAssertCurrentWhatsappRuntimeInTransaction.mockResolvedValue(undefined);
+  });
+
   it('updates labels/channels in transaction and updates contact', async () => {
     const {
       repository,
@@ -96,8 +147,8 @@ describe('ContactUpdaterRepository', () => {
       contactLabelTemplateCreatorRepository.createContactLabelTemplate
     ).toHaveBeenCalledTimes(2);
     expect(
-      contactChannelsUpdaterTransactionRepository.updateContactChannels
-    ).toHaveBeenCalledWith('contact-1', 'acc-1', ['channel-1']);
+      contactChannelsUpdaterTransactionRepository.updateContactChannelsInTransaction
+    ).toHaveBeenCalledWith(tx, 'contact-1', 'acc-1', ['channel-1']);
     expect(txSet).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'New Name',
@@ -109,7 +160,8 @@ describe('ContactUpdaterRepository', () => {
   it('updates channels without label transaction path', async () => {
     const {
       repository,
-      dbSet,
+      tx,
+      txSet,
       contactLabelTemplateDeleterRepository,
       contactChannelsUpdaterTransactionRepository,
     } = createRepository();
@@ -131,9 +183,12 @@ describe('ContactUpdaterRepository', () => {
       contactLabelTemplateDeleterRepository.deleteContactLabelTemplatesByContactId
     ).not.toHaveBeenCalled();
     expect(
-      contactChannelsUpdaterTransactionRepository.updateContactChannels
-    ).toHaveBeenCalledWith('contact-1', 'acc-1', ['channel-1', 'channel-2']);
-    expect(dbSet).toHaveBeenCalledWith(
+      contactChannelsUpdaterTransactionRepository.updateContactChannelsInTransaction
+    ).toHaveBeenCalledWith(tx, 'contact-1', 'acc-1', [
+      'channel-1',
+      'channel-2',
+    ]);
+    expect(txSet).toHaveBeenCalledWith(
       expect.objectContaining({
         phone: '11999999999',
         phone_partial: '9999',
@@ -200,5 +255,104 @@ describe('ContactUpdaterRepository', () => {
     await expect(
       repository.updateContactIsValided('contact-1', true)
     ).resolves.toBe(false);
+  });
+
+  it('sets provenance when validating and clears it when invalidating', async () => {
+    const { repository, dbSet } = createRepository();
+
+    await repository.updateContactIsValided(
+      'contact-1',
+      true,
+      undefined,
+      undefined,
+      undefined,
+      'official_assumed'
+    );
+    expect(dbSet).toHaveBeenLastCalledWith({
+      is_valided: true,
+      validation_origin: 'official_assumed',
+    });
+
+    await repository.updateContactIsValided('contact-1', false);
+    expect(dbSet).toHaveBeenLastCalledWith({
+      is_valided: false,
+      validation_origin: null,
+    });
+  });
+
+  it('validates worker ownership and generation in the contact transaction', async () => {
+    const { repository, dbRw, tx } = createRepository();
+
+    await expect(
+      repository.updateContactIsValided(
+        'contact-1',
+        true,
+        'acc-1',
+        null,
+        runtimeFence
+      )
+    ).resolves.toBe(true);
+
+    expect(dbRw.transaction).toHaveBeenCalledTimes(1);
+    expect(mockAssertCurrentWhatsappRuntimeInTransaction).toHaveBeenCalledWith(
+      tx,
+      runtimeFence
+    );
+    expect(
+      mockAssertCurrentWhatsappRuntimeInTransaction.mock.invocationCallOrder[0]
+    ).toBeLessThan(tx.update.mock.invocationCallOrder[0]);
+  });
+
+  it('does not mutate a contact after its runtime generation is replaced', async () => {
+    const { repository, txUpdate } = createRepository();
+    mockAssertCurrentWhatsappRuntimeInTransaction.mockRejectedValueOnce(
+      new StaleWhatsappRuntimeDatabaseFenceError()
+    );
+
+    await expect(
+      repository.updateContactById(
+        'contact-1',
+        { name: 'stale mutation' } as never,
+        'acc-1',
+        null,
+        runtimeFence
+      )
+    ).rejects.toBeInstanceOf(StaleWhatsappRuntimeDatabaseFenceError);
+
+    expect(txUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a mismatched account before starting the transaction', async () => {
+    const { repository, dbRw } = createRepository();
+
+    await expect(
+      repository.updateContactIsValided(
+        'contact-1',
+        true,
+        'another-account',
+        null,
+        runtimeFence
+      )
+    ).rejects.toBeInstanceOf(StaleWhatsappRuntimeDatabaseFenceError);
+
+    expect(dbRw.transaction).not.toHaveBeenCalled();
+  });
+
+  it('does not update a contact owned by another account', async () => {
+    const { repository, txUpdate } = createRepository({
+      lockedContacts: [],
+    });
+
+    await expect(
+      repository.updateContactIsValided(
+        'contact-from-another-account',
+        true,
+        'acc-1',
+        null,
+        runtimeFence
+      )
+    ).rejects.toThrow('outbound_webhook_contact_not_mutable');
+
+    expect(txUpdate).not.toHaveBeenCalled();
   });
 });

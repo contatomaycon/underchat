@@ -6,11 +6,11 @@ export async function extendLock(
   key: string,
   token: string,
   ttlMs: number
-): Promise<void> {
+): Promise<boolean> {
   if (isRedisConnectionClosed(redis)) {
-    return;
+    return false;
   }
-  await redis.eval(
+  const result = await redis.eval(
     `
       if redis.call("get", KEYS[1]) == ARGV[1] then
         return redis.call("pexpire", KEYS[1], ARGV[2])
@@ -23,4 +23,6 @@ export async function extendLock(
     token,
     String(ttlMs)
   );
+
+  return Number(result) === 1;
 }

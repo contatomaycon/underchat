@@ -42,11 +42,15 @@ describe('LabelTemplateService', () => {
     await expect(service.createLabelTemplate({} as never, 'a1')).resolves.toBe(
       'l1'
     );
-    await expect(service.viewLabelTemplateById('l1')).resolves.toEqual({
+    await expect(service.viewLabelTemplateById('l1', 'a1')).resolves.toEqual({
       label_template_id: 'l1',
     });
-    await expect(service.deleteLabelTemplateById('l1')).resolves.toBe(true);
-    await expect(service.updateLabelTemplateById('l1', {})).resolves.toBe(true);
+    await expect(service.deleteLabelTemplateById('l1', 'a1')).resolves.toBe(
+      true
+    );
+    await expect(service.updateLabelTemplateById('l1', {}, 'a1')).resolves.toBe(
+      true
+    );
     await expect(service.listLabelTemplateAll('a1')).resolves.toEqual([
       { label_template_id: 'l1' },
     ]);

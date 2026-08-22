@@ -18,9 +18,17 @@ export class BaileysMessageEditDeleteService {
   deleteMessage(
     jid: string,
     key: WAMessageKey,
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
-    return this.baileysHelpersService.send(jid, { delete: key }, options);
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          { delete: key },
+          options,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, { delete: key }, options);
   }
 
   /**
@@ -30,12 +38,17 @@ export class BaileysMessageEditDeleteService {
     jid: string,
     newText: string,
     editKey: WAMessageKey,
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
-    return this.baileysHelpersService.send(
-      jid,
-      { text: newText, edit: editKey },
-      options
-    );
+    const content = { text: newText, edit: editKey };
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          content,
+          options,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, content, options);
   }
 }

@@ -118,12 +118,20 @@ func (cli *Client) doHandshake(ctx context.Context, fs *socket.FrameSocket, ephe
 		return fmt.Errorf("failed to send handshake finish message: %w", err)
 	}
 
-	ns, err := nh.Finish(ctx, fs, cli.handleFrame, cli.onDisconnect)
+	nextGeneration := cli.socketGeneration + 1
+	ns, err := nh.FinishWithSource(ctx, fs, func(frameCtx context.Context, source *socket.NoiseSocket, data []byte) {
+		cli.handleFrameFromSocket(frameCtx, source, nextGeneration, data)
+	}, cli.onDisconnect)
 	if err != nil {
 		return fmt.Errorf("failed to create noise socket: %w", err)
 	}
 
+	cli.socketGeneration = nextGeneration
+	// A newly installed transport is not authenticated until its generation's
+	// own success node is accepted.
+	cli.isLoggedIn.Store(false)
 	cli.socket = ns
+	ns.Start(ctx)
 
 	return nil
 }

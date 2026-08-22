@@ -52,14 +52,25 @@ function createCreatorUseCase(options?: { channelExists?: boolean }) {
   return { useCase, messageTemplateService, workerService };
 }
 
-function createUpdaterUseCase(options?: { channelExists?: boolean }) {
+function createUpdaterUseCase(options?: {
+  channelExists?: boolean | ((channelId: string) => boolean);
+  currentChannelIds?: string[];
+}) {
   const messageTemplateService = {
-    viewMessageTemplateById: jest.fn(async () => ({ type: 'text' })),
+    viewMessageTemplateById: jest.fn(async () => ({
+      type: 'text',
+      channel_ids: options?.currentChannelIds ?? [],
+      account: { account_id: 'acc-1' },
+    })),
     existsMessageStatusById: jest.fn(async () => true),
     updateMessageTemplateById: jest.fn(async () => true),
   };
   const workerService = {
-    existsWorkerById: jest.fn(async () => options?.channelExists ?? true),
+    existsWorkerById: jest.fn(async (_accountId: string, channelId: string) =>
+      typeof options?.channelExists === 'function'
+        ? options.channelExists(channelId)
+        : (options?.channelExists ?? true)
+    ),
   };
 
   const useCase = new MessageTemplateUpdaterUseCase(
@@ -157,6 +168,68 @@ describe('MessageTemplate channel_ids use cases', () => {
     );
   });
 
+  it('clears channel mappings from the multipart null string wrapper', async () => {
+    const { useCase, messageTemplateService, workerService } =
+      createUpdaterUseCase({ currentChannelIds: [channelId1] });
+
+    await expect(
+      useCase.execute(
+        t,
+        '019b6fa2-7a4c-7004-b367-a1dc05db05a4',
+        {
+          message: { value: 'hello' },
+          command: { value: 'start' },
+          channel_ids: {
+            type: 'field',
+            fieldname: 'channel_ids',
+            value: 'null',
+          },
+          message_status_id: { value: statusId },
+          type: { value: 'text' },
+        } as never,
+        'acc-1'
+      )
+    ).resolves.toBe(true);
+
+    expect(workerService.existsWorkerById).not.toHaveBeenCalled();
+    expect(
+      messageTemplateService.updateMessageTemplateById
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel_ids: [],
+      })
+    );
+  });
+
+  it('clears channel mappings from an explicit empty array', async () => {
+    const { useCase, messageTemplateService, workerService } =
+      createUpdaterUseCase({ currentChannelIds: [channelId1] });
+
+    await expect(
+      useCase.execute(
+        t,
+        '019b6fa2-8c6e-7004-a406-130d98da27df',
+        {
+          message: { value: 'hello' },
+          command: { value: 'start' },
+          channel_ids: [],
+          message_status_id: { value: statusId },
+          type: { value: 'text' },
+        } as never,
+        'acc-1'
+      )
+    ).resolves.toBe(true);
+
+    expect(workerService.existsWorkerById).not.toHaveBeenCalled();
+    expect(
+      messageTemplateService.updateMessageTemplateById
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel_ids: [],
+      })
+    );
+  });
+
   it('keeps nonexistent valid channel ids as domain errors on update', async () => {
     const { useCase, messageTemplateService } = createUpdaterUseCase({
       channelExists: false,
@@ -177,6 +250,93 @@ describe('MessageTemplate channel_ids use cases', () => {
       )
     ).rejects.toThrow('worker_not_found');
 
+    expect(
+      messageTemplateService.updateMessageTemplateById
+    ).not.toHaveBeenCalled();
+  });
+
+  it('drops a deleted previous channel while replacing it with an active channel', async () => {
+    const { useCase, messageTemplateService } = createUpdaterUseCase({
+      currentChannelIds: [channelId1],
+      channelExists: (channelId) => channelId === channelId2,
+    });
+
+    await expect(
+      useCase.execute(
+        t,
+        '019b6fa2-c083-7006-9779-9f13a491d184',
+        {
+          message: { value: 'hello' },
+          command: { value: 'start' },
+          channel_ids: [{ value: channelId1 }, { value: channelId2 }],
+          message_status_id: { value: statusId },
+          type: { value: 'text' },
+        } as never,
+        'acc-1'
+      )
+    ).resolves.toBe(true);
+
+    expect(
+      messageTemplateService.updateMessageTemplateById
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel_ids: [channelId2],
+      })
+    );
+  });
+
+  it('does not forgive an inactive channel that was not already linked', async () => {
+    const { useCase, messageTemplateService } = createUpdaterUseCase({
+      currentChannelIds: [channelId1],
+      channelExists: false,
+    });
+
+    await expect(
+      useCase.execute(
+        t,
+        '019b6fa2-e648-7007-a571-f3b9aed813ec',
+        {
+          message: { value: 'hello' },
+          command: { value: 'start' },
+          channel_ids: [{ value: channelId2 }],
+          message_status_id: { value: statusId },
+          type: { value: 'text' },
+        } as never,
+        'acc-1'
+      )
+    ).rejects.toThrow('worker_not_found');
+
+    expect(
+      messageTemplateService.updateMessageTemplateById
+    ).not.toHaveBeenCalled();
+  });
+
+  it('does not update a template owned by another account', async () => {
+    const { useCase, messageTemplateService, workerService } =
+      createUpdaterUseCase();
+
+    messageTemplateService.viewMessageTemplateById.mockResolvedValueOnce({
+      type: 'text',
+      channel_ids: [channelId1],
+      account: { account_id: 'another-account' },
+    });
+
+    await expect(
+      useCase.execute(
+        t,
+        '019b6fa3-0d74-7008-8442-5da2632ae481',
+        {
+          message: { value: 'hello' },
+          command: { value: 'start' },
+          channel_ids: [{ value: channelId1 }],
+          message_status_id: { value: statusId },
+          type: { value: 'text' },
+        } as never,
+        'acc-1'
+      )
+    ).rejects.toThrow('message_template_not_found');
+
+    expect(workerService.existsWorkerById).not.toHaveBeenCalled();
     expect(
       messageTemplateService.updateMessageTemplateById
     ).not.toHaveBeenCalled();

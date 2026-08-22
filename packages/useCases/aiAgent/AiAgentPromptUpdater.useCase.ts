@@ -157,9 +157,30 @@ export class AiAgentPromptUpdaterUseCase {
       return currentValue;
     }
 
-    await this.deleteFileFromS3(currentValue, t);
-
     return this.uploadFileToS3(file, accountId, t);
+  }
+
+  private async deleteFileFromS3BestEffort(
+    fileUrl: string,
+    context: {
+      accountId: string;
+      aiAgentPromptId: string;
+      reason: string;
+    }
+  ): Promise<void> {
+    try {
+      const deleted = await this.storageService.deleteImage(fileUrl);
+      if (!deleted) {
+        throw new Error('Storage source cleanup returned false.');
+      }
+    } catch (error) {
+      console.error('[AiAgentPromptUpdater] source cleanup failed', {
+        error,
+        account_id: context.accountId,
+        ai_agent_prompt_id: context.aiAgentPromptId,
+        reason: context.reason,
+      });
+    }
   }
 
   private async removePromptSearchArtifacts(
@@ -168,35 +189,90 @@ export class AiAgentPromptUpdaterUseCase {
     aiAgentPromptId: string,
     openaiFileId: string | null | undefined
   ): Promise<void> {
-    await this.embeddingService.deletePromptEmbeddings(aiAgentPromptId);
+    let gptProvider:
+      | {
+          apiKey: string;
+          baseUrl: string;
+        }
+      | undefined;
+    if (openaiFileId) {
+      const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
+      const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
+      if (isGpt) {
+        await this.openAIAssistantService.registerPendingOpenAIFileCleanup(
+          accountId,
+          aiAgentId,
+          aiAgentPromptId,
+          agent.openai_vector_store_id,
+          openaiFileId
+        );
+        if (agent.api_key && agent.base_url) {
+          gptProvider = {
+            apiKey: agent.api_key,
+            baseUrl: agent.base_url,
+          };
+        }
+      }
+    }
+
+    const embeddingsDeleted =
+      await this.embeddingService.deletePromptEmbeddings(aiAgentPromptId);
+    if (!embeddingsDeleted) {
+      throw new Error('Failed to remove inactive prompt embeddings.');
+    }
 
     if (!openaiFileId) {
       return;
     }
 
-    const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
-    const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
-    if (isGpt && agent?.api_key && agent?.base_url) {
-      try {
-        await this.openAIAssistantService.cleanupOpenAIFile(
-          agent.api_key,
-          agent.base_url,
-          agent.openai_vector_store_id,
-          openaiFileId
-        );
-      } catch (error) {
-        console.error('Erro ao limpar arquivo OpenAI:', error);
-      }
-    }
-
-    await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
+    const cleared = await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
       aiAgentPromptId,
       accountId,
       null
     );
+    if (!cleared) {
+      throw new Error('Failed to clear inactive OpenAI prompt file.');
+    }
+
+    if (gptProvider) {
+      await this.openAIAssistantService.cleanupPendingOpenAIFiles(
+        gptProvider.apiKey,
+        gptProvider.baseUrl,
+        accountId,
+        aiAgentId
+      );
+    }
   }
 
   async execute(
+    t: TFunction<'translation', undefined>,
+    aiAgentPromptId: string,
+    body: UpdateAiAgentPromptRequest,
+    accountId: string
+  ): Promise<boolean> {
+    const prompt = await this.aiAgentService.viewAiAgentPrompt(
+      aiAgentPromptId,
+      accountId
+    );
+
+    if (!prompt) {
+      throw new Error(t('ai_agent_prompt_not_found'));
+    }
+
+    return this.embeddingService.withEmbeddingGenerationLock(
+      accountId,
+      prompt.ai_agent_id,
+      () =>
+        this.executeWithEmbeddingGenerationLock(
+          t,
+          aiAgentPromptId,
+          body,
+          accountId
+        )
+    );
+  }
+
+  private async executeWithEmbeddingGenerationLock(
     t: TFunction<'translation', undefined>,
     aiAgentPromptId: string,
     body: UpdateAiAgentPromptRequest,
@@ -215,6 +291,7 @@ export class AiAgentPromptUpdaterUseCase {
     let finalValue =
       this.getFieldFromMultipartBody<string>(bodyRecord, 'value') ??
       aiAgentPromptExists.value;
+    let uploadedFileUrl: string | null = null;
 
     if (body.file) {
       const newFileUrl = await this.processFileUpdate(
@@ -226,6 +303,7 @@ export class AiAgentPromptUpdaterUseCase {
 
       if (newFileUrl) {
         finalValue = newFileUrl;
+        uploadedFileUrl = newFileUrl;
       }
     }
 
@@ -237,89 +315,83 @@ export class AiAgentPromptUpdaterUseCase {
     };
     const finalStatus = updateBody.status ?? aiAgentPromptExists.status;
 
-    const aiAgentPromptUpdater =
-      await this.aiAgentService.updateAiAgentPromptById(
-        updateBody,
-        aiAgentPromptId,
-        accountId
-      );
-
-    if (!aiAgentPromptUpdater) {
-      throw new Error(t('ai_agent_prompt_update_error'));
-    }
-
-    if (finalStatus !== EAiAgentStatus.active) {
-      await this.removePromptSearchArtifacts(
-        accountId,
-        aiAgentPromptExists.ai_agent_id,
-        aiAgentPromptId,
-        aiAgentPromptExists.openai_file_id
-      );
-      return true;
-    }
-
-    await this.ensureOpenAIAndCleanupIfNeeded(
-      accountId,
-      aiAgentPromptExists.ai_agent_id,
-      aiAgentPromptExists.openai_file_id
-    );
-
-    await this.sendToEmbeddingQueue(
-      accountId,
-      aiAgentPromptExists.ai_agent_id,
-      aiAgentPromptId,
-      finalValue,
-      'update'
-    );
-
-    return aiAgentPromptUpdater;
-  }
-
-  private async ensureOpenAIAndCleanupIfNeeded(
-    accountId: string,
-    aiAgentId: string,
-    openaiFileId: string | null | undefined
-  ): Promise<void> {
-    const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
-    const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
-    if (!isGpt || !agent?.api_key || !agent?.base_url) {
-      return;
-    }
-
-    const vectorStoreId = await this.openAIAssistantService.ensureVectorStore(
-      aiAgentId,
-      accountId,
-      agent.api_key,
-      agent.base_url
-    );
-
-    if (agent.model) {
-      const instructions =
-        this.openAIAssistantService.getAssistantInstructionsFromSystemPrompt(
-          agent.system_prompt
+    let databaseUpdated = false;
+    try {
+      const aiAgentPromptUpdater =
+        await this.aiAgentService.updateAiAgentPromptById(
+          updateBody,
+          aiAgentPromptId,
+          accountId
         );
-      await this.openAIAssistantService.ensureAssistant(
-        aiAgentId,
-        accountId,
-        agent.api_key,
-        agent.base_url,
-        agent.model,
-        instructions,
-        vectorStoreId
-      );
-    }
 
-    if (openaiFileId) {
-      try {
-        await this.openAIAssistantService.cleanupOpenAIFile(
-          agent.api_key,
-          agent.base_url,
-          vectorStoreId,
-          openaiFileId
-        );
-      } catch (error) {
-        console.error('Erro ao limpar arquivo OpenAI:', error);
+      if (!aiAgentPromptUpdater) {
+        throw new Error(t('ai_agent_prompt_update_error'));
       }
+      databaseUpdated = true;
+
+      if (finalStatus !== EAiAgentStatus.active) {
+        await this.removePromptSearchArtifacts(
+          accountId,
+          aiAgentPromptExists.ai_agent_id,
+          aiAgentPromptId,
+          aiAgentPromptExists.openai_file_id
+        );
+      } else {
+        await this.sendToEmbeddingQueue(
+          accountId,
+          aiAgentPromptExists.ai_agent_id,
+          aiAgentPromptId,
+          finalValue,
+          'update'
+        );
+      }
+
+      if (uploadedFileUrl && uploadedFileUrl !== aiAgentPromptExists.value) {
+        await this.deleteFileFromS3BestEffort(aiAgentPromptExists.value, {
+          accountId,
+          aiAgentPromptId,
+          reason: 'replaced source',
+        });
+      }
+
+      return aiAgentPromptUpdater;
+    } catch (error) {
+      let safeToRemoveUploadedFile = !databaseUpdated;
+      if (databaseUpdated && finalStatus !== EAiAgentStatus.active) {
+        safeToRemoveUploadedFile = false;
+        console.error(
+          '[AiAgentPromptUpdater] inactive prompt cleanup will retry without reactivation',
+          {
+            account_id: accountId,
+            ai_agent_prompt_id: aiAgentPromptId,
+          }
+        );
+      } else if (databaseUpdated) {
+        const rolledBack = await this.aiAgentService.updateAiAgentPromptById(
+          {
+            value: aiAgentPromptExists.value,
+            status: aiAgentPromptExists.status,
+          },
+          aiAgentPromptId,
+          accountId
+        );
+        safeToRemoveUploadedFile = rolledBack;
+        if (!rolledBack) {
+          console.error('[AiAgentPromptUpdater] rollback failed', {
+            account_id: accountId,
+            ai_agent_prompt_id: aiAgentPromptId,
+          });
+        }
+      }
+
+      if (uploadedFileUrl && safeToRemoveUploadedFile) {
+        await this.deleteFileFromS3BestEffort(uploadedFileUrl, {
+          accountId,
+          aiAgentPromptId,
+          reason: 'failed update rollback',
+        });
+      }
+      throw error;
     }
   }
 

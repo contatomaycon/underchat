@@ -37,6 +37,41 @@ const canCustomizeAccount = computed(() => {
   return permissions.some((perm) => ability.can(perm, perm));
 });
 
+const accountSettingsTabs = computed(() =>
+  [
+    {
+      value: 'account',
+      icon: 'tabler-user',
+      labelKey: 'account',
+      visible: true,
+    },
+    {
+      value: 'security',
+      icon: 'tabler-lock',
+      labelKey: 'security',
+      visible: true,
+    },
+    {
+      value: 'customize',
+      icon: 'tabler-palette',
+      labelKey: 'customize',
+      visible: canCustomizeAccount.value,
+    },
+    {
+      value: 'plans',
+      icon: 'tabler-package',
+      labelKey: 'plans',
+      visible: canAccessPlanInvoice.value,
+    },
+    {
+      value: 'invoices',
+      icon: 'tabler-receipt-2',
+      labelKey: 'invoices',
+      visible: canAccessPlanInvoice.value,
+    },
+  ].filter((item) => item.visible)
+);
+
 const resolveTab = (nextTab: string) => {
   if (
     (nextTab === 'plans' || nextTab === 'invoices') &&
@@ -53,6 +88,10 @@ const resolveTab = (nextTab: string) => {
 };
 
 const tab = ref(resolveTab((route.query.tab as string) || 'account'));
+
+const setTab = (nextTab: string) => {
+  tab.value = nextTab;
+};
 
 watch(tab, (v) => {
   const nextTab = resolveTab(v);
@@ -88,39 +127,32 @@ watch(
 
 <template>
   <div class="account-settings-page">
-    <div class="mb-6">
-      <VTabs v-model="tab">
-        <VTab value="account" prepend-icon="tabler-user">
-          {{ $t('account') }}
-        </VTab>
-        <VTab value="security" prepend-icon="tabler-lock">
-          {{ $t('security') }}
-        </VTab>
-        <VTab
-          v-if="canCustomizeAccount"
-          value="customize"
-          prepend-icon="tabler-palette"
+    <nav class="account-settings-nav" :aria-label="$t('settings')">
+      <div class="account-settings-tabs" role="tablist">
+        <button
+          v-for="item in accountSettingsTabs"
+          :key="item.value"
+          class="account-settings-tab"
+          :class="{ 'account-settings-tab--active': tab === item.value }"
+          type="button"
+          role="tab"
+          :aria-selected="tab === item.value"
+          @click="setTab(item.value)"
         >
-          {{ $t('customize') }}
-        </VTab>
-        <VTab
-          v-if="canAccessPlanInvoice"
-          value="plans"
-          prepend-icon="tabler-package"
-        >
-          {{ $t('plans') }}
-        </VTab>
-        <VTab
-          v-if="canAccessPlanInvoice"
-          value="invoices"
-          prepend-icon="tabler-receipt-2"
-        >
-          {{ $t('invoices') }}
-        </VTab>
-      </VTabs>
-    </div>
+          <span class="account-settings-tab__icon">
+            <VIcon :icon="item.icon" size="18" />
+          </span>
+          <span class="account-settings-tab__label">
+            {{ $t(item.labelKey) }}
+          </span>
+        </button>
+      </div>
+    </nav>
 
-    <VWindow v-model="tab" class="disable-tab-transition">
+    <VWindow
+      v-model="tab"
+      class="disable-tab-transition account-settings-content"
+    >
       <VWindowItem value="account">
         <AccountTab />
       </VWindowItem>
@@ -139,3 +171,114 @@ watch(
     </VWindow>
   </div>
 </template>
+
+<style scoped lang="scss">
+.account-settings-page {
+  display: grid;
+  gap: 24px;
+}
+
+.account-settings-nav {
+  max-width: 100%;
+  overflow-x: auto;
+  padding-block-end: 2px;
+  scrollbar-width: none;
+}
+
+.account-settings-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.account-settings-tabs {
+  display: inline-flex;
+  min-width: max-content;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.045);
+}
+
+.account-settings-content {
+  min-width: 0;
+}
+
+.account-settings-tab {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+  cursor: pointer;
+  font-size: 0.925rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
+}
+
+.account-settings-tab__icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.06);
+  color: currentColor;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.account-settings-tab__label {
+  white-space: nowrap;
+}
+
+.account-settings-tab:hover {
+  background: rgba(var(--v-theme-on-surface), var(--v-hover-opacity));
+  color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
+}
+
+.account-settings-tab--active {
+  border-color: rgb(var(--v-theme-primary) / 0.28);
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 12px 28px -22px rgb(var(--v-theme-primary) / 0.9);
+  color: rgb(var(--v-theme-primary));
+}
+
+.account-settings-tab--active .account-settings-tab__icon {
+  background: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-on-primary));
+}
+
+@media (max-width: 599px) {
+  .account-settings-page {
+    gap: 18px;
+  }
+
+  .account-settings-tabs {
+    gap: 6px;
+    padding: 3px;
+  }
+
+  .account-settings-tab {
+    min-height: 40px;
+    padding: 5px 12px 5px 6px;
+    font-size: 0.875rem;
+  }
+
+  .account-settings-tab__icon {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+  }
+}
+</style>

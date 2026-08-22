@@ -21,7 +21,8 @@ export const createContactGroup = async (
     const response = await contactGroupCreatorUseCase.execute(
       t,
       request.body,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.user_id
     );
 
     if (response) {

@@ -16,6 +16,12 @@ import { validatePassword } from '@/@webcore/utils/passwordStrength';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { can } from '@/@layouts/plugins/casl';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
+import {
+  normalizeCnpj,
+  validateCnpj,
+} from '@core/common/functions/validateCnpj';
+import { cnpjAlphanumericMask } from '@/@webcore/utils/masks';
+import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
 
 const userStore = useUsersStore();
 const { items: countryCodes } = useCountryCodes();
@@ -72,6 +78,26 @@ const uniqueChannelsOptions = computed(() =>
   }))
 );
 const userStatusId = ref<string>(EUserStatus.active);
+const userStatusOptions = computed(() => {
+  const items = [
+    { id: EUserStatus.active, name: t('active') },
+    { id: EUserStatus.inactive, name: t('inactive') },
+    { id: EUserStatus.blocked, name: t('blocked') },
+  ];
+
+  return isMasterOrAdministratorRole(permissionRoleId.value)
+    ? items.filter((item) => item.id !== EUserStatus.blocked)
+    : items;
+});
+
+watch(permissionRoleId, (roleId) => {
+  if (
+    isMasterOrAdministratorRole(roleId) &&
+    userStatusId.value === EUserStatus.blocked
+  ) {
+    userStatusId.value = EUserStatus.active;
+  }
+});
 
 const props = defineProps<{
   modelValue: boolean;
@@ -139,9 +165,9 @@ const docConfig = {
     placeholder: '000.000.000-00',
   },
   cnpj: {
-    mask: '##.###.###/####-##',
+    mask: cnpjAlphanumericMask,
     label: t('cnpj'),
-    placeholder: '00.000.000/0000-00',
+    placeholder: '00.AAA.000/00AA-00',
   },
 };
 
@@ -162,16 +188,16 @@ const docPlaceholder = computed(() =>
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
 
 const cpfRegex = /^\d{11}$/;
-const cnpjRegex = /^\d{14}$/;
 
 const docRules = computed(() => [
   (v: string | null) => {
     if (!user_document_type_id.value) return true;
     if (!v) return true;
     const digits = onlyDigits(v ?? '');
-    if (!digits) return true;
+    const cnpj = normalizeCnpj(v ?? '');
+    if (!digits && !cnpj) return true;
     if (isCPF.value) return cpfRegex.test(digits) || t('cpf_invalid');
-    if (isCNPJ.value) return cnpjRegex.test(digits) || t('cnpj_invalid');
+    if (isCNPJ.value) return validateCnpj(v) || t('cnpj_invalid');
     return true;
   },
 ]);
@@ -504,7 +530,9 @@ const buildUserPayload = () => {
   }
 
   if (document.value) {
-    payload.document = { value: document.value };
+    payload.document = {
+      value: isCNPJ.value ? normalizeCnpj(document.value) : document.value,
+    };
   }
 
   if (country_id.value) {
@@ -1545,11 +1573,7 @@ onMounted(resetForm);
                         >
                         <AppSelectSearch
                           v-model="userStatusId"
-                          :items="[
-                            { id: EUserStatus.active, name: $t('active') },
-                            { id: EUserStatus.inactive, name: $t('inactive') },
-                            { id: EUserStatus.blocked, name: $t('blocked') },
-                          ]"
+                          :items="userStatusOptions"
                           :placeholder="$t('select_status')"
                           item-value="id"
                           item-title="name"
@@ -1828,7 +1852,7 @@ onMounted(resetForm);
                       :label="docLabel + ':'"
                       :placeholder="docPlaceholder"
                       v-maska="docMask"
-                      inputmode="numeric"
+                      :inputmode="isCNPJ ? undefined : 'numeric'"
                       :rules="docRules"
                     />
                   </VCol>

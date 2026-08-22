@@ -102,6 +102,29 @@ export class DatabaseEnvironment {
     return pw;
   }
 
+  /**
+   * Dedicated login used only by WhatsApp runtimes. Session volumes do not
+   * remove their operational database dependency (fence, status/config,
+   * outbox and S3 fallback), so all three providers use this identity.
+   */
+  public get workerDbUser(): string {
+    const user = process.env.WORKER_DB_USER?.trim();
+    if (!user) {
+      throw new InvalidConfigurationError('WORKER_DB_USER is not defined.');
+    }
+
+    return user;
+  }
+
+  public get workerDbPassword(): string {
+    const password = process.env.WORKER_DB_PASSWORD;
+    if (!password) {
+      throw new InvalidConfigurationError('WORKER_DB_PASSWORD is not defined.');
+    }
+
+    return password;
+  }
+
   public get dbDatabase(): string {
     const db = process.env.DB_DATABASE;
     if (!db) {
@@ -179,19 +202,6 @@ export class DatabaseEnvironment {
     }
 
     return max;
-  }
-
-  public get dbDatabaseUrl(): string {
-    const url = resolveScopedEnvValue({
-      publicKey: 'DB_PUBLIC_DATABASE_URL',
-      privateKey: 'DB_PRIVATE_DATABASE_URL',
-      legacyKey: 'DB_DATABASE_URL',
-    });
-    if (!url) {
-      throw new InvalidConfigurationError('DB_DATABASE_URL is not defined.');
-    }
-
-    return url;
   }
 
   public get dbAtlas(): string {

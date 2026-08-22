@@ -112,6 +112,19 @@ async function processJsonSources(
       }
     }
     if (typeof item !== 'string' && item.icons?.length) {
+      const availableIcons = new Set([
+        ...Object.keys(content.icons),
+        ...Object.keys(content.aliases ?? {}),
+      ]);
+      const missingIcons = item.icons.filter(
+        (icon) => !availableIcons.has(icon)
+      );
+      if (missingIcons.length) {
+        throw new Error(
+          `Cannot find required icons in ${filename}: ${missingIcons.join(', ')}`
+        );
+      }
+
       const filtered = getIcons(content, item.icons);
       if (!filtered)
         throw new Error(`Cannot find required icons in ${filename}`);

@@ -81,6 +81,27 @@ func (nh *NoiseHandshake) Finish(
 	frameHandler FrameHandler,
 	disconnectHandler DisconnectHandler,
 ) (*NoiseSocket, error) {
+	ns, err := nh.FinishWithSource(ctx, fs, func(frameCtx context.Context, _ *NoiseSocket, data []byte) {
+		frameHandler(frameCtx, data)
+	}, disconnectHandler)
+	if err == nil {
+		// Preserve the original Finish contract for external callers. The
+		// source-aware variant deliberately lets its owner install a generation
+		// fence before starting frame consumption.
+		ns.Start(ctx)
+	}
+	return ns, err
+}
+
+// FinishWithSource is equivalent to Finish, but preserves the NoiseSocket that
+// produced every frame. Clients with reconnectable transports should prefer
+// this form so delayed handlers cannot act on a replacement socket.
+func (nh *NoiseHandshake) FinishWithSource(
+	ctx context.Context,
+	fs *FrameSocket,
+	frameHandler SourceFrameHandler,
+	disconnectHandler DisconnectHandler,
+) (*NoiseSocket, error) {
 	if write, read, err := nh.extractAndExpand(nh.salt, nil); err != nil {
 		return nil, fmt.Errorf("failed to extract final keys: %w", err)
 	} else if writeKey, err := gcmutil.Prepare(write); err != nil {

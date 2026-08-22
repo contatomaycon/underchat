@@ -1,5 +1,5 @@
 export interface ICachedWorkerDates {
-  connectionDateMs: number | null;
+  workerActive: boolean;
   createdAtMs: number | null;
   expiresAt: number;
 }

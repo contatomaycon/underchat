@@ -5,6 +5,11 @@ import { inject, injectable } from 'tsyringe';
 import { ContactGroupCreatorRepository } from './ContactGroupCreator.repository';
 import { ContactGroupAssignmentCreatorRepository } from './ContactGroupAssignmentCreator.repository';
 import { CreateContactGroupRequest } from '@core/schema/contactGroup/createContactGroup/request.schema';
+import { v7 as uuidv7 } from 'uuid';
+import {
+  ContactGroupOutboundWebhookBatchService,
+  type ContactGroupOutboundWebhookBatch,
+} from '@core/services/contactGroupOutboundWebhookBatch.service';
 
 @injectable()
 export class ContactGroupCreatorTransactionRepository {
@@ -13,36 +18,77 @@ export class ContactGroupCreatorTransactionRepository {
     @inject(ContactGroupCreatorRepository)
     private readonly contactGroupCreatorRepository: ContactGroupCreatorRepository,
     @inject(ContactGroupAssignmentCreatorRepository)
-    private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository
+    private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository,
+    @inject(ContactGroupOutboundWebhookBatchService)
+    private readonly outboundWebhookBatchService: ContactGroupOutboundWebhookBatchService
   ) {}
 
   createContactGroup = async (
     t: TFunction<'translation', undefined>,
     accountId: string,
-    input: CreateContactGroupRequest
+    input: CreateContactGroupRequest,
+    actorUserId?: string
   ): Promise<boolean> => {
-    await this.dbRw.transaction(async (tx) => {
-      const contactGroupId =
-        await this.contactGroupCreatorRepository.createContactGroup(
+    const contactGroupId = uuidv7();
+    const operationId = uuidv7();
+    const contactIds = [
+      ...new Set(
+        (input.contacts ?? [])
+          .map((contact) => contact.contact_id)
+          .filter(Boolean)
+      ),
+    ].sort((a, b) => a.localeCompare(b));
+    let batch: ContactGroupOutboundWebhookBatch | null = null;
+
+    try {
+      await this.dbRw.transaction(async (tx) => {
+        batch = await this.outboundWebhookBatchService.prepareInTransaction({
           tx,
-          input,
-          accountId
-        );
+          accountId,
+          actorUserId,
+          operationId,
+          operation: 'created',
+          contactGroupId,
+          contactGroupName: input.name,
+          affectedContactIds: contactIds,
+          nextMemberIds: new Set(contactIds),
+        });
 
-      if (!contactGroupId) {
-        throw new Error(t('contact_group_creation_failed'));
-      }
-
-      await Promise.all(
-        (input.contacts ?? []).map((contact) =>
-          this.contactGroupAssignmentCreatorRepository.createContactGroupAssignment(
+        const createdContactGroupId =
+          await this.contactGroupCreatorRepository.createContactGroup(
             tx,
-            contactGroupId,
-            contact.contact_id
-          )
-        )
-      );
-    });
+            input,
+            accountId,
+            contactGroupId
+          );
+        if (!createdContactGroupId) {
+          throw new Error(t('contact_group_creation_failed'));
+        }
+
+        for (const contactId of contactIds) {
+          const assignmentId =
+            await this.contactGroupAssignmentCreatorRepository.createContactGroupAssignment(
+              tx,
+              contactGroupId,
+              contactId,
+              accountId
+            );
+          if (!assignmentId) {
+            throw new Error(t('contact_group_assignment_creation_failed'));
+          }
+        }
+
+        await this.outboundWebhookBatchService.markAppliedInTransaction(
+          tx,
+          batch
+        );
+      });
+    } catch (error) {
+      await this.outboundWebhookBatchService.cancelBestEffort(batch);
+      throw error;
+    }
+
+    await this.outboundWebhookBatchService.completePersistedBestEffort(batch);
 
     return true;
   };

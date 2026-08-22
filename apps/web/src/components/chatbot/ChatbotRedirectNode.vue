@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './chatbot-node-workbench.css';
 import { ref, watch, onMounted } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
@@ -76,7 +77,9 @@ const loadChannels = async () => {
 
     if (
       redirectData.value.selectedChannel &&
-      !channels.value.some((c) => c.value === redirectData.value.selectedChannel)
+      !channels.value.some(
+        (c) => c.value === redirectData.value.selectedChannel
+      )
     ) {
       channels.value.unshift({
         value: redirectData.value.selectedChannel,
@@ -312,16 +315,26 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="chatbot-redirect-node">
-    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
+  <div class="chatbot-redirect-node chatbot-workbench-node">
+    <Handle
+      id="target"
+      type="target"
+      :position="Position.Top"
+      class="handle-target"
+    />
 
-    <VCard class="redirect-card" elevation="2">
+    <VCard class="redirect-card chatbot-workbench-card" elevation="2">
       <VCardTitle
-        class="d-flex align-center justify-space-between pa-2 node-drag-handle"
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle chatbot-workbench-header"
       >
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-arrow-forward" color="info" size="20" />
-          <span class="text-sm font-weight-medium">{{
+        <div class="d-flex align-center ga-2 chatbot-workbench-identity">
+          <VIcon
+            icon="tabler-arrow-forward"
+            color="info"
+            size="20"
+            class="chatbot-workbench-icon"
+          />
+          <span class="text-sm font-weight-medium chatbot-workbench-title">{{
             t('chatbot_redirect')
           }}</span>
         </div>
@@ -330,12 +343,12 @@ onMounted(() => {
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
+      <VCardText class="pa-3 chatbot-workbench-body">
         <VLabel class="text-body-2 mb-1">{{
           t('chat_forward_channel_label')
         }}</VLabel>

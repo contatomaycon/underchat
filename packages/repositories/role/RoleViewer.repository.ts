@@ -20,6 +20,7 @@ export class RoleViewerRepository {
         permission_role_id: permissionRole.permission_role_id,
         name: permissionRole.name,
         description: permissionRole.description,
+        status: permissionRole.status,
         account: {
           id: account.account_id,
           name: account.name,
@@ -47,6 +48,7 @@ export class RoleViewerRepository {
       permission_role_id: item.permission_role_id,
       name: item.name,
       description: item.description,
+      status: item.status,
       account: item.account,
       created_at: item.created_at,
     };

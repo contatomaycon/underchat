@@ -21,19 +21,19 @@ export class AiAgentUpdaterRepository {
     }
 
     if (input.base_url !== undefined) {
-      inputUpdate.base_url = input.base_url ?? undefined;
+      inputUpdate.base_url = input.base_url;
     }
 
     if (input.api_key !== undefined) {
-      inputUpdate.api_key = input.api_key ?? undefined;
+      inputUpdate.api_key = input.api_key;
     }
 
     if (input.model !== undefined) {
-      inputUpdate.model = input.model ?? undefined;
+      inputUpdate.model = input.model;
     }
 
     if (input.embedding_model !== undefined) {
-      inputUpdate.embedding_model = input.embedding_model ?? undefined;
+      inputUpdate.embedding_model = input.embedding_model;
     }
 
     if (input.chunk_size !== undefined) {
@@ -98,7 +98,7 @@ export class AiAgentUpdaterRepository {
     accountId: string,
     ids: {
       openai_assistant_id?: string;
-      openai_vector_store_id?: string;
+      openai_vector_store_id?: string | null;
     }
   ): Promise<boolean> => {
     const updateInput: Partial<typeof aiAgent.$inferInsert> = {};

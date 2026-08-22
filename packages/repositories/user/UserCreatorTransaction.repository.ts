@@ -20,6 +20,8 @@ import { ChatUserCreatorRepository } from '../chat/ChatUserCreator.repository';
 import { PermissionAssignmentCreatorRepository } from '../permission/PermissionAssignmentCreator.repository';
 import { SectorUserCreatorRepository } from '../sector/SectorUserCreator.repository';
 import { UserChannelCreatorRepository } from './UserChannelCreator.repository';
+import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
+import { normalizeCnpj } from '@core/common/functions/validateCnpj';
 
 @injectable()
 export class UserTransactionCreatorRepository {
@@ -227,14 +229,18 @@ export class UserTransactionCreatorRepository {
           : null;
 
       if (input.document?.value) {
+        const documentValue =
+          input.document_type_id?.value === EUserDocumentType.CNPJ
+            ? normalizeCnpj(input.document.value)
+            : input.document.value;
         const documentEncrypted = this.passwordEncryptorService.encrypt(
-          input.document.value
+          documentValue
         );
         const documentPartialEncrypted = this.encryptService.sanitize(
-          input.document.value,
+          documentValue,
           ETypeSanetize.document
         );
-        const documentC = this.encryptService.encrypt(input.document.value);
+        const documentC = this.encryptService.encrypt(documentValue);
 
         if (createUserDocument) {
           createUserDocument.document = documentEncrypted;

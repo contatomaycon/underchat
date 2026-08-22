@@ -24,6 +24,37 @@ export interface ChatWorker {
   is_official?: boolean | null;
 }
 
+export type OfficialWindowState =
+  'open' | 'closed' | 'awaiting_contact_reply' | 'send_uncertain';
+
+export type OfficialWindowReason =
+  | 'customer_service_window_open'
+  | 'customer_reply_required'
+  | 'customer_service_window_closed'
+  | 'no_customer_message'
+  | 'meta_reengagement'
+  | 'template_pending'
+  | 'template_failed'
+  | 'template_send_uncertain';
+
+export interface OfficialWindow {
+  is_official: true;
+  state: OfficialWindowState;
+  reason: OfficialWindowReason;
+  can_send_freeform: boolean;
+  can_send_template: boolean;
+  service_window_started_at?: string | null;
+  last_inbound_at?: string | null;
+  service_window_expires_at?: string | null;
+  awaiting_contact_reply_since?: string | null;
+  awaiting_contact_reply_expires_at?: string | null;
+  awaiting_template_message_id?: string | null;
+  last_template_sent_at?: string | null;
+  last_meta_error_code?: number | null;
+  closed_reason?: string | null;
+  updated_at?: string | null;
+}
+
 export interface ChatUser {
   id: string;
   name: string;
@@ -69,6 +100,7 @@ export interface ListChatsResult {
   protocol_transfer?: string[] | null;
   label?: ChatLabel[] | null;
   forward_to_output_chatbot?: boolean | null;
+  official_window?: OfficialWindow | null;
 }
 
 export interface ListChatsResponse {
@@ -205,6 +237,223 @@ export interface MessageContentContact {
   photo?: string | null;
 }
 
+export interface MessageButtonOption {
+  id?: string | null;
+  display_text: string;
+  type?: string | number | null;
+}
+
+export interface MessageContentButtons {
+  text?: string | null;
+  footer?: string | null;
+  header?: string | null;
+  header_type?: string | number | null;
+  buttons: MessageButtonOption[];
+}
+
+export interface MessageListRow {
+  id?: string | null;
+  title: string;
+  description?: string | null;
+}
+
+export interface MessageListSection {
+  id?: string | null;
+  title?: string | null;
+  rows: MessageListRow[];
+}
+
+export interface MessageContentList {
+  text?: string | null;
+  button_text?: string | null;
+  list_type?: string | number | null;
+  sections: MessageListSection[];
+}
+
+export type OfficialTemplateVariableComponent =
+  'HEADER' | 'BODY' | 'FOOTER' | 'BUTTON';
+
+export type OfficialTemplateParameterFormat = 'POSITIONAL' | 'NAMED';
+
+export interface OfficialTemplateVariable {
+  key: string;
+  component_type: OfficialTemplateVariableComponent;
+  index: number;
+  parameter_name?: string | null;
+  button_index?: number | null;
+  value?: string;
+  sample?: string | null;
+}
+
+export interface OfficialTemplateButton {
+  type: string;
+  text?: string | null;
+  url?: string | null;
+  phone_number?: string | null;
+  example?: string[] | null;
+  variables?: OfficialTemplateVariable[];
+}
+
+export interface OfficialTemplateComponent {
+  type: string;
+  format?: string | null;
+  text?: string | null;
+  example?: Record<string, unknown> | null;
+  buttons?: OfficialTemplateButton[] | null;
+  variables?: OfficialTemplateVariable[];
+}
+
+export interface OfficialTemplatePreview {
+  header?: string | null;
+  body?: string | null;
+  footer?: string | null;
+  buttons?: string[];
+}
+
+export interface OfficialTemplate {
+  id?: string | null;
+  name: string;
+  language: string;
+  status: 'APPROVED';
+  category?: string | null;
+  parameter_format?: OfficialTemplateParameterFormat | null;
+  components: OfficialTemplateComponent[];
+  variables: OfficialTemplateVariable[];
+  preview: OfficialTemplatePreview;
+}
+
+export interface OfficialTemplateVariableValue {
+  key: string;
+  component_type: OfficialTemplateVariableComponent;
+  index: number;
+  parameter_name?: string | null;
+  button_index?: number | null;
+  value: string | number;
+}
+
+export interface OfficialTemplateMessageRequest {
+  name: string;
+  language: string;
+  variables?: OfficialTemplateVariableValue[];
+}
+
+export interface OfficialOpeningContextResponse {
+  worker_id: string;
+  is_official: boolean;
+  requires_template: boolean;
+  official_window: OfficialWindow;
+  templates: OfficialTemplate[];
+}
+
+export interface OfficialConversationContextResponse {
+  chat_id: string;
+  worker_id: string;
+  contact_id?: string | null;
+  phone: string;
+  is_official: boolean;
+  official_window: OfficialWindow;
+  templates: OfficialTemplate[];
+}
+
+export type OfficialDisplayKind =
+  | 'button'
+  | 'list'
+  | 'cta_url'
+  | 'location_request'
+  | 'flow'
+  | 'product'
+  | 'product_list'
+  | 'catalog'
+  | 'carousel'
+  | 'address'
+  | 'template'
+  | 'order'
+  | 'reply'
+  | 'referral'
+  | 'system'
+  | 'unsupported'
+  | 'call_permission_request';
+
+export interface OfficialDisplayAction {
+  id?: string | null;
+  type?: string | null;
+  title?: string | null;
+  description?: string | null;
+  url?: string | null;
+  phone_number?: string | null;
+}
+
+export interface OfficialDisplayMedia {
+  type?: string | null;
+  id?: string | null;
+  url?: string | null;
+  link?: string | null;
+  caption?: string | null;
+}
+
+export interface OfficialDisplaySection {
+  id?: string | null;
+  title?: string | null;
+  rows?: OfficialDisplayAction[];
+  items?: OfficialDisplayAction[];
+}
+
+export interface OfficialDisplayCard {
+  title?: string | null;
+  body?: string | null;
+  footer?: string | null;
+  media?: OfficialDisplayMedia | null;
+  actions?: OfficialDisplayAction[];
+  items?: OfficialDisplayAction[];
+}
+
+export interface OfficialDisplayMetadata {
+  kind: OfficialDisplayKind;
+  raw_type?: string | null;
+  title?: string | null;
+  body?: string | null;
+  footer?: string | null;
+  action_label?: string | null;
+  actions?: OfficialDisplayAction[];
+  sections?: OfficialDisplaySection[];
+  items?: OfficialDisplayAction[];
+  cards?: OfficialDisplayCard[];
+  media?: OfficialDisplayMedia | null;
+  submitted_data?: Record<string, unknown> | null;
+}
+
+export interface OfficialMessageMetadata {
+  provider: 'meta_whatsapp';
+  type: string;
+  webhook_field?: string | null;
+  message_id?: string | null;
+  status?: string | null;
+  echo?: boolean;
+  display?: OfficialDisplayMetadata | null;
+  interactive?: {
+    type?: string | null;
+    id?: string | null;
+    title?: string | null;
+    description?: string | null;
+  } | null;
+  order?: {
+    catalog_id?: string | null;
+    text?: string | null;
+    product_items?: unknown[];
+  } | null;
+  button?: {
+    text?: string | null;
+    payload?: string | null;
+  } | null;
+  unsupported?: {
+    type?: string | null;
+    reason?: string | null;
+  } | null;
+  referral?: Record<string, unknown> | null;
+  errors?: Record<string, unknown>[];
+  raw?: Record<string, unknown>;
+}
+
 export interface MessageQuoted {
   key?: MessageKey | null;
   message?: string | null;
@@ -217,6 +466,10 @@ export interface MessageQuoted {
   location?: MessageContentLocation | null;
   contact?: MessageContentContact | null;
   contacts?: MessageContentContact[] | null;
+  buttons?: MessageContentButtons | null;
+  list?: MessageContentList | null;
+  official_template?: OfficialTemplate | null;
+  official?: OfficialMessageMetadata | null;
 }
 
 export interface MessageTemplateButton {
@@ -320,6 +573,10 @@ export interface MessageContent {
   version?: MessageVersion[] | null;
   context_info?: MessageContextInfo | null;
   template?: MessageContentTemplate | null;
+  buttons?: MessageContentButtons | null;
+  list?: MessageContentList | null;
+  official_template?: OfficialTemplate | null;
+  official?: OfficialMessageMetadata | null;
   album?: MessageContentAlbum | null;
   pin?: MessageContentPin | null;
   ephemeral?: MessageContentEphemeral | null;
@@ -346,10 +603,14 @@ export interface ListMessageResult {
   has_quoted?: boolean;
   hash?: string | null;
   sent_from_platform?: boolean | null;
+  delivery_status?: string | null;
+  provider_error_code?: number | null;
+  provider_status_at?: string | null;
 }
 
 export interface ListMessageResponse {
   results: ListMessageResult[];
+  official_window?: OfficialWindow | null;
   current_page: number;
   total_pages: number;
   per_page: number;

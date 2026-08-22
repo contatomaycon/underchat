@@ -7,6 +7,11 @@ import * as schema from '@core/models';
 import { container } from 'tsyringe';
 import { FastifyInstance } from 'fastify';
 import { APP_TIMEZONE } from '@core/common/constants/timezone';
+import { OutboundWebhookEventService } from '@core/services/outboundWebhookEvent.service';
+import {
+  OUTBOUND_WEBHOOK_EVENT_SERVICE_TOKEN,
+  type OutboundWebhookEventServicePort,
+} from '@core/common/interfaces/IOutboundWebhookEventService';
 
 async function dbConnector(fastify: FastifyInstance) {
   const sslMode = databaseEnvironment.dbSslMode;
@@ -90,6 +95,12 @@ async function dbConnector(fastify: FastifyInstance) {
   container.register<Pool>('DatabasePoolRo', {
     useValue: poolRo,
   });
+  container.register<OutboundWebhookEventServicePort>(
+    OUTBOUND_WEBHOOK_EVENT_SERVICE_TOKEN,
+    {
+      useClass: OutboundWebhookEventService,
+    }
+  );
 
   fastify.decorate('DatabaseRw', connectionRw);
   fastify.decorate('DatabaseRo', connectionRo);

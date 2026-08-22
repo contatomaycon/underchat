@@ -24,8 +24,7 @@ export class UserChannelChannelsListerRepository {
       .where(
         and(
           eq(userChannel.user_id, userId),
-          eq(userChannel.account_id, accountId),
-          isNull(worker.deleted_at)
+          eq(userChannel.account_id, accountId)
         )
       )
       .execute();
@@ -52,8 +51,7 @@ export class UserChannelChannelsListerRepository {
       .where(
         and(
           eq(userChannel.user_id, userId),
-          eq(userChannel.account_id, accountId),
-          isNull(worker.deleted_at)
+          eq(userChannel.account_id, accountId)
         )
       )
       .execute();
@@ -76,8 +74,7 @@ export class UserChannelChannelsListerRepository {
       .where(
         and(
           eq(userChannel.user_id, user.user_id),
-          eq(userChannel.account_id, accountId),
-          isNull(worker.deleted_at)
+          eq(userChannel.account_id, accountId)
         )
       );
   }
@@ -94,8 +91,7 @@ export class UserChannelChannelsListerRepository {
         and(
           eq(userChannel.user_id, user.user_id),
           eq(userChannel.account_id, accountId),
-          eq(userChannel.channel_id, channelId),
-          isNull(worker.deleted_at)
+          eq(userChannel.channel_id, channelId)
         )
       );
   }

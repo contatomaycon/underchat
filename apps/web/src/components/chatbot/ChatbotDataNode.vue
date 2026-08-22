@@ -1,18 +1,28 @@
 <script setup lang="ts">
+import './chatbot-node-workbench.css';
 import { ref, computed, watch } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { useI18n } from 'vue-i18n';
+import ApiVariableField from '@/components/chatbot/api-request/ApiVariableField.vue';
+import type { ApiRequestVariable } from '@/components/chatbot/api-request/types';
+import {
+  formatChatbotNodeOutputTag,
+  normalizeChatbotNodeOutputKey,
+} from '@core/common/functions/chatbotNodeOutputs';
+import CapturableOutputStrip from './CapturableOutputStrip.vue';
 
 type DataType = 'name' | 'lastname' | 'email' | 'cpf' | 'cnpj' | null;
 
 interface DataNodeData {
+  outputKey: string;
   dataType: DataType;
   firstName: string;
   lastName: string;
   email: string;
   cpf: string;
   cnpj: string;
+  availableVariables?: ApiRequestVariable[];
   onRemove?: () => void;
 }
 
@@ -22,6 +32,7 @@ const { t } = useI18n();
 const getInitialData = (): DataNodeData => {
   const data = props.data as DataNodeData | undefined;
   return {
+    outputKey: normalizeChatbotNodeOutputKey('data', data?.outputKey),
     dataType: data?.dataType || null,
     firstName: data?.firstName || t('chatbot_data_default_name_question'),
     lastName: data?.lastName || t('chatbot_data_default_lastname_question'),
@@ -63,6 +74,17 @@ const showLastNameField = computed(
 const showEmailField = computed(() => dataNodeData.value.dataType === 'email');
 const showCpfField = computed(() => dataNodeData.value.dataType === 'cpf');
 const showCnpjField = computed(() => dataNodeData.value.dataType === 'cnpj');
+const availableVariables = computed(
+  () => (props.data as DataNodeData | undefined)?.availableVariables || []
+);
+const outputTags = computed(() => {
+  const dataType = dataNodeData.value.dataType;
+  if (!dataType) return [];
+  return [
+    formatChatbotNodeOutputTag(dataNodeData.value.outputKey, 'value'),
+    formatChatbotNodeOutputTag(dataNodeData.value.outputKey, dataType),
+  ];
+});
 
 const firstNameRules = computed(() => [
   (v: string | null | undefined) => {
@@ -107,6 +129,7 @@ const cnpjRules = computed(() => [
 const updateNodeData = () => {
   if (props.data) {
     const data = props.data as DataNodeData;
+    data.outputKey = dataNodeData.value.outputKey;
     data.dataType = dataNodeData.value.dataType;
     data.firstName = dataNodeData.value.firstName;
     data.lastName = dataNodeData.value.lastName;
@@ -173,17 +196,32 @@ watch(
 </script>
 
 <template>
-  <div class="chatbot-data-node">
-    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
-    <Handle id="source" type="source" :position="Position.Bottom" class="handle-source" />
+  <div class="chatbot-data-node chatbot-workbench-node">
+    <Handle
+      id="target"
+      type="target"
+      :position="Position.Top"
+      class="handle-target"
+    />
+    <Handle
+      id="source"
+      type="source"
+      :position="Position.Bottom"
+      class="handle-source"
+    />
 
-    <VCard class="data-card" elevation="2">
+    <VCard class="data-card chatbot-workbench-card" elevation="2">
       <VCardTitle
-        class="d-flex align-center justify-space-between pa-2 node-drag-handle"
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle chatbot-workbench-header"
       >
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-database" color="info" size="20" />
-          <span class="text-sm font-weight-medium">{{
+        <div class="d-flex align-center ga-2 chatbot-workbench-identity">
+          <VIcon
+            icon="tabler-database"
+            color="info"
+            size="20"
+            class="chatbot-workbench-icon"
+          />
+          <span class="text-sm font-weight-medium chatbot-workbench-title">{{
             t('chatbot_data')
           }}</span>
         </div>
@@ -192,12 +230,12 @@ watch(
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
+      <VCardText class="pa-3 chatbot-workbench-body">
         <VSelect
           v-model="dataNodeData.dataType"
           :items="dataTypeOptions"
@@ -208,59 +246,63 @@ watch(
           hide-details
         />
 
-        <VTextField
+        <ApiVariableField
           v-if="showNameFields"
           v-model="dataNodeData.firstName"
+          :variables="availableVariables"
           :label="t('chatbot_data_question')"
-          variant="outlined"
-          density="compact"
           class="mb-3"
           :rules="firstNameRules"
           hide-details="auto"
         />
 
-        <VTextField
+        <ApiVariableField
           v-if="showLastNameField"
           v-model="dataNodeData.lastName"
+          :variables="availableVariables"
           :label="t('chatbot_data_question')"
-          variant="outlined"
-          density="compact"
           class="mb-3"
           :rules="lastNameRules"
           hide-details="auto"
         />
 
-        <VTextField
+        <ApiVariableField
           v-if="showEmailField"
           v-model="dataNodeData.email"
+          :variables="availableVariables"
           :label="t('chatbot_data_question')"
-          variant="outlined"
-          density="compact"
           class="mb-3"
           :rules="emailRules"
           hide-details="auto"
         />
 
-        <VTextField
+        <ApiVariableField
           v-if="showCpfField"
           v-model="dataNodeData.cpf"
+          :variables="availableVariables"
           :label="t('chatbot_data_question')"
-          variant="outlined"
-          density="compact"
           class="mb-3"
           :rules="cpfRules"
           hide-details="auto"
         />
 
-        <VTextField
+        <ApiVariableField
           v-if="showCnpjField"
           v-model="dataNodeData.cnpj"
+          :variables="availableVariables"
           :label="t('chatbot_data_question')"
-          variant="outlined"
-          density="compact"
           class="mb-3"
           :rules="cnpjRules"
           hide-details="auto"
+        />
+
+        <CapturableOutputStrip
+          v-if="outputTags.length"
+          :title="t('chatbot_captured_output_title')"
+          :description="t('chatbot_captured_output_data_help')"
+          :tags="outputTags"
+          :copy-label="t('chatbot_captured_output_copy')"
+          :copied-label="t('chatbot_captured_output_copied')"
         />
       </VCardText>
     </VCard>

@@ -51,6 +51,14 @@ func (cli *Client) handlePasskeyNotification(ctx context.Context, node *waBinary
 		cli.Log.Warnf("Ignoring passkey notification from non-server JID %s", fromJID)
 		return
 	}
+	if !cli.hasPairingADVSecret() {
+		cli.Log.Warnf("Rejecting passkey handoff because the ADV secret is unavailable")
+		cli.dispatchEvent(&events.PairPasskeyError{
+			Error:        ErrPairAdvSecretUnavailable,
+			Continuation: false,
+		})
+		return
+	}
 	cli.Log.Infof("Received passkey prologue request notification")
 	pubKey, err := parsePasskeyNotification(node)
 	if err != nil {
@@ -78,6 +86,9 @@ func (cli *Client) handlePasskeyNotification(ctx context.Context, node *waBinary
 // SendPasskeyResponse sends a WebAuthn response from the authenticator to the server.
 // This should be called after receiving an [*events.PairPasskeyRequest] and asking the authenticator for a response.
 func (cli *Client) SendPasskeyResponse(ctx context.Context, passkeyResp *types.WebAuthnResponse) error {
+	if !cli.hasPairingADVSecret() {
+		return ErrPairAdvSecretUnavailable
+	}
 	marshaledResp, err := json.Marshal(passkeyResp)
 	if err != nil {
 		return fmt.Errorf("failed to marshal WebAuthnResponse: %w", err)
@@ -211,6 +222,9 @@ func (cli *Client) handlePasskeyContinuationNotification(ctx context.Context, no
 // was shown to the user and they confirmed it. If the event has the SkipHandoffUX flag, showing the code to the user
 // can be skipped.
 func (cli *Client) SendPasskeyConfirmation(ctx context.Context) error {
+	if !cli.hasPairingADVSecret() {
+		return ErrPairAdvSecretUnavailable
+	}
 	cache := cli.passkeyLinkingCache.Load()
 	if cache == nil {
 		return fmt.Errorf("no passkey linking cache available")

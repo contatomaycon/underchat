@@ -1298,6 +1298,55 @@ export class ServerBuildRepository {
     return job ?? null;
   };
 
+  getBuildVersionById = async (
+    serverBuildVersionId: string
+  ): Promise<ServerBuildVersion | null> => {
+    const [version] = await this.dbRw
+      .select()
+      .from(serverBuildVersion)
+      .where(
+        eq(serverBuildVersion.server_build_version_id, serverBuildVersionId)
+      )
+      .limit(1)
+      .execute();
+
+    return version ? this.mapVersion(version) : null;
+  };
+
+  hasActiveBuildJobForVersion = async (version: string): Promise<boolean> => {
+    const [activeJob] = await this.dbRw
+      .select({
+        server_build_job_id: serverBuildJob.server_build_job_id,
+      })
+      .from(serverBuildJob)
+      .where(
+        and(
+          eq(serverBuildJob.version, version),
+          inArray(serverBuildJob.status, this.activeJobStatuses)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return Boolean(activeJob?.server_build_job_id);
+  };
+
+  hardDeleteBuildVersionById = async (
+    serverBuildVersionId: string
+  ): Promise<boolean> => {
+    const result = await this.dbRw
+      .delete(serverBuildVersion)
+      .where(
+        and(
+          eq(serverBuildVersion.server_build_version_id, serverBuildVersionId),
+          eq(serverBuildVersion.is_default, false)
+        )
+      )
+      .execute();
+
+    return (result.rowCount ?? 0) > 0;
+  };
+
   isBuildVersionDefault = async (version: string): Promise<boolean> => {
     const [versionRow] = await this.dbRw
       .select({
@@ -1365,6 +1414,23 @@ export class ServerBuildRepository {
     created_jobs: number;
     created_versions: number;
   }> => {
+    const availableImages = this.buildTypes.flatMap((buildType) => {
+      const harborRepository = input.harbor_repositories[buildType];
+      const imageReference = input.image_references[buildType];
+
+      return harborRepository && imageReference
+        ? [{ buildType, harborRepository, imageReference }]
+        : [];
+    });
+
+    if (availableImages.length === 0) {
+      return {
+        imported: false,
+        created_jobs: 0,
+        created_versions: 0,
+      };
+    }
+
     const baseNow = currentTime();
     const dateFromHarbor = input.created_at ? new Date(input.created_at) : null;
     const normalizedDate =
@@ -1377,16 +1443,16 @@ export class ServerBuildRepository {
       let createdJobs = 0;
       let imported = false;
 
-      for (const buildType of this.buildTypes) {
+      for (const image of availableImages) {
         const result = await tx
           .insert(serverBuildVersion)
           .values({
             server_build_version_id: uuidv7(),
-            build_type: buildType,
+            build_type: image.buildType,
             version: input.version,
             harbor_registry: buildEnvironment.harborRegistry,
-            harbor_repository: input.harbor_repositories[buildType],
-            image_reference: input.image_references[buildType],
+            harbor_repository: image.harborRepository,
+            image_reference: image.imageReference,
             is_default: false,
             created_at: normalizedDate,
             updated_at: normalizedDate,
@@ -1400,10 +1466,10 @@ export class ServerBuildRepository {
           imported = true;
         }
 
-        await this.keepOnlyLastFiveVersions(tx, buildType);
+        await this.keepOnlyLastFiveVersions(tx, image.buildType);
         await this.ensureDefaultVersionWhenMissing(
           tx,
-          buildType,
+          image.buildType,
           input.version,
           baseNow
         );
@@ -1418,9 +1484,9 @@ export class ServerBuildRepository {
         .limit(1)
         .execute();
 
-      if (!existingJob) {
-        const serverBuildJobId = uuidv7();
+      const serverBuildJobId = existingJob?.server_build_job_id ?? uuidv7();
 
+      if (!existingJob) {
         await tx
           .insert(serverBuildJob)
           .values({
@@ -1436,26 +1502,30 @@ export class ServerBuildRepository {
           })
           .execute();
 
-        await tx
-          .insert(serverBuildJobItem)
-          .values(
-            this.buildTypes.map((buildType) => ({
-              server_build_job_item_id: uuidv7(),
-              server_build_job_id: serverBuildJobId,
-              build_type: buildType,
-              status: EServerBuildJobItemStatus.success,
-              image_reference: input.image_references[buildType],
-              error_message: null,
-              created_at: normalizedDate,
-              updated_at: normalizedDate,
-              started_at: normalizedDate,
-              finished_at: normalizedDate,
-            }))
-          )
-          .onConflictDoNothing()
-          .execute();
-
         createdJobs = 1;
+        imported = true;
+      }
+
+      const jobItemsResult = await tx
+        .insert(serverBuildJobItem)
+        .values(
+          availableImages.map((image) => ({
+            server_build_job_item_id: uuidv7(),
+            server_build_job_id: serverBuildJobId,
+            build_type: image.buildType,
+            status: EServerBuildJobItemStatus.success,
+            image_reference: image.imageReference,
+            error_message: null,
+            created_at: normalizedDate,
+            updated_at: normalizedDate,
+            started_at: normalizedDate,
+            finished_at: normalizedDate,
+          }))
+        )
+        .onConflictDoNothing()
+        .execute();
+
+      if ((jobItemsResult.rowCount ?? 0) > 0) {
         imported = true;
       }
 

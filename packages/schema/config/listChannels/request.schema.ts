@@ -1,5 +1,6 @@
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EWorkerSessionStorage } from '@core/common/enums/EWorkerSessionStorage';
 import { pagingRequestSchema } from '@core/schema/common/pagingRequestSchema';
 import { sortRequestSchema } from '@core/schema/common/sortRequestSchema';
 import { Static, Type } from '@sinclair/typebox';
@@ -17,6 +18,9 @@ export const listChannelsRequestSchema = Type.Object({
   ),
   type: Type.Optional(
     Type.Union([Type.String({ enum: Object.values(EWorkerType) }), Type.Null()])
+  ),
+  session_storage: Type.Optional(
+    Type.Union([Type.Enum(EWorkerSessionStorage), Type.Null()])
   ),
   server: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   account: Type.Optional(Type.Union([Type.String(), Type.Null()])),

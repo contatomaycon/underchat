@@ -1,5 +1,4 @@
-import { injectable, inject } from 'tsyringe';
-import { KafkaService } from './kafka.service';
+import { injectable } from 'tsyringe';
 import { KAFKA_GLOBAL_TOPIC_CONFIG } from '@core/common/functions/kafkaTopicConfig';
 
 @injectable()
@@ -7,11 +6,6 @@ export class KafkaServiceQueueService {
   static readonly NUM_PARTITIONS = KAFKA_GLOBAL_TOPIC_CONFIG.numPartitions;
   static readonly REPLICATION_FACTOR =
     KAFKA_GLOBAL_TOPIC_CONFIG.replicationFactor;
-
-  constructor(
-    @inject(KafkaService)
-    private readonly kafkaService: KafkaService
-  ) {}
 
   getNumPartitions(): number {
     return KafkaServiceQueueService.NUM_PARTITIONS;
@@ -27,9 +21,9 @@ export class KafkaServiceQueueService {
     const upsertMessage = this.upsertMessage();
     const upsertMessageHistory = this.upsertMessageHistory();
     const updateMessageStatus = this.updateMessageStatus();
-    const markMessageRead = this.markMessageRead();
     const clearChatSummary = this.clearChatSummary();
     const phoneValidationResponse = this.phoneValidationResponse();
+    const userPhoneJidUpdate = this.userPhoneJidUpdate();
     const updateProfileStatusExternalId = this.updateProfileStatusExternalId();
     const asaasInvoiceWebhook = this.asaasInvoiceWebhook();
     const asaasNfseWebhook = this.asaasNfseWebhook();
@@ -39,7 +33,6 @@ export class KafkaServiceQueueService {
     const reportConversationHistoryPdfGenerate =
       this.reportConversationHistoryPdfGenerate();
     const scheduleStatusUpdate = this.scheduleStatusUpdate();
-    const workerConfigUpdate = this.workerConfigUpdate();
     const aiAgentPromptEmbedding = this.aiAgentPromptEmbedding();
     const chatHistoryEmbedding = this.chatHistoryEmbedding();
     const contactValidationUpdate = this.contactValidationUpdate();
@@ -58,9 +51,9 @@ export class KafkaServiceQueueService {
       upsertMessage,
       upsertMessageHistory,
       updateMessageStatus,
-      markMessageRead,
       clearChatSummary,
       phoneValidationResponse,
+      userPhoneJidUpdate,
       updateProfileStatusExternalId,
       asaasInvoiceWebhook,
       asaasNfseWebhook,
@@ -69,7 +62,6 @@ export class KafkaServiceQueueService {
       officialWhatsappWebhookEvent,
       reportConversationHistoryPdfGenerate,
       scheduleStatusUpdate,
-      workerConfigUpdate,
       aiAgentPromptEmbedding,
       chatHistoryEmbedding,
       contactValidationUpdate,
@@ -85,13 +77,9 @@ export class KafkaServiceQueueService {
   };
 
   delete = (): Promise<void> => {
-    const allTopics = this.all();
-
-    return this.kafkaService.deleteTopics(allTopics);
-  };
-
-  close = async (): Promise<void> => {
-    await this.kafkaService.close();
+    return Promise.reject(
+      new Error('runtime_global_kafka_topic_deletion_disabled')
+    );
   };
 
   createServer = () => {
@@ -114,16 +102,16 @@ export class KafkaServiceQueueService {
     return `update.message.status`;
   };
 
-  markMessageRead = () => {
-    return `mark.message.read`;
-  };
-
   clearChatSummary = () => {
     return `clear.chat.summary`;
   };
 
   phoneValidationResponse = () => {
     return `phone.validation.response`;
+  };
+
+  userPhoneJidUpdate = () => {
+    return 'user.phone.jid.update';
   };
 
   updateProfileStatusExternalId = () => {
@@ -156,10 +144,6 @@ export class KafkaServiceQueueService {
 
   scheduleStatusUpdate = () => {
     return `schedule.status.update`;
-  };
-
-  workerConfigUpdate = () => {
-    return `worker.config.update`;
   };
 
   workerWarmReplenishRequest = () => {

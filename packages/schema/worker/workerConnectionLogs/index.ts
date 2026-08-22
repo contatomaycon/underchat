@@ -1,7 +1,7 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { workerConnectionLogsResponseSchema } from './response.schema';
+import { workerConnectionHealthResponseSchema } from './response.schema';
 import {
   workerConnectionLogsRequestSchema,
   workerConnectionLogsQuerySchema,
@@ -33,7 +33,7 @@ export const workerConnectionLogsSchema = {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Array(workerConnectionLogsResponseSchema),
+        data: workerConnectionHealthResponseSchema,
       },
       { description: 'Successful' }
     ),
@@ -45,6 +45,15 @@ export const workerConnectionLogsSchema = {
         data: Type.Null(),
       },
       { description: 'Unauthorized' }
+    ),
+    400: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ default: false }),
+        message: Type.String(),
+        data: Type.Null(),
+      },
+      { description: 'Database-backed connection required' }
     ),
     403: Type.Object(
       {

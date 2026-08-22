@@ -5,6 +5,7 @@ import { UpdateContactRequest } from '@core/schema/contact/editContact/request.s
 import { ContactUpdaterUseCase } from '@core/useCases/contact/ContactUpdater.useCase';
 import { normalizeContactRequest } from '@core/common/functions/normalizeContactRequest';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 
 @injectable()
 export class ChatContactUpdaterUseCase {
@@ -18,7 +19,9 @@ export class ChatContactUpdaterUseCase {
     accountId: string,
     contactId: string,
     body: UpdateChatContactRequest,
-    allowedChannelIds: string[] = []
+    allowedChannelIds: string[] = [],
+    actorUserId?: string,
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<boolean> {
     const normalizedBody = normalizeContactRequest(body);
 
@@ -53,7 +56,9 @@ export class ChatContactUpdaterUseCase {
       accountId,
       contactId,
       contactRequest,
-      allowedChannelIds
+      allowedChannelIds,
+      actorUserId,
+      webhookSource
     );
 
     return !!result;

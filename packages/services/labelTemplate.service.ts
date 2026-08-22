@@ -90,28 +90,34 @@ export class LabelTemplateService {
   };
 
   viewLabelTemplateById = async (
-    labelTemplateId: string
+    labelTemplateId: string,
+    accountId: string
   ): Promise<ViewLabelTemplateResponse | null> => {
     return this.labelTemplateViewerRepository.viewLabelTemplateById(
-      labelTemplateId
+      labelTemplateId,
+      accountId
     );
   };
 
   deleteLabelTemplateById = async (
-    labelTemplateId: string
+    labelTemplateId: string,
+    accountId: string
   ): Promise<boolean> => {
     return this.labelTemplateDeleterRepository.deleteLabelTemplateById(
-      labelTemplateId
+      labelTemplateId,
+      accountId
     );
   };
 
   updateLabelTemplateById = async (
     labelTemplateId: string,
-    input: Partial<UpdateLabelTemplateRequest>
+    input: Partial<UpdateLabelTemplateRequest>,
+    accountId: string
   ): Promise<boolean> => {
     return this.labelTemplateUpdaterRepository.updateLabelTemplateById(
       labelTemplateId,
-      input
+      input,
+      accountId
     );
   };
 

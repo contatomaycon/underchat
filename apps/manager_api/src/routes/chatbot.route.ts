@@ -8,6 +8,7 @@ import { listChatbotSchema } from '@core/schema/chatbot/listChatbot';
 import { updateChatbotSchema } from '@core/schema/chatbot/updateChatbot';
 import { listChatbotUsersSchema } from '@core/schema/chatbot/listUsers';
 import { listChatbotChannelsSchema } from '@core/schema/chatbot/listChannels';
+import { listChannelChatbotsSchema } from '@core/schema/chatbot/listChannelChatbots';
 import { listChatbotSectorsSchema } from '@core/schema/chatbot/listSectors';
 import { listChatbotSectorUsersSchema } from '@core/schema/chatbot/listSectorUsers';
 import { listChatbotChatTagsSchema } from '@core/schema/chatbot/listChatTags';
@@ -27,8 +28,11 @@ import { updateLocalHolidaySchema } from '@core/schema/chatbot/updateLocalHolida
 import { deleteLocalHolidaySchema } from '@core/schema/chatbot/deleteLocalHoliday';
 import { officialCapabilitiesSchema } from '@core/schema/chatbot/officialCapabilities';
 import { officialTemplatesSchema } from '@core/schema/chatbot/officialTemplates';
+import { blockChatbotSchema } from '@core/schema/chatbot/blockChatbot';
+import { unblockChatbotSchema } from '@core/schema/chatbot/unblockChatbot';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
+import { testApiRequestSchema } from '@core/schema/chatbot/testApiRequest';
 
 export default function chatbotRoutes(server: FastifyInstance) {
   const chatbotController = container.resolve(ChatbotController);
@@ -77,6 +81,28 @@ export default function chatbotRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.post('/chatbot/:chatbot_id/block', {
+    schema: blockChatbotSchema,
+    handler: chatbotController.blockChatbot,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chatbot/:chatbot_id/unblock', {
+    schema: unblockChatbotSchema,
+    handler: chatbotController.unblockChatbot,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
   server.post('/chatbot/clone', {
     schema: cloneChatbotSchema,
     handler: chatbotController.cloneChatbot,
@@ -102,6 +128,17 @@ export default function chatbotRoutes(server: FastifyInstance) {
   server.get('/chatbot/channels', {
     schema: listChatbotChannelsSchema,
     handler: chatbotController.listChannels,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chatbot/channels/:worker_id/chatbots', {
+    schema: listChannelChatbotsSchema,
+    handler: chatbotController.listChannelChatbots,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
@@ -179,6 +216,17 @@ export default function chatbotRoutes(server: FastifyInstance) {
   server.get('/chatbot/flow', {
     schema: listChatbotFlowSchema,
     handler: chatbotController.listChatbotFlow,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chatbot/flow/api-request/test', {
+    schema: testApiRequestSchema,
+    handler: chatbotController.testApiRequest,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),

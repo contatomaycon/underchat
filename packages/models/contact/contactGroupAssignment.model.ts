@@ -1,4 +1,10 @@
-import { pgTable, uuid, timestamp, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  timestamp,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { contact } from './contact.model';
 import { contactGroup } from './contactGroup.model';
@@ -26,6 +32,10 @@ export const contactGroupAssignment = pgTable(
     index('contact_group_assignment_contact_group_id_contact_id_idx').on(
       table.contact_group_id,
       table.contact_id
+    ),
+    uniqueIndex('contact_group_assignment_contact_group_uidx').on(
+      table.contact_id,
+      table.contact_group_id
     ),
   ]
 );

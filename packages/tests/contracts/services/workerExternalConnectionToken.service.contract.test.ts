@@ -37,6 +37,7 @@ describe('WorkerExternalConnectionTokenService', () => {
         server_id: 'server-1',
         worker_type_id: 'worker-type-1',
         worker_updated_at: '2026-06-03T12:00:03.000Z',
+        external_connection_revision: 7,
       },
       now
     );
@@ -47,9 +48,88 @@ describe('WorkerExternalConnectionTokenService', () => {
       server_id: 'server-1',
       worker_type_id: 'worker-type-1',
       worker_updated_at: '2026-06-03T12:00:03.000Z',
+      external_connection_revision: 7,
       iat: now,
       exp: now + 24 * 60 * 60 * 1000,
     });
+  });
+
+  it('accepts only the worker snapshot captured by the token', () => {
+    const sut = makeSut();
+    const now = 1_700_000_000_000;
+    const token = sut.create(
+      'account-1',
+      'worker-1',
+      {
+        server_id: 'server-1',
+        worker_type_id: 'worker-type-1',
+        worker_updated_at: '2026-06-03T12:00:03.000Z',
+        external_connection_revision: 7,
+      },
+      now
+    ).token;
+    const payload = sut.validate(token, now);
+
+    expect(() =>
+      sut.validateWorkerSnapshot(payload, {
+        server_id: 'server-1',
+        worker_type_id: 'worker-type-1',
+        worker_updated_at: new Date('2026-06-03T12:00:03.000Z'),
+        external_connection_revision: 7,
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      sut.validateWorkerSnapshot(payload, {
+        server_id: 'server-1',
+        worker_type_id: 'worker-type-1',
+        worker_updated_at: '2026-06-03T12:30:00.000Z',
+        external_connection_revision: 7,
+      })
+    ).not.toThrow();
+
+    const staleSnapshots = [
+      {
+        server_id: 'server-2',
+        worker_type_id: 'worker-type-1',
+        worker_updated_at: '2026-06-03T12:00:03.000Z',
+        external_connection_revision: 7,
+      },
+      {
+        server_id: 'server-1',
+        worker_type_id: 'worker-type-2',
+        worker_updated_at: '2026-06-03T12:00:03.000Z',
+        external_connection_revision: 7,
+      },
+      {
+        server_id: 'server-1',
+        worker_type_id: 'worker-type-1',
+        worker_updated_at: '2026-06-03T12:00:03.000Z',
+        external_connection_revision: 8,
+      },
+    ];
+
+    for (const staleSnapshot of staleSnapshots) {
+      expect(() => sut.validateWorkerSnapshot(payload, staleSnapshot)).toThrow(
+        'worker_external_connection_revoked'
+      );
+    }
+  });
+
+  it('revokes legacy tokens without a worker snapshot', () => {
+    const sut = makeSut();
+    const now = 1_700_000_000_000;
+    const token = sut.create('account-1', 'worker-1', now).token;
+    const payload = sut.validate(token, now);
+
+    expect(() =>
+      sut.validateWorkerSnapshot(payload, {
+        server_id: 'server-1',
+        worker_type_id: 'worker-type-1',
+        worker_updated_at: '2026-06-03T12:00:03.000Z',
+        external_connection_revision: 1,
+      })
+    ).toThrow('worker_external_connection_revoked');
   });
 
   it('rejects expired tokens', () => {

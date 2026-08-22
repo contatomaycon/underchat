@@ -2,6 +2,7 @@ export interface IPlanAccountCancellationData {
   account_payment_id: string | null;
   billing: string | null;
   last_payment_date: string | null;
+  subscription_started_at: string | null;
 }
 
 export interface IPlanAccountCancellationResult {
@@ -27,6 +28,7 @@ export interface IPlanAccountWithPayment {
   last_payment_date: string | null;
   next_payment_date: string | null;
   cancellation_date: string | null;
+  created_at: string | null;
   apy: {
     account_payment_id: string;
     billing: string | null;

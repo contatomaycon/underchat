@@ -75,6 +75,7 @@ import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/re
 import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
 import { ListTransferOptionsResponse } from '@core/schema/chat/listTransferOptions/response.schema';
 import type { OfficialOpeningContextResponse } from '@core/schema/chat/officialOpeningContext/response.schema';
+import type { OfficialConversationContextResponse } from '@core/schema/chat/officialConversationContext/response.schema';
 import type { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 import { ListChatContactChannelsResponse } from '@core/schema/chat/listContactChannels/response.schema';
 import { ListKanbanResponse } from '@core/schema/chat/listKanban/response.schema';
@@ -87,13 +88,34 @@ import { ViewChatAttendanceInactivityResponse } from '@core/schema/chat/viewChat
 import { UpdateChatAttendanceInactivityRequest } from '@core/schema/chat/updateChatAttendanceInactivity/request.schema';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
+import { PerKeyPromiseQueue } from '../utils/perKeyPromiseQueue';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
 import type { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import {
+  compareChatStatusRevisions,
+  hasDifferentIncomingStatusRevision,
+  mergeChatStatusMetadata,
+} from '@core/common/functions/chatStatusSnapshotRevision';
+import { selectNewestChatSnapshotRevision } from '@core/common/functions/chatSnapshotRevision';
+import {
+  hasApplicableIncomingOfficialWhatsappWindowSnapshot,
+  selectNewestOfficialWhatsappWindowSnapshot,
+} from '@core/common/functions/officialWhatsappWindowSnapshotRevision';
+import {
   filterMessagesForChat,
   messageBelongsToChat,
 } from '@core/common/functions/chatMessageOwnership';
+import {
+  getApiErrorRequestId,
+  getApiErrorStatus,
+  isOfficialWindowRefreshConflict,
+} from '@/utils/apiError';
+import type {
+  WorkerCommandActionAttempt,
+  WorkerCommandActionRequestResult,
+} from '@core/common/functions/workerCommandActionAttempt';
+import { mergeMessageDeliveryProjection } from '@core/common/functions/messageDeliveryProjection';
 
 type LocalMessageState = {
   status: 'uploading' | 'error';
@@ -117,12 +139,90 @@ type CreateMessageOptions = {
 
 type ActiveMessageChangeType = 'created' | 'updated' | 'unchanged';
 
-let chatUnreadSummaryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-let chatUnreadSummaryRequestInFlight = false;
-let chatUnreadSummaryRefreshQueued = false;
-let chatUnreadSummaryLastFetchedAt = 0;
+type WorkerCommandActionApiResponse = IApiResponse<boolean> & {
+  operation_id?: string;
+};
 
-const CHAT_UNREAD_SUMMARY_CACHE_TTL_MS = 2000;
+type WorkerCommandForwardApiResponse = IApiResponse<ForwardMessageResponse> & {
+  idempotency_key?: string;
+};
+
+export type WorkerCommandForwardRequestResult =
+  WorkerCommandActionRequestResult & {
+    data: ForwardMessageResponse | null;
+  };
+
+const workerCommandActionErrorResult = (
+  error: unknown,
+  operationId: string
+): WorkerCommandActionRequestResult => {
+  if (!(error instanceof AxiosError) || !error.response) {
+    return { status: 'unknown', operationId };
+  }
+
+  const statusCode = error.response.status;
+  const response = error.response.data as
+    | {
+        data?: {
+          acceptance?: unknown;
+          reason?: unknown;
+          operation_id?: unknown;
+        };
+      }
+    | undefined;
+
+  if (statusCode === 410 && response?.data?.reason === 'retry_window_elapsed') {
+    return { status: 'terminal', operationId };
+  }
+
+  if (
+    statusCode === 408 ||
+    statusCode === 429 ||
+    statusCode >= 500 ||
+    response?.data?.acceptance === 'unknown'
+  ) {
+    return { status: 'unknown', operationId };
+  }
+
+  return { status: 'rejected', operationId };
+};
+
+const requestWorkerCommandWithOneUnknownRetry = async <T>(
+  operationId: string,
+  request: () => Promise<T>,
+  classify: (value: T) => WorkerCommandActionRequestResult
+): Promise<{
+  result: WorkerCommandActionRequestResult;
+  value?: T;
+  error?: unknown;
+}> => {
+  for (let requestNumber = 0; requestNumber < 2; requestNumber += 1) {
+    try {
+      const value = await request();
+      const result = classify(value);
+      if (result.status === 'unknown' && requestNumber === 0) continue;
+      return { result, value };
+    } catch (error) {
+      const result = workerCommandActionErrorResult(error, operationId);
+      if (result.status === 'unknown' && requestNumber === 0) continue;
+      return { result, error };
+    }
+  }
+
+  return { result: { status: 'unknown', operationId } };
+};
+
+let chatUnreadSummaryRequestInFlight = false;
+let chatUnreadSummaryRequestAccountId: string | null = null;
+let chatUnreadSummaryScopeGeneration = 0;
+let pinnedChatsRequestAccountId: string | null = null;
+let kanbanRequestAccountId: string | null = null;
+const chatMessageAdmissionQueue = new PerKeyPromiseQueue();
+
+const isCurrentAccount = (
+  currentAccountId: string | null | undefined,
+  expectedAccountId: string | null
+): boolean => (currentAccountId ?? null) === expectedAccountId;
 
 type ChatMessagesRequestState = {
   promise: Promise<ListMessageResponse | null>;
@@ -133,6 +233,7 @@ type ChatMessagesRequestState = {
 const chatMessagesRequests = new Map<string, ChatMessagesRequestState>();
 const latestChatMessagesSequenceByChatId = new Map<string, number>();
 let chatMessagesRequestSequence = 0;
+let activeChatMessagesRequestSequence = 0;
 
 type ChatFilters = {
   filter_label_template_id?: string | null;
@@ -167,7 +268,10 @@ type ChatCounts = {
 type ResolveChatEndpointResult = {
   results: ListChatsResult[];
   counts: ChatCounts | null;
+  succeeded: boolean;
 };
+
+type ChatStatusSnapshotFence = Record<string, string>;
 
 const pickDefinedFilters = <T extends Record<string, unknown>>(
   filters: T,
@@ -331,6 +435,11 @@ const areMessagesEquivalent = (
     stableStringify(first.content) === stableStringify(second.content) &&
     (first.sent_from_platform ?? null) ===
       (second.sent_from_platform ?? null) &&
+    (first.delivery_status ?? null) === (second.delivery_status ?? null) &&
+    (first.provider_error_code ?? null) ===
+      (second.provider_error_code ?? null) &&
+    (first.provider_status_at ?? null) ===
+      (second.provider_status_at ?? null) &&
     areMessageDeliverySummariesEqual(first.summary, second.summary)
   );
 };
@@ -470,51 +579,6 @@ const shouldPreserveExistingMessage = (
   return messageDate < oldestLoadedAt || messageDate > newestLoadedAt;
 };
 
-const mergeMessageDeliverySummary = (
-  incoming?: ListMessageResult['summary'] | IChatMessage['summary'] | null,
-  existing?: ListMessageResult['summary'] | IChatMessage['summary'] | null
-): ListMessageResult['summary'] | null => {
-  const normalizedIncoming = normalizeMessageDeliverySummary(incoming);
-  const normalizedExisting = normalizeMessageDeliverySummary(existing);
-
-  if (!normalizedIncoming && !normalizedExisting) {
-    return null;
-  }
-  if (!normalizedIncoming) {
-    return normalizedExisting;
-  }
-  if (!normalizedExisting) {
-    return normalizedIncoming;
-  }
-
-  const isSeen = normalizedIncoming.is_seen || normalizedExisting.is_seen;
-  const isDelivered =
-    normalizedIncoming.is_delivered ||
-    normalizedExisting.is_delivered ||
-    isSeen;
-  const isSent =
-    normalizedIncoming.is_sent || normalizedExisting.is_sent || isDelivered;
-  const hasDeliveryFailure =
-    normalizedIncoming.is_sent_to_internal === false ||
-    normalizedExisting.is_sent_to_internal === false;
-
-  if (hasDeliveryFailure) {
-    return {
-      is_sent: false,
-      is_delivered: false,
-      is_seen: false,
-      is_sent_to_internal: false,
-    };
-  }
-
-  return {
-    is_sent: isSent,
-    is_delivered: isDelivered,
-    is_seen: isSeen,
-    is_sent_to_internal: true,
-  };
-};
-
 const mergeSentFromPlatform = (
   incoming?:
     | ListMessageResult['sent_from_platform']
@@ -575,10 +639,7 @@ const mergeLoadedChatMessages = (
           message.sent_from_platform,
           existing?.sent_from_platform
         ),
-        summary: mergeMessageDeliverySummary(
-          message.summary,
-          existing?.summary
-        ),
+        ...mergeMessageDeliveryProjection(message, existing),
       };
     }
   );
@@ -659,7 +720,11 @@ export const useChatStore = defineStore('chat', {
     loadingChats: false,
     loadingUnreadSummary: false,
     unreadSummaryCount: 0,
-    unreadSummaryRefreshTimer: null as ReturnType<typeof setTimeout> | null,
+    unreadSummaryAccountId: null as string | null,
+    unreadSummaryByChatId: {} as Record<
+      string,
+      { unread_count: number; revision: number }
+    >,
     skipChatStatusEventsUntil: {} as Record<string, number>,
     loadingMoreMessages: false,
     pendingStatusUpdateChatId: null as string | null,
@@ -769,6 +834,16 @@ export const useChatStore = defineStore('chat', {
     hideSnackbar() {
       this.snackbar.status = false;
     },
+    ensureUnreadSummaryAccountScope(accountId: string | null): void {
+      if (this.unreadSummaryAccountId === accountId) {
+        return;
+      }
+
+      this.unreadSummaryAccountId = accountId;
+      this.unreadSummaryByChatId = {};
+      this.setUnreadSummaryCount(0);
+      chatUnreadSummaryScopeGeneration += 1;
+    },
     setUnreadSummaryCount(count: number): void {
       const normalizedCount = Number.isFinite(count)
         ? Math.max(0, Math.trunc(count))
@@ -787,63 +862,142 @@ export const useChatStore = defineStore('chat', {
 
       this.setUnreadSummaryCount(this.unreadSummaryCount + delta);
     },
-    resetUnreadSummary(): void {
-      if (chatUnreadSummaryRefreshTimer) {
-        clearTimeout(chatUnreadSummaryRefreshTimer);
-        chatUnreadSummaryRefreshTimer = null;
+    replaceUnreadSummary(data: ChatUnreadSummaryData): void {
+      const currentProjection = this.unreadSummaryByChatId;
+      const projection: Record<
+        string,
+        { unread_count: number; revision: number }
+      > = {};
+      let unreadCount = Math.max(0, Math.trunc(data.unread_count));
+
+      for (const item of data.unread_chats ?? []) {
+        if (!item.chat_id || item.unread_count <= 0) {
+          continue;
+        }
+
+        projection[item.chat_id] = {
+          unread_count: Math.max(0, Math.trunc(item.unread_count)),
+          revision: Math.max(0, Math.trunc(item.revision)),
+        };
       }
 
+      for (const [chatId, current] of Object.entries(currentProjection)) {
+        const incoming = projection[chatId];
+        if (current.revision < (incoming?.revision ?? 0)) {
+          continue;
+        }
+
+        unreadCount += current.unread_count - (incoming?.unread_count ?? 0);
+        projection[chatId] = current;
+      }
+
+      this.unreadSummaryByChatId = projection;
+      this.setUnreadSummaryCount(unreadCount);
+    },
+    reconcileUnreadSummaryFromChat(chat: IChat): void {
+      if (!chat.chat_id) {
+        return;
+      }
+
+      const currentAccountId = this.user?.account_id ?? null;
+      if (
+        currentAccountId &&
+        chat.account?.id &&
+        chat.account.id !== currentAccountId
+      ) {
+        return;
+      }
+      this.ensureUnreadSummaryAccountScope(currentAccountId);
+
+      const previous = this.unreadSummaryByChatId[chat.chat_id];
+      const incomingRevision = Math.max(
+        0,
+        Math.trunc(chat.summary?.revision ?? 0)
+      );
+
+      if (
+        previous &&
+        previous.revision > 0 &&
+        incomingRevision > 0 &&
+        incomingRevision <= previous.revision
+      ) {
+        return;
+      }
+
+      const isVisible =
+        isPinnableChatStatus(chat.status) && this.canViewChat(chat);
+      const nextUnreadCount = isVisible
+        ? Math.max(0, Math.trunc(chat.summary?.unread_count ?? 0))
+        : 0;
+      const previousUnreadCount = previous?.unread_count ?? 0;
+
+      this.unreadSummaryByChatId[chat.chat_id] = {
+        unread_count: nextUnreadCount,
+        revision: incomingRevision,
+      };
+      this.adjustUnreadSummaryCount(nextUnreadCount - previousUnreadCount);
+    },
+    clearUnreadSummaryForChat(chatId: string): void {
+      const previous = this.unreadSummaryByChatId[chatId];
+      if (!previous || previous.unread_count <= 0) {
+        return;
+      }
+
+      this.unreadSummaryByChatId[chatId] = {
+        ...previous,
+        unread_count: 0,
+      };
+      this.adjustUnreadSummaryCount(-previous.unread_count);
+    },
+    resetUnreadSummary(): void {
+      chatUnreadSummaryScopeGeneration += 1;
+      this.unreadSummaryByChatId = {};
+      this.unreadSummaryAccountId = null;
       this.setUnreadSummaryCount(0);
       if (this.loadingUnreadSummary) {
         this.loadingUnreadSummary = false;
       }
       chatUnreadSummaryRequestInFlight = false;
-      chatUnreadSummaryRefreshQueued = false;
-      chatUnreadSummaryLastFetchedAt = 0;
-    },
-    scheduleUnreadSummaryRefresh(delayMs = 700): void {
-      if (chatUnreadSummaryRefreshTimer) {
-        return;
-      }
-
-      chatUnreadSummaryRefreshTimer = setTimeout(() => {
-        chatUnreadSummaryRefreshTimer = null;
-        void this.viewUnreadSummary();
-      }, delayMs);
+      chatUnreadSummaryRequestAccountId = null;
     },
     async viewUnreadSummary(): Promise<number> {
+      const requestAccountId = this.user?.account_id ?? null;
+      this.ensureUnreadSummaryAccountScope(requestAccountId);
+      const requestScopeGeneration = chatUnreadSummaryScopeGeneration;
       if (
-        chatUnreadSummaryLastFetchedAt > 0 &&
-        Date.now() - chatUnreadSummaryLastFetchedAt <
-          CHAT_UNREAD_SUMMARY_CACHE_TTL_MS
+        chatUnreadSummaryRequestInFlight &&
+        chatUnreadSummaryRequestAccountId === requestAccountId
       ) {
         return this.unreadSummaryCount;
       }
 
-      if (chatUnreadSummaryRequestInFlight) {
-        chatUnreadSummaryRefreshQueued = true;
-        return this.unreadSummaryCount;
-      }
-
       chatUnreadSummaryRequestInFlight = true;
+      chatUnreadSummaryRequestAccountId = requestAccountId;
 
       try {
         const response = await axios.get<IApiResponse<ChatUnreadSummaryData>>(
           '/chat/unread-summary'
         );
-        this.setUnreadSummaryCount(response.data?.data?.unread_count ?? 0);
-        chatUnreadSummaryLastFetchedAt = Date.now();
+        if (
+          !isCurrentAccount(this.user?.account_id, requestAccountId) ||
+          requestScopeGeneration !== chatUnreadSummaryScopeGeneration
+        ) {
+          return this.unreadSummaryCount;
+        }
+
+        const data = response.data?.data;
+        if (data) {
+          this.replaceUnreadSummary(data);
+        }
       } catch {
         // The menu badge is opportunistic; navigation must not be blocked by it.
       } finally {
-        chatUnreadSummaryRequestInFlight = false;
-        if (this.loadingUnreadSummary) {
-          this.loadingUnreadSummary = false;
-        }
-
-        if (chatUnreadSummaryRefreshQueued) {
-          chatUnreadSummaryRefreshQueued = false;
-          this.scheduleUnreadSummaryRefresh(250);
+        if (chatUnreadSummaryRequestAccountId === requestAccountId) {
+          chatUnreadSummaryRequestInFlight = false;
+          chatUnreadSummaryRequestAccountId = null;
+          if (this.loadingUnreadSummary) {
+            this.loadingUnreadSummary = false;
+          }
         }
       }
 
@@ -974,8 +1128,26 @@ export const useChatStore = defineStore('chat', {
 
       this.pinningChatIds = this.pinningChatIds.filter((id) => id !== chatId);
     },
+    reconcileIncomingChatSnapshots(
+      existing: ListChatsResult[],
+      incoming: ListChatsResult[]
+    ): ListChatsResult[] {
+      const existingByChatId = new Map(
+        existing.map((chat) => [chat.chat_id, chat] as const)
+      );
+
+      return incoming.map((chat) =>
+        selectNewestChatSnapshotRevision(
+          existingByChatId.get(chat.chat_id),
+          chat
+        )
+      );
+    },
     setPinnedChats(chats: ListChatsResult[]): void {
-      this.pinnedChats = chats
+      this.pinnedChats = this.reconcileIncomingChatSnapshots(
+        this.pinnedChats,
+        chats
+      )
         .filter((chat) => isPinnableChatStatus(chat.status))
         .map((chat) =>
           this.createUpdatedActiveChat(
@@ -1030,14 +1202,23 @@ export const useChatStore = defineStore('chat', {
       );
     },
     async loadPinnedChats(): Promise<ListChatsResult[]> {
-      if (this.loadingPinnedChats) {
+      const requestAccountId = this.user?.account_id ?? null;
+      if (
+        this.loadingPinnedChats &&
+        pinnedChatsRequestAccountId === requestAccountId
+      ) {
         return this.pinnedChats;
       }
 
       try {
         this.loadingPinnedChats = true;
+        pinnedChatsRequestAccountId = requestAccountId;
         const response =
           await axios.get<IApiResponse<ListChatsResult[]>>('/chat/pinned');
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return this.pinnedChats;
+        }
+
         const data = response?.data;
 
         if (!data?.status || !Array.isArray(data.data)) {
@@ -1050,7 +1231,10 @@ export const useChatStore = defineStore('chat', {
       } catch {
         return this.pinnedChats;
       } finally {
-        this.loadingPinnedChats = false;
+        if (pinnedChatsRequestAccountId === requestAccountId) {
+          pinnedChatsRequestAccountId = null;
+          this.loadingPinnedChats = false;
+        }
       }
     },
     async pinChat(chat: ListChatsResult): Promise<boolean> {
@@ -1199,10 +1383,14 @@ export const useChatStore = defineStore('chat', {
         params.filter_phone = filters.filter_phone;
       }
     },
-    async loadKanbanInitial(filters?: Partial<ChatFilters>): Promise<void> {
-      if (this.loadingKanban) return;
+    async loadKanbanInitial(filters?: Partial<ChatFilters>): Promise<boolean> {
+      const requestAccountId = this.user?.account_id ?? null;
+      if (this.loadingKanban && kanbanRequestAccountId === requestAccountId) {
+        return false;
+      }
 
       this.loadingKanban = true;
+      kanbanRequestAccountId = requestAccountId;
       try {
         const resolvedFilters = filters
           ? this.setKanbanFilters(filters)
@@ -1220,30 +1408,51 @@ export const useChatStore = defineStore('chat', {
           '/chat/kanban',
           { params }
         );
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return false;
+        }
 
         const data = response?.data;
         if (!data?.status || !data?.data) {
-          this.loadingKanban = false;
-          return;
+          return false;
         }
 
         const d = data.data;
 
-        this.kanbanChatbot = d.chatbot.results;
-        this.kanbanQueue = d.queue.results;
-        this.kanbanInChat = d.in_chat.results;
-        this.kanbanClosed = d.closed.results;
+        this.kanbanChatbot = this.reconcileIncomingChatSnapshots(
+          this.kanbanChatbot,
+          d.chatbot.results
+        );
+        this.kanbanQueue = this.reconcileIncomingChatSnapshots(
+          this.kanbanQueue,
+          d.queue.results
+        );
+        this.kanbanInChat = this.reconcileIncomingChatSnapshots(
+          this.kanbanInChat,
+          d.in_chat.results
+        );
+        this.kanbanClosed = this.reconcileIncomingChatSnapshots(
+          this.kanbanClosed,
+          d.closed.results
+        );
         this.kanbanChatbotPagings = { ...d.chatbot.pagings };
         this.kanbanQueuePagings = { ...d.queue.pagings };
         this.kanbanInChatPagings = { ...d.in_chat.pagings };
         this.kanbanClosedPagings = { ...d.closed.pagings };
+        return true;
       } catch {
-        this.showSnackbar(
-          this.i18n.global.t('chat_list_not_found'),
-          EColor.error
-        );
+        if (isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          this.showSnackbar(
+            this.i18n.global.t('chat_list_not_found'),
+            EColor.error
+          );
+        }
+        return false;
       } finally {
-        this.loadingKanban = false;
+        if (kanbanRequestAccountId === requestAccountId) {
+          kanbanRequestAccountId = null;
+          this.loadingKanban = false;
+        }
       }
     },
     async loadMoreKanbanColumn(
@@ -1360,7 +1569,7 @@ export const useChatStore = defineStore('chat', {
         this.listMessages.push({
           ...message,
           sent_from_platform: message.sent_from_platform ?? null,
-          summary: normalizeMessageDeliverySummary(message.summary),
+          ...mergeMessageDeliveryProjection(message),
         });
         return;
       }
@@ -1376,10 +1585,7 @@ export const useChatStore = defineStore('chat', {
             message.sent_from_platform,
             existing.sent_from_platform
           ),
-          summary: mergeMessageDeliverySummary(
-            message.summary,
-            existing.summary
-          ),
+          ...mergeMessageDeliveryProjection(message, existing),
         };
         cleanupMessageMedia(this.listMessages[idx]);
         this.listMessages.splice(idx, 1, next);
@@ -1388,7 +1594,7 @@ export const useChatStore = defineStore('chat', {
       this.listMessages.push({
         ...message,
         sent_from_platform: message.sent_from_platform ?? null,
-        summary: normalizeMessageDeliverySummary(message.summary),
+        ...mergeMessageDeliveryProjection(message),
       });
     },
     removeMessageByHash(hash: string) {
@@ -1421,7 +1627,11 @@ export const useChatStore = defineStore('chat', {
         has_quoted: message.has_quoted ?? false,
         hash: message.hash ?? null,
         sent_from_platform: message.sent_from_platform ?? null,
+        delivery_status: message.delivery_status ?? null,
+        provider_error_code: message.provider_error_code ?? null,
+        provider_status_at: message.provider_status_at ?? null,
       };
+      Object.assign(input, mergeMessageDeliveryProjection(input));
 
       let existingIndex = -1;
       if (message.hash) {
@@ -1452,7 +1662,7 @@ export const useChatStore = defineStore('chat', {
             input.sent_from_platform,
             existing.sent_from_platform
           ),
-          summary: mergeMessageDeliverySummary(input.summary, existing.summary),
+          ...mergeMessageDeliveryProjection(input, existing),
         };
 
         if (
@@ -1717,6 +1927,7 @@ export const useChatStore = defineStore('chat', {
 
       return {
         ...incomingChat,
+        meta: mergeChatStatusMetadata(snapshot.meta, incomingChat.meta),
         summary: resolveOptionalPartialNull(
           incomingChat.summary,
           snapshot.summary
@@ -1766,6 +1977,13 @@ export const useChatStore = defineStore('chat', {
         forward_to_output_chatbot: resolveOptionalPartialNull(
           incomingChat.forward_to_output_chatbot,
           snapshot.forward_to_output_chatbot
+        ),
+        official_window: resolveOptionalPartialNull(
+          selectNewestOfficialWhatsappWindowSnapshot(
+            snapshot.official_window,
+            incomingChat.official_window
+          ),
+          snapshot.official_window
         ),
       };
     },
@@ -1857,7 +2075,7 @@ export const useChatStore = defineStore('chat', {
       const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
       const existingSnapshot = isActiveChat ? this.activeChat : previousChat;
 
-      if (this.shouldIgnoreChatUpdate(existingSnapshot, chat, skipEvents)) {
+      if (this.shouldIgnoreChatUpdate(existingSnapshot, chat)) {
         return;
       }
 
@@ -1957,6 +2175,7 @@ export const useChatStore = defineStore('chat', {
 
       const input: ListChatsResult = {
         chat_id: resolvedChat.chat_id,
+        meta: resolvedChat.meta,
         summary: resolvedChat.summary,
         account: resolvedChat.account,
         worker: resolvedChat.worker,
@@ -1978,6 +2197,7 @@ export const useChatStore = defineStore('chat', {
         protocol_transfer: resolvedChat.protocol_transfer ?? null,
         label: resolvedChat.label ?? null,
         forward_to_output_chatbot: resolvedChat.forward_to_output_chatbot,
+        official_window: resolvedChat.official_window ?? null,
       };
 
       this.updatePinnedChatSnapshot(input);
@@ -2093,8 +2313,16 @@ export const useChatStore = defineStore('chat', {
       input: ListChatsResult,
       isActiveChat: boolean
     ): ListChatsResult {
+      const officialWindow =
+        isActiveChat && this.activeChat?.chat_id === input.chat_id
+          ? selectNewestOfficialWhatsappWindowSnapshot(
+              this.activeChat.official_window,
+              input.official_window
+            )
+          : input.official_window;
       const result = {
         chat_id: input.chat_id,
+        meta: input.meta,
         summary:
           isActiveChat && this.activeChat?.summary
             ? this.getSummaryForActiveChat(input, this.activeChat.summary)
@@ -2117,6 +2345,7 @@ export const useChatStore = defineStore('chat', {
         protocol_start: input.protocol_start ?? null,
         protocol_transfer: input.protocol_transfer ?? null,
         forward_to_output_chatbot: input.forward_to_output_chatbot,
+        official_window: officialWindow ?? null,
       };
       return result;
     },
@@ -2179,14 +2408,85 @@ export const useChatStore = defineStore('chat', {
     },
 
     findChatInLists(chatId: string): ListChatsResult | null {
-      return (
-        this.listQueue.find((c) => c.chat_id === chatId) ||
-        this.listInChat.find((c) => c.chat_id === chatId) ||
-        this.listChatbot.find((c) => c.chat_id === chatId) ||
-        this.listScheduled.find((c) => c.chat_id === chatId) ||
-        this.listClosed.find((c) => c.chat_id === chatId) ||
+      const candidates = [
+        this.listQueue.find((c) => c.chat_id === chatId),
+        this.listInChat.find((c) => c.chat_id === chatId),
+        this.listChatbot.find((c) => c.chat_id === chatId),
+        this.listScheduled.find((c) => c.chat_id === chatId),
+        this.listClosed.find((c) => c.chat_id === chatId),
+      ].filter((chat): chat is ListChatsResult => !!chat);
+
+      return candidates.reduce<ListChatsResult | null>(
+        (newest, candidate) =>
+          selectNewestChatSnapshotRevision(newest, candidate),
         null
       );
+    },
+
+    getChatStatusSnapshotSignature(
+      chat: ListChatsResult | null | undefined
+    ): string {
+      if (!chat) {
+        return '';
+      }
+
+      return [
+        chat.status ?? '',
+        chat.meta?.status_epoch ?? '',
+        chat.meta?.status_event_id ?? '',
+      ].join(':');
+    },
+
+    captureChatStatusSnapshotFence(): ChatStatusSnapshotFence {
+      const fence: ChatStatusSnapshotFence = {};
+      const chatIds = new Set<string>();
+
+      for (const chat of [
+        ...this.listQueue,
+        ...this.listInChat,
+        ...this.listChatbot,
+        ...this.listScheduled,
+        ...this.listClosed,
+      ]) {
+        chatIds.add(chat.chat_id);
+      }
+
+      if (this.activeChat?.chat_id) {
+        chatIds.add(this.activeChat.chat_id);
+      }
+
+      for (const chatId of chatIds) {
+        const listSnapshot = this.findChatInLists(chatId);
+        const activeSnapshot =
+          this.activeChat?.chat_id === chatId ? this.activeChat : null;
+        const newest = activeSnapshot
+          ? selectNewestChatSnapshotRevision(listSnapshot, activeSnapshot)
+          : listSnapshot;
+
+        fence[chatId] = this.getChatStatusSnapshotSignature(newest);
+      }
+
+      return fence;
+    },
+
+    hasChatStatusSnapshotFenceChanged(
+      statusSnapshotFence: ChatStatusSnapshotFence
+    ): boolean {
+      const currentFence = this.captureChatStatusSnapshotFence();
+      const chatIds = new Set([
+        ...Object.keys(statusSnapshotFence),
+        ...Object.keys(currentFence),
+      ]);
+
+      for (const chatId of chatIds) {
+        if (
+          (statusSnapshotFence[chatId] ?? '') !== (currentFence[chatId] ?? '')
+        ) {
+          return true;
+        }
+      }
+
+      return false;
     },
 
     updateMyChatsTotalFromTransition(
@@ -2281,15 +2581,31 @@ export const useChatStore = defineStore('chat', {
 
     shouldIgnoreChatUpdate(
       existingChat: ListChatsResult | null,
-      incomingChat: IChat,
-      skipEvents: boolean
+      incomingChat: IChat
     ): boolean {
-      if (skipEvents || !existingChat) {
+      if (!existingChat) {
         return false;
       }
 
       const existingStatus = existingChat.status ?? null;
       const incomingStatus = incomingChat.status ?? null;
+
+      if (
+        hasApplicableIncomingOfficialWhatsappWindowSnapshot(
+          existingChat.official_window,
+          incomingChat.official_window
+        )
+      ) {
+        return false;
+      }
+
+      const statusRevisionOrder = compareChatStatusRevisions(
+        existingChat,
+        incomingChat
+      );
+      if (statusRevisionOrder !== null) {
+        return statusRevisionOrder <= 0;
+      }
 
       if (
         incomingStatus &&
@@ -3227,6 +3543,8 @@ export const useChatStore = defineStore('chat', {
       input: ListChatsQuery,
       append = false
     ): Promise<ListChatsResponse | null> {
+      const requestAccountId = this.user?.account_id ?? null;
+      const statusSnapshotFence = this.captureChatStatusSnapshotFence();
       try {
         this.loading = true;
         if (!append) {
@@ -3254,6 +3572,9 @@ export const useChatStore = defineStore('chat', {
             params: request,
           }
         );
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
+        }
 
         this.loading = false;
         this.loadingChats = false;
@@ -3261,54 +3582,31 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          if (!append) {
-            this.listQueue = [];
-          }
-
           return null;
         }
 
-        if (append) {
-          const existingIds = new Set(this.listQueue.map((c) => c.chat_id));
-          const newResults = data.data.results.filter(
-            (c) => !existingIds.has(c.chat_id)
-          );
-          this.listQueue = [...this.listQueue, ...newResults];
-        } else {
-          const filteredResults = data.data.results.filter((chat) => {
-            const existingInQueue = this.listQueue.find(
-              (c) => c.chat_id === chat.chat_id
-            );
-            const existingInInChat = this.listInChat.find(
-              (c) => c.chat_id === chat.chat_id
-            );
+        const statusChangedDuringRequest =
+          this.hasChatStatusSnapshotFenceChanged(statusSnapshotFence);
+        this.updateListsByStatus(
+          [EChatStatus.queue],
+          data.data.results,
+          append,
+          statusSnapshotFence
+        );
 
-            if (
-              existingInInChat &&
-              existingInInChat.status === EChatStatus.in_chat
-            ) {
-              return false;
+        this.queuePagings = statusChangedDuringRequest
+          ? {
+              ...this.queuePagings,
+              count: this.listQueue.length,
             }
-
-            if (
-              existingInQueue &&
-              existingInQueue.status !== EChatStatus.queue
-            ) {
-              return false;
-            }
-
-            return true;
-          });
-          this.listQueue = filteredResults;
-        }
-
-        this.queuePagings = data.data.pagings;
+          : data.data.pagings;
 
         return data.data;
       } catch {
-        if (!append) {
-          this.listQueue = [];
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
         }
+
         this.loading = false;
         this.loadingChats = false;
 
@@ -3320,6 +3618,8 @@ export const useChatStore = defineStore('chat', {
       input: ListChatsQuery,
       append = false
     ): Promise<ListChatsResponse | null> {
+      const requestAccountId = this.user?.account_id ?? null;
+      const statusSnapshotFence = this.captureChatStatusSnapshotFence();
       try {
         this.loading = true;
         if (!append) {
@@ -3347,6 +3647,9 @@ export const useChatStore = defineStore('chat', {
             params: request,
           }
         );
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
+        }
 
         this.loading = false;
         this.loadingChats = false;
@@ -3354,41 +3657,31 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          if (!append) {
-            this.listInChat = [];
-          }
-
           return null;
         }
 
-        if (append) {
-          const existingIds = new Set(this.listInChat.map((c) => c.chat_id));
-          const newResults = data.data.results.filter(
-            (c) => !existingIds.has(c.chat_id)
-          );
-          this.listInChat = [...this.listInChat, ...newResults];
-        } else {
-          const existingInChatChats = this.listInChat.filter(
-            (c) => c.status === EChatStatus.in_chat
-          );
-          const existingInChatIds = new Set(
-            existingInChatChats.map((c) => c.chat_id)
-          );
+        const statusChangedDuringRequest =
+          this.hasChatStatusSnapshotFenceChanged(statusSnapshotFence);
+        this.updateListsByStatus(
+          [EChatStatus.in_chat],
+          data.data.results,
+          append,
+          statusSnapshotFence
+        );
 
-          const newInChatChats = data.data.results.filter(
-            (c) => !existingInChatIds.has(c.chat_id)
-          );
-
-          this.listInChat = [...existingInChatChats, ...newInChatChats];
-        }
-
-        this.inChatPagings = data.data.pagings;
+        this.inChatPagings = statusChangedDuringRequest
+          ? {
+              ...this.inChatPagings,
+              count: this.listInChat.length,
+            }
+          : data.data.pagings;
 
         return data.data;
       } catch {
-        if (!append) {
-          this.listInChat = [];
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
         }
+
         this.loading = false;
         this.loadingChats = false;
 
@@ -3400,6 +3693,8 @@ export const useChatStore = defineStore('chat', {
       input: ListChatsQuery,
       append = false
     ): Promise<ListChatsResponse | null> {
+      const requestAccountId = this.user?.account_id ?? null;
+      const statusSnapshotFence = this.captureChatStatusSnapshotFence();
       this.loading = true;
 
       try {
@@ -3424,39 +3719,35 @@ export const useChatStore = defineStore('chat', {
             params: request,
           }
         );
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
+        }
 
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          if (!append) {
-            this.listChatbot = [];
-          }
-
           return null;
         }
 
         this.chatbotPagings = data.data.pagings;
-
-        if (append) {
-          const existingIds = new Set(this.listChatbot.map((c) => c.chat_id));
-          const newResults = data.data.results.filter(
-            (c) => !existingIds.has(c.chat_id)
-          );
-          this.listChatbot = [...this.listChatbot, ...newResults];
-          return data.data;
-        }
-
-        this.listChatbot = data.data.results;
+        this.updateListsByStatus(
+          [EChatStatus.ura],
+          data.data.results,
+          append,
+          statusSnapshotFence
+        );
 
         return data.data;
       } catch {
-        if (!append) {
-          this.listChatbot = [];
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
         }
 
         return null;
       } finally {
-        this.loading = false;
+        if (isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          this.loading = false;
+        }
       }
     },
 
@@ -3464,6 +3755,8 @@ export const useChatStore = defineStore('chat', {
       input: ListChatsQuery,
       append = false
     ): Promise<ListChatsResponse | null> {
+      const requestAccountId = this.user?.account_id ?? null;
+      const statusSnapshotFence = this.captureChatStatusSnapshotFence();
       try {
         this.loading = true;
 
@@ -3488,36 +3781,32 @@ export const useChatStore = defineStore('chat', {
             params: request,
           }
         );
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
+        }
 
         this.loading = false;
 
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          if (!append) {
-            this.listClosed = [];
-          }
           return null;
         }
 
-        if (append) {
-          const existingIds = new Set(this.listClosed.map((c) => c.chat_id));
-          const newResults = data.data.results.filter(
-            (c) => !existingIds.has(c.chat_id)
-          );
-          this.listClosed = [...this.listClosed, ...newResults];
-          this.closedPagings = data.data.pagings;
-          return data.data;
-        }
-
-        this.listClosed = data.data.results;
+        this.updateListsByStatus(
+          [EChatStatus.closed],
+          data.data.results,
+          append,
+          statusSnapshotFence
+        );
         this.closedPagings = data.data.pagings;
 
         return data.data;
       } catch {
-        if (!append) {
-          this.listClosed = [];
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
         }
+
         return null;
       }
     },
@@ -3526,6 +3815,8 @@ export const useChatStore = defineStore('chat', {
       input: ListChatsQuery,
       append = false
     ): Promise<ListChatsResponse | null> {
+      const requestAccountId = this.user?.account_id ?? null;
+      const statusSnapshotFence = this.captureChatStatusSnapshotFence();
       try {
         this.loading = true;
 
@@ -3550,36 +3841,32 @@ export const useChatStore = defineStore('chat', {
             params: request,
           }
         );
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
+        }
 
         this.loading = false;
 
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          if (!append) {
-            this.listScheduled = [];
-          }
           return null;
         }
 
-        if (append) {
-          const existingIds = new Set(this.listScheduled.map((c) => c.chat_id));
-          const newResults = data.data.results.filter(
-            (c) => !existingIds.has(c.chat_id)
-          );
-          this.listScheduled = [...this.listScheduled, ...newResults];
-          this.scheduledPagings = data.data.pagings;
-          return data.data;
-        }
-
-        this.listScheduled = data.data.results;
+        this.updateListsByStatus(
+          [EChatStatus.ura_schedule],
+          data.data.results,
+          append,
+          statusSnapshotFence
+        );
         this.scheduledPagings = data.data.pagings;
 
         return data.data;
       } catch {
-        if (!append) {
-          this.listScheduled = [];
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
         }
+
         return null;
       }
     },
@@ -3587,6 +3874,7 @@ export const useChatStore = defineStore('chat', {
     async searchChats(
       input: SearchChatsQuery
     ): Promise<SearchChatsResponse | null> {
+      const requestAccountId = this.user?.account_id ?? null;
       try {
         this.loading = true;
 
@@ -3641,6 +3929,9 @@ export const useChatStore = defineStore('chat', {
           `/chat/search`,
           { params }
         );
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
+        }
 
         this.loading = false;
 
@@ -3660,6 +3951,10 @@ export const useChatStore = defineStore('chat', {
         };
         return searchResponse;
       } catch {
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return null;
+        }
+
         this.loading = false;
         return null;
       }
@@ -3795,6 +4090,8 @@ export const useChatStore = defineStore('chat', {
       pagination: { current_page: number; per_page: number },
       append: boolean
     ): Promise<ResolveChatEndpointResult> {
+      const requestAccountId = this.user?.account_id ?? null;
+      const statusSnapshotFence = this.captureChatStatusSnapshotFence();
       try {
         this.loading = true;
 
@@ -3809,30 +4106,52 @@ export const useChatStore = defineStore('chat', {
           `/chat`,
           { params }
         );
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return { results: [], counts: null, succeeded: false };
+        }
 
         this.loading = false;
 
         const data = response?.data;
         if (!data?.status || !data?.data) {
-          return { results: [], counts: null };
+          return { results: [], counts: null, succeeded: false };
         }
 
+        const statusChangedDuringRequest =
+          this.hasChatStatusSnapshotFenceChanged(statusSnapshotFence);
         this.updateListsByStatus(
           [EChatStatus.queue, EChatStatus.in_chat],
           data.data.results,
-          append
+          append,
+          statusSnapshotFence
         );
 
-        this.queuePagings = { ...data.data.pagings };
-        this.inChatPagings = { ...data.data.pagings };
+        if (statusChangedDuringRequest) {
+          this.queuePagings = {
+            ...this.queuePagings,
+            count: this.listQueue.length,
+          };
+          this.inChatPagings = {
+            ...this.inChatPagings,
+            count: this.listInChat.length,
+          };
+        } else {
+          this.queuePagings = { ...data.data.pagings };
+          this.inChatPagings = { ...data.data.pagings };
+        }
 
         return {
           results: data.data.results,
           counts: data.data.counts,
+          succeeded: true,
         };
       } catch {
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return { results: [], counts: null, succeeded: false };
+        }
+
         this.loading = false;
-        return { results: [], counts: null };
+        return { results: [], counts: null, succeeded: false };
       }
     },
 
@@ -3871,15 +4190,29 @@ export const useChatStore = defineStore('chat', {
         request.sort_order = filters.sort_order;
       }
 
+      const statusSnapshotFence = this.captureChatStatusSnapshotFence();
       const result = await this.searchChats(request);
       if (!result) {
-        return { results: [], counts: null };
+        return { results: [], counts: null, succeeded: false };
       }
 
-      this.updateListsByStatus(statusArray, result.results, append);
-      this.updatePagingsByStatus(statusArray, result.pagings);
+      const statusChangedDuringRequest =
+        this.hasChatStatusSnapshotFenceChanged(statusSnapshotFence);
+      this.updateListsByStatus(
+        statusArray,
+        result.results,
+        append,
+        statusSnapshotFence
+      );
+      if (!statusChangedDuringRequest) {
+        this.updatePagingsByStatus(statusArray, result.pagings);
+      }
 
-      return { results: result.results, counts: result.counts };
+      return {
+        results: result.results,
+        counts: result.counts,
+        succeeded: true,
+      };
     },
 
     updatePagingsByStatus(
@@ -3915,6 +4248,8 @@ export const useChatStore = defineStore('chat', {
       pagination: { current_page: number; per_page: number },
       append: boolean
     ): Promise<ResolveChatEndpointResult> {
+      const requestAccountId = this.user?.account_id ?? null;
+      const statusSnapshotFence = this.captureChatStatusSnapshotFence();
       try {
         this.loading = true;
 
@@ -3929,27 +4264,61 @@ export const useChatStore = defineStore('chat', {
           `/chat`,
           { params }
         );
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return { results: [], counts: null, succeeded: false };
+        }
 
         this.loading = false;
 
         const data = response?.data;
         if (!data?.status || !data?.data) {
-          return { results: [], counts: null };
+          return { results: [], counts: null, succeeded: false };
         }
 
-        this.updateListsByStatus(statusArray, data.data.results, append);
+        const statusChangedDuringRequest =
+          this.hasChatStatusSnapshotFenceChanged(statusSnapshotFence);
+        this.updateListsByStatus(
+          statusArray,
+          data.data.results,
+          append,
+          statusSnapshotFence
+        );
 
         const counts = data.data.counts;
         const isMultiStatus = statusArray.length > 1;
 
-        if (statusArray.includes(EChatStatus.queue)) {
+        if (statusChangedDuringRequest) {
+          if (statusArray.includes(EChatStatus.queue)) {
+            this.queuePagings.count = this.listQueue.length;
+          }
+          if (statusArray.includes(EChatStatus.in_chat)) {
+            this.inChatPagings.count = this.listInChat.length;
+          }
+          if (statusArray.some((s) => this.isChatbotStatus(s))) {
+            this.chatbotPagings.count = this.listChatbot.length;
+          }
+          if (statusArray.some((s) => this.isScheduledStatus(s))) {
+            this.scheduledPagings.count = this.listScheduled.length;
+          }
+          if (statusArray.includes(EChatStatus.closed)) {
+            this.closedPagings.count = this.listClosed.length;
+          }
+        }
+
+        if (
+          !statusChangedDuringRequest &&
+          statusArray.includes(EChatStatus.queue)
+        ) {
           this.queuePagings = {
             ...data.data.pagings,
             total:
               isMultiStatus && counts ? counts.queue : data.data.pagings.total,
           };
         }
-        if (statusArray.includes(EChatStatus.in_chat)) {
+        if (
+          !statusChangedDuringRequest &&
+          statusArray.includes(EChatStatus.in_chat)
+        ) {
           this.inChatPagings = {
             ...data.data.pagings,
             total:
@@ -3958,7 +4327,10 @@ export const useChatStore = defineStore('chat', {
                 : data.data.pagings.total,
           };
         }
-        if (statusArray.some((s) => this.isChatbotStatus(s))) {
+        if (
+          !statusChangedDuringRequest &&
+          statusArray.some((s) => this.isChatbotStatus(s))
+        ) {
           this.chatbotPagings = {
             ...data.data.pagings,
             total:
@@ -3967,7 +4339,10 @@ export const useChatStore = defineStore('chat', {
                 : data.data.pagings.total,
           };
         }
-        if (statusArray.some((s) => this.isScheduledStatus(s))) {
+        if (
+          !statusChangedDuringRequest &&
+          statusArray.some((s) => this.isScheduledStatus(s))
+        ) {
           const scheduleCount = (counts as { schedule?: number })?.schedule;
           this.scheduledPagings = {
             ...data.data.pagings,
@@ -3977,7 +4352,10 @@ export const useChatStore = defineStore('chat', {
                 : data.data.pagings.total,
           };
         }
-        if (statusArray.includes(EChatStatus.closed)) {
+        if (
+          !statusChangedDuringRequest &&
+          statusArray.includes(EChatStatus.closed)
+        ) {
           const closedCount = (counts as { closed?: number })?.closed;
           this.closedPagings = {
             ...data.data.pagings,
@@ -3988,10 +4366,14 @@ export const useChatStore = defineStore('chat', {
           };
         }
 
-        return { results: data.data.results, counts };
+        return { results: data.data.results, counts, succeeded: true };
       } catch {
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return { results: [], counts: null, succeeded: false };
+        }
+
         this.loading = false;
-        return { results: [], counts: null };
+        return { results: [], counts: null, succeeded: false };
       }
     },
 
@@ -4052,18 +4434,82 @@ export const useChatStore = defineStore('chat', {
 
       const handler = handlers[status];
       if (!handler) {
-        return { results: [], counts: null };
+        return { results: [], counts: null, succeeded: false };
       }
 
       const response = await handler.fetch(request, append);
-      return { results: handler.getList(), counts: response?.counts ?? null };
+      return {
+        results: handler.getList(),
+        counts: response?.counts ?? null,
+        succeeded: response !== null,
+      };
     },
 
     updateListsByStatus(
       statusArray: EChatStatus[],
       results: ListChatsResult[],
-      append: boolean
+      append: boolean,
+      statusSnapshotFence?: ChatStatusSnapshotFence
     ): void {
+      // A list request can start before a realtime/PATCH status transition and
+      // finish after it. Reconcile every response against the newest local
+      // revision and preserve transitions that happened while it was pending.
+      const currentSnapshots = new Map<string, ListChatsResult>();
+      const rememberNewest = (chat: ListChatsResult | null | undefined) => {
+        if (!chat?.chat_id) {
+          return;
+        }
+
+        currentSnapshots.set(
+          chat.chat_id,
+          selectNewestChatSnapshotRevision(
+            currentSnapshots.get(chat.chat_id),
+            chat
+          )
+        );
+      };
+
+      this.listQueue.forEach(rememberNewest);
+      this.listInChat.forEach(rememberNewest);
+      this.listChatbot.forEach(rememberNewest);
+      this.listScheduled.forEach(rememberNewest);
+      this.listClosed.forEach(rememberNewest);
+      rememberNewest(this.activeChat);
+
+      const reconciledResultsById = new Map<string, ListChatsResult>();
+      for (const incoming of results) {
+        if (!incoming.chat_id) {
+          continue;
+        }
+
+        const newestLocal = currentSnapshots.get(incoming.chat_id);
+        const reconciled = selectNewestChatSnapshotRevision(
+          newestLocal,
+          incoming
+        );
+        reconciledResultsById.set(
+          incoming.chat_id,
+          selectNewestChatSnapshotRevision(
+            reconciledResultsById.get(incoming.chat_id),
+            reconciled
+          )
+        );
+
+        if (this.activeChat?.chat_id === incoming.chat_id) {
+          const newestActiveSnapshot = selectNewestChatSnapshotRevision(
+            this.activeChat,
+            reconciled
+          );
+          if (newestActiveSnapshot !== this.activeChat) {
+            this.activeChat = this.createUpdatedActiveChat(
+              newestActiveSnapshot,
+              true
+            );
+          }
+        }
+      }
+
+      const reconciledResults = [...reconciledResultsById.values()];
       const updateList = (
         targetStatus: EChatStatus,
         getCurrentList: () => ListChatsResult[],
@@ -4078,16 +4524,51 @@ export const useChatStore = defineStore('chat', {
         const statusesToInclude = this.isChatbotStatus(targetStatus)
           ? [EChatStatus.ura, EChatStatus.ura_output, EChatStatus.ura_webhook]
           : [targetStatus];
-        const filtered = results.filter((c) =>
+        const filtered = reconciledResults.filter((c) =>
           statusesToInclude.includes(c.status as EChatStatus)
         );
         if (append) {
           const currentList = getCurrentList();
-          const existingIds = new Set(currentList.map((c) => c.chat_id));
-          const newItems = filtered.filter((c) => !existingIds.has(c.chat_id));
-          currentList.push(...newItems);
+          const merged = new Map(
+            currentList.map((chat) => [chat.chat_id, chat] as const)
+          );
+          for (const chat of filtered) {
+            merged.set(
+              chat.chat_id,
+              selectNewestChatSnapshotRevision(merged.get(chat.chat_id), chat)
+            );
+          }
+          setList([...merged.values()]);
         } else {
-          setList(filtered);
+          const merged = new Map(
+            filtered.map((chat) => [chat.chat_id, chat] as const)
+          );
+
+          if (statusSnapshotFence) {
+            for (const current of currentSnapshots.values()) {
+              const reconciledResponse = reconciledResultsById.get(
+                current.chat_id
+              );
+              if (
+                (reconciledResponse && reconciledResponse !== current) ||
+                !statusesToInclude.includes(current.status as EChatStatus) ||
+                statusSnapshotFence[current.chat_id] ===
+                  this.getChatStatusSnapshotSignature(current)
+              ) {
+                continue;
+              }
+
+              merged.set(
+                current.chat_id,
+                selectNewestChatSnapshotRevision(
+                  merged.get(current.chat_id),
+                  current
+                )
+              );
+            }
+          }
+
+          setList([...merged.values()]);
         }
       };
 
@@ -4118,8 +4599,10 @@ export const useChatStore = defineStore('chat', {
       );
     },
 
-    async reloadAllChatLists(hasAppliedAdvancedFilters = false): Promise<void> {
-      await Promise.all([
+    async reloadAllChatLists(
+      hasAppliedAdvancedFilters = false
+    ): Promise<boolean> {
+      const results = await Promise.all([
         this.resolveChatEndpoint(
           EChatStatus.queue,
           {},
@@ -4151,6 +4634,8 @@ export const useChatStore = defineStore('chat', {
           false
         ),
       ]);
+
+      return results.every((result) => result.succeeded);
     },
 
     async updateChatsUser(input: UpdateChatsUserRequest): Promise<boolean> {
@@ -4247,7 +4732,9 @@ export const useChatStore = defineStore('chat', {
       query: ListMessageChatsQuery,
       chatId?: string,
       options: ChatMessagesFetchOptions = {}
-    ): Promise<void> {
+    ): Promise<boolean> {
+      const requestAccountId = this.user?.account_id ?? null;
+      const requestSequence = ++activeChatMessagesRequestSequence;
       const shouldPreserveMessages = options.preserveMessages === true;
       const shouldHandleLoading = options.skipLoading !== true;
 
@@ -4258,7 +4745,7 @@ export const useChatStore = defineStore('chat', {
           if (!shouldPreserveMessages) {
             this.listMessages = [];
           }
-          return;
+          return true;
         }
 
         const existingMessages = filterMessagesForChat(
@@ -4281,6 +4768,13 @@ export const useChatStore = defineStore('chat', {
             params: query,
           }
         );
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return false;
+        }
+
+        if (activeChatMessagesRequestSequence !== requestSequence) {
+          return true;
+        }
 
         const data = response?.data;
 
@@ -4289,15 +4783,20 @@ export const useChatStore = defineStore('chat', {
             this.listMessages = [];
           }
 
-          return;
+          return false;
         }
 
         if (
           this.activeChat?.chat_id &&
           this.activeChat.chat_id !== targetChatId
         ) {
-          return;
+          return true;
         }
+
+        this.applyOfficialWindowSnapshot(
+          targetChatId,
+          data.data.official_window
+        );
 
         const loadedMessages = filterMessagesForChat(
           [...data.data.results].reverse(),
@@ -4313,10 +4812,7 @@ export const useChatStore = defineStore('chat', {
               message.sent_from_platform,
               existing?.sent_from_platform
             ),
-            summary: mergeMessageDeliverySummary(
-              message.summary,
-              existing?.summary
-            ),
+            ...mergeMessageDeliveryProjection(message, existing),
           };
         });
 
@@ -4330,27 +4826,35 @@ export const useChatStore = defineStore('chat', {
           : normalizedLoadedMessages;
         this.currentPage = data.data.pagings.current_page;
         this.totalPages = data.data.pagings.total_pages;
+        return true;
       } catch (error) {
+        if (!isCurrentAccount(this.user?.account_id, requestAccountId)) {
+          return false;
+        }
+
         if (!shouldPreserveMessages) {
           this.listMessages = [];
         }
 
         if (error instanceof AxiosError) {
           if (error.response?.status === 404) {
-            return;
+            return true;
           }
           const errorMessage = error.response?.data?.message ?? error.message;
           this.showSnackbar(errorMessage, EColor.error);
-          return;
+          return false;
         }
 
         if (error instanceof Error) {
           this.showSnackbar(error.message, EColor.error);
         }
 
-        return;
+        return false;
       } finally {
-        if (shouldHandleLoading) {
+        if (
+          shouldHandleLoading &&
+          activeChatMessagesRequestSequence === requestSequence
+        ) {
           this.loading = false;
         }
       }
@@ -4391,6 +4895,8 @@ export const useChatStore = defineStore('chat', {
           if (!data?.status || !data?.data) {
             return null;
           }
+
+          this.applyOfficialWindowSnapshot(chatId, data.data.official_window);
 
           return {
             ...data.data,
@@ -4472,6 +4978,11 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
+        this.applyOfficialWindowSnapshot(
+          targetChatId,
+          data.data.official_window
+        );
+
         this.currentPage = data.data.pagings.current_page;
         const reversedResults = filterMessagesForChat(
           data.data.results.toReversed(),
@@ -4496,15 +5007,16 @@ export const useChatStore = defineStore('chat', {
       options: CreateMessageOptions = {}
     ): Promise<boolean> {
       const shouldHandleLoading = options.skipLoading !== true;
+      const targetChatId = this.activeChat?.chat_id;
+      if (!targetChatId) return false;
 
       try {
         if (shouldHandleLoading) {
           this.loading = true;
         }
 
-        const response = await axios.post<IApiResponse<boolean>>(
-          `/chat/${this.activeChat?.chat_id}`,
-          input
+        const response = await chatMessageAdmissionQueue.run(targetChatId, () =>
+          axios.post<IApiResponse<boolean>>(`/chat/${targetChatId}`, input)
         );
 
         const data = response?.data;
@@ -4513,7 +5025,6 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
-        this.scheduleUnreadSummaryRefresh();
         return true;
       } catch {
         return false;
@@ -4570,45 +5081,56 @@ export const useChatStore = defineStore('chat', {
 
         if (data.data) {
           const isActiveChat = this.activeChat?.chat_id === chatId;
+          const existingSnapshot = isActiveChat
+            ? this.activeChat
+            : this.findChatInLists(chatId);
+          const responseAccepted = !this.shouldIgnoreChatUpdate(
+            existingSnapshot,
+            data.data
+          );
 
-          this.addChat(data.data, true);
-          this.scheduleUnreadSummaryRefresh();
+          if (responseAccepted) {
+            this.reconcileUnreadSummaryFromChat(data.data);
+            this.addChat(data.data, true);
 
-          if (isActiveChat && isClosing) {
-            this.activeChat = null;
-          }
+            if (isActiveChat && isClosing) {
+              this.activeChat = null;
+            }
 
-          if (isClosing) {
-            this.clearPinnedChatIfMatches(chatId);
-          }
+            if (isClosing) {
+              this.clearPinnedChatIfMatches(chatId);
+            }
 
-          if (isActiveChat && !isClosing) {
-            const input: ListChatsResult = {
-              chat_id: data.data.chat_id,
-              summary: data.data.summary,
-              account: data.data.account,
-              worker: data.data.worker,
-              sector: data.data.sector,
-              user: data.data.user,
-              secondary_users: this.normalizeSecondaryUsers(
-                data.data.secondary_users
-              ),
-              contact: data.data.contact,
-              photo: data.data.photo,
-              name: data.data.name,
-              phone: data.data.phone,
-              status: data.data.status,
-              date: data.data.date,
-              started_at: data.data.started_at,
-              closed_at: data.data.closed_at,
-              protocol_ura: data.data.protocol_ura ?? null,
-              protocol_start: data.data.protocol_start ?? null,
-              protocol_transfer: data.data.protocol_transfer ?? null,
-              label: data.data.label ?? null,
-              forward_to_output_chatbot: data.data.forward_to_output_chatbot,
-            };
+            if (isActiveChat && !isClosing) {
+              const input: ListChatsResult = {
+                chat_id: data.data.chat_id,
+                meta: data.data.meta,
+                summary: data.data.summary,
+                account: data.data.account,
+                worker: data.data.worker,
+                sector: data.data.sector,
+                user: data.data.user,
+                secondary_users: this.normalizeSecondaryUsers(
+                  data.data.secondary_users
+                ),
+                contact: data.data.contact,
+                photo: data.data.photo,
+                name: data.data.name,
+                phone: data.data.phone,
+                status: data.data.status,
+                date: data.data.date,
+                started_at: data.data.started_at,
+                closed_at: data.data.closed_at,
+                protocol_ura: data.data.protocol_ura ?? null,
+                protocol_start: data.data.protocol_start ?? null,
+                protocol_transfer: data.data.protocol_transfer ?? null,
+                label: data.data.label ?? null,
+                forward_to_output_chatbot: data.data.forward_to_output_chatbot,
+                official_window: data.data.official_window ?? null,
+              };
 
-            this.activeChat = this.createUpdatedActiveChat(input, true);
+              this.activeChat = this.createUpdatedActiveChat(input, true);
+            }
           }
         }
 
@@ -4681,8 +5203,6 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
-        this.scheduleUnreadSummaryRefresh();
-
         return true;
       } catch (error) {
         this.loading = false;
@@ -4720,8 +5240,6 @@ export const useChatStore = defineStore('chat', {
           this.showSnackbar(errorMessage, EColor.error);
           return null;
         }
-
-        this.scheduleUnreadSummaryRefresh();
 
         return data.data;
       } catch (error) {
@@ -4761,8 +5279,8 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
+        this.reconcileUnreadSummaryFromChat(data.data as unknown as IChat);
         this.addChat(data.data as unknown as IChat, true);
-        this.scheduleUnreadSummaryRefresh();
 
         if (this.activeChat?.chat_id === chatId) {
           this.activeChat = this.createUpdatedActiveChat(data.data, true);
@@ -4805,6 +5323,7 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
+        this.reconcileUnreadSummaryFromChat(data.data as unknown as IChat);
         this.addChat(data.data as unknown as IChat, true);
 
         if (this.activeChat?.chat_id === chatId) {
@@ -4862,7 +5381,6 @@ export const useChatStore = defineStore('chat', {
 
       try {
         await axios.post(`/chat/${chatId}/clear-summary`, {});
-        this.scheduleUnreadSummaryRefresh();
         return true;
       } catch {
         return false;
@@ -4874,6 +5392,8 @@ export const useChatStore = defineStore('chat', {
       options?: UploadOptions
     ): Promise<boolean> {
       const shouldHandleLoading = !options?.skipLoading;
+      const targetChatId = this.activeChat?.chat_id;
+      if (!targetChatId) return false;
 
       try {
         if (shouldHandleLoading) {
@@ -4902,10 +5422,12 @@ export const useChatStore = defineStore('chat', {
           };
         }
 
-        const response = await axios.post<IApiResponse<boolean>>(
-          `/chat/${this.activeChat?.chat_id}`,
-          formData,
-          config
+        const response = await chatMessageAdmissionQueue.run(targetChatId, () =>
+          axios.post<IApiResponse<boolean>>(
+            `/chat/${targetChatId}`,
+            formData,
+            config
+          )
         );
 
         if (shouldHandleLoading) {
@@ -4917,8 +5439,6 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status) {
           return false;
         }
-
-        this.scheduleUnreadSummaryRefresh();
 
         return true;
       } catch {
@@ -4935,6 +5455,8 @@ export const useChatStore = defineStore('chat', {
       options?: UploadOptions
     ): Promise<boolean> {
       const shouldHandleLoading = !options?.skipLoading;
+      const targetChatId = this.activeChat?.chat_id;
+      if (!targetChatId) return false;
 
       try {
         if (shouldHandleLoading) {
@@ -4963,10 +5485,12 @@ export const useChatStore = defineStore('chat', {
           };
         }
 
-        const response = await axios.post<IApiResponse<boolean>>(
-          `/chat/${this.activeChat?.chat_id}`,
-          formData,
-          config
+        const response = await chatMessageAdmissionQueue.run(targetChatId, () =>
+          axios.post<IApiResponse<boolean>>(
+            `/chat/${targetChatId}`,
+            formData,
+            config
+          )
         );
 
         if (shouldHandleLoading) {
@@ -4978,8 +5502,6 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status) {
           return false;
         }
-
-        this.scheduleUnreadSummaryRefresh();
 
         return true;
       } catch {
@@ -4996,6 +5518,8 @@ export const useChatStore = defineStore('chat', {
       options?: UploadOptions
     ): Promise<boolean> {
       const shouldHandleLoading = !options?.skipLoading;
+      const targetChatId = this.activeChat?.chat_id;
+      if (!targetChatId) return false;
 
       try {
         if (shouldHandleLoading) {
@@ -5024,10 +5548,12 @@ export const useChatStore = defineStore('chat', {
           };
         }
 
-        const response = await axios.post<IApiResponse<boolean>>(
-          `/chat/${this.activeChat?.chat_id}`,
-          formData,
-          config
+        const response = await chatMessageAdmissionQueue.run(targetChatId, () =>
+          axios.post<IApiResponse<boolean>>(
+            `/chat/${targetChatId}`,
+            formData,
+            config
+          )
         );
 
         if (shouldHandleLoading) {
@@ -5039,8 +5565,6 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status) {
           return false;
         }
-
-        this.scheduleUnreadSummaryRefresh();
 
         return true;
       } catch {
@@ -5056,6 +5580,8 @@ export const useChatStore = defineStore('chat', {
       options?: UploadOptions
     ): Promise<boolean> {
       const shouldHandleLoading = !options?.skipLoading;
+      const targetChatId = this.activeChat?.chat_id;
+      if (!targetChatId) return false;
 
       try {
         if (shouldHandleLoading) {
@@ -5084,10 +5610,12 @@ export const useChatStore = defineStore('chat', {
           };
         }
 
-        const response = await axios.post<IApiResponse<boolean>>(
-          `/chat/${this.activeChat?.chat_id}`,
-          formData,
-          config
+        const response = await chatMessageAdmissionQueue.run(targetChatId, () =>
+          axios.post<IApiResponse<boolean>>(
+            `/chat/${targetChatId}`,
+            formData,
+            config
+          )
         );
 
         if (shouldHandleLoading) {
@@ -5099,8 +5627,6 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status) {
           return false;
         }
-
-        this.scheduleUnreadSummaryRefresh();
 
         return true;
       } catch {
@@ -5117,6 +5643,8 @@ export const useChatStore = defineStore('chat', {
       options?: UploadOptions
     ): Promise<boolean> {
       const shouldHandleLoading = !options?.skipLoading;
+      const targetChatId = this.activeChat?.chat_id;
+      if (!targetChatId) return false;
 
       try {
         if (shouldHandleLoading) {
@@ -5129,10 +5657,12 @@ export const useChatStore = defineStore('chat', {
           },
         };
 
-        const response = await axios.post<IApiResponse<boolean>>(
-          `/chat/${this.activeChat?.chat_id}`,
-          formData,
-          config
+        const response = await chatMessageAdmissionQueue.run(targetChatId, () =>
+          axios.post<IApiResponse<boolean>>(
+            `/chat/${targetChatId}`,
+            formData,
+            config
+          )
         );
 
         if (shouldHandleLoading) {
@@ -5144,8 +5674,6 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status) {
           return false;
         }
-
-        this.scheduleUnreadSummaryRefresh();
 
         return true;
       } catch {
@@ -5162,6 +5690,8 @@ export const useChatStore = defineStore('chat', {
       options?: UploadOptions
     ): Promise<boolean> {
       const shouldHandleLoading = !options?.skipLoading;
+      const targetChatId = this.activeChat?.chat_id;
+      if (!targetChatId) return false;
 
       try {
         if (shouldHandleLoading) {
@@ -5174,10 +5704,12 @@ export const useChatStore = defineStore('chat', {
           },
         };
 
-        const response = await axios.post<IApiResponse<boolean>>(
-          `/chat/${this.activeChat?.chat_id}`,
-          formData,
-          config
+        const response = await chatMessageAdmissionQueue.run(targetChatId, () =>
+          axios.post<IApiResponse<boolean>>(
+            `/chat/${targetChatId}`,
+            formData,
+            config
+          )
         );
 
         if (shouldHandleLoading) {
@@ -5189,8 +5721,6 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status) {
           return false;
         }
-
-        this.scheduleUnreadSummaryRefresh();
 
         return true;
       } catch {
@@ -5228,22 +5758,54 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    applyOfficialWindowSnapshot(
+      chatId: string,
+      officialWindow: ListMessageResponse['official_window']
+    ): boolean {
+      if (officialWindow === undefined || this.activeChat?.chat_id !== chatId) {
+        return false;
+      }
+
+      const resolvedWindow = selectNewestOfficialWhatsappWindowSnapshot(
+        this.activeChat.official_window,
+        officialWindow
+      );
+
+      if (this.activeChat.official_window === resolvedWindow) {
+        return true;
+      }
+
+      this.activeChat = {
+        ...this.activeChat,
+        official_window: resolvedWindow,
+      };
+      return true;
+    },
+
     setActiveChat(chatId: string, fallbackChat?: ListChatsResult): void {
       if (this.activeChat?.chat_id === chatId) {
         return;
       }
 
-      const chat = ((fallbackChat?.chat_id === chatId ? fallbackChat : null) ??
-        this.listQueue.find((c) => c.chat_id === chatId) ??
-        this.listInChat.find((c) => c.chat_id === chatId) ??
-        this.listChatbot.find((c) => c.chat_id === chatId) ??
-        this.listScheduled.find((c) => c.chat_id === chatId) ??
-        this.listClosed.find((c) => c.chat_id === chatId) ??
-        this.kanbanQueue.find((c) => c.chat_id === chatId) ??
-        this.kanbanInChat.find((c) => c.chat_id === chatId) ??
-        this.kanbanChatbot.find((c) => c.chat_id === chatId) ??
-        this.kanbanClosed.find((c) => c.chat_id === chatId)) as
-        ListChatsResult | undefined;
+      const candidates = [
+        fallbackChat?.chat_id === chatId ? fallbackChat : null,
+        this.listQueue.find((c) => c.chat_id === chatId),
+        this.listInChat.find((c) => c.chat_id === chatId),
+        this.listChatbot.find((c) => c.chat_id === chatId),
+        this.listScheduled.find((c) => c.chat_id === chatId),
+        this.listClosed.find((c) => c.chat_id === chatId),
+        this.kanbanQueue.find((c) => c.chat_id === chatId),
+        this.kanbanInChat.find((c) => c.chat_id === chatId),
+        this.kanbanChatbot.find((c) => c.chat_id === chatId),
+        this.kanbanClosed.find((c) => c.chat_id === chatId),
+      ].filter((candidate): candidate is ListChatsResult => !!candidate);
+
+      const chat =
+        candidates.reduce<ListChatsResult | null>(
+          (newest, candidate) =>
+            selectNewestChatSnapshotRevision(newest, candidate),
+          null
+        ) ?? undefined;
 
       if (!chat?.chat_id) {
         return;
@@ -5266,6 +5828,7 @@ export const useChatStore = defineStore('chat', {
 
       this.activeChat = {
         chat_id: chat.chat_id,
+        meta: chat.meta,
         summary: chat.summary,
         account: chat.account,
         worker: chat.worker,
@@ -5285,12 +5848,14 @@ export const useChatStore = defineStore('chat', {
         protocol_transfer: chat.protocol_transfer ?? null,
         label: chat.label ?? null,
         forward_to_output_chatbot: chat.forward_to_output_chatbot,
+        official_window: chat.official_window ?? null,
       };
     },
 
     isActiveChatSummaryOnlyUpdate(chat: {
       chat_id?: string | null;
       status?: string | null;
+      meta?: IChat['meta'];
       summary?: {
         last_date?: unknown;
         last_message?: unknown;
@@ -5306,6 +5871,10 @@ export const useChatStore = defineStore('chat', {
       }
 
       if (this.activeChat.status !== chat.status) {
+        return false;
+      }
+
+      if (hasDifferentIncomingStatusRevision(this.activeChat, chat)) {
         return false;
       }
 
@@ -5339,6 +5908,7 @@ export const useChatStore = defineStore('chat', {
       }
 
       const chatId = this.activeChat.chat_id;
+      this.clearUnreadSummaryForChat(chatId);
 
       if (this.activeChat.summary) {
         this.activeChat.summary = {
@@ -5364,12 +5934,16 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    clearActiveChatUnreadCountLocally(): void {
+    clearActiveChatUnreadCountLocally(): boolean {
       if (!this.activeChat?.chat_id) {
-        return;
+        return false;
       }
 
       const chatId = this.activeChat.chat_id;
+      const hadUnreadMessages =
+        (this.activeChat.summary?.unread_count ?? 0) > 0 ||
+        (this.unreadSummaryByChatId[chatId]?.unread_count ?? 0) > 0;
+      this.clearUnreadSummaryForChat(chatId);
 
       if (this.activeChat.summary) {
         this.activeChat.summary = {
@@ -5393,6 +5967,8 @@ export const useChatStore = defineStore('chat', {
           unread_count: 0,
         };
       }
+
+      return hadUnreadMessages;
     },
 
     setMessageReply(m: ListMessageResult) {
@@ -5478,24 +6054,28 @@ export const useChatStore = defineStore('chat', {
     async reactToMessage(
       chatId: string,
       messageId: string,
-      emoji: string
-    ): Promise<boolean> {
-      try {
-        const response = await axios.post(
-          `/chat/${chatId}/message/${messageId}/react`,
-          { emoji }
-        );
-
-        const data = response?.data as IApiResponse<boolean>;
-
-        if (!data?.status) {
-          return false;
+      emoji: string,
+      attempt: WorkerCommandActionAttempt
+    ): Promise<WorkerCommandActionRequestResult> {
+      const { result } = await requestWorkerCommandWithOneUnknownRetry(
+        attempt.operationId,
+        () =>
+          axios.post(`/chat/${chatId}/message/${messageId}/react`, {
+            emoji,
+            operation_id: attempt.operationId,
+            ...(attempt.retryOf ? { retry_of: attempt.retryOf } : {}),
+          }),
+        (response) => {
+          const data = response?.data as WorkerCommandActionApiResponse;
+          return data?.status &&
+            data.data === true &&
+            (data.operation_id === undefined ||
+              data.operation_id === attempt.operationId)
+            ? { status: 'accepted', operationId: attempt.operationId }
+            : { status: 'unknown', operationId: attempt.operationId };
         }
-
-        return true;
-      } catch {
-        return false;
-      }
+      );
+      return result;
     },
 
     async forwardMessage(
@@ -5505,33 +6085,42 @@ export const useChatStore = defineStore('chat', {
         target_chat_ids?: string[];
         target_contact_ids?: string[];
         worker_id?: string;
-      }
-    ): Promise<ForwardMessageResponse | null> {
-      try {
-        const response = await axios.post<IApiResponse<ForwardMessageResponse>>(
-          `/chat/${chatId}/message/${messageId}/forward`,
-          payload
-        );
-
-        const data = response?.data;
-
-        if (!data?.status || !data?.data) {
-          const message =
-            data?.message || this.i18n.global.t('chat_forward_error');
-          this.showSnackbar(message, EColor.error);
-          return null;
+      },
+      attempt: WorkerCommandActionAttempt
+    ): Promise<WorkerCommandForwardRequestResult> {
+      const requestResult = await requestWorkerCommandWithOneUnknownRetry(
+        attempt.operationId,
+        () =>
+          axios.post<IApiResponse<ForwardMessageResponse>>(
+            `/chat/${chatId}/message/${messageId}/forward`,
+            {
+              ...payload,
+              idempotency_key: attempt.operationId,
+              ...(attempt.retryOf ? { retry_of: attempt.retryOf } : {}),
+            }
+          ),
+        (response) => {
+          const data = response?.data as WorkerCommandForwardApiResponse;
+          return data?.status &&
+            Boolean(data.data) &&
+            data.idempotency_key === attempt.operationId
+            ? { status: 'accepted', operationId: attempt.operationId }
+            : { status: 'unknown', operationId: attempt.operationId };
         }
-
-        return data.data;
-      } catch (error) {
-        let message = this.i18n.global.t('chat_forward_error');
-        if (error instanceof AxiosError) {
-          message = error?.response?.data?.message ?? message;
-        }
-
-        this.showSnackbar(message, EColor.error);
-        return null;
+      );
+      const responseData = requestResult.value?.data as
+        WorkerCommandForwardApiResponse | undefined;
+      if (requestResult.result.status === 'accepted' && responseData?.data) {
+        return { ...requestResult.result, data: responseData.data };
       }
+
+      let message =
+        responseData?.message || this.i18n.global.t('chat_forward_error');
+      if (requestResult.error instanceof AxiosError) {
+        message = requestResult.error.response?.data?.message ?? message;
+      }
+      this.showSnackbar(message, EColor.error);
+      return { ...requestResult.result, data: null };
     },
 
     markMessageAsDeleted(messageId: string) {
@@ -5559,38 +6148,52 @@ export const useChatStore = defineStore('chat', {
     async editMessage(
       chatId: string,
       messageId: string,
-      newMessage: string
-    ): Promise<boolean> {
-      try {
-        const response = await axios.post(
-          `/chat/${chatId}/message/${messageId}/edit`,
-          { message: newMessage }
-        );
-
-        const data = response?.data as IApiResponse<boolean>;
-
-        return data?.status ?? false;
-      } catch {
-        return false;
-      }
-    },
-    async deleteMessage(chatId: string, messageId: string): Promise<boolean> {
-      try {
-        const response = await axios.post(
-          `/chat/${chatId}/message/${messageId}/delete`,
-          {}
-        );
-
-        const data = response?.data as IApiResponse<boolean>;
-
-        if (!data?.status) {
-          return false;
+      newMessage: string,
+      attempt: WorkerCommandActionAttempt
+    ): Promise<WorkerCommandActionRequestResult> {
+      const { result } = await requestWorkerCommandWithOneUnknownRetry(
+        attempt.operationId,
+        () =>
+          axios.post(`/chat/${chatId}/message/${messageId}/edit`, {
+            message: newMessage,
+            operation_id: attempt.operationId,
+            ...(attempt.retryOf ? { retry_of: attempt.retryOf } : {}),
+          }),
+        (response) => {
+          const data = response?.data as WorkerCommandActionApiResponse;
+          return data?.status &&
+            data.data === true &&
+            (data.operation_id === undefined ||
+              data.operation_id === attempt.operationId)
+            ? { status: 'accepted', operationId: attempt.operationId }
+            : { status: 'unknown', operationId: attempt.operationId };
         }
-
-        return true;
-      } catch {
-        return false;
-      }
+      );
+      return result;
+    },
+    async deleteMessage(
+      chatId: string,
+      messageId: string,
+      attempt: WorkerCommandActionAttempt
+    ): Promise<WorkerCommandActionRequestResult> {
+      const { result } = await requestWorkerCommandWithOneUnknownRetry(
+        attempt.operationId,
+        () =>
+          axios.post(`/chat/${chatId}/message/${messageId}/delete`, {
+            operation_id: attempt.operationId,
+            ...(attempt.retryOf ? { retry_of: attempt.retryOf } : {}),
+          }),
+        (response) => {
+          const data = response?.data as WorkerCommandActionApiResponse;
+          return data?.status &&
+            data.data === true &&
+            (data.operation_id === undefined ||
+              data.operation_id === attempt.operationId)
+            ? { status: 'accepted', operationId: attempt.operationId }
+            : { status: 'unknown', operationId: attempt.operationId };
+        }
+      );
+      return result;
     },
 
     async searchMessages(
@@ -5729,8 +6332,11 @@ export const useChatStore = defineStore('chat', {
       contactId: string,
       force = false
     ): Promise<ViewChatContactResponse | null> {
-      if (!force && this.chatContacts[contactId]) {
-        return this.chatContacts[contactId];
+      if (
+        !force &&
+        Object.prototype.hasOwnProperty.call(this.chatContacts, contactId)
+      ) {
+        return this.chatContacts[contactId] ?? null;
       }
 
       if (this.loadingChatContacts[contactId]) {
@@ -5797,7 +6403,8 @@ export const useChatStore = defineStore('chat', {
       const uniqueIds = Array.from(new Set(contactIds)).filter(Boolean);
       const contactIdsToLoad = uniqueIds.filter(
         (contactId) =>
-          !this.chatContacts[contactId] && !this.loadingChatContacts[contactId]
+          !Object.prototype.hasOwnProperty.call(this.chatContacts, contactId) &&
+          !this.loadingChatContacts[contactId]
       );
 
       if (!contactIdsToLoad.length) {
@@ -5819,6 +6426,10 @@ export const useChatStore = defineStore('chat', {
 
         if (!data?.status || !data?.data) {
           return [];
+        }
+
+        for (const contactId of contactIdsToLoad) {
+          this.chatContacts[contactId] = null;
         }
 
         for (const contact of data.data) {
@@ -6550,7 +7161,8 @@ export const useChatStore = defineStore('chat', {
 
     async viewOfficialOpeningContext(
       workerId: string,
-      contactId: string
+      contactId: string,
+      options: { silent?: boolean } = {}
     ): Promise<OfficialOpeningContextResponse | null> {
       try {
         const response = await axios.get<
@@ -6568,7 +7180,9 @@ export const useChatStore = defineStore('chat', {
           const errorMessage =
             data?.message ||
             this.i18n.global.t('official_templates_loading_error');
-          this.showSnackbar(errorMessage, EColor.error);
+          if (!options.silent) {
+            this.showSnackbar(errorMessage, EColor.error);
+          }
           return null;
         }
 
@@ -6576,6 +7190,89 @@ export const useChatStore = defineStore('chat', {
       } catch (error) {
         let errorMessage = this.i18n.global.t(
           'official_templates_loading_error'
+        );
+        const status = getApiErrorStatus(error);
+        if (error instanceof AxiosError && (!status || status < 500)) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        const requestId = getApiErrorRequestId(error);
+        if (requestId) {
+          errorMessage = `${errorMessage} ${this.i18n.global.t('request_id')}: ${requestId}`;
+        }
+        if (options.silent) {
+          throw error;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+
+    async viewOfficialConversationContext(
+      chatId: string
+    ): Promise<OfficialConversationContextResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<OfficialConversationContextResponse>
+        >(`/chat/${chatId}/official-conversation/context`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const errorMessage =
+            data?.message ||
+            this.i18n.global.t('official_templates_loading_error');
+          this.showSnackbar(errorMessage, EColor.error);
+          return null;
+        }
+
+        this.applyOfficialWindowSnapshot(chatId, data.data.official_window);
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'official_templates_loading_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+
+    async sendOfficialTemplateToChat(
+      chatId: string,
+      officialTemplate: Pick<
+        IOfficialWhatsappTemplateMessage,
+        'name' | 'language' | 'variables'
+      >
+    ): Promise<IChat | null> {
+      try {
+        const response = await axios.post<IApiResponse<IChat>>(
+          `/chat/${chatId}/official-template`,
+          officialTemplate
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const errorMessage =
+            data?.message ||
+            this.i18n.global.t('official_template_conversation_error');
+          this.showSnackbar(errorMessage, EColor.error);
+          return null;
+        }
+
+        this.addChat(data.data);
+        this.showSnackbar(
+          this.i18n.global.t('official_template_conversation_queued'),
+          EColor.info
+        );
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'official_template_conversation_error'
         );
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
@@ -6639,9 +7336,20 @@ export const useChatStore = defineStore('chat', {
         return data.data;
       } catch (error) {
         this.loading = false;
+        if (isOfficialWindowRefreshConflict(error)) {
+          throw error;
+        }
+
         let errorMessage = this.i18n.global.t('chat_creation_error');
-        if (error instanceof AxiosError) {
+        const status = getApiErrorStatus(error);
+        if (status && status >= 500) {
+          errorMessage = this.i18n.global.t('chat_creation_server_error');
+        } else if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        const requestId = getApiErrorRequestId(error);
+        if (requestId) {
+          errorMessage = `${errorMessage} ${this.i18n.global.t('request_id')}: ${requestId}`;
         }
         this.showSnackbar(errorMessage, EColor.error);
         return null;
@@ -6745,6 +7453,7 @@ export const useChatStore = defineStore('chat', {
           if (this.activeChat?.chat_id === chatId) {
             const updated: ListChatsResult = {
               chat_id: this.activeChat.chat_id,
+              meta: this.activeChat.meta,
               summary: this.activeChat.summary,
               account: this.activeChat.account,
               worker: this.activeChat.worker,
@@ -6767,6 +7476,7 @@ export const useChatStore = defineStore('chat', {
               label: normalizedLabel,
               forward_to_output_chatbot:
                 this.activeChat.forward_to_output_chatbot,
+              official_window: this.activeChat.official_window ?? null,
             };
             this.activeChat = updated;
           }

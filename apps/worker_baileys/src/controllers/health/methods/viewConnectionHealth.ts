@@ -3,33 +3,108 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { BaileysHealthCheckService } from '@core/services/baileys/methods/healthCheck.service';
+import { BaileysConnectionService } from '@core/services/baileys/methods/connection.service';
 import {
+  areKafkaConsumersReady,
   getKafkaConsumerHealthSummary,
   getKafkaConsumerHealthSnapshots,
-  hasUnhealthyKafkaConsumer,
 } from '@/consumer/registry';
-
-const FAIL_ON_KAFKA_UNHEALTHY =
-  process.env.WORKER_CONNECTION_HEALTH_FAIL_ON_KAFKA_UNHEALTHY === 'true';
+import { isWorkerKafkaDispatchAuthorized } from '@core/common/functions/workerKafkaDispatchAuthorization';
+import { isWhatsappConnectionOnline } from '@core/common/functions/whatsappConnectionStatus';
+import { baileysEnvironment } from '@core/config/environments';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 export const viewConnectionHealth = async (
-  _request: FastifyRequest,
+  request: FastifyRequest,
   reply: FastifyReply
 ) => {
   const healthCheckService = container.resolve(BaileysHealthCheckService);
+  const connectionService = container.resolve(BaileysConnectionService);
   const readiness = await healthCheckService.verifyCurrentSession();
+  const hasSession = connectionService.hasSession();
+  const qrStreamReady = request.server?.qrStreamReady === true;
+  const runtimeActivated = baileysEnvironment.isRuntimeActivated;
+  const runtimeStandby = baileysEnvironment.isWarmStandby;
+  const runtimeState = runtimeStandby
+    ? 'warm_standby'
+    : runtimeActivated
+      ? qrStreamReady
+        ? 'active'
+        : 'activating'
+      : 'inactive';
+  const nativeEvidence = connectionService.getConnectionStatusHealthEvidence();
+  const nativeConnectionOnline = isWhatsappConnectionOnline(
+    nativeEvidence.connectionStatus
+  );
+  const nativeProofReady =
+    nativeConnectionOnline &&
+    nativeEvidence.sourceCurrent &&
+    Boolean(nativeEvidence.connectionStatusSourceId) &&
+    nativeEvidence.leaseProofValid;
   const sessionReady = readiness.session_ready === true;
-  const kafkaUnhealthy = hasUnhealthyKafkaConsumer();
+  const centralOnlineAcknowledged =
+    connectionService.hasCentralOnlineAcknowledgement();
+  const kafkaConsumersAuthorized = isWorkerKafkaDispatchAuthorized();
+  const runtimeGenerationReady =
+    Number.isSafeInteger(readiness.runtime_generation) &&
+    Number(readiness.runtime_generation) > 0;
+  const kafkaConsumers = getKafkaConsumerHealthSnapshots();
+  const kafkaConsumerSummary = getKafkaConsumerHealthSummary(kafkaConsumers);
+  const kafkaConsumersReady = areKafkaConsumersReady(kafkaConsumerSummary);
+  const dispatchReady =
+    kafkaConsumersReady &&
+    kafkaConsumersAuthorized &&
+    centralOnlineAcknowledged;
+  const connectionReady =
+    sessionReady && dispatchReady && runtimeGenerationReady && nativeProofReady;
+  const degradedReason = !nativeConnectionOnline
+    ? 'native_connection_not_online'
+    : !nativeEvidence.sourceCurrent || !nativeEvidence.connectionStatusSourceId
+      ? 'native_connection_status_source_invalid'
+      : nativeEvidence.leaseRequired && !nativeEvidence.leaseProofValid
+        ? 'session_lease_proof_unavailable'
+        : sessionReady && kafkaConsumersReady && !dispatchReady
+          ? 'awaiting_dispatch_authorization'
+          : readiness.degraded_reason;
   const data = {
     ...readiness,
-    connected: sessionReady,
-    ready: sessionReady,
-    kafka_unhealthy: kafkaUnhealthy,
-    kafka_consumers: getKafkaConsumerHealthSnapshots(),
-    kafka_consumer_summary: getKafkaConsumerHealthSummary(),
+    session_ready: sessionReady && dispatchReady && nativeProofReady,
+    can_send: readiness.can_send === true && dispatchReady && nativeProofReady,
+    can_receive_runtime:
+      readiness.can_receive_runtime === true &&
+      dispatchReady &&
+      nativeProofReady,
+    degraded_reason: degradedReason,
+    connected: connectionReady,
+    ready: connectionReady,
+    has_session: hasSession,
+    qr_stream_ready: qrStreamReady,
+    worker_id: runtimeActivated ? baileysEnvironment.baileysWorkerId : '',
+    account_id: runtimeActivated ? baileysEnvironment.baileysAccountId : '',
+    worker_type_id: baileysEnvironment.workerTypeId ?? EWorkerType.baileys,
+    runtime_state: runtimeState,
+    activated: runtimeActivated,
+    standby: runtimeStandby,
+    central_online_acknowledged: centralOnlineAcknowledged,
+    runtime_generation_ready: runtimeGenerationReady,
+    kafka_unhealthy: !kafkaConsumersReady,
+    kafka_consumers_ready: kafkaConsumersReady,
+    kafka_consumers_authorized: kafkaConsumersAuthorized,
+    command_ingress_ready: kafkaConsumersReady,
+    command_ingress_authorized: kafkaConsumersAuthorized,
+    runtime_health_schema_version: 3,
+    session_storage: nativeEvidence.sessionStorage,
+    native_connection_online: nativeConnectionOnline,
+    connection_status: nativeEvidence.connectionStatus,
+    connection_status_source_id: nativeEvidence.connectionStatusSourceId,
+    connection_status_source_current: nativeEvidence.sourceCurrent,
+    connection_status_lease_required: nativeEvidence.leaseRequired,
+    connection_status_lease_proof_valid: nativeEvidence.leaseProofValid,
+    kafka_consumers: kafkaConsumers,
+    kafka_consumer_summary: kafkaConsumerSummary,
   };
 
-  if (sessionReady && (!kafkaUnhealthy || !FAIL_ON_KAFKA_UNHEALTHY)) {
+  if (connectionReady) {
     return sendResponse(reply, {
       httpStatusCode: EHTTPStatusCode.ok,
       data,

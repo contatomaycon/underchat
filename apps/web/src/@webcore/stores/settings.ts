@@ -31,9 +31,15 @@ import { ListMethodPaymentsResponse } from '@core/schema/config/listMethodPaymen
 import { UpdateMethodPaymentRequest } from '@core/schema/config/updateMethodPayment/request.schema';
 import { UpdateMethodPaymentResponse } from '@core/schema/config/updateMethodPayment/response.schema';
 import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
+import { EWorkerConnectionStrategy } from '@core/common/enums/EWorkerConnectionStrategy';
 import { ViewWhatsappEmbeddedConfigResponse } from '@core/schema/config/viewWhatsappEmbeddedConfig/response.schema';
 import { UpdateWhatsappEmbeddedConfigRequest } from '@core/schema/config/updateWhatsappEmbeddedConfig/request.schema';
 import { UpdateWhatsappEmbeddedConfigResponse } from '@core/schema/config/updateWhatsappEmbeddedConfig/response.schema';
+import { DownloadArtifactsResponse } from '@core/schema/config/downloadArtifacts/response.schema';
+import type { SessionStorageMigrationSummary } from '@core/schema/config/sessionStorageMigration/response.schema';
+import type { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
+import type { WorkerConnectionHealthResponse } from '@core/schema/worker/workerConnectionLogs/response.schema';
+import { UpdateDownloadArtifactsRequest } from '@core/schema/config/downloadArtifacts/request.schema';
 import {
   connectionLifecycleDebugHeaders,
   createConnectionLifecycleDebugTraceId,
@@ -85,6 +91,7 @@ export const useSettingsStore = defineStore('settings', {
     creditCardFee: null as ListCreditCardFeeResponse | null,
     methodPayments: null as ListMethodPaymentsResponse | null,
     whatsappEmbeddedConfig: null as ViewWhatsappEmbeddedConfigResponse | null,
+    downloadArtifacts: null as DownloadArtifactsResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -538,6 +545,37 @@ export const useSettingsStore = defineStore('settings', {
         return null;
       }
     },
+    async channelConnectionHealth(
+      channelId: string,
+      query: WorkerConnectionLogsQuery
+    ): Promise<WorkerConnectionHealthResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<WorkerConnectionHealthResponse>
+        >(`/config/channels/${encodeURIComponent(channelId)}/health`, {
+          params: query,
+        });
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('worker_logs_connection_error');
+
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('worker_logs_connection_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
     async getS3BackupUploads(
       query: ListS3BackupUploadsRequest
     ): Promise<ListS3BackupUploadsFinalResponse | null> {
@@ -686,6 +724,84 @@ export const useSettingsStore = defineStore('settings', {
         return null;
       }
     },
+    async getDownloadArtifacts(): Promise<DownloadArtifactsResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<DownloadArtifactsResponse>
+        >('/config/download-artifacts');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.downloadArtifacts = data.data;
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+
+        let errorMessage = this.i18n.global.t('download_artifacts_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async updateDownloadArtifacts(
+      input: UpdateDownloadArtifactsRequest
+    ): Promise<DownloadArtifactsResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<
+          IApiResponse<DownloadArtifactsResponse>
+        >('/config/download-artifacts', input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('download_artifacts_update_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.downloadArtifacts = data.data;
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t('download_artifacts_update_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t(
+          'download_artifacts_update_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
     async getAccounts(): Promise<IAccountBasic[] | null> {
       try {
         this.loading = true;
@@ -731,7 +847,9 @@ export const useSettingsStore = defineStore('settings', {
         return null;
       }
     },
-    async updateChannel(input: UpdateChannelRequest): Promise<boolean> {
+    async updateChannel(
+      input: UpdateChannelRequest
+    ): Promise<boolean | IWorkerLifecycleAck> {
       const debugTraceId = createWebTraceId('web_config_channel_edit');
       try {
         this.loading = true;
@@ -751,6 +869,7 @@ export const useSettingsStore = defineStore('settings', {
             name: input.name,
             worker_type: input.worker_type,
             server_id: input.server_id,
+            connection_strategy: input.connection_strategy,
           },
           buildConnectionLifecycleDebugConfig(debugTraceId)
         );
@@ -795,7 +914,12 @@ export const useSettingsStore = defineStore('settings', {
             : 'no_recreate_required',
         });
 
-        return true;
+        return isWorkerLifecycleAck(data.data)
+          ? {
+              ...data.data,
+              debug_trace_id: data.data.debug_trace_id ?? debugTraceId,
+            }
+          : true;
       } catch (error) {
         this.loading = false;
         let errorMessage = this.i18n.global.t('channel_edit_error');
@@ -816,12 +940,18 @@ export const useSettingsStore = defineStore('settings', {
       }
     },
 
-    async recreateChannel(channelId: string): Promise<boolean> {
+    async recreateChannel(
+      channelId: string,
+      connectionStrategy: EWorkerConnectionStrategy = EWorkerConnectionStrategy.migrate
+    ): Promise<IWorkerLifecycleAck | null> {
       try {
         this.loading = true;
 
-        const response = await axios.patch<IApiResponse<null>>(
-          `/config/channels/${channelId}/recreate`
+        const response = await axios.patch<IApiResponse<IWorkerLifecycleAck>>(
+          `/config/channels/${channelId}/recreate`,
+          {
+            connection_strategy: connectionStrategy,
+          }
         );
 
         this.loading = false;
@@ -833,7 +963,7 @@ export const useSettingsStore = defineStore('settings', {
             data?.message ?? this.i18n.global.t('channel_recreate_error'),
             EColor.error
           );
-          return false;
+          return null;
         }
 
         this.showSnackbar(
@@ -841,7 +971,7 @@ export const useSettingsStore = defineStore('settings', {
           EColor.success
         );
 
-        return true;
+        return data.data ?? null;
       } catch (error) {
         this.loading = false;
         let errorMessage = this.i18n.global.t('channel_recreate_error');
@@ -851,7 +981,66 @@ export const useSettingsStore = defineStore('settings', {
 
         this.showSnackbar(errorMessage, EColor.error);
 
-        return false;
+        return null;
+      }
+    },
+
+    async startSessionStorageMigration(
+      channelId: string
+    ): Promise<SessionStorageMigrationSummary | null> {
+      try {
+        const response = await axios.post<
+          IApiResponse<SessionStorageMigrationSummary>
+        >(`/config/channels/${channelId}/session-storage-migrations`);
+        return response.data?.status ? (response.data.data ?? null) : null;
+      } catch (error) {
+        const message =
+          error instanceof AxiosError
+            ? (error.response?.data?.message ??
+              this.i18n.global.t('session_migration_start_error'))
+            : this.i18n.global.t('session_migration_start_error');
+        this.showSnackbar(message, EColor.error);
+        return null;
+      }
+    },
+
+    async latestSessionStorageMigration(
+      channelId: string
+    ): Promise<SessionStorageMigrationSummary | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<SessionStorageMigrationSummary | null>
+        >(`/config/channels/${channelId}/session-storage-migrations/latest`);
+        return response.data?.status ? (response.data.data ?? null) : null;
+      } catch {
+        return null;
+      }
+    },
+
+    async deleteLegacySessionVolume(
+      channelId: string,
+      migrationId: string
+    ): Promise<SessionStorageMigrationSummary | null> {
+      try {
+        const response = await axios.delete<
+          IApiResponse<SessionStorageMigrationSummary>
+        >(
+          `/config/channels/${channelId}/session-storage-migrations/${migrationId}/legacy-volume`
+        );
+        if (!response.data?.status || !response.data.data) return null;
+        this.showSnackbar(
+          this.i18n.global.t('session_migration_volume_deleted'),
+          EColor.success
+        );
+        return response.data.data;
+      } catch (error) {
+        const message =
+          error instanceof AxiosError
+            ? (error.response?.data?.message ??
+              this.i18n.global.t('session_migration_volume_delete_error'))
+            : this.i18n.global.t('session_migration_volume_delete_error');
+        this.showSnackbar(message, EColor.error);
+        return null;
       }
     },
 
@@ -926,6 +1115,7 @@ export const useSettingsStore = defineStore('settings', {
         >('/config/channels/recreate-all', {
           status: filters?.status ?? undefined,
           type: filters?.type ?? undefined,
+          session_storage: filters?.session_storage ?? undefined,
           account: filters?.account ?? undefined,
           name: filters?.name ?? undefined,
           number: filters?.number ?? undefined,

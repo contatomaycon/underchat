@@ -96,7 +96,8 @@ export class BalanceMonitorActivity implements IBalanceMonitorActivity {
       if (serverData.server_status_id === EServerStatus.offline) {
         await this.serverService.updateServerStatusById(
           serverData.server_id,
-          EServerStatus.online
+          EServerStatus.online,
+          [EServerStatus.offline]
         );
       }
 
@@ -129,7 +130,8 @@ export class BalanceMonitorActivity implements IBalanceMonitorActivity {
       if (serverData.server_status_id !== EServerStatus.offline) {
         await this.serverService.updateServerStatusById(
           serverData.server_id,
-          EServerStatus.offline
+          EServerStatus.offline,
+          [serverData.server_status_id as EServerStatus]
         );
       }
     }
@@ -182,7 +184,8 @@ export class BalanceMonitorActivity implements IBalanceMonitorActivity {
     if (currentServer.server_status_id === EServerStatus.offline) {
       await this.serverService.updateServerStatusById(
         currentServer.server_id,
-        EServerStatus.online
+        EServerStatus.online,
+        [EServerStatus.offline]
       );
     }
   };
@@ -208,7 +211,8 @@ export class BalanceMonitorActivity implements IBalanceMonitorActivity {
     if (currentServer.server_status_id !== EServerStatus.offline) {
       await this.serverService.updateServerStatusById(
         currentServer.server_id,
-        EServerStatus.offline
+        EServerStatus.offline,
+        [currentServer.server_status_id as EServerStatus]
       );
     }
   };

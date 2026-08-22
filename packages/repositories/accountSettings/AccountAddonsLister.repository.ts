@@ -28,14 +28,19 @@ export class AccountAddonsListerRepository {
     accountId: string,
     planProductId: string
   ): Promise<number> => {
-    if (planProductId === EPlanProduct.internal_chat) {
+    if (
+      planProductId === EPlanProduct.internal_chat ||
+      planProductId === EPlanProduct.integration
+    ) {
       return 1;
     }
     if (planProductId === EPlanProduct.worker) {
       return this.workerTotalViewerRepository.totalWorkerByAccountId(accountId);
     }
     if (planProductId === EPlanProduct.user) {
-      return this.userTotalViewerRepository.totalUserByAccount(accountId);
+      const total =
+        await this.userTotalViewerRepository.totalUserByAccount(accountId);
+      return total > 0 ? total - 1 : 0;
     }
     if (planProductId === EPlanProduct.role) {
       return this.roleTotalViewerRepository.totalRoleByAccount(accountId);
@@ -140,7 +145,9 @@ export class AccountAddonsListerRepository {
       }
 
       const planProductId = crossSell.pca.ppt.plan_product_id;
-      const isBooleanProduct = planProductId === EPlanProduct.internal_chat;
+      const isBooleanProduct =
+        planProductId === EPlanProduct.internal_chat ||
+        planProductId === EPlanProduct.integration;
       const addonQuantityRaw = crossSell.pca.quantity || 0;
       const addonQuantity = isBooleanProduct
         ? addonQuantityRaw > 0

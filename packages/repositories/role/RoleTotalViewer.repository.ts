@@ -1,6 +1,8 @@
 import * as schema from '@core/models';
 import { permissionRole } from '@core/models';
-import { and, count, eq, isNull } from 'drizzle-orm';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import { EPermissionRoleStatus } from '@core/common/enums/EPermissionRoleStatus';
+import { and, count, eq, isNull, notInArray } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 
@@ -19,6 +21,11 @@ export class RoleTotalViewerRepository {
       .where(
         and(
           eq(permissionRole.account_id, accountId),
+          eq(permissionRole.status, EPermissionRoleStatus.active),
+          notInArray(permissionRole.permission_role_id, [
+            EPermissionRole.master,
+            EPermissionRole.administrator,
+          ]),
           isNull(permissionRole.deleted_at)
         )
       )

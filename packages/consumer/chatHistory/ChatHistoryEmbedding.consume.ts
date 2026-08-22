@@ -42,7 +42,21 @@ export class ChatHistoryEmbeddingConsume {
             '[ChatHistoryEmbedding] Erro ao processar embedding:',
             error
           );
+          throw error;
         }
+      },
+      maxRetries: 3,
+      retryDelaysMs: [1000, 5000, 15000],
+      onDiscarded: (data, context, error, reason) => {
+        console.error('[ChatHistoryEmbedding] mensagem descartada', {
+          account_id: data.account_id,
+          ai_agent_id: data.ai_agent_id,
+          phone: data.phone,
+          partition: context.partition,
+          offset: context.offset,
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        });
       },
       logger: console,
     });
@@ -97,7 +111,8 @@ export class ChatHistoryEmbeddingConsume {
     await this.embeddingService.processMultipleChatHistoryEmbeddings(
       data.account_id,
       data.phone,
-      data.ai_agent_id
+      data.ai_agent_id,
+      data.exclude_chat_id
     );
   }
 }

@@ -3,48 +3,10 @@ import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { wwebjsEnvironment } from '@core/config/environments';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { extractWwebjsMessageId } from './wwebjsMessageId';
 
 function getMessageId(msg: { id?: unknown }): string | undefined {
-  if (!msg?.id) return undefined;
-  if (typeof msg.id === 'object' && msg.id !== null) {
-    const idObject = msg.id as {
-      _serialized?: unknown;
-      id?: unknown;
-      remote?: unknown;
-      fromMe?: unknown;
-    };
-
-    if (typeof idObject._serialized === 'string' && idObject._serialized) {
-      return idObject._serialized;
-    }
-
-    const idPart =
-      typeof idObject.id === 'string' && idObject.id ? idObject.id : undefined;
-    const remotePart =
-      typeof idObject.remote === 'string'
-        ? idObject.remote
-        : typeof idObject.remote === 'object' &&
-            idObject.remote !== null &&
-            '_serialized' in (idObject.remote as object)
-          ? ((idObject.remote as { _serialized?: unknown })._serialized as
-              | string
-              | undefined)
-          : undefined;
-    const fromMePart =
-      typeof idObject.fromMe === 'boolean' ? idObject.fromMe : false;
-
-    if (idPart && remotePart) {
-      return `${fromMePart}_${remotePart}_${idPart}`;
-    }
-
-    if (idPart) {
-      return idPart;
-    }
-  }
-  if (typeof msg.id === 'string') {
-    return msg.id;
-  }
-  return undefined;
+  return extractWwebjsMessageId(msg, { allowStanzaIdFallback: true });
 }
 
 function getNonEmptyString(value: unknown): string | undefined {
@@ -277,6 +239,7 @@ export function buildCallUpsert(
     },
     has_quoted: false,
     is_call_event: true,
+    event_revision: callId?.trim() || undefined,
     call_phone: callPhone,
     call_jid: normalizedCallJid,
     call_jid_alt: callJidAlt,

@@ -1,12 +1,8 @@
 import 'reflect-metadata';
-jest.mock('@core/services/s3BackupUpload.service', () => ({
-  S3BackupUploadService: class {},
-}));
 jest.mock('@core/services/balanceWorkerStatusGrpcClient.service', () => ({
   BalanceWorkerStatusGrpcClientService: class {},
 }));
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { container } from 'tsyringe';
 import { S3Uploader } from '@core/services/storage/S3Uploader';
 
 describe('S3Uploader', () => {
@@ -79,14 +75,8 @@ describe('S3Uploader', () => {
     expect(sleep).toHaveBeenNthCalledWith(2, 2000);
   });
 
-  it('falls back to backup client and registers locally when primary fails', async () => {
+  it('falls back to backup and registers through the direct runtime adapter', async () => {
     const { service, primarySend, backupSend, grpcRegister } = makeService();
-    const localRegister = jest.fn<Promise<void>, [unknown]>(
-      async () => undefined
-    );
-    const resolveSpy = jest
-      .spyOn(container, 'resolve')
-      .mockReturnValue({ registerFallbackUpload: localRegister } as never);
 
     primarySend.mockRejectedValue(new Error('primary-down'));
     backupSend
@@ -106,8 +96,7 @@ describe('S3Uploader', () => {
       backupError: null,
     });
 
-    expect(resolveSpy).toHaveBeenCalled();
-    expect(localRegister).toHaveBeenCalledWith(
+    expect(grpcRegister).toHaveBeenCalledWith(
       expect.objectContaining({
         account_id: 'acc-1',
         file_name: 'file.jpg',
@@ -116,16 +105,10 @@ describe('S3Uploader', () => {
         backup_attempts: 2,
       })
     );
-    expect(grpcRegister).not.toHaveBeenCalled();
   });
 
-  it('uses grpc fallback registration when local registration fails', async () => {
+  it('sends fallback accounting through the direct runtime adapter', async () => {
     const { service, grpcRegister } = makeService();
-    jest.spyOn(container, 'resolve').mockReturnValue({
-      registerFallbackUpload: jest.fn(async () => {
-        throw new Error('db-down');
-      }),
-    } as never);
 
     await expect(
       (service as any).registerBackupFallbackUpload(
@@ -156,10 +139,11 @@ describe('S3Uploader', () => {
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
 
-    jest.spyOn(container, 'resolve').mockImplementation(() => {
-      throw new Error('resolve-fail');
-    });
-    grpcRegister.mockRejectedValueOnce(new Error('grpc-down'));
+    const secret =
+      'postgres://worker:password@database:5432/underchat capability-secret qr-secret';
+    grpcRegister.mockRejectedValueOnce(
+      Object.assign(new Error(secret), { code: '57P01' })
+    );
 
     try {
       await expect(
@@ -179,9 +163,13 @@ describe('S3Uploader', () => {
       ).resolves.toBeUndefined();
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        'Erro ao registrar fallback no S3 backup:',
-        expect.any(Error)
+        'Erro ao registrar fallback no S3 backup',
+        {
+          error_name: 'error',
+          error_code: '57p01',
+        }
       );
+      expect(JSON.stringify(consoleSpy.mock.calls)).not.toContain(secret);
     } finally {
       consoleSpy.mockRestore();
     }
@@ -189,7 +177,6 @@ describe('S3Uploader', () => {
 
   it('does not register fallback when account id cannot be resolved', async () => {
     const { service, grpcRegister } = makeService();
-    const resolveSpy = jest.spyOn(container, 'resolve');
 
     await expect(
       (service as any).registerBackupFallbackUpload(
@@ -207,7 +194,6 @@ describe('S3Uploader', () => {
       )
     ).resolves.toBeUndefined();
 
-    expect(resolveSpy).not.toHaveBeenCalled();
     expect(grpcRegister).not.toHaveBeenCalled();
   });
 

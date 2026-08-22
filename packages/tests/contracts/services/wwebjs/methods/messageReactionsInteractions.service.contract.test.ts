@@ -72,6 +72,24 @@ describe('WwebjsMessageReactionsInteractionsService', () => {
 
     const helpers = {
       getClient: jest.fn(() => client),
+      invokeProviderLookup: jest.fn(
+        async (
+          _client: unknown,
+          _operation: string,
+          invoke: () => Promise<unknown>
+        ) => invoke()
+      ),
+      invokeProviderMutation: jest.fn(
+        async (
+          _client: unknown,
+          _operation: string,
+          beforeProviderInvoke: (() => Promise<void>) | undefined,
+          invoke: () => Promise<unknown>
+        ) => {
+          await beforeProviderInvoke?.();
+          return invoke();
+        }
+      ),
     };
 
     const service = new WwebjsMessageReactionsInteractionsService(
@@ -153,6 +171,37 @@ describe('WwebjsMessageReactionsInteractionsService', () => {
       '👍'
     );
     expect(mockMessageToWaLike).toHaveBeenCalledWith(message);
+  });
+
+  it('crosses the durable boundary immediately before the reaction mutation', async () => {
+    const { service, client, helpers } = makeService();
+    const sut = service as unknown as {
+      resolveMessageByKey: (key: unknown) => Promise<unknown | null>;
+    };
+    const order: string[] = [];
+    jest.spyOn(sut, 'resolveMessageByKey').mockResolvedValueOnce({
+      id: { _serialized: 'true_5511@c.us_stanza-boundary' },
+    });
+    client.pupPage.evaluate.mockImplementationOnce(async () => {
+      order.push('provider');
+    });
+    const boundary = jest.fn(async () => {
+      order.push('ledger');
+    });
+
+    await service.react(
+      { id: 'parsed-id', remoteJid: '5511@c.us' } as never,
+      '🔥',
+      boundary
+    );
+
+    expect(order).toEqual(['ledger', 'provider']);
+    expect(helpers.invokeProviderMutation).toHaveBeenCalledWith(
+      client,
+      'react_message',
+      boundary,
+      expect.any(Function)
+    );
   });
 
   it('covers browser callback branches used by react evaluate block', async () => {
@@ -486,7 +535,8 @@ describe('WwebjsMessageReactionsInteractionsService', () => {
         id: 'parsed-id',
         remoteJid: '5511999999999@c.us',
       },
-      expect.any(Array)
+      expect.any(Array),
+      client
     );
 
     await expect(sut.resolveMessageByKey({ id: '   ' })).resolves.toBeNull();

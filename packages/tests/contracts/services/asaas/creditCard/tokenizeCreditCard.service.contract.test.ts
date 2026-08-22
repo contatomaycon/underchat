@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import axios from 'axios';
+import { CreditCardAlreadyTokenizedError } from '@core/common/exceptions/UserCardError';
 import { TokenizeCreditCardService } from '@core/services/asaas/creditCard/tokenizeCreditCard.service';
 
 jest.mock('axios', () => ({
@@ -54,6 +55,33 @@ describe('TokenizeCreditCardService', () => {
     await expect(service.tokenizeCreditCard({} as never)).rejects.toThrow(
       'tokenize-fail'
     );
+  });
+
+  it('maps an already tokenized card response to a safe domain error', async () => {
+    (
+      axios.isAxiosError as unknown as jest.MockedFunction<
+        typeof axios.isAxiosError
+      >
+    ).mockReturnValue(true);
+    const asaasDescription = 'Cartão 223702****6481 já tokenizado';
+    const post = jest.fn(async () => {
+      throw {
+        response: { data: { errors: [{ description: asaasDescription }] } },
+      };
+    });
+    const service = new TokenizeCreditCardService({
+      getAxiosInstance: () => ({ post }),
+    } as never);
+
+    try {
+      await service.tokenizeCreditCard({} as never);
+      throw new Error('Expected tokenization to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(CreditCardAlreadyTokenizedError);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).not.toContain('223702');
+      expect((error as Error).message).not.toContain('6481');
+    }
   });
 
   it('throws default axios message when no description is available', async () => {

@@ -7,6 +7,8 @@ interface IResolveServerBuildCommandInput {
   dockerfileAbsolutePath: string;
   workspaceRoot: string;
   kanikoExecutorPath: string;
+  kanikoWorkingDir: string;
+  kanikoIgnorePath: string;
 }
 
 interface IResolvedServerBuildCommand {
@@ -46,7 +48,9 @@ export function resolveServerBuildCommand(
       '--cache=false',
       '--force',
       '--kaniko-dir',
-      '/tmp/kaniko',
+      input.kanikoWorkingDir,
+      '--ignore-path',
+      input.kanikoIgnorePath,
       '--ignore-path',
       '/tmp',
       '--ignore-path',

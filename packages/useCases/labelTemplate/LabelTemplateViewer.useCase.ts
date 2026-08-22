@@ -12,15 +12,18 @@ export class LabelTemplateViewerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    labelTemplateId: string
+    labelTemplateId: string,
+    accountId: string
   ): Promise<ViewLabelTemplateResponse | null> {
-    const labelTemplateExists =
-      await this.labelTemplateService.existsLabelTemplateById(labelTemplateId);
+    const labelTemplate = await this.labelTemplateService.viewLabelTemplateById(
+      labelTemplateId,
+      accountId
+    );
 
-    if (!labelTemplateExists) {
+    if (!labelTemplate) {
       throw new Error(t('label_template_not_found'));
     }
 
-    return this.labelTemplateService.viewLabelTemplateById(labelTemplateId);
+    return labelTemplate;
   }
 }

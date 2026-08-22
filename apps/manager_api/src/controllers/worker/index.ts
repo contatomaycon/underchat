@@ -9,6 +9,7 @@ import { changeStatusConnection } from './methods/changeStatusConnection';
 import { workerConnectionLogs } from './methods/workerConnectionLogs';
 import { recreateWorker } from './methods/recreateWorker';
 import { resetWorkerConnection } from './methods/resetWorkerConnection';
+import { disconnectWorkerConnection } from './methods/disconnectWorkerConnection';
 import { uploadProfileStatus } from './methods/uploadProfileStatus';
 import { listProfileStatus } from './methods/listProfileStatus';
 import { updateProfileStatus } from './methods/updateProfileStatus';
@@ -45,6 +46,8 @@ import { viewAttendanceInactivityAlert } from './methods/viewAttendanceInactivit
 import { updateAttendanceInactivityAlert } from './methods/updateAttendanceInactivityAlert';
 import { viewOperatorReplyPendingAlert } from './methods/viewOperatorReplyPendingAlert';
 import { updateOperatorReplyPendingAlert } from './methods/updateOperatorReplyPendingAlert';
+import { viewOperatorReplyPendingRedistribution } from './methods/viewOperatorReplyPendingRedistribution';
+import { updateOperatorReplyPendingRedistribution } from './methods/updateOperatorReplyPendingRedistribution';
 import { checkWorkerOpenConversations } from './methods/checkWorkerOpenConversations';
 import { createExternalConnectionLink } from './methods/createExternalConnectionLink';
 import { viewExternalConnection } from './methods/viewExternalConnection';
@@ -66,7 +69,12 @@ import { cancelSecureConnectionSession } from './methods/cancelSecureConnectionS
 import { viewSecureConnectionHelper } from './methods/viewSecureConnectionHelper';
 import { updateSecureConnectionHelperStatus } from './methods/updateSecureConnectionHelperStatus';
 import { uploadSecureConnectionHelperSession } from './methods/uploadSecureConnectionHelperSession';
-import { downloadAuthenticatorInstaller } from './methods/downloadAuthenticatorInstaller';
+import { listDownloadArtifacts } from './methods/listDownloadArtifacts';
+import { blockWorker } from './methods/blockWorker';
+import { unblockWorker } from './methods/unblockWorker';
+import { viewWhatsappProviderHandoff } from './methods/viewWhatsappProviderHandoff';
+import { viewWhatsappProviderHandoffEvidence } from './methods/viewWhatsappProviderHandoffEvidence';
+import { resolveWhatsappProviderHandoff } from './methods/resolveWhatsappProviderHandoff';
 
 @injectable()
 class WorkerController {
@@ -80,6 +88,7 @@ class WorkerController {
   public workerConnectionLogs = workerConnectionLogs;
   public recreateWorker = recreateWorker;
   public resetWorkerConnection = resetWorkerConnection;
+  public disconnectWorkerConnection = disconnectWorkerConnection;
   public uploadProfileStatus = uploadProfileStatus;
   public listProfileStatus = listProfileStatus;
   public updateProfileStatus = updateProfileStatus;
@@ -119,6 +128,10 @@ class WorkerController {
   public updateAttendanceInactivityAlert = updateAttendanceInactivityAlert;
   public viewOperatorReplyPendingAlert = viewOperatorReplyPendingAlert;
   public updateOperatorReplyPendingAlert = updateOperatorReplyPendingAlert;
+  public viewOperatorReplyPendingRedistribution =
+    viewOperatorReplyPendingRedistribution;
+  public updateOperatorReplyPendingRedistribution =
+    updateOperatorReplyPendingRedistribution;
   public checkWorkerOpenConversations = checkWorkerOpenConversations;
   public createExternalConnectionLink = createExternalConnectionLink;
   public viewExternalConnection = viewExternalConnection;
@@ -144,7 +157,13 @@ class WorkerController {
     updateSecureConnectionHelperStatus;
   public uploadSecureConnectionHelperSession =
     uploadSecureConnectionHelperSession;
-  public downloadAuthenticatorInstaller = downloadAuthenticatorInstaller;
+  public listDownloadArtifacts = listDownloadArtifacts;
+  public blockWorker = blockWorker;
+  public unblockWorker = unblockWorker;
+  public viewWhatsappProviderHandoff = viewWhatsappProviderHandoff;
+  public viewWhatsappProviderHandoffEvidence =
+    viewWhatsappProviderHandoffEvidence;
+  public resolveWhatsappProviderHandoff = resolveWhatsappProviderHandoff;
 }
 
 export default WorkerController;

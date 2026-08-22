@@ -21,6 +21,15 @@ import { normalizeContactRequest } from '@core/common/functions/normalizeContact
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
+import { v7 as uuidv7 } from 'uuid';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
+import { ContactCreationClientError } from '@core/common/exceptions/ContactCreationClientError';
+import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
+import { ContactPhoneValidationPolicyService } from '@core/services/contactPhoneValidationPolicy.service';
+import {
+  CONTACT_VALIDATION_ORIGINS,
+  type ContactValidationOrigin,
+} from '@core/common/types/ContactValidationOrigin';
 
 @injectable()
 export class ContactCreatorUseCase {
@@ -40,7 +49,18 @@ export class ContactCreatorUseCase {
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(PlanAccountService)
-    private readonly planAccountService: PlanAccountService
+    private readonly planAccountService: PlanAccountService,
+    @inject(ContactPhoneValidationPolicyService)
+    private readonly contactPhoneValidationPolicyService: Pick<
+      ContactPhoneValidationPolicyService,
+      'resolve'
+    > = {
+      resolve: async () => ({
+        channelIds: [],
+        isOfficialOnly: false,
+        areAllChannelsResolved: true,
+      }),
+    }
   ) {}
 
   private extractChannelIds(
@@ -66,7 +86,10 @@ export class ContactCreatorUseCase {
     const allowedSet = new Set(allowedChannelIds);
     for (const channelId of channelIds) {
       if (!allowedSet.has(channelId)) {
-        throw new Error(t('contact_channel_not_allowed'));
+        throw new ContactCreationClientError(
+          t('contact_channel_not_allowed'),
+          EHTTPStatusCode.forbidden
+        );
       }
     }
   }
@@ -76,7 +99,10 @@ export class ContactCreatorUseCase {
     birthDate: string
   ) {
     if (!moment(birthDate, 'YYYY-MM-DD', true).isValid()) {
-      throw new Error(t('date_must_be_in_the_format_yyyy_mm_dd'));
+      throw new ContactCreationClientError(
+        t('date_must_be_in_the_format_yyyy_mm_dd'),
+        EHTTPStatusCode.bad_request
+      );
     }
 
     const birth = moment(birthDate, 'YYYY-MM-DD');
@@ -84,11 +110,17 @@ export class ContactCreatorUseCase {
     const today = moment().startOf('day');
 
     if (birth.isBefore(minDate)) {
-      throw new Error(t('date_must_be_greater_than_1900_01_01'));
+      throw new ContactCreationClientError(
+        t('date_must_be_greater_than_1900_01_01'),
+        EHTTPStatusCode.bad_request
+      );
     }
 
     if (!birth.isBefore(today)) {
-      throw new Error(t('date_must_be_less_than_today'));
+      throw new ContactCreationClientError(
+        t('date_must_be_less_than_today'),
+        EHTTPStatusCode.bad_request
+      );
     }
   }
 
@@ -101,7 +133,10 @@ export class ContactCreatorUseCase {
       await this.accountService.existsAccountById(accountId);
 
     if (!accountExists) {
-      throw new Error(t('account_not_found'));
+      throw new ContactCreationClientError(
+        t('account_not_found'),
+        EHTTPStatusCode.not_found
+      );
     }
 
     if (labelTemplateIds && labelTemplateIds.length > 0) {
@@ -112,7 +147,10 @@ export class ContactCreatorUseCase {
 
       for (const id of labelTemplateIds) {
         if (!existingLabelTemplateIds.has(id)) {
-          throw new Error(t('label_template_not_found'));
+          throw new ContactCreationClientError(
+            t('label_template_not_found'),
+            EHTTPStatusCode.not_found
+          );
         }
       }
     }
@@ -170,11 +208,17 @@ export class ContactCreatorUseCase {
     phoneExists: boolean
   ): void {
     if (emailExists) {
-      throw new Error(t('contact_already_exists_email'));
+      throw new ContactCreationClientError(
+        t('contact_already_exists_email'),
+        EHTTPStatusCode.conflict
+      );
     }
 
     if (phoneExists) {
-      throw new Error(t('contact_already_exists_phone'));
+      throw new ContactCreationClientError(
+        t('contact_already_exists_phone'),
+        EHTTPStatusCode.conflict
+      );
     }
   }
 
@@ -200,12 +244,39 @@ export class ContactCreatorUseCase {
     throw error;
   }
 
+  private isPhoneRejectedByWhatsapp(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return (
+      message.includes('phone_number_not_valid_on_whatsapp') ||
+      message.includes('phone number is not valid on whatsapp')
+    );
+  }
+
   private async validateAndNormalizePhone(
     t: TFunction<'translation', undefined>,
     accountId: string,
     phone: string,
-    phoneDdi?: string | null
-  ): Promise<{ phone: string; phoneDdi: string | null; isValidated: boolean }> {
+    phoneDdi: string | null | undefined,
+    isOfficialOnly: boolean
+  ): Promise<{
+    phone: string;
+    phoneDdi: string | null;
+    isValidated: boolean;
+    validationOrigin: ContactValidationOrigin | null;
+  }> {
+    if (isOfficialOnly) {
+      return {
+        phone,
+        phoneDdi: phoneDdi ?? null,
+        isValidated: true,
+        validationOrigin: CONTACT_VALIDATION_ORIGINS.officialAssumed,
+      };
+    }
+
     try {
       const validationResult = await this.phoneValidationService.validatePhone(
         accountId,
@@ -216,11 +287,19 @@ export class ContactCreatorUseCase {
       );
 
       if (!validationResult.valid) {
-        throw new Error(t('phone_number_not_valid_on_whatsapp'));
+        throw new ContactCreationClientError(
+          t('phone_number_not_valid_on_whatsapp'),
+          EHTTPStatusCode.bad_request
+        );
       }
 
       if (!validationResult.phone) {
-        return { phone, phoneDdi: phoneDdi ?? null, isValidated: true };
+        return {
+          phone,
+          phoneDdi: phoneDdi ?? null,
+          isValidated: true,
+          validationOrigin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
+        };
       }
 
       const normalizedPhone = extractPhoneAndDdi(validationResult.phone);
@@ -229,14 +308,63 @@ export class ContactCreatorUseCase {
           phone: normalizedPhone.phone,
           phoneDdi: normalizedPhone.phone_ddi,
           isValidated: true,
+          validationOrigin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
         };
       }
 
-      return { phone, phoneDdi: phoneDdi ?? null, isValidated: true };
+      return {
+        phone,
+        phoneDdi: phoneDdi ?? null,
+        isValidated: true,
+        validationOrigin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
+      };
     } catch (error) {
+      if (error instanceof ContactCreationClientError) {
+        throw error;
+      }
+
+      if (this.isPhoneRejectedByWhatsapp(error)) {
+        throw new ContactCreationClientError(
+          t('phone_number_not_valid_on_whatsapp'),
+          EHTTPStatusCode.bad_request
+        );
+      }
+
       const validationResult = this.handlePhoneValidationError(error);
       if (validationResult.shouldSkipValidation) {
-        return { phone, phoneDdi: phoneDdi ?? null, isValidated: false };
+        return {
+          phone,
+          phoneDdi: phoneDdi ?? null,
+          isValidated: false,
+          validationOrigin: null,
+        };
+      }
+
+      throw error;
+    }
+  }
+
+  private async validateContactPlan(
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<void> {
+    try {
+      await this.planAccountService.validateCanCreateContact(t, accountId);
+    } catch (error) {
+      if (error instanceof Error) {
+        const expectedPlanFailures = new Set([
+          'contact_not_available',
+          'contact_not_available_additional',
+          t('contact_not_available'),
+          t('contact_not_available_additional'),
+        ]);
+
+        if (expectedPlanFailures.has(error.message)) {
+          throw new ContactCreationClientError(
+            error.message,
+            EHTTPStatusCode.bad_request
+          );
+        }
       }
 
       throw error;
@@ -247,7 +375,9 @@ export class ContactCreatorUseCase {
     t: TFunction<'translation', undefined>,
     input: CreateContactRequest,
     accountId: string,
-    allowedChannelIds: string[] = []
+    allowedChannelIds: string[] = [],
+    actorUserId?: string,
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<boolean> {
     const normalizedInput = normalizeContactRequest(input);
 
@@ -266,19 +396,28 @@ export class ContactCreatorUseCase {
     const notes = extractFieldValue(normalizedInput.notes as FieldValue);
 
     if (!name) {
-      throw new Error(t('name_required'));
+      throw new ContactCreationClientError(
+        t('name_required'),
+        EHTTPStatusCode.bad_request
+      );
     }
 
     if (!phoneDdi) {
-      throw new Error(t('phone_ddi_required'));
+      throw new ContactCreationClientError(
+        t('phone_ddi_required'),
+        EHTTPStatusCode.bad_request
+      );
     }
 
     if (!phone) {
-      throw new Error(t('phone_required'));
+      throw new ContactCreationClientError(
+        t('phone_required'),
+        EHTTPStatusCode.bad_request
+      );
     }
 
     await this.validateAccountAndLabelTemplates(t, accountId, labelTemplateIds);
-    await this.planAccountService.validateCanCreateContact(t, accountId);
+    await this.validateContactPlan(t, accountId);
 
     this.validateBirthdayIfPresent(t, birthday);
 
@@ -295,18 +434,27 @@ export class ContactCreatorUseCase {
     let phoneToSave = phone;
     let phoneDdiToSave = phoneDdi;
     let isValidated = true;
+    let validationOrigin: ContactValidationOrigin | null = null;
+
+    const validationPolicy =
+      await this.contactPhoneValidationPolicyService.resolve({
+        accountId,
+        requestedChannelIds: channelIds,
+      });
 
     if (phone) {
       const normalized = await this.validateAndNormalizePhone(
         t,
         accountId,
         phone,
-        phoneDdi
+        phoneDdi,
+        validationPolicy.isOfficialOnly
       );
 
       phoneToSave = normalized.phone;
       phoneDdiToSave = normalized.phoneDdi ?? '55';
       isValidated = normalized.isValidated;
+      validationOrigin = normalized.validationOrigin;
     }
 
     const rawContactDocumentTypeId = extractFieldValue(
@@ -345,10 +493,21 @@ export class ContactCreatorUseCase {
       ignore: normalizedInput.ignore,
     };
 
+    const requestedContactId = uuidv7();
     const contactId = await this.contactService.createContact(
       contactToCreate,
       accountId,
-      isValidated
+      isValidated,
+      requestedContactId,
+      {
+        source: webhookSource,
+        idempotencyKey: 'contact-created',
+        actor: actorUserId
+          ? { type: 'user', id: actorUserId }
+          : { type: 'system' },
+        changes: { origin: webhookSource },
+      },
+      validationOrigin
     );
 
     if (!contactId) {
@@ -416,7 +575,19 @@ export class ContactCreatorUseCase {
       label: contactLabels,
     };
 
-    const saved = await this.chatService.saveChat(updatedChat);
+    const saved = await this.chatService.saveChat(updatedChat, {
+      outboundWebhook: {
+        eventTypes: ['chat.updated', 'chat.labels.changed'],
+        idempotencyKey: `chat-contact-created:${chat.chat_id}:${contactId}`,
+        source: 'contact_service',
+        previousChat: chat,
+        actor: { type: 'system' },
+        changes: {
+          contact_id: contactId,
+          labels: contactLabels ?? [],
+        },
+      },
+    });
     if (!saved) return;
 
     const channelAccountId = updatedChat.account?.id ?? accountId;

@@ -1,16 +1,15 @@
 import { singleton, inject } from 'tsyringe';
-import type { KafkaConsumer } from 'node-rdkafka';
-import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { wwebjsEnvironment } from '@core/config/environments';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IWebhookIntegrationRequest } from '@core/common/interfaces/IWebhookIntegrationRequest';
 import { WwebjsService } from '@core/services/wwebjs';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { v7 as uuidv7 } from 'uuid';
-import { IContactValidationUpdate } from '@core/common/interfaces/IContactValidationUpdate';
+import {
+  CONTACT_VALIDATION_WEBHOOK_INTEGRATION_SOURCE,
+  IWebhookIntegrationContactValidationUpdate,
+} from '@core/common/interfaces/IContactValidationUpdate';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
@@ -19,60 +18,61 @@ import {
   type IWebhookInteractionJids,
 } from '@core/common/functions/resolveWebhookInteractionJids';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
-import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import {
+  PlanEntitlementDeniedError,
+  PlanEntitlementRevisionMismatchError,
+} from '@core/common/exceptions/PlanEntitlementError';
+import { WorkerIntegrationEntitlementService } from '@core/services/workerIntegrationEntitlement.service';
+import {
+  isWebhookIntegrationEntitlementUnavailableError,
+  WebhookIntegrationEntitlementUnavailableError,
+} from './WebhookIntegrationEntitlementFailure';
+import {
+  createPlanEntitlementAuditContext,
+  getPlanEntitlementAuditSource,
+  planEntitlementTelemetryStore,
+} from '@core/services/planEntitlementTelemetryStore';
+import { buildWebhookIntegrationStanzaId } from '@core/common/functions/webhookIntegrationIdentity';
+import { ensureInboundEventId } from '@core/common/functions/inboundEventIdentity';
+import { WwebjsIncomingMessageService } from '@core/services/wwebjs/methods/incoming.service';
+import type { IWhatsappRuntimeFence } from '@core/services/whatsappRuntimeFence.service';
+
+class WebhookIntegrationRuntimeStaleError extends Error {
+  constructor() {
+    super('Webhook integration runtime is stale');
+    this.name = 'WebhookIntegrationRuntimeStaleError';
+  }
+}
 
 @singleton()
 export class WebhookIntegrationWwebjsConsume {
-  private consumer: KafkaConsumer | null = null;
-  private runner: KafkaConsumerRunner<IWebhookIntegrationRequest> | null = null;
-  private isRunning = false;
-
   constructor(
-    @inject('Kafka') private readonly kafka: KafkaClient,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     @inject(WwebjsService)
     private readonly wwebjsService: WwebjsService,
+    @inject(WwebjsIncomingMessageService)
+    private readonly wwebjsIncomingMessageService: WwebjsIncomingMessageService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(WorkerIntegrationEntitlementService)
+    private readonly workerIntegrationEntitlementService: WorkerIntegrationEntitlementService
   ) {}
 
-  public async execute(): Promise<void> {
-    if (this.consumer && this.isRunning) {
-      return;
-    }
-
-    const topic = this.kafkaBaileysQueueService.workerWebhookIntegration(
-      wwebjsEnvironment.wwebjsWorkerId
+  public async handleJetStreamCommand(
+    commandId: string,
+    payload: unknown,
+    assertActive: () => void
+  ): Promise<void> {
+    const data = this.parseMessage(
+      Buffer.from(JSON.stringify(payload), 'utf8')
     );
-
-    const groupId = `group-underchat-webhook-integration-wwebjs-${wwebjsEnvironment.wwebjsWorkerId}`;
-
-    this.runner = new KafkaConsumerRunner<IWebhookIntegrationRequest>({
-      kafka: this.kafka,
-      topic,
-      groupId,
-      parse: (message) => this.parseMessage(message.value),
-      resolveEntityKey: (data) => this.resolveWebhookEntityKey(data),
-      handle: (data) => this.processWebhookIntegration(data),
-      logger: console,
-    });
-
-    await this.runner.start(() => {
-      this.isRunning = true;
-    });
-    this.consumer = this.runner.consumer;
-  }
-
-  public async close(): Promise<void> {
-    this.isRunning = false;
-    if (this.runner) {
-      await this.runner.close();
-      this.runner = null;
+    if (!data || !data.account_id || !data.worker_id) {
+      throw new Error('worker_command_webhook_payload_invalid');
     }
-    this.consumer = null;
+    data.operation_id = data.operation_id?.trim() || commandId;
+    await this.processWebhookIntegration(data, assertActive);
   }
 
   private parseMessage(
@@ -90,36 +90,178 @@ export class WebhookIntegrationWwebjsConsume {
   }
 
   private async processWebhookIntegration(
-    data: IWebhookIntegrationRequest
+    data: IWebhookIntegrationRequest,
+    assertActive: () => void = () => undefined
   ): Promise<void> {
-    const resolvedJids = await this.resolveRemoteJidForInteraction(data);
+    const connectionScope =
+      await this.captureActiveConnectionScope(assertActive);
+    if (
+      !(await this.hasCurrentIntegrationEntitlement(
+        data,
+        'received',
+        undefined,
+        assertActive
+      ))
+    ) {
+      return;
+    }
+
+    assertActive();
+    const resolvedJids = await this.resolveRemoteJidForInteraction(
+      data,
+      assertActive,
+      connectionScope
+    );
     if (!resolvedJids) {
       return;
     }
 
+    assertActive();
     const upsertMessage = this.buildUpsertMessage(data, resolvedJids);
 
     if (!upsertMessage) {
+      throw new Error('webhook_integration_operation_identity_missing');
+    }
+    upsertMessage.worker_id = connectionScope.worker_id;
+    upsertMessage.source_provider = connectionScope.source_provider;
+    upsertMessage.runtime_generation = connectionScope.runtime_generation;
+    upsertMessage.connection_epoch = connectionScope.connection_epoch;
+
+    await this.assertConnectionScopeActive(connectionScope, assertActive);
+    if (
+      !(await this.hasCurrentIntegrationEntitlement(
+        data,
+        'publish',
+        upsertMessage.message.key.id,
+        assertActive
+      ))
+    ) {
       return;
     }
 
-    await this.sendToMessageUpsert(upsertMessage);
+    await this.sendToMessageUpsert(
+      upsertMessage,
+      assertActive,
+      connectionScope
+    );
   }
 
-  private resolveWebhookEntityKey(data: IWebhookIntegrationRequest): string {
-    return [
-      data.account_id,
-      data.worker_id,
-      data.contact_id || data.phone || 'unknown-contact',
-    ].join(':');
+  private async hasCurrentIntegrationEntitlement(
+    data: IWebhookIntegrationRequest,
+    stage: 'received' | 'publish',
+    eventId?: string,
+    assertActive: () => void = () => undefined
+  ): Promise<boolean> {
+    assertActive();
+    if (!data.integration_entitlement_revision) {
+      planEntitlementTelemetryStore.recordDecision('inbound_worker', 'denied');
+      planEntitlementTelemetryStore.recordSuppression(
+        'inbound_worker',
+        'legacy_revision_missing'
+      );
+      console.warn(
+        '[PlanEntitlementAudit] Dropping legacy inbound webhook event',
+        {
+          ...createPlanEntitlementAuditContext({
+            surface: 'inbound_worker',
+            outcome: 'denied',
+            accountId: data.account_id,
+            planProductId: EPlanProduct.integration,
+            source: null,
+            eventId,
+            reason: 'integration_entitlement_missing',
+          }),
+          stage,
+          worker_id: data.worker_id,
+        }
+      );
+      return false;
+    }
+
+    try {
+      const entitlement =
+        await this.workerIntegrationEntitlementService.assertEntitled(
+          data.account_id,
+          EPlanProduct.integration,
+          { expectedRevision: data.integration_entitlement_revision }
+        );
+      assertActive();
+      planEntitlementTelemetryStore.recordDecision('inbound_worker', 'allowed');
+      if (stage === 'publish') {
+        console.info(
+          '[PlanEntitlementAudit] Inbound webhook worker admitted event',
+          createPlanEntitlementAuditContext({
+            surface: 'inbound_worker',
+            outcome: 'allowed',
+            accountId: data.account_id,
+            planProductId: EPlanProduct.integration,
+            revision:
+              entitlement?.revision ?? data.integration_entitlement_revision,
+            source: entitlement?.source,
+            eventId,
+          })
+        );
+      }
+      return true;
+    } catch (error) {
+      if (
+        error instanceof PlanEntitlementDeniedError ||
+        error instanceof PlanEntitlementRevisionMismatchError
+      ) {
+        assertActive();
+        planEntitlementTelemetryStore.recordDecision(
+          'inbound_worker',
+          'denied'
+        );
+        planEntitlementTelemetryStore.recordSuppression(
+          'inbound_worker',
+          error instanceof PlanEntitlementRevisionMismatchError
+            ? 'revision_mismatch'
+            : 'integration_entitlement_missing'
+        );
+        console.warn(
+          '[PlanEntitlementAudit] Dropping stale inbound webhook event',
+          {
+            ...createPlanEntitlementAuditContext({
+              surface: 'inbound_worker',
+              outcome: 'denied',
+              accountId: data.account_id,
+              planProductId: EPlanProduct.integration,
+              revision: error.entitlement.revision,
+              source: getPlanEntitlementAuditSource(error.entitlement),
+              eventId,
+              reason: 'integration_entitlement_missing',
+            }),
+            stage,
+            worker_id: data.worker_id,
+            expected_revision: data.integration_entitlement_revision,
+          }
+        );
+        return false;
+      }
+      planEntitlementTelemetryStore.recordDecision(
+        'inbound_worker',
+        'unavailable'
+      );
+      assertActive();
+      throw new WebhookIntegrationEntitlementUnavailableError(stage, error);
+    }
   }
 
   private async validatePhone(
     phone: string,
-    phoneDdi: string | null
+    phoneDdi: string | null,
+    assertActive: () => void = () => undefined,
+    connectionScope?: IWhatsappRuntimeFence
   ): Promise<{ valid: boolean; jid?: string; phone?: string }> {
     const phoneDdiToUse = phoneDdi ?? '55';
-    return this.wwebjsService.validatePhone(phoneDdiToUse, phone);
+    const activeScope =
+      connectionScope ??
+      (await this.captureActiveConnectionScope(assertActive));
+    await this.assertConnectionScopeActive(activeScope, assertActive);
+    const result = await this.wwebjsService.validatePhone(phoneDdiToUse, phone);
+    await this.assertConnectionScopeActive(activeScope, assertActive);
+    return result;
   }
 
   private isLidJid(jid?: string | null): boolean {
@@ -301,39 +443,76 @@ export class WebhookIntegrationWwebjsConsume {
   }
 
   private async publishContactValidationUpdate(
-    contactId: string,
+    request: IWebhookIntegrationRequest,
     phoneWithDdi: string,
-    isValidated: boolean
-  ): Promise<void> {
-    if (!contactId?.trim()) {
-      return;
+    isValidated: boolean,
+    assertActive: () => void = () => undefined,
+    connectionScope?: IWhatsappRuntimeFence
+  ): Promise<boolean> {
+    if (!request.contact_id?.trim()) {
+      return true;
     }
 
-    const payload: IContactValidationUpdate = {
-      contact_id: contactId,
+    const activeScope =
+      connectionScope ??
+      (await this.captureActiveConnectionScope(assertActive));
+    await this.assertConnectionScopeActive(activeScope, assertActive);
+    if (
+      !(await this.hasCurrentIntegrationEntitlement(
+        request,
+        'publish',
+        undefined,
+        assertActive
+      ))
+    ) {
+      return false;
+    }
+
+    const payload: IWebhookIntegrationContactValidationUpdate = {
+      contact_id: request.contact_id,
       phone: phoneWithDdi,
       is_validated: isValidated,
+      account_id: request.account_id,
+      integration_entitlement_revision:
+        request.integration_entitlement_revision,
+      operation_id: request.operation_id,
+      source: CONTACT_VALIDATION_WEBHOOK_INTEGRATION_SOURCE,
+      worker_id: activeScope.worker_id,
+      source_provider: activeScope.source_provider,
+      runtime_generation: activeScope.runtime_generation,
+      connection_epoch: activeScope.connection_epoch,
     };
 
     const topic = this.kafkaServiceQueueService.contactValidationUpdate();
-    await this.streamProducerService.send(topic, payload);
+    await this.assertConnectionScopeActive(activeScope, assertActive);
+    await this.streamProducerService.send(
+      topic,
+      payload,
+      `${request.account_id}:${request.contact_id}`
+    );
+    await this.assertConnectionScopeActive(activeScope, assertActive);
+    return true;
   }
 
   private async resolveRemoteJidForInteraction(
-    request: IWebhookIntegrationRequest
+    request: IWebhookIntegrationRequest,
+    assertActive: () => void = () => undefined,
+    connectionScope?: IWhatsappRuntimeFence
   ): Promise<IWebhookInteractionJids | null> {
+    assertActive();
     const candidates = this.buildValidationCandidates(request);
     if (!candidates.length) {
       return null;
     }
 
     let hasInvalidPhone = false;
-
     for (const candidate of candidates) {
       try {
         const result = await this.validatePhone(
           candidate.phone,
-          candidate.phoneDdi
+          candidate.phoneDdi,
+          assertActive,
+          connectionScope
         );
 
         if (!result.valid) {
@@ -349,11 +528,17 @@ export class WebhookIntegrationWwebjsConsume {
         if (
           this.shouldPublishSuccessContactUpdate(request, validatedPhoneWithDdi)
         ) {
-          await this.publishContactValidationUpdate(
-            request.contact_id,
-            validatedPhoneWithDdi,
-            true
-          );
+          if (
+            !(await this.publishContactValidationUpdate(
+              request,
+              validatedPhoneWithDdi,
+              true,
+              assertActive,
+              connectionScope
+            ))
+          ) {
+            return null;
+          }
         }
 
         const resolvedJids = resolveWebhookInteractionJids({
@@ -367,16 +552,20 @@ export class WebhookIntegrationWwebjsConsume {
           return resolvedJids;
         }
       } catch (error) {
+        if (isWebhookIntegrationEntitlementUnavailableError(error)) {
+          throw error;
+        }
+
         if (this.isInvalidValidationError(error)) {
           hasInvalidPhone = true;
           continue;
         }
 
         if (this.isTechnicalValidationError(error)) {
-          continue;
+          throw error instanceof Error ? error : new Error(String(error));
         }
 
-        return null;
+        throw error instanceof Error ? error : new Error(String(error));
       }
     }
 
@@ -386,11 +575,17 @@ export class WebhookIntegrationWwebjsConsume {
     }
 
     if (hasInvalidPhone) {
-      await this.publishContactValidationUpdate(
-        request.contact_id,
-        fallbackCandidate.phoneWithDdi,
-        false
-      );
+      if (
+        !(await this.publishContactValidationUpdate(
+          request,
+          fallbackCandidate.phoneWithDdi,
+          false,
+          assertActive,
+          connectionScope
+        ))
+      ) {
+        return null;
+      }
     }
 
     return resolveWebhookInteractionJids({
@@ -405,15 +600,23 @@ export class WebhookIntegrationWwebjsConsume {
     resolvedJids: IWebhookInteractionJids
   ): IUpsertMessage | null {
     const messageText = this.extractMessageText(request);
+    const stanzaId = buildWebhookIntegrationStanzaId(request);
+    if (!stanzaId) {
+      return null;
+    }
     const waMessage = this.buildWaMessage(
       resolvedJids.remoteJid,
       resolvedJids.remoteJidAlt,
-      messageText ?? ''
+      messageText ?? '',
+      stanzaId
     );
 
     const upsert: IUpsertMessage = {
+      integration_entitlement_revision:
+        request.integration_entitlement_revision,
       account_id: request.account_id,
       worker_id: request.worker_id,
+      source_provider: 'webhook',
       type: EMessageType.text,
       message: waMessage,
       has_quoted: false,
@@ -448,14 +651,15 @@ export class WebhookIntegrationWwebjsConsume {
   private buildWaMessage(
     remoteJid: string,
     remoteJidAlt: string | undefined,
-    messageText: string
+    messageText: string,
+    stanzaId: string
   ): IUpsertMessage['message'] {
     return {
       key: {
         remoteJid,
         remoteJidAlt,
         fromMe: false,
-        id: uuidv7(),
+        id: stanzaId,
       },
       messageTimestamp: Math.floor(Date.now() / 1000),
       message: {
@@ -547,13 +751,57 @@ export class WebhookIntegrationWwebjsConsume {
   }
 
   private async sendToMessageUpsert(
-    upsertMessage: IUpsertMessage
+    upsertMessage: IUpsertMessage,
+    assertActive: () => void = () => undefined,
+    connectionScope?: IWhatsappRuntimeFence
   ): Promise<void> {
     const topic = this.kafkaServiceQueueService.upsertMessage();
-    const messageKey = buildUpsertMessageKafkaKey(
-      upsertMessage,
-      upsertMessage.message.key?.id ?? uuidv7()
-    );
+    const stanzaId = upsertMessage.message.key?.id?.trim();
+    if (!stanzaId || !ensureInboundEventId(upsertMessage)) {
+      throw new Error('webhook_integration_upsert_identity_missing');
+    }
+    const messageKey = buildUpsertMessageKafkaKey(upsertMessage, stanzaId);
+    const activeScope =
+      connectionScope ??
+      (await this.captureActiveConnectionScope(assertActive));
+    await this.assertConnectionScopeActive(activeScope, assertActive);
     await this.streamProducerService.send(topic, upsertMessage, messageKey);
+    await this.assertConnectionScopeActive(activeScope, assertActive);
+  }
+
+  private async captureActiveConnectionScope(
+    assertActive: () => void
+  ): Promise<IWhatsappRuntimeFence> {
+    assertActive();
+    const scope =
+      await this.wwebjsIncomingMessageService.captureActiveConnectionScope();
+    assertActive();
+    if (
+      !scope ||
+      scope.worker_id !== wwebjsEnvironment.wwebjsWorkerId ||
+      scope.source_provider !== 'wwebjs'
+    ) {
+      throw new WebhookIntegrationRuntimeStaleError();
+    }
+    return scope;
+  }
+
+  private async assertConnectionScopeActive(
+    expected: IWhatsappRuntimeFence,
+    assertActive: () => void
+  ): Promise<void> {
+    assertActive();
+    const current =
+      await this.wwebjsIncomingMessageService.captureActiveConnectionScope();
+    assertActive();
+    if (
+      !current ||
+      current.worker_id !== expected.worker_id ||
+      current.source_provider !== expected.source_provider ||
+      current.runtime_generation !== expected.runtime_generation ||
+      current.connection_epoch !== expected.connection_epoch
+    ) {
+      throw new WebhookIntegrationRuntimeStaleError();
+    }
   }
 }

@@ -6,8 +6,13 @@ export const workerConnectionLogsRequestSchema = Type.Object({
 });
 
 export const workerConnectionLogsQuerySchema = Type.Object({
-  from: Type.Optional(Type.Number({ default: 0 })),
-  size: Type.Optional(Type.Number({ default: 100 })),
+  from: Type.Optional(Type.Integer({ default: 0, minimum: 0 })),
+  size: Type.Optional(Type.Integer({ default: 100, minimum: 1, maximum: 200 })),
+  period_hours: Type.Optional(
+    Type.Union([Type.Literal(24), Type.Literal(72), Type.Literal(168)], {
+      default: 24,
+    })
+  ),
   sort: Type.Optional(
     Type.Union([Type.Literal(ESortOrder.asc), Type.Literal(ESortOrder.desc)])
   ),

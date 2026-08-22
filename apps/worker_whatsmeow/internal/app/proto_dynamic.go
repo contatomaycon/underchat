@@ -12,27 +12,22 @@ import (
 )
 
 type dynamicDescriptors struct {
-	workerConnectionService           protoreflect.ServiceDescriptor
-	statusConnectionRequest           protoreflect.MessageDescriptor
-	workerConnectionResponse          protoreflect.MessageDescriptor
-	passkeyResponseRequest            protoreflect.MessageDescriptor
-	passkeyConfirmationRequest        protoreflect.MessageDescriptor
-	secureSessionImportRequest        protoreflect.MessageDescriptor
-	connectionPhoneValidationRequest  protoreflect.MessageDescriptor
-	connectionPhoneValidationResponse protoreflect.MessageDescriptor
-	workerRuntimeActivationRequest    protoreflect.MessageDescriptor
-	workerRuntimeActivationResponse   protoreflect.MessageDescriptor
-	workerRuntimeHealthRequest        protoreflect.MessageDescriptor
-	workerRuntimeHealthResponse       protoreflect.MessageDescriptor
-
-	commandNotifyWorkerStatus       protoreflect.MessageDescriptor
-	commandResponse                 protoreflect.MessageDescriptor
-	commandResolveIncomingCallReq   protoreflect.MessageDescriptor
-	commandResolveIncomingCallResp  protoreflect.MessageDescriptor
-	commandTypingSimulationReq      protoreflect.MessageDescriptor
-	commandTypingSimulationResp     protoreflect.MessageDescriptor
-	commandRegisterS3BackupFallback protoreflect.MessageDescriptor
-	commandSelfHealingReq           protoreflect.MessageDescriptor
+	workerConnectionService                protoreflect.ServiceDescriptor
+	statusConnectionRequest                protoreflect.MessageDescriptor
+	workerConnectionResponse               protoreflect.MessageDescriptor
+	passkeyResponseRequest                 protoreflect.MessageDescriptor
+	passkeyConfirmationRequest             protoreflect.MessageDescriptor
+	secureSessionImportRequest             protoreflect.MessageDescriptor
+	providerHandoffPrepareRequest          protoreflect.MessageDescriptor
+	providerHandoffPrepareResponse         protoreflect.MessageDescriptor
+	sessionStorageMigrationPrepareRequest  protoreflect.MessageDescriptor
+	sessionStorageMigrationPrepareResponse protoreflect.MessageDescriptor
+	connectionPhoneValidationRequest       protoreflect.MessageDescriptor
+	connectionPhoneValidationResponse      protoreflect.MessageDescriptor
+	workerRuntimeActivationRequest         protoreflect.MessageDescriptor
+	workerRuntimeActivationResponse        protoreflect.MessageDescriptor
+	workerRuntimeHealthRequest             protoreflect.MessageDescriptor
+	workerRuntimeHealthResponse            protoreflect.MessageDescriptor
 }
 
 var (
@@ -54,6 +49,7 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 		Name:    proto.String("worker_connection.proto"),
 		Package: proto.String("worker_connection"),
 		MessageType: []*descriptorpb.DescriptorProto{
+			whatsappConnectionStatusMessage(),
 			message("StatusConnectionRequest",
 				stringField("worker_id", 1),
 				stringField("status", 2),
@@ -64,6 +60,8 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				int32Field("runtime_generation", 9),
 				stringField("warm_pool_id", 10),
 				stringField("debug_trace_id", 11),
+				boolField("qr_pending", 12),
+				stringField("authorized_connection_epoch", 13),
 			),
 			message("WorkerConnectionResponse",
 				int32Field("code", 1),
@@ -108,6 +106,9 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				boolField("passkey_pending", 41),
 				stringField("passkey_confirmation_code", 42),
 				boolField("passkey_skip_handoff_ux", 43),
+				messageField("connection_status", 44, ".worker_connection.WhatsappConnectionStatus"),
+				stringField("connection_status_source_id", 45),
+				stringField("authorized_connection_epoch", 46),
 			),
 			message("PasskeyResponseRequest",
 				stringField("worker_id", 1),
@@ -136,6 +137,66 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				stringField("checksum", 11),
 				stringField("debug_trace_id", 12),
 			),
+			message("ProviderHandoffPrepareRequest",
+				stringField("worker_id", 1),
+				stringField("account_id", 2),
+				stringField("handoff_id", 3),
+				stringField("lifecycle_operation_id", 4),
+				stringField("source_provider", 5),
+				stringField("target_provider", 6),
+				int64Field("source_revision_id", 7),
+				int32Field("runtime_generation", 8),
+				stringField("debug_trace_id", 9),
+			),
+			message("ProviderHandoffPrepareResponse",
+				stringField("worker_id", 1),
+				stringField("provider", 2),
+				stringField("handoff_id", 3),
+				stringField("lifecycle_operation_id", 4),
+				int64Field("source_revision_id", 5),
+				int32Field("runtime_generation", 6),
+				boolField("prepared", 7),
+				boolField("consumers_drained", 8),
+				boolField("writes_paused", 9),
+				boolField("checkpoint_persisted", 10),
+				boolField("provider_disconnected", 11),
+				boolField("lease_released", 12),
+				stringField("checkpoint_checksum_sha256", 13),
+				int64Field("checkpoint_size_bytes", 14),
+				int64Field("checkpoint_record_count", 15),
+				stringField("prepared_at", 16),
+				stringField("error", 17),
+			),
+			message("SessionStorageMigrationPrepareRequest",
+				stringField("worker_id", 1),
+				stringField("account_id", 2),
+				stringField("migration_id", 3),
+				stringField("provider", 4),
+				stringField("source_volume_name", 5),
+				int32Field("runtime_generation", 6),
+				stringField("expected_phone", 7),
+				stringField("debug_trace_id", 8),
+				stringField("runtime_capability", 9),
+			),
+			message("SessionStorageMigrationPrepareResponse",
+				stringField("worker_id", 1),
+				stringField("provider", 2),
+				stringField("migration_id", 3),
+				int32Field("runtime_generation", 4),
+				boolField("prepared", 5),
+				boolField("consumers_drained", 6),
+				boolField("writes_paused", 7),
+				boolField("checkpoint_persisted", 8),
+				boolField("provider_disconnected", 9),
+				stringField("checkpoint_checksum_sha256", 10),
+				int64Field("checkpoint_size_bytes", 11),
+				int64Field("checkpoint_record_count", 12),
+				stringField("phone", 13),
+				stringField("identity_hash", 14),
+				stringField("prepared_at", 15),
+				stringField("error", 16),
+				boolField("volume_preserved", 17),
+			),
 			message("PhoneValidationRequest",
 				stringField("request_id", 1),
 				stringField("account_id", 2),
@@ -161,6 +222,9 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				stringField("balancer_grpc_host", 6),
 				int32Field("balancer_grpc_port", 7),
 				int32Field("runtime_generation", 9),
+				stringField("session_storage", 10),
+				stringField("runtime_capability", 11),
+				stringField("writer_epoch", 12),
 			),
 			message("WorkerRuntimeActivationResponse",
 				stringField("worker_id", 1),
@@ -197,6 +261,16 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				int32Field("probe_latency_ms", 21),
 				stringField("phone", 22),
 				boolField("kafka_unhealthy", 23),
+				boolField("kafka_consumers_ready", 24),
+				boolField("kafka_consumers_authorized", 25),
+				uint32Field("runtime_health_schema_version", 26),
+				messageField("connection_status", 27, ".worker_connection.WhatsappConnectionStatus"),
+				stringField("connection_status_source_id", 28),
+				boolField("command_ingress_ready", 29),
+				boolField("command_ingress_authorized", 30),
+				stringField("session_storage", 31),
+				int64Field("session_revision_id", 32),
+				stringField("session_storage_migration_id", 33),
 			),
 		},
 		Service: []*descriptorpb.ServiceDescriptorProto{{
@@ -209,132 +283,8 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				method("ValidatePhone", ".worker_connection.PhoneValidationRequest", ".worker_connection.PhoneValidationResponse"),
 				method("ActivateRuntime", ".worker_connection.WorkerRuntimeActivationRequest", ".worker_connection.WorkerRuntimeActivationResponse"),
 				method("RuntimeHealth", ".worker_connection.WorkerRuntimeHealthRequest", ".worker_connection.WorkerRuntimeHealthResponse"),
-			},
-		}},
-	}, nil)
-	if err != nil {
-		return dynamicDescriptors{}, err
-	}
-
-	commandFile, err := protodesc.NewFile(&descriptorpb.FileDescriptorProto{
-		Syntax:  proto.String("proto3"),
-		Name:    proto.String("worker_command.proto"),
-		Package: proto.String("worker_command"),
-		MessageType: []*descriptorpb.DescriptorProto{
-			message("WorkerCommandResponse"),
-			message("NotifyWorkerStatusRequest",
-				stringField("worker_id", 1),
-				stringField("account_id", 2),
-				stringField("worker_status_id", 3),
-				stringField("phone", 4),
-				boolField("disconnected_user", 5),
-				stringField("connection_attempt_id", 6),
-				int32Field("code", 7),
-				stringField("status", 8),
-				stringField("qrcode", 9),
-				boolField("is_new_login", 10),
-				int64Field("time", 11),
-				stringField("pairing_code", 12),
-				int32Field("seconds_until_next_attempt", 13),
-				int32Field("attempt", 14),
-				int32Field("max_attempts", 15),
-				boolField("qr_pending", 16),
-				stringField("proxy_status", 17),
-				stringField("proxy_error_code", 18),
-				stringField("proxy_fallback", 19),
-				boolField("proxy_bypassed", 20),
-				stringField("qr_generated_at", 21),
-				stringField("reason", 23),
-				stringField("error", 24),
-				int32Field("time_to_first_qr_ms", 25),
-				stringField("container_id", 26),
-				int32Field("runtime_generation", 27),
-				stringField("warm_pool_id", 28),
-				stringField("debug_trace_id", 29),
-				boolField("session_ready", 30),
-				boolField("can_send", 31),
-				boolField("can_receive_runtime", 32),
-				boolField("authenticated", 33),
-				stringField("provider_state", 34),
-				stringField("degraded_reason", 35),
-				stringField("last_probe_at", 36),
-				int32Field("probe_latency_ms", 37),
-				stringField("worker_type_id", 38),
-				stringField("passkey_public_key", 39),
-				boolField("passkey_pending", 40),
-				stringField("passkey_confirmation_code", 41),
-				boolField("passkey_skip_handoff_ux", 42),
-			),
-			message("WorkerSelfHealingRequest",
-				stringField("worker_id", 1),
-				stringField("account_id", 2),
-				stringField("worker_type_id", 3),
-				stringField("source", 4),
-				stringField("reason", 5),
-				stringField("provider_state", 6),
-				stringField("degraded_reason", 7),
-				boolField("kafka_unhealthy", 8),
-				int32Field("runtime_generation", 9),
-				stringField("debug_trace_id", 10),
-				int32Field("recovery_window_seconds", 11),
-			),
-			message("ResolveIncomingCallActionRequest",
-				stringField("worker_id", 1),
-				stringField("account_id", 2),
-				stringField("call_jid", 3),
-				stringField("call_phone", 4),
-				boolField("is_video", 5),
-			),
-			message("ResolveIncomingCallActionResponse",
-				boolField("reject_call", 1),
-				boolField("show_message_on_call", 2),
-				stringField("show_message_text", 3),
-			),
-			message("GetTypingSimulationConfigRequest",
-				stringField("worker_id", 1),
-				stringField("account_id", 2),
-			),
-			message("GetTypingSimulationConfigResponse",
-				boolField("enabled", 1),
-				int32Field("speed", 2),
-			),
-			message("RegisterS3BackupFallbackUploadRequest",
-				stringField("account_id", 1),
-				stringField("bucket", 2),
-				stringField("object_key", 3),
-				stringField("file_name", 4),
-				stringField("content_type", 5),
-				int64Field("size_bytes", 6),
-				int32Field("primary_attempts", 7),
-				int32Field("backup_attempts", 8),
-				stringField("primary_error", 9),
-				stringField("backup_error", 10),
-			),
-			message("PhoneValidationRequest",
-				stringField("request_id", 1),
-				stringField("account_id", 2),
-				stringField("worker_id", 3),
-				stringField("phone", 4),
-				stringField("phone_ddi", 5),
-			),
-			message("PhoneValidationResponse",
-				stringField("request_id", 1),
-				stringField("account_id", 2),
-				stringField("worker_id", 3),
-				boolField("valid", 4),
-				stringField("jid", 5),
-				stringField("phone", 6),
-				stringField("error", 7),
-			),
-		},
-		Service: []*descriptorpb.ServiceDescriptorProto{{
-			Name: proto.String("WorkerCommand"),
-			Method: []*descriptorpb.MethodDescriptorProto{
-				method("NotifyWorkerStatus", ".worker_command.NotifyWorkerStatusRequest", ".worker_command.WorkerCommandResponse"),
-				method("RequestWorkerSelfHealing", ".worker_command.WorkerSelfHealingRequest", ".worker_command.WorkerCommandResponse"),
-				method("ResolveIncomingCallAction", ".worker_command.ResolveIncomingCallActionRequest", ".worker_command.ResolveIncomingCallActionResponse"),
-				method("GetTypingSimulationConfig", ".worker_command.GetTypingSimulationConfigRequest", ".worker_command.GetTypingSimulationConfigResponse"),
-				method("RegisterS3BackupFallbackUpload", ".worker_command.RegisterS3BackupFallbackUploadRequest", ".worker_command.WorkerCommandResponse"),
+				method("PrepareProviderHandoff", ".worker_connection.ProviderHandoffPrepareRequest", ".worker_connection.ProviderHandoffPrepareResponse"),
+				method("PrepareSessionStorageMigration", ".worker_connection.SessionStorageMigrationPrepareRequest", ".worker_connection.SessionStorageMigrationPrepareResponse"),
 			},
 		}},
 	}, nil)
@@ -343,26 +293,22 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 	}
 
 	return dynamicDescriptors{
-		workerConnectionService:           connectionFile.Services().ByName("WorkerConnection"),
-		statusConnectionRequest:           connectionFile.Messages().ByName("StatusConnectionRequest"),
-		workerConnectionResponse:          connectionFile.Messages().ByName("WorkerConnectionResponse"),
-		passkeyResponseRequest:            connectionFile.Messages().ByName("PasskeyResponseRequest"),
-		passkeyConfirmationRequest:        connectionFile.Messages().ByName("PasskeyConfirmationRequest"),
-		secureSessionImportRequest:        connectionFile.Messages().ByName("SecureSessionImportRequest"),
-		connectionPhoneValidationRequest:  connectionFile.Messages().ByName("PhoneValidationRequest"),
-		connectionPhoneValidationResponse: connectionFile.Messages().ByName("PhoneValidationResponse"),
-		workerRuntimeActivationRequest:    connectionFile.Messages().ByName("WorkerRuntimeActivationRequest"),
-		workerRuntimeActivationResponse:   connectionFile.Messages().ByName("WorkerRuntimeActivationResponse"),
-		workerRuntimeHealthRequest:        connectionFile.Messages().ByName("WorkerRuntimeHealthRequest"),
-		workerRuntimeHealthResponse:       connectionFile.Messages().ByName("WorkerRuntimeHealthResponse"),
-		commandNotifyWorkerStatus:         commandFile.Messages().ByName("NotifyWorkerStatusRequest"),
-		commandResponse:                   commandFile.Messages().ByName("WorkerCommandResponse"),
-		commandResolveIncomingCallReq:     commandFile.Messages().ByName("ResolveIncomingCallActionRequest"),
-		commandResolveIncomingCallResp:    commandFile.Messages().ByName("ResolveIncomingCallActionResponse"),
-		commandTypingSimulationReq:        commandFile.Messages().ByName("GetTypingSimulationConfigRequest"),
-		commandTypingSimulationResp:       commandFile.Messages().ByName("GetTypingSimulationConfigResponse"),
-		commandRegisterS3BackupFallback:   commandFile.Messages().ByName("RegisterS3BackupFallbackUploadRequest"),
-		commandSelfHealingReq:             commandFile.Messages().ByName("WorkerSelfHealingRequest"),
+		workerConnectionService:                connectionFile.Services().ByName("WorkerConnection"),
+		statusConnectionRequest:                connectionFile.Messages().ByName("StatusConnectionRequest"),
+		workerConnectionResponse:               connectionFile.Messages().ByName("WorkerConnectionResponse"),
+		passkeyResponseRequest:                 connectionFile.Messages().ByName("PasskeyResponseRequest"),
+		passkeyConfirmationRequest:             connectionFile.Messages().ByName("PasskeyConfirmationRequest"),
+		secureSessionImportRequest:             connectionFile.Messages().ByName("SecureSessionImportRequest"),
+		providerHandoffPrepareRequest:          connectionFile.Messages().ByName("ProviderHandoffPrepareRequest"),
+		providerHandoffPrepareResponse:         connectionFile.Messages().ByName("ProviderHandoffPrepareResponse"),
+		sessionStorageMigrationPrepareRequest:  connectionFile.Messages().ByName("SessionStorageMigrationPrepareRequest"),
+		sessionStorageMigrationPrepareResponse: connectionFile.Messages().ByName("SessionStorageMigrationPrepareResponse"),
+		connectionPhoneValidationRequest:       connectionFile.Messages().ByName("PhoneValidationRequest"),
+		connectionPhoneValidationResponse:      connectionFile.Messages().ByName("PhoneValidationResponse"),
+		workerRuntimeActivationRequest:         connectionFile.Messages().ByName("WorkerRuntimeActivationRequest"),
+		workerRuntimeActivationResponse:        connectionFile.Messages().ByName("WorkerRuntimeActivationResponse"),
+		workerRuntimeHealthRequest:             connectionFile.Messages().ByName("WorkerRuntimeHealthRequest"),
+		workerRuntimeHealthResponse:            connectionFile.Messages().ByName("WorkerRuntimeHealthResponse"),
 	}, nil
 }
 
@@ -371,6 +317,29 @@ func message(name string, fields ...*descriptorpb.FieldDescriptorProto) *descrip
 		Name:  proto.String(name),
 		Field: fields,
 	}
+}
+
+func whatsappConnectionStatusMessage() *descriptorpb.DescriptorProto {
+	sessionValid := boolField("sessionValid", 5)
+	sessionValid.Proto3Optional = proto.Bool(true)
+	sessionValid.OneofIndex = proto.Int32(0)
+	result := message("WhatsappConnectionStatus",
+		stringField("provider", 1),
+		stringField("status", 2),
+		boolField("connected", 3),
+		boolField("authenticated", 4),
+		sessionValid,
+		boolField("recoverable", 6),
+		boolField("qrAvailable", 7),
+		uint64Field("sequence", 8),
+		stringField("changedAt", 9),
+		stringField("reason", 10),
+		stringField("errorCode", 11),
+	)
+	result.OneofDecl = []*descriptorpb.OneofDescriptorProto{{
+		Name: proto.String("_sessionValid"),
+	}}
+	return result
 }
 
 func method(name, input, output string) *descriptorpb.MethodDescriptorProto {
@@ -395,6 +364,20 @@ func int64Field(name string, number int32) *descriptorpb.FieldDescriptorProto {
 
 func int32Field(name string, number int32) *descriptorpb.FieldDescriptorProto {
 	return field(name, number, descriptorpb.FieldDescriptorProto_TYPE_INT32)
+}
+
+func uint32Field(name string, number int32) *descriptorpb.FieldDescriptorProto {
+	return field(name, number, descriptorpb.FieldDescriptorProto_TYPE_UINT32)
+}
+
+func uint64Field(name string, number int32) *descriptorpb.FieldDescriptorProto {
+	return field(name, number, descriptorpb.FieldDescriptorProto_TYPE_UINT64)
+}
+
+func messageField(name string, number int32, typeName string) *descriptorpb.FieldDescriptorProto {
+	result := field(name, number, descriptorpb.FieldDescriptorProto_TYPE_MESSAGE)
+	result.TypeName = proto.String(typeName)
+	return result
 }
 
 func field(name string, number int32, typ descriptorpb.FieldDescriptorProto_Type) *descriptorpb.FieldDescriptorProto {
@@ -434,6 +417,14 @@ func dynamicInt32(msg *dynamicpb.Message, name string) int32 {
 	return int32(msg.Get(field).Int())
 }
 
+func dynamicInt64(msg *dynamicpb.Message, name string) int64 {
+	field := msg.Descriptor().Fields().ByName(protoreflect.Name(name))
+	if field == nil {
+		return 0
+	}
+	return msg.Get(field).Int()
+}
+
 func setDynamicString(msg *dynamicpb.Message, name, value string) {
 	if value == "" {
 		return
@@ -463,6 +454,45 @@ func setDynamicInt32(msg *dynamicpb.Message, name string, value int32) {
 	if field != nil {
 		msg.Set(field, protoreflect.ValueOfInt32(value))
 	}
+}
+
+func setDynamicUint32(msg *dynamicpb.Message, name string, value uint32) {
+	field := msg.Descriptor().Fields().ByName(protoreflect.Name(name))
+	if field != nil {
+		msg.Set(field, protoreflect.ValueOfUint32(value))
+	}
+}
+
+func setDynamicUint64(msg *dynamicpb.Message, name string, value uint64) {
+	field := msg.Descriptor().Fields().ByName(protoreflect.Name(name))
+	if field != nil {
+		msg.Set(field, protoreflect.ValueOfUint64(value))
+	}
+}
+
+func setDynamicConnectionStatus(msg *dynamicpb.Message, name string, value *WhatsappConnectionStatus) {
+	if value == nil {
+		return
+	}
+	field := msg.Descriptor().Fields().ByName(protoreflect.Name(name))
+	if field == nil || field.Message() == nil {
+		return
+	}
+	nested := newDynamicMessage(field.Message())
+	setDynamicString(nested, "provider", value.Provider)
+	setDynamicString(nested, "status", value.Status)
+	setDynamicBool(nested, "connected", value.Connected)
+	setDynamicBool(nested, "authenticated", value.Authenticated)
+	if value.SessionValid != nil {
+		setDynamicBool(nested, "sessionValid", *value.SessionValid)
+	}
+	setDynamicBool(nested, "recoverable", value.Recoverable)
+	setDynamicBool(nested, "qrAvailable", value.QRAvailable)
+	setDynamicUint64(nested, "sequence", value.Sequence)
+	setDynamicString(nested, "changedAt", value.ChangedAt)
+	setDynamicString(nested, "reason", value.Reason)
+	setDynamicString(nested, "errorCode", value.ErrorCode)
+	msg.Set(field, protoreflect.ValueOfMessage(nested))
 }
 
 func requiredDescriptor(desc protoreflect.MessageDescriptor, name string) (protoreflect.MessageDescriptor, error) {

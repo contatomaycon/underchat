@@ -158,12 +158,36 @@ export class ScheduleUpdaterRepository {
   ): Promise<boolean> => {
     return this.dbRw.transaction(async (tx) => {
       const updateData = this.prepareUpdateData(input);
-
-      await this.deleteExistingScheduledContacts(tx, scheduleId);
+      const hasRecipientChanges =
+        input.contact_ids !== undefined ||
+        input.contact_group_ids !== undefined ||
+        input.send_to === EScheduleSendTo.all;
+      const recipientType =
+        input.send_to === EScheduleSendTo.contacts ||
+        input.send_to === EScheduleSendTo.contact_groups ||
+        input.send_to === EScheduleSendTo.all
+          ? input.send_to
+          : input.contact_ids !== undefined
+            ? EScheduleSendTo.contacts
+            : input.contact_group_ids !== undefined
+              ? EScheduleSendTo.contact_groups
+              : undefined;
 
       if (
-        (input.send_to === EScheduleSendTo.contacts ||
-          updateData.send_to === EScheduleSendTo.contacts) &&
+        input.send_to === undefined &&
+        (recipientType === EScheduleSendTo.contacts ||
+          recipientType === EScheduleSendTo.contact_groups)
+      ) {
+        updateData.send_to = recipientType;
+      }
+
+      if (hasRecipientChanges) {
+        await this.deleteExistingScheduledContacts(tx, scheduleId);
+      }
+
+      if (
+        hasRecipientChanges &&
+        recipientType === EScheduleSendTo.contacts &&
         input.contact_ids &&
         input.contact_ids.length > 0
       ) {
@@ -175,8 +199,8 @@ export class ScheduleUpdaterRepository {
       }
 
       if (
-        (input.send_to === EScheduleSendTo.contact_groups ||
-          updateData.send_to === EScheduleSendTo.contact_groups) &&
+        hasRecipientChanges &&
+        recipientType === EScheduleSendTo.contact_groups &&
         input.contact_group_ids &&
         input.contact_group_ids.length > 0
       ) {

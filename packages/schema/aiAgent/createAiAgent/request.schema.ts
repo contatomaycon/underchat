@@ -6,8 +6,12 @@ import { EAiAgentVoiceOutputMode } from '@core/common/enums/EAiAgentVoiceOutputM
 export const createAiAgentRequestSchema = Type.Object({
   ai_agent_type_id: Type.String({ format: 'uuid' }),
   name: Type.String({ minLength: 1, maxLength: 200 }),
-  base_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  api_key: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  base_url: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 500 }), Type.Null()])
+  ),
+  api_key: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 2000 }), Type.Null()])
+  ),
   model: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
   embedding_model: Type.Optional(
     Type.Union([Type.String({ minLength: 1, maxLength: 100 }), Type.Null()])

@@ -17,6 +17,7 @@ import (
 	armadillo "go.mau.fi/whatsmeow/proto"
 	"go.mau.fi/whatsmeow/proto/instamadilloTransportPayload"
 	"go.mau.fi/whatsmeow/proto/waArmadilloApplication"
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/proto/waConsumerApplication"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"
@@ -47,6 +48,7 @@ type PairSuccess struct {
 	LID          types.JID
 	BusinessName string
 	Platform     string
+	Props        *waCompanionReg.ClientPairingProps
 }
 
 // PairError is emitted when a pair-success event is received from the server, but finishing the pairing locally fails.
@@ -55,6 +57,7 @@ type PairError struct {
 	LID          types.JID
 	BusinessName string
 	Platform     string
+	Props        *waCompanionReg.ClientPairingProps
 	Error        error
 }
 
@@ -87,11 +90,57 @@ type QRScannedWithoutMultidevice struct{}
 // at this point, which is why this event doesn't contain any data.
 type Connected struct{}
 
+// ConnectionStatusType is the provider-neutral connection state exposed by
+// all Underchat WhatsApp clients. The string values are part of the public wire
+// contract and must not be renamed without a coordinated schema change.
+type ConnectionStatusType string
+
+const (
+	ConnectionStatusInitializing   ConnectionStatusType = "initializing"
+	ConnectionStatusRestoring      ConnectionStatusType = "restoring"
+	ConnectionStatusConnecting     ConnectionStatusType = "connecting"
+	ConnectionStatusQR             ConnectionStatusType = "qr"
+	ConnectionStatusOnline         ConnectionStatusType = "online"
+	ConnectionStatusReconnecting   ConnectionStatusType = "reconnecting"
+	ConnectionStatusOffline        ConnectionStatusType = "offline"
+	ConnectionStatusLoggedOut      ConnectionStatusType = "logged_out"
+	ConnectionStatusInvalidSession ConnectionStatusType = "invalid_session"
+	ConnectionStatusConflict       ConnectionStatusType = "conflict"
+	ConnectionStatusLeaseLost      ConnectionStatusType = "lease_lost"
+	ConnectionStatusHandoff        ConnectionStatusType = "handoff"
+	ConnectionStatusStopped        ConnectionStatusType = "stopped"
+	ConnectionStatusError          ConnectionStatusType = "error"
+)
+
+// ConnectionStatus is an immutable point-in-time view of the client's
+// connection lifecycle. It is emitted as *ConnectionStatus through the normal
+// Client.AddEventHandler mechanism whenever a semantic field changes.
+//
+// SessionValid is deliberately tri-state: nil means that validity has not been
+// established yet, true means reusable registered credentials are present and
+// false means the credentials are known to be invalid or logged out.
+//
+// Reason and ErrorCode are bounded machine-safe descriptions. They never
+// contain QR payloads, JIDs, cookies, keys, tokens or raw error strings.
+type ConnectionStatus struct {
+	Provider      string               `json:"provider"`
+	Status        ConnectionStatusType `json:"status"`
+	Connected     bool                 `json:"connected"`
+	Authenticated bool                 `json:"authenticated"`
+	SessionValid  *bool                `json:"sessionValid"`
+	Recoverable   bool                 `json:"recoverable"`
+	QRAvailable   bool                 `json:"qrAvailable"`
+	Sequence      uint64               `json:"sequence"`
+	ChangedAt     time.Time            `json:"changedAt"`
+	Reason        string               `json:"reason,omitempty"`
+	ErrorCode     string               `json:"errorCode,omitempty"`
+}
+
 // KeepAliveTimeout is emitted when the keepalive ping request to WhatsApp web servers times out.
 //
-// Currently, there's no automatic handling for these, but it's expected that the TCP connection will
-// either start working again or notice it's dead on its own eventually. Clients may use this event to
-// decide to force a disconnect+reconnect faster.
+// The client keeps retrying and performs its own reconnect only after KeepAliveMaxFailTime has elapsed.
+// Consumers may use this event as telemetry, but should avoid adding a second count-based reconnect
+// authority that can restart an otherwise recoverable linked-device transport prematurely.
 type KeepAliveTimeout struct {
 	ErrorCount  int
 	LastSuccess time.Time

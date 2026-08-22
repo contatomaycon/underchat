@@ -9,6 +9,7 @@ import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class ServerReinstallServerUseCase {
@@ -72,16 +73,20 @@ export class ServerReinstallServerUseCase {
 
   async onServerCreated(
     t: TFunction<'translation', undefined>,
-    serverId: string
+    serverId: string,
+    installationId: string
   ): Promise<void> {
     try {
       const payload: CreateServerResponse = {
         server_id: serverId,
+        installation_id: installationId,
+        force_install: true,
       };
 
       await this.streamProducerService.send(
         this.kafkaServiceQueueService.createServer(),
-        payload
+        payload,
+        serverId
       );
     } catch {
       throw new Error(t('kafka_error'));
@@ -100,22 +105,83 @@ export class ServerReinstallServerUseCase {
       throw new Error(t('server_not_found'));
     }
 
+    const currentStatus =
+      await this.serverService.viewServerStatusByIdAuthoritative(serverId);
+
+    if (currentStatus === null) {
+      throw new Error(t('server_not_found'));
+    }
+
+    if (currentStatus === EServerStatus.installing) {
+      throw new Error(t('server_reinstall_failed'));
+    }
+
+    const installationId = uuidv7();
+
+    if (currentStatus === EServerStatus.new) {
+      const pendingInstallationClaimed =
+        await this.serverService.updateServerStatusById(
+          serverId,
+          EServerStatus.installing,
+          [EServerStatus.new]
+        );
+
+      if (!pendingInstallationClaimed) {
+        const latestStatus =
+          await this.serverService.viewServerStatusByIdAuthoritative(serverId);
+        if (latestStatus === EServerStatus.installing) {
+          return true;
+        }
+
+        throw new Error(t('server_reinstall_failed'));
+      }
+
+      try {
+        await this.onServerCreated(t, serverId, installationId);
+        return true;
+      } catch (error) {
+        await this.serverService.updateServerStatusById(
+          serverId,
+          EServerStatus.error,
+          [EServerStatus.installing]
+        );
+        throw error;
+      }
+    }
+
     const statusUpdated = await this.serverService.updateServerStatusById(
       serverId,
-      EServerStatus.new
+      EServerStatus.new,
+      [
+        EServerStatus.online,
+        EServerStatus.error,
+        EServerStatus.offline,
+        EServerStatus.canceled,
+      ]
     );
 
     if (!statusUpdated) {
+      const latestStatus =
+        await this.serverService.viewServerStatusByIdAuthoritative(serverId);
+      if (
+        latestStatus === EServerStatus.new ||
+        latestStatus === EServerStatus.installing
+      ) {
+        return true;
+      }
+
       throw new Error(t('server_reinstall_failed'));
     }
 
     try {
-      await this.onServerCreated(t, serverId);
+      await this.serverService.deleteLogInstallServer(serverId);
+      await this.onServerCreated(t, serverId, installationId);
       return true;
     } catch (error) {
       await this.serverService.updateServerStatusById(
         serverId,
-        EServerStatus.error
+        EServerStatus.error,
+        [EServerStatus.new]
       );
       throw error;
     }

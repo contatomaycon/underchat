@@ -146,8 +146,6 @@ export const useIntegrationStore = defineStore('integration', {
         const message = this.i18n.global.t('integration_created_successfully');
         this.showSnackbar(message, EColor.success);
 
-        await this.listIntegrations();
-
         return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('integration_creation_error');
@@ -190,8 +188,6 @@ export const useIntegrationStore = defineStore('integration', {
         const message = this.i18n.global.t('integration_updated_successfully');
         this.showSnackbar(message, EColor.success);
 
-        await this.listIntegrations();
-
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('integration_update_error');
@@ -229,8 +225,6 @@ export const useIntegrationStore = defineStore('integration', {
 
         const message = this.i18n.global.t('integration_deleted_successfully');
         this.showSnackbar(message, EColor.success);
-
-        await this.listIntegrations();
 
         return true;
       } catch (error) {
@@ -320,8 +314,6 @@ export const useIntegrationStore = defineStore('integration', {
           'integration_status_updated_successfully'
         );
         this.showSnackbar(message, EColor.success);
-
-        await this.listIntegrations();
 
         return true;
       } catch (error) {

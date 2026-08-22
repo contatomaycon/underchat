@@ -14,3 +14,5 @@ export * from './cancelPlanAccount';
 export * from './cancelAccountAddon';
 export * from './viewAccountCustomization';
 export * from './upsertAccountCustomization';
+export * from './listArchivedUserCards';
+export * from './reactivateUserCard';

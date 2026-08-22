@@ -1,5 +1,6 @@
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { pagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
+import { officialWindowSchema } from '@core/schema/chat/officialWindow.schema';
 import { Static, Type } from '@sinclair/typebox';
 
 export const accountSchema = Type.Object({
@@ -55,8 +56,19 @@ export const messageKeySchema = Type.Object({
   remote_jid_alt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
+export const chatMetaSchema = Type.Object({
+  status_epoch: Type.Optional(Type.Union([Type.Integer(), Type.Null()])),
+  status_event_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  status_source: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  assignment_epoch: Type.Optional(Type.Union([Type.Integer(), Type.Null()])),
+  assignment_event_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  labels_epoch: Type.Optional(Type.Union([Type.Integer(), Type.Null()])),
+  labels_event_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const listChatsResultSchema = Type.Object({
   chat_id: Type.String(),
+  meta: Type.Optional(Type.Union([chatMetaSchema, Type.Null()])),
   remote_jid: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   remote_jid_alt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   message_key: Type.Optional(Type.Union([messageKeySchema, Type.Null()])),
@@ -88,6 +100,9 @@ export const listChatsResultSchema = Type.Object({
   label: Type.Optional(Type.Union([Type.Array(labelSchema), Type.Null()])),
   forward_to_output_chatbot: Type.Optional(
     Type.Union([Type.Boolean(), Type.Null()])
+  ),
+  official_window: Type.Optional(
+    Type.Union([officialWindowSchema, Type.Null()])
   ),
 });
 

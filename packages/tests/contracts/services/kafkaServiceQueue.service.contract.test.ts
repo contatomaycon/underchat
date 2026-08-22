@@ -3,14 +3,8 @@ jest.mock('@core/common/vendors/nodeRdkafka', () => ({ rdkafka: {} }));
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 
 describe('KafkaServiceQueueService', () => {
-  it('builds all fixed topics and delegates delete/close', async () => {
-    const deleteTopics = jest.fn(async () => undefined);
-    const close = jest.fn(async () => undefined);
-
-    const service = new KafkaServiceQueueService({
-      deleteTopics,
-      close,
-    } as never);
+  it('builds all fixed topics while runtime deletion remains disabled', async () => {
+    const service = new KafkaServiceQueueService();
 
     expect(service.getNumPartitions()).toBe(30);
     expect(service.getReplicationFactor()).toBe(3);
@@ -19,9 +13,9 @@ describe('KafkaServiceQueueService', () => {
     expect(service.upsertMessage()).toBe('upsert.message');
     expect(service.upsertMessageHistory()).toBe('upsert.message.history');
     expect(service.updateMessageStatus()).toBe('update.message.status');
-    expect(service.markMessageRead()).toBe('mark.message.read');
     expect(service.clearChatSummary()).toBe('clear.chat.summary');
     expect(service.phoneValidationResponse()).toBe('phone.validation.response');
+    expect(service.userPhoneJidUpdate()).toBe('user.phone.jid.update');
     expect(service.updateProfileStatusExternalId()).toBe(
       'update.profile.status.external.id'
     );
@@ -38,7 +32,6 @@ describe('KafkaServiceQueueService', () => {
       'report.conversation.history.pdf.generate'
     );
     expect(service.scheduleStatusUpdate()).toBe('schedule.status.update');
-    expect(service.workerConfigUpdate()).toBe('worker.config.update');
     expect(service.aiAgentPromptEmbedding()).toBe('ai.agent.prompt.embedding');
     expect(service.chatHistoryEmbedding()).toBe('chat.history.embedding');
     expect(service.contactValidationUpdate()).toBe('contact.validation.update');
@@ -73,9 +66,9 @@ describe('KafkaServiceQueueService', () => {
       'upsert.message',
       'upsert.message.history',
       'update.message.status',
-      'mark.message.read',
       'clear.chat.summary',
       'phone.validation.response',
+      'user.phone.jid.update',
       'update.profile.status.external.id',
       'asaas.invoice.webhook',
       'asaas.nfse.webhook',
@@ -84,7 +77,6 @@ describe('KafkaServiceQueueService', () => {
       'official.whatsapp.webhook.event',
       'report.conversation.history.pdf.generate',
       'schedule.status.update',
-      'worker.config.update',
       'ai.agent.prompt.embedding',
       'chat.history.embedding',
       'contact.validation.update',
@@ -98,10 +90,9 @@ describe('KafkaServiceQueueService', () => {
       'worker.lifecycle.request',
     ]);
 
-    await expect(service.delete()).resolves.toBeUndefined();
-    expect(deleteTopics).toHaveBeenCalledWith(topics);
-
-    await expect(service.close()).resolves.toBeUndefined();
-    expect(close).toHaveBeenCalledTimes(1);
+    await expect(service.delete()).rejects.toThrow(
+      'runtime_global_kafka_topic_deletion_disabled'
+    );
+    expect('close' in service).toBe(false);
   });
 });

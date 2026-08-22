@@ -13,19 +13,29 @@ import type { IBaileysConnection } from '@core/common/interfaces/IBaileysConnect
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
+import {
+  ProviderAuxiliaryInvocationInFlightError,
+  ProviderAuxiliaryInvocationSingleFlight,
+  ProviderAuxiliaryInvocationTimeoutError,
+  invokeProviderAuxiliaryWithTimeout,
+} from '@core/common/functions/providerAuxiliaryInvocation';
+import {
+  isProviderInvocationCapacityError,
+  ProviderInvocationInFlightError,
+  ProviderInvocationSingleFlight,
+} from '@core/common/functions/providerInvocationSingleFlight';
+import {
+  workerErrorDiagnostics,
+  workerErrorFailureReason,
+} from '@core/common/functions/workerErrorDiagnostics';
 
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
 const DEFAULT_PROBE_TIMEOUT_MS = 10_000;
 const TRANSIENT_DISCONNECT_THRESHOLD = 3;
-
-function getChannel(): string {
-  return workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
-}
 
 function getWorker(): string {
   return baileysEnvironment.baileysWorkerId;
@@ -49,6 +59,7 @@ interface HealthCheckResult {
   last_probe_at: string;
   probe_latency_ms: number;
   phone?: string;
+  runtime_generation?: number;
 }
 
 type SocketStateName = 'open' | 'connecting' | 'closing' | 'closed' | 'unknown';
@@ -57,11 +68,17 @@ interface BaileysHealthCheckConfig {
   getSocket: () => WASocket | undefined;
   getStatus: () => Status;
   getCode: () => ECodeMessage;
-  reconnect: (input: IBaileysConnection) => void;
+  reconnect: (input: IBaileysConnection) => boolean | Promise<boolean>;
   isConnected: () => boolean;
+  prepareSession?: () => Promise<void | boolean>;
   hasSession: () => boolean;
   isIncomingBound?: (socket?: WASocket) => boolean;
+  getRuntimeFenceIdentity?: () => {
+    connection_epoch: string;
+    connection_sequence: number;
+  } | null;
   onStatusMismatch?: (detected: Status, workerStatus: EWorkerStatus) => void;
+  onProviderProbeTimeout?: (socket: WASocket, error: unknown) => void;
 }
 
 @singleton()
@@ -73,15 +90,33 @@ export class BaileysHealthCheckService {
   private socketGetter: (() => WASocket | undefined) | undefined;
   private statusGetter: (() => Status) | undefined;
   private codeGetter: (() => ECodeMessage) | undefined;
-  private reconnectAction: ((input: IBaileysConnection) => void) | undefined;
+  private reconnectAction:
+    ((input: IBaileysConnection) => boolean | Promise<boolean>) | undefined;
   private isConnectedAction: (() => boolean) | undefined;
+  private prepareSessionAction: (() => Promise<void | boolean>) | undefined;
   private hasSessionAction: (() => boolean) | undefined;
   private isIncomingBoundAction: ((socket?: WASocket) => boolean) | undefined;
-  private onStatusMismatch:
-    | ((detected: Status, workerStatus: EWorkerStatus) => void)
+  private runtimeFenceIdentityGetter:
+    | (() => {
+        connection_epoch: string;
+        connection_sequence: number;
+      } | null)
     | undefined;
+  private onStatusMismatch:
+    ((detected: Status, workerStatus: EWorkerStatus) => void) | undefined;
+  private onProviderProbeTimeout:
+    ((socket: WASocket, error: unknown) => void) | undefined;
+  private readonly providerInvocationFence =
+    new ProviderInvocationSingleFlight();
+  private readonly providerProbeSingleFlight =
+    new ProviderAuxiliaryInvocationSingleFlight();
+  private readonly openSocketProbeFlights = new WeakMap<
+    WASocket,
+    Promise<HealthCheckResult>
+  >();
   private bootstrapPromise: Promise<void> | undefined;
   private bootstrapLock = false;
+  private bootstrapGeneration = 0;
   private transientDisconnectFailures = 0;
   private lastResult: HealthCheckResult = {
     isHealthy: false,
@@ -113,9 +148,12 @@ export class BaileysHealthCheckService {
     this.codeGetter = options.getCode;
     this.reconnectAction = options.reconnect;
     this.isConnectedAction = options.isConnected;
+    this.prepareSessionAction = options.prepareSession;
     this.hasSessionAction = options.hasSession;
     this.isIncomingBoundAction = options.isIncomingBound;
+    this.runtimeFenceIdentityGetter = options.getRuntimeFenceIdentity;
     this.onStatusMismatch = options.onStatusMismatch;
+    this.onProviderProbeTimeout = options.onProviderProbeTimeout;
   }
 
   start(intervalMs = DEFAULT_HEALTH_CHECK_INTERVAL_MS): void {
@@ -132,6 +170,7 @@ export class BaileysHealthCheckService {
   }
 
   stop(): void {
+    this.bootstrapGeneration += 1;
     if (!this.isRunning) {
       return;
     }
@@ -155,10 +194,13 @@ export class BaileysHealthCheckService {
     }
 
     this.bootstrapLock = true;
-    this.bootstrapPromise = this.runBootstrapConnection().finally(() => {
-      this.bootstrapLock = false;
-      this.bootstrapPromise = undefined;
-    });
+    const generation = this.bootstrapGeneration;
+    this.bootstrapPromise = this.runBootstrapConnection(generation).finally(
+      () => {
+        this.bootstrapLock = false;
+        this.bootstrapPromise = undefined;
+      }
+    );
 
     return this.bootstrapPromise;
   }
@@ -169,6 +211,7 @@ export class BaileysHealthCheckService {
       workerStatus?: EWorkerStatus;
       detectedStatus?: Status;
       providerState?: string;
+      publishStatus?: boolean;
     } = {}
   ): Promise<void> {
     const workerStatus = options.workerStatus ?? EWorkerStatus.disponible;
@@ -197,7 +240,9 @@ export class BaileysHealthCheckService {
       this.lastKnownStatus = result.detectedStatus;
       this.lastKnownWorkerStatus = result.workerStatus;
 
-      await this.notifyStatusChange(undefined, result);
+      if (options.publishStatus !== false) {
+        await this.notifyStatusChange(undefined, result);
+      }
     }
   }
 
@@ -282,10 +327,24 @@ export class BaileysHealthCheckService {
       this.lastKnownStatus = result.detectedStatus;
       this.lastKnownWorkerStatus = result.workerStatus;
 
-      await this.notifyStatusChange(socket, result);
+      if (this.shouldPublishStatusChange(result)) {
+        await this.notifyStatusChange(socket, result);
+      } else {
+        this.logHealthResult(
+          'baileys.health_check.soft_transition_deferred',
+          result,
+          {
+            reported_status: reportedStatus,
+          }
+        );
+      }
     }
 
-    if (reportedStatus !== result.detectedStatus && this.onStatusMismatch) {
+    if (
+      reportedStatus !== result.detectedStatus &&
+      this.shouldReportStatusMismatch(result) &&
+      this.onStatusMismatch
+    ) {
       console.log(
         `[BaileysHealthCheck] Mismatch detected: reported=${reportedStatus}, actual=${result.detectedStatus}, reason=${result.reason ?? 'unknown'}`
       );
@@ -295,7 +354,15 @@ export class BaileysHealthCheckService {
     return result;
   }
 
-  private async runBootstrapConnection(): Promise<void> {
+  private shouldPublishStatusChange(result: HealthCheckResult): boolean {
+    return result.session_ready || !result.isHealthy;
+  }
+
+  private shouldReportStatusMismatch(result: HealthCheckResult): boolean {
+    return result.session_ready || !result.isHealthy;
+  }
+
+  private async runBootstrapConnection(generation: number): Promise<void> {
     if (!this.hasBootstrapConfig()) {
       console.warn(
         '[BaileysHealthCheck] bootstrapConnection skipped: service not configured'
@@ -304,6 +371,55 @@ export class BaileysHealthCheckService {
     }
 
     if (this.isConnectedAction?.()) {
+      return;
+    }
+
+    let sessionStoreAuthorized = true;
+    try {
+      sessionStoreAuthorized = (await this.prepareSessionAction?.()) !== false;
+    } catch (error) {
+      if (generation !== this.bootstrapGeneration) {
+        throw new Error('baileys_bootstrap_cancelled');
+      }
+      const reason = workerErrorFailureReason(
+        'baileys_bootstrap_session_refresh_failed',
+        error
+      );
+      console.error(
+        '[BaileysHealthCheck] Bootstrap session refresh failed',
+        workerErrorDiagnostics(error)
+      );
+      if (
+        this.isConnectedAction?.() ||
+        this.statusGetter?.() === Status.connected
+      ) {
+        return;
+      }
+      await this.reportBootstrapFailure(
+        reason,
+        'bootstrap_session_refresh_failed'
+      );
+      throw new Error(reason);
+    }
+
+    if (!sessionStoreAuthorized) {
+      console.log(
+        '[BaileysHealthCheck] Auth store dormant. Waiting for an authorized QR grant.'
+      );
+      await this.notifyDisponibleStatus(
+        'Waiting for an authorized QR connection grant'
+      );
+      return;
+    }
+
+    if (generation !== this.bootstrapGeneration) {
+      throw new Error('baileys_bootstrap_cancelled');
+    }
+
+    if (
+      this.isConnectedAction?.() ||
+      this.statusGetter?.() === Status.connected
+    ) {
       return;
     }
 
@@ -331,16 +447,57 @@ export class BaileysHealthCheckService {
       return;
     }
 
+    let reconnectStarted: boolean | undefined;
     try {
-      this.reconnectAction?.({
+      reconnectStarted = await this.reconnectAction?.({
         initial_connection: true,
         requested_by_user: false,
         from_disconnect_restart: true,
+        runtime_generation: baileysEnvironment.runtimeGeneration,
       });
     } catch (error) {
+      if (generation !== this.bootstrapGeneration) {
+        throw new Error('baileys_bootstrap_cancelled');
+      }
+      const reason = workerErrorFailureReason(
+        'baileys_bootstrap_reconnect_failed',
+        error
+      );
       console.error('[BaileysHealthCheck] Bootstrap reconnect trigger failed', {
-        error: error instanceof Error ? error.message : String(error),
+        ...workerErrorDiagnostics(error),
       });
+      await this.reportBootstrapFailure(reason, 'bootstrap_reconnect_failed');
+      throw new Error(reason);
+    }
+
+    if (generation !== this.bootstrapGeneration) {
+      throw new Error('baileys_bootstrap_cancelled');
+    }
+    if (reconnectStarted !== true) {
+      const reason = 'baileys_bootstrap_reconnect_not_started';
+      await this.reportBootstrapFailure(
+        reason,
+        'bootstrap_reconnect_not_started'
+      );
+      throw new Error(reason);
+    }
+  }
+
+  private async reportBootstrapFailure(
+    reason: string,
+    providerState: string
+  ): Promise<void> {
+    try {
+      await this.notifyDisconnected(reason, {
+        workerStatus: EWorkerStatus.offline,
+        detectedStatus: Status.disconnected,
+        providerState,
+      });
+    } catch (reportError) {
+      console.error(
+        '[BaileysHealthCheck] Failed to report bootstrap failure',
+        workerErrorDiagnostics(reportError)
+      );
     }
   }
 
@@ -362,6 +519,7 @@ export class BaileysHealthCheckService {
       account_id: getAccount(),
       worker_type_id: EWorkerType.baileys,
       worker_status_id: EWorkerStatus.disponible,
+      runtime_generation: baileysEnvironment.runtimeGeneration,
       session_ready: false,
       can_send: false,
       can_receive_runtime: false,
@@ -379,7 +537,7 @@ export class BaileysHealthCheckService {
     } catch (error) {
       console.error(
         '[BaileysHealthCheck] Failed to notify available worker status during bootstrap',
-        error
+        workerErrorDiagnostics(error)
       );
     }
 
@@ -403,12 +561,12 @@ export class BaileysHealthCheckService {
     const socketState = this.inspectSocketState(socket);
 
     if (socketState.state === 'open') {
-      return this.probeOpenSocket(socket, socketState.reason);
+      return this.probeOpenSocketSingleFlight(socket, socketState.reason);
     }
 
     if (
       socketState.state === 'connecting' ||
-      reportedStatus === Status.connecting
+      (socketState.state === 'unknown' && reportedStatus === Status.connecting)
     ) {
       return this.buildResult({
         isHealthy: true,
@@ -590,14 +748,30 @@ export class BaileysHealthCheckService {
     try {
       await this.runProbe(socket, selfPhone);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
+      if (isProviderInvocationCapacityError(error)) {
+        return this.buildResult({
+          isHealthy: true,
+          reason: 'Outbound provider capacity saturated',
+          detectedStatus: Status.connecting,
+          workerStatus: EWorkerStatus.disponible,
+          providerState: 'open',
+          degradedReason: 'outbound_provider_capacity_saturated',
+          authenticated: true,
+          canReceiveRuntime: true,
+          lastProbeAt,
+          probeLatencyMs: Date.now() - probeStartedAt,
+          phone: selfPhone,
+        });
+      }
+
+      const diagnostics = workerErrorDiagnostics(error);
       return this.buildResult({
         isHealthy: true,
-        reason: `Session probe failed: ${reason}`,
+        reason: 'Session probe failed',
         detectedStatus: Status.connecting,
         workerStatus: EWorkerStatus.disponible,
         providerState: 'open',
-        degradedReason: reason,
+        degradedReason: `session_probe_failed:${diagnostics.error_code}`,
         authenticated: true,
         canReceiveRuntime: true,
         lastProbeAt,
@@ -622,6 +796,26 @@ export class BaileysHealthCheckService {
     });
   }
 
+  private probeOpenSocketSingleFlight(
+    socket: WASocket,
+    socketReason: string
+  ): Promise<HealthCheckResult> {
+    const existing = this.openSocketProbeFlights.get(socket);
+    if (existing) {
+      return existing;
+    }
+
+    const flight = this.probeOpenSocket(socket, socketReason);
+    this.openSocketProbeFlights.set(socket, flight);
+    const clearFlight = (): void => {
+      if (this.openSocketProbeFlights.get(socket) === flight) {
+        this.openSocketProbeFlights.delete(socket);
+      }
+    };
+    void flight.then(clearFlight, clearFlight);
+    return flight;
+  }
+
   private async runProbe(socket: WASocket, selfPhone: string): Promise<void> {
     const probeSocket = socket as WASocket & {
       fetchPrivacySettings?: (force?: boolean) => Promise<unknown>;
@@ -634,14 +828,17 @@ export class BaileysHealthCheckService {
     if (typeof probeSocket.onWhatsApp !== 'function') {
       throw new Error('onWhatsApp_unavailable');
     }
+    const fetchPrivacySettings =
+      probeSocket.fetchPrivacySettings.bind(probeSocket);
+    const onWhatsApp = probeSocket.onWhatsApp.bind(probeSocket);
 
-    await this.withProbeTimeout(
-      Promise.resolve(probeSocket.fetchPrivacySettings(true)),
-      'fetchPrivacySettings'
+    await this.invokeProviderProbe(socket, 'fetchPrivacySettings', () =>
+      fetchPrivacySettings(true)
     );
-    const registered = await this.withProbeTimeout(
-      Promise.resolve(probeSocket.onWhatsApp(selfPhone)),
-      'onWhatsApp'
+    const registered = await this.invokeProviderProbe(
+      socket,
+      'onWhatsApp',
+      () => onWhatsApp(selfPhone)
     );
 
     const selfExists =
@@ -653,22 +850,48 @@ export class BaileysHealthCheckService {
     }
   }
 
-  private withProbeTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error(`${label}_timeout`));
-      }, DEFAULT_PROBE_TIMEOUT_MS);
+  private async invokeProviderProbe<T>(
+    socket: WASocket,
+    operation: string,
+    invoke: () => Promise<T>
+  ): Promise<T> {
+    const runtimeLease = this.providerInvocationFence.acquire(socket);
+    if (!runtimeLease) {
+      const stalled = this.providerInvocationFence.isStalled(socket);
+      const error = new ProviderInvocationInFlightError(
+        stalled ? 'stalled' : 'capacity'
+      );
+      if (stalled) {
+        this.onProviderProbeTimeout?.(socket, error);
+      }
+      throw error;
+    }
 
-      promise
-        .then((value) => {
-          clearTimeout(timeout);
-          resolve(value);
-        })
-        .catch((error) => {
-          clearTimeout(timeout);
-          reject(error);
-        });
-    });
+    const operationKey = `health:${operation}`;
+    const operationLease = this.providerProbeSingleFlight.acquire(
+      socket,
+      operationKey
+    );
+    if (!operationLease) {
+      runtimeLease.releaseBeforeStart();
+      throw new ProviderAuxiliaryInvocationInFlightError(operationKey);
+    }
+
+    const providerCall = operationLease.start(() => runtimeLease.start(invoke));
+    try {
+      return await invokeProviderAuxiliaryWithTimeout({
+        provider: 'baileys',
+        operation: operationKey,
+        timeoutMs: DEFAULT_PROBE_TIMEOUT_MS,
+        invoke: () => providerCall,
+      });
+    } catch (error) {
+      if (error instanceof ProviderAuxiliaryInvocationTimeoutError) {
+        runtimeLease.markStalled();
+        this.onProviderProbeTimeout?.(socket, error);
+      }
+      throw error;
+    }
   }
 
   private buildResult(input: {
@@ -705,6 +928,7 @@ export class BaileysHealthCheckService {
       last_probe_at: input.lastProbeAt ?? new Date().toISOString(),
       probe_latency_ms: input.probeLatencyMs ?? 0,
       phone: input.phone,
+      runtime_generation: baileysEnvironment.runtimeGeneration,
     };
   }
 
@@ -724,6 +948,7 @@ export class BaileysHealthCheckService {
           : ECodeMessage.connectionLost,
       phone: getPhoneNumber(socket?.user?.id),
       worker_status_id: result.workerStatus,
+      runtime_generation: baileysEnvironment.runtimeGeneration,
       session_ready: result.session_ready,
       can_send: result.can_send,
       can_receive_runtime: result.can_receive_runtime,
@@ -732,6 +957,7 @@ export class BaileysHealthCheckService {
       degraded_reason: result.degraded_reason,
       last_probe_at: result.last_probe_at,
       probe_latency_ms: result.probe_latency_ms,
+      ...(this.runtimeFenceIdentityGetter?.() ?? {}),
     };
 
     logLocalConnectionStatus('baileys.health_check.notify_status', {
@@ -754,19 +980,13 @@ export class BaileysHealthCheckService {
     });
 
     try {
-      await this.centrifugo.publishSub(getChannel(), payload);
-    } catch (error) {
-      console.error('[BaileysHealthCheck] Failed to publish status', error);
-    }
-
-    try {
       await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
         payload
       );
     } catch (error) {
       console.error(
         '[BaileysHealthCheck] Failed to notify balance worker status',
-        error
+        workerErrorDiagnostics(error)
       );
     }
 

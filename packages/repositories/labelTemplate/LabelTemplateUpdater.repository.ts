@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { labelTemplate } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { UpdateLabelTemplateRequest } from '@core/schema/labelTemplate/editLabelTemplate/request.schema';
 
 @injectable()
@@ -33,14 +33,21 @@ export class LabelTemplateUpdaterRepository {
 
   updateLabelTemplateById = async (
     labelTemplateId: string,
-    input: UpdateLabelTemplateRequest
+    input: UpdateLabelTemplateRequest,
+    accountId: string
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
     const result = await this.dbRw
       .update(labelTemplate)
       .set(updateInput)
-      .where(eq(labelTemplate.label_template_id, labelTemplateId))
+      .where(
+        and(
+          eq(labelTemplate.label_template_id, labelTemplateId),
+          eq(labelTemplate.account_id, accountId),
+          isNull(labelTemplate.deleted_at)
+        )
+      )
       .execute();
 
     return result.rowCount === 1;

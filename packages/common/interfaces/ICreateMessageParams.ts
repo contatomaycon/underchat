@@ -5,6 +5,7 @@ import { IQuotedMessage } from './IChatMessage';
 export interface ICreateMessageParams {
   chat: IChat;
   chatId: string;
+  messageId?: string;
   type: EMessageType;
   message: string | null;
   messageQuotedId: string | null;

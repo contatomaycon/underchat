@@ -9,7 +9,18 @@ export class ScheduleWorkersListerUseCase {
     private readonly scheduleService: ScheduleService
   ) {}
 
-  async execute(accountId: string): Promise<ListScheduleWorkersFinalResponse> {
-    return this.scheduleService.listScheduleWorkers(accountId);
+  async execute(
+    accountId: string,
+    userChannels: { id: string; name: string }[] = []
+  ): Promise<ListScheduleWorkersFinalResponse> {
+    const workers = await this.scheduleService.listScheduleWorkers(accountId);
+
+    if (userChannels.length === 0) {
+      return workers;
+    }
+
+    const allowedWorkerIds = new Set(userChannels.map((channel) => channel.id));
+
+    return workers.filter((worker) => allowedWorkerIds.has(worker.worker_id));
   }
 }

@@ -20,6 +20,8 @@ import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearch
 import { buildPhoneSearchClause } from '@core/common/functions/buildPhoneSearchClause';
 import { ChatUserService } from '@core/services/chatUser.service';
 import { extractUserChannelIds } from '@core/common/functions/extractUserChannelIds';
+import { OfficialWhatsappConversationWindowService } from '@core/services/officialWhatsappConversationWindow.service';
+import { IChat } from '@core/common/interfaces/IChat';
 
 @injectable()
 export class ChatListerUseCase {
@@ -41,7 +43,11 @@ export class ChatListerUseCase {
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject(ChatUserService)
-    private readonly chatUserService: ChatUserService
+    private readonly chatUserService: ChatUserService,
+    @inject(OfficialWhatsappConversationWindowService)
+    private readonly officialWindowService: OfficialWhatsappConversationWindowService = {
+      hydrateChats: async <T extends IChat>(chats: T[]) => chats,
+    } as OfficialWhatsappConversationWindowService
   ) {}
 
   private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
@@ -1386,7 +1392,9 @@ export class ChatListerUseCase {
       };
     }
 
-    const chats = this.mapResultHitsToChats(result.hits.hits);
+    const chats = await this.officialWindowService.hydrateChats(
+      this.mapResultHitsToChats(result.hits.hits) as unknown as IChat[]
+    );
     const total = this.getHitsTotal(result.hits.total);
 
     const pagings = setPaginationData(
@@ -1398,7 +1406,7 @@ export class ChatListerUseCase {
 
     return {
       pagings,
-      results: chats,
+      results: chats as unknown as ListChatsResult[],
       counts,
     };
   }

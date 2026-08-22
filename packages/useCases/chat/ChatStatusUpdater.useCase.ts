@@ -38,6 +38,10 @@ import { ChatClosureCommentCreatorRepository } from '@core/repositories/chat/Cha
 import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 import { ChatUserService } from '@core/services/chatUser.service';
 import { isChatbotStatus } from '@core/common/functions/chatStatus';
+import { resolveChatLifecycleEventTypes } from '@core/common/constants/outboundWebhookEvents';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
+import { v7 as uuidv7 } from 'uuid';
+import { OperatorReplyPendingRedistributionTrackerService } from '@core/services/operatorReplyPendingRedistributionTracker.service';
 
 interface IClosedStatusProtocolResult {
   protocol: string | null;
@@ -70,7 +74,9 @@ export class ChatStatusUpdaterUseCase {
     @inject(AttendanceInactivityService)
     private readonly attendanceInactivityService: AttendanceInactivityService,
     @inject(ChatUserService)
-    private readonly chatUserService: ChatUserService
+    private readonly chatUserService: ChatUserService,
+    @inject(OperatorReplyPendingRedistributionTrackerService)
+    private readonly operatorReplyPendingRedistributionTracker: OperatorReplyPendingRedistributionTrackerService | null = null
   ) {}
 
   private async sendProtocolMessage(
@@ -644,7 +650,8 @@ export class ChatStatusUpdaterUseCase {
     body: UpdateChatStatusBody,
     actions: IJwtGroupHierarchy[],
     userChannels: { id: string; name: string }[] = [],
-    executionOptions?: { skipClosureCommentValidation?: boolean }
+    executionOptions?: { skipClosureCommentValidation?: boolean },
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<IChat | null> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -705,6 +712,13 @@ export class ChatStatusUpdaterUseCase {
       !isParticipantAttendant
     ) {
       throw new Error(t('chat_join_required'));
+    }
+
+    // Status updates are state-setting operations. A retry after a committed
+    // response must not append journal markers or repeat protocol, closure,
+    // annotation and notification side effects.
+    if (status === chat.status) {
+      return chat;
     }
 
     let user: IChat['user'] | null | undefined;
@@ -797,6 +811,10 @@ export class ChatStatusUpdaterUseCase {
       closedAt
     );
 
+    if (isReopeningChat) {
+      updatedChat.embedded_for_ai_agents = [];
+    }
+
     if (finalStatus === EChatStatus.in_chat) {
       updatedChat.forward_to_output_chatbot = true;
       updatedChat.chatbot_transfer_id = null;
@@ -816,10 +834,38 @@ export class ChatStatusUpdaterUseCase {
         finalStatus === EChatStatus.ura_schedule ||
         finalStatus === EChatStatus.ura_webhook,
       refresh: true,
+      outboundWebhook: {
+        eventTypes: resolveChatLifecycleEventTypes({
+          operation:
+            finalStatus === EChatStatus.in_chat &&
+            chat.status !== EChatStatus.in_chat
+              ? 'attended'
+              : 'status_changed',
+          previousStatus: chat.status,
+          currentStatus: finalStatus,
+        }),
+        idempotencyKey: `chat-status:${chat.chat_id}:${chat.status}:${finalStatus}:${currentDate}`,
+        source: webhookSource,
+        previousChat: chat,
+        actor: { type: 'user', id: userId },
+        changes: {
+          previous_status: chat.status,
+          status: finalStatus,
+          requested_status: requestedStatus,
+          closure_comment:
+            requestedStatus === EChatStatus.closed
+              ? (closureComment ?? null)
+              : null,
+        },
+      },
     });
     if (!updated) {
       throw new Error(t('chat_status_update_failed'));
     }
+
+    await this.operatorReplyPendingRedistributionTracker?.handleChatTransition(
+      updatedChat
+    );
 
     if (finalStatus === EChatStatus.in_chat && isChatbotStatus(chat.status)) {
       await this.chatbotFlowRunnerService.clearFlowCacheForChat(
@@ -845,7 +891,13 @@ export class ChatStatusUpdaterUseCase {
       );
     }
 
-    await this.chatService.clearChatSummary(params.chat_id, accountId);
+    await this.chatService.clearChatSummary(params.chat_id, accountId, {
+      operationId: uuidv7(),
+      enforceExpectedSummaryRevision: true,
+      expectedSummaryRevision: chat.summary?.revision ?? 0,
+      enforceExpectedLastMessageId: true,
+      expectedLastMessageId: chat.summary?.last_message_id ?? null,
+    });
 
     if (requestedStatus === EChatStatus.closed && closureComment) {
       await this.persistClosureComment({

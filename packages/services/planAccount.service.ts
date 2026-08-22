@@ -3,16 +3,14 @@ import { PlanAccountUpdaterRepository } from '@core/repositories/planAccount/Pla
 import { UpdatePlanAccountRequest } from '@core/schema/planAccount/updatePlanAccount/request.schema';
 import { withLock } from '@core/common/functions/withLock';
 import { AccountService } from './account.service';
-import { UserService } from './user.service';
-import { WorkerService } from './worker.service';
-import { RoleService } from './role.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { TFunction } from 'i18next';
-import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
 import { AiAgentService } from './aiAgent.service';
+import { PlanLimitEnforcementService } from './planLimitEnforcement.service';
 import Redis from 'ioredis';
+import { PlanEntitlementService } from './planEntitlement.service';
 
 @injectable()
 export class PlanAccountService {
@@ -21,22 +19,41 @@ export class PlanAccountService {
     private readonly planAccountUpdaterRepository: PlanAccountUpdaterRepository,
     @inject(AccountService)
     private readonly accountService: AccountService,
-    @inject(UserService)
-    private readonly userService: UserService,
-    @inject(WorkerService)
-    private readonly workerService: WorkerService,
-    @inject(RoleService)
-    private readonly roleService: RoleService,
-    @inject(DashboardChatbotsRepository)
-    private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
     @inject(DashboardStatsRepository)
     private readonly dashboardStatsRepository: DashboardStatsRepository,
     @inject(DashboardSchedulesRepository)
     private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
     @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
-    @inject('Redis') private readonly redis: Redis
+    @inject(PlanLimitEnforcementService)
+    private readonly planLimitEnforcementService: PlanLimitEnforcementService,
+    @inject('Redis') private readonly redis: Redis,
+    @inject(PlanEntitlementService)
+    private readonly planEntitlementService: PlanEntitlementService
   ) {}
+
+  private readonly restoreIntegrationEntitlementAfterFailure = async (
+    accountId: string,
+    denyFenceOwnerToken?: string
+  ): Promise<void> => {
+    try {
+      await (denyFenceOwnerToken
+        ? this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration,
+            denyFenceOwnerToken
+          )
+        : this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration
+          ));
+    } catch (error) {
+      console.error(
+        'Could not restore integration entitlement after a failed plan account mutation.',
+        error
+      );
+    }
+  };
 
   findPlanAccountByAccountId = async (accountId: string) => {
     return this.planAccountUpdaterRepository.findPlanAccountByAccountId(
@@ -48,19 +65,84 @@ export class PlanAccountService {
     accountId: string,
     input: UpdatePlanAccountRequest
   ): Promise<boolean> => {
-    const lockKey = `plan-account:${accountId}`;
-    const result = await withLock(
-      this.redis,
-      lockKey,
-      () =>
-        this.planAccountUpdaterRepository.updatePlanAccountByAccountId(
-          accountId,
-          input
-        ),
-      { ttlMs: 20000 }
-    );
+    const projectedCycle =
+      await this.planAccountUpdaterRepository.projectPlanAccountCycle(
+        accountId,
+        input
+      );
+    const projectedCycleIsActive =
+      new Date(projectedCycle.nextPaymentDate).getTime() > Date.now();
+    const projectedAllowed =
+      projectedCycleIsActive &&
+      (await this.planEntitlementService.willGrantAfterPlanAssignment({
+        accountId,
+        planId: input.plan_id,
+        planProductId: EPlanProduct.integration,
+        prospectiveLastPaymentDate: projectedCycle.lastPaymentDate,
+        includeExistingAddons: true,
+      }));
+    const mutate = () =>
+      withLock(
+        this.redis,
+        `plan-account:${accountId}`,
+        () =>
+          this.planAccountUpdaterRepository.updatePlanAccountByAccountId(
+            accountId,
+            input
+          ),
+        { ttlMs: 20000 }
+      );
 
-    return result ?? false;
+    if (projectedAllowed) {
+      await this.planEntitlementService.refreshAfterMutation(
+        accountId,
+        EPlanProduct.integration
+      );
+      const result = await mutate();
+      await this.planEntitlementService.refreshAfterMutation(
+        accountId,
+        EPlanProduct.integration
+      );
+      return result ?? false;
+    }
+
+    let denyFenceOwnerToken: string | null;
+    try {
+      denyFenceOwnerToken = await this.planEntitlementService.installDenyFence(
+        accountId,
+        EPlanProduct.integration
+      );
+    } catch (error) {
+      throw error;
+    }
+
+    let mutationCompleted = false;
+
+    try {
+      const result = await mutate();
+      mutationCompleted = true;
+
+      await (denyFenceOwnerToken
+        ? this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration,
+            denyFenceOwnerToken
+          )
+        : this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration
+          ));
+
+      return result ?? false;
+    } catch (error) {
+      if (!mutationCompleted) {
+        await this.restoreIntegrationEntitlementAfterFailure(
+          accountId,
+          denyFenceOwnerToken ?? undefined
+        );
+      }
+      throw error;
+    }
   };
 
   async totalUserLimitByAccountId(accountId: string): Promise<number> {
@@ -77,85 +159,44 @@ export class PlanAccountService {
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<void> {
-    const [viewAccountQuantityProduct, totalUserByAccountId] =
-      await Promise.all([
-        this.totalUserLimitByAccountId(accountId),
-        this.userService.totalUserByAccount(accountId),
-      ]);
-
-    if (viewAccountQuantityProduct <= 0) {
-      throw new Error(t('user_not_available'));
-    }
-
-    if (totalUserByAccountId >= viewAccountQuantityProduct) {
-      throw new Error(t('user_not_available_additional'));
-    }
+    await this.planLimitEnforcementService.ensureCanActivate(
+      t,
+      accountId,
+      'user'
+    );
   }
 
   async validateCanCreateWorker(
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<void> {
-    const [viewAccountQuantityProduct, totalWorkerByAccountId] =
-      await Promise.all([
-        this.accountService.viewAccountQuantityProduct(
-          accountId,
-          EPlanProduct.worker
-        ),
-        this.workerService.totalWorkerByAccountId(accountId),
-      ]);
-
-    if (viewAccountQuantityProduct <= 0) {
-      throw new Error(t('worker_not_available'));
-    }
-
-    if (totalWorkerByAccountId >= viewAccountQuantityProduct) {
-      throw new Error(t('worker_not_available_additional'));
-    }
+    await this.planLimitEnforcementService.ensureCanActivate(
+      t,
+      accountId,
+      'worker'
+    );
   }
 
   async validateCanCreateRole(
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<void> {
-    const [viewAccountQuantityProduct, totalRoleByAccountId] =
-      await Promise.all([
-        this.accountService.viewAccountQuantityProduct(
-          accountId,
-          EPlanProduct.role
-        ),
-        this.roleService.totalRoleByAccount(accountId),
-      ]);
-
-    if (viewAccountQuantityProduct <= 0) {
-      throw new Error(t('role_not_available'));
-    }
-
-    if (totalRoleByAccountId >= viewAccountQuantityProduct) {
-      throw new Error(t('role_not_available_additional'));
-    }
+    await this.planLimitEnforcementService.ensureCanActivate(
+      t,
+      accountId,
+      'role'
+    );
   }
 
   async validateCanCreateChatbot(
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<void> {
-    const [viewAccountQuantityProduct, totalChatbotByAccountId] =
-      await Promise.all([
-        this.accountService.viewAccountQuantityProduct(
-          accountId,
-          EPlanProduct.chatbot
-        ),
-        this.dashboardChatbotsRepository.getChatbotsTotal(accountId),
-      ]);
-
-    if (viewAccountQuantityProduct <= 0) {
-      throw new Error(t('chatbot_not_available'));
-    }
-
-    if (totalChatbotByAccountId >= viewAccountQuantityProduct) {
-      throw new Error(t('chatbot_not_available_additional'));
-    }
+    await this.planLimitEnforcementService.ensureCanActivate(
+      t,
+      accountId,
+      'chatbot'
+    );
   }
 
   async validateCanCreateContact(
@@ -273,18 +314,10 @@ export class PlanAccountService {
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<void> {
-    const aiAgentConfig = await this.viewAiAgentConfigByAccountId(accountId);
-
-    if (
-      !aiAgentConfig.enabled ||
-      aiAgentConfig.ai_agent === null ||
-      aiAgentConfig.ai_agent <= 0
-    ) {
-      throw new Error(t('ai_agent_not_available'));
-    }
-
-    if (aiAgentConfig.total >= aiAgentConfig.ai_agent) {
-      throw new Error(t('ai_agent_not_available_additional'));
-    }
+    await this.planLimitEnforcementService.ensureCanActivate(
+      t,
+      accountId,
+      'ai_agent'
+    );
   }
 }

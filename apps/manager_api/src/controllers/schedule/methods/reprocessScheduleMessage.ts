@@ -1,6 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { handleControllerError } from '@core/common/functions/handleControllerError';
+import { handleScheduleControllerError } from '@core/controllers/schedule/methods/handleScheduleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ScheduleMessagesReprocessorUseCase } from '@core/useCases/schedule/ScheduleMessagesReprocessor.useCase';
@@ -23,7 +23,8 @@ export const reprocessScheduleMessage = async (
       t,
       scheduleId,
       messageId,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.channels
     );
 
     return sendResponse(reply, {
@@ -32,6 +33,6 @@ export const reprocessScheduleMessage = async (
       data: null,
     });
   } catch (error) {
-    handleControllerError(error, reply, t);
+    handleScheduleControllerError(error, reply, t);
   }
 };

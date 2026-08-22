@@ -44,7 +44,10 @@ const brushWidth = shallowRef(5);
 const blurIntensity = shallowRef(50);
 const selectedShape = shallowRef<ChatImageEditorShape>('rect');
 const isExporting = shallowRef(false);
+const isSending = shallowRef(false);
 const isEmojiMenuOpen = shallowRef(false);
+
+const isBusy = computed(() => isExporting.value || isSending.value);
 
 const activePhoto = computed(() => {
   return photosModel.value.find((photo) => photo.id === activePhotoId.value) ?? null;
@@ -313,13 +316,45 @@ const handleCropClick = async () => {
 };
 
 const handleSend = async () => {
-  if (canEditActivePhoto.value) {
-    await applyCurrentImage();
+  if (photosModel.value.length === 0 || isBusy.value) return;
+
+  isSending.value = true;
+  try {
+    if (canEditActivePhoto.value) {
+      await applyCurrentImage();
+    }
+
+    editor.dispose();
+    openModel.value = false;
+    emit('send');
+  } finally {
+    isSending.value = false;
+  }
+};
+
+const handleSendEnter = (event: KeyboardEvent) => {
+  if (event.isComposing) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  void handleSend();
+};
+
+const focusPreview = (event?: MouseEvent) => {
+  const target = event?.target;
+  if (
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLInputElement
+  ) {
+    return;
   }
 
-  editor.dispose();
-  openModel.value = false;
-  emit('send');
+  viewportRef.value?.focus({ preventScroll: true });
+};
+
+const handleThumbnailClick = (photoId: string) => {
+  void setActivePhoto(photoId);
+  focusPreview();
 };
 
 const handleFilterClick = (filter: ChatImageEditorFilter) => {
@@ -355,8 +390,16 @@ watch(
 
 watch(
   () => photosModel.value.length,
-  async () => {
+  async (photoCount) => {
     if (!openModel.value) return;
+
+    if (photoCount === 0) {
+      editor.dispose();
+      activePhotoId.value = null;
+      openModel.value = false;
+      return;
+    }
+
     await selectFirstEditablePhoto();
   }
 );
@@ -381,7 +424,7 @@ watch(blurIntensity, updateBlurIntensity);
           <VBtn
             variant="tonal"
             color="primary"
-            :disabled="!canEditActivePhoto || !activeTool || isExporting"
+            :disabled="!canEditActivePhoto || !activeTool || isBusy"
             :loading="isExporting"
             @click="handleApply"
           >
@@ -392,7 +435,8 @@ watch(blurIntensity, updateBlurIntensity);
             variant="flat"
             icon
             :aria-label="t('chat_image_editor_send')"
-            :disabled="photosModel.length === 0 || isExporting"
+            :disabled="photosModel.length === 0 || isBusy"
+            :loading="isSending"
             @click="handleSend"
           >
             <VIcon size="22">tabler-send</VIcon>
@@ -422,7 +466,13 @@ watch(blurIntensity, updateBlurIntensity);
         </VTooltip>
       </aside>
 
-      <main ref="viewportRef" class="chat-image-editor__stage">
+      <main
+        ref="viewportRef"
+        class="chat-image-editor__stage"
+        tabindex="-1"
+        @click="focusPreview"
+        @keydown.enter.exact="handleSendEnter"
+      >
         <div v-if="activePhoto && isGifPhoto(activePhoto)" class="chat-image-editor__gif-preview">
           <VImg :src="activePhoto.preview" :alt="activePhoto.file.name" max-height="70vh" />
           <VAlert type="info" variant="tonal" class="mt-4">
@@ -781,7 +831,7 @@ watch(blurIntensity, updateBlurIntensity);
             type="button"
             class="chat-image-editor__thumb"
             :class="{ 'is-active': photo.id === activePhotoId }"
-            @click="setActivePhoto(photo.id)"
+            @click="handleThumbnailClick(photo.id)"
           >
             <VImg :src="photo.preview" :alt="photo.file.name" cover />
             <VIcon v-if="photo.edited" class="chat-image-editor__edited" size="14">
@@ -807,7 +857,9 @@ watch(blurIntensity, updateBlurIntensity);
           auto-grow
           max-rows="3"
           hide-details
+          persistent-placeholder
           :placeholder="t('write_your_message')"
+          @keydown.enter.exact="handleSendEnter"
         />
       </footer>
   </div>
@@ -1249,7 +1301,9 @@ watch(blurIntensity, updateBlurIntensity);
 
 .chat-image-editor__footer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 520px);
+  grid-template-columns:
+    minmax(0, 1fr) minmax(280px, 520px)
+    minmax(0, 1fr);
   gap: 14px;
   align-items: center;
   padding: 10px 18px 14px;
@@ -1258,6 +1312,7 @@ watch(blurIntensity, updateBlurIntensity);
 }
 
 .chat-image-editor__thumbs {
+  grid-column: 1;
   display: flex;
   gap: 10px;
   min-inline-size: 0;
@@ -1304,11 +1359,18 @@ watch(blurIntensity, updateBlurIntensity);
 }
 
 .chat-image-editor__caption {
+  grid-column: 2;
+  inline-size: 100%;
   min-inline-size: 0;
 }
 
 .chat-image-editor__caption :deep(.v-field) {
   border-radius: 28px;
+}
+
+.chat-image-editor__caption :deep(textarea.v-field__input::placeholder) {
+  color: rgba(var(--v-theme-on-surface), 0.6) !important;
+  opacity: 1 !important;
 }
 
 @media (max-width: 780px) {
@@ -1337,6 +1399,11 @@ watch(blurIntensity, updateBlurIntensity);
     grid-template-columns: 1fr;
     gap: 8px;
     padding: 8px 10px 10px;
+  }
+
+  .chat-image-editor__thumbs,
+  .chat-image-editor__caption {
+    grid-column: 1;
   }
 
   .chat-image-editor__stage {

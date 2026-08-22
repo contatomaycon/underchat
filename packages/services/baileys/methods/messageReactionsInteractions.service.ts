@@ -21,13 +21,18 @@ export class BaileysMessageReactionsInteractionsService {
     jid: string,
     key: WAMessageKey,
     emoji: string,
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
-    return this.baileysHelpersService.send(
-      jid,
-      { react: { text: emoji, key } },
-      options
-    );
+    const content = { react: { text: emoji, key } };
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          content,
+          options,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, content, options);
   }
 
   /**

@@ -1,4 +1,5 @@
 import type { SessionPlatform } from '@core/common/types/SessionPlatform';
+import { createHash } from 'node:crypto';
 
 function joinParts(parts: string[]): string {
   const filteredParts = parts.filter(Boolean);
@@ -67,7 +68,8 @@ export function createKeyApiCacheKey(
   }
 
   const encodedRouteModule = encodeURIComponent(routeModule);
-  return joinParts(['keyCache', keyApi, encodedRouteModule]);
+  const keyHash = createHash('sha256').update(keyApi, 'utf8').digest('hex');
+  return joinParts(['keyCache', keyHash, encodedRouteModule]);
 }
 
 export function createJwtSessionKey(
@@ -200,6 +202,58 @@ export function createChatbotFlowCacheKey(
   }
 
   return joinParts(['underchat', 'chatbot-flow', accountId, workerId, chatId]);
+}
+
+export function createChatbotFlowContextCacheKey(
+  accountId: string,
+  workerId: string,
+  chatId: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!workerId) {
+    throw new Error('worker id is required');
+  }
+
+  if (!chatId) {
+    throw new Error('chat id is required');
+  }
+
+  return joinParts([
+    'underchat',
+    'chatbot-flow-context',
+    accountId,
+    workerId,
+    chatId,
+  ]);
+}
+
+export function createChatbotOfficialResponsePendingCacheKey(
+  accountId: string,
+  workerId: string,
+  chatId: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!workerId) {
+    throw new Error('worker id is required');
+  }
+
+  if (!chatId) {
+    throw new Error('chat id is required');
+  }
+
+  return joinParts([
+    'underchat',
+    'chatbot-official-response-pending',
+    accountId,
+    workerId,
+    chatId,
+  ]);
 }
 
 export function createChatbotInactivityCacheKey(

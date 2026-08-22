@@ -9,13 +9,13 @@ import { IViewChannelContext } from '@core/common/interfaces/IViewChannelContext
 @injectable()
 export class ChannelViewerRepository {
   constructor(
-    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   viewChannelContext = async (
     channelId: string
   ): Promise<IViewChannelContext | null> => {
-    const result = await this.dbRo
+    const result = await this.dbRw
       .select({
         worker_id: worker.worker_id,
         account_id: worker.account_id,
@@ -34,10 +34,22 @@ export class ChannelViewerRepository {
     return result[0] as IViewChannelContext;
   };
 
+  existsActiveAccountByIdConsistent = async (
+    accountId: string
+  ): Promise<boolean> => {
+    const result = await this.dbRw
+      .select({ account_id: account.account_id })
+      .from(account)
+      .where(and(eq(account.account_id, accountId), isNull(account.deleted_at)))
+      .execute();
+
+    return result.length > 0;
+  };
+
   viewChannelBalancer = async (
     channelId: string
   ): Promise<IViewWorkerServer | null> => {
-    const result = await this.dbRo
+    const result = await this.dbRw
       .select({
         server_id: server.server_id,
         key: apiKey.key,

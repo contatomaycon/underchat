@@ -2,6 +2,7 @@
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { useServerBuildStore } from '@/@webcore/stores/serverBuild';
 import AppGenerateServerBuildDialog from '@/components/server/AppGenerateServerBuildDialog.vue';
+import AppServerBuildVersionListItem from '@/components/server/AppServerBuildVersionListItem.vue';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EServerBuildJobItemStatus } from '@core/common/enums/EServerBuildJobItemStatus';
 import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
@@ -14,8 +15,9 @@ import { IServerBuildCentrifugo } from '@core/common/interfaces/IServerBuildCent
 import {
   ServerBuildJob,
   ServerBuildJobItem,
+  ServerBuildVersion,
 } from '@core/schema/server/viewServerBuild/response.schema';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 
@@ -72,13 +74,27 @@ const terminalStatusSet = new Set<string>([
 const isBuildRealtimeSubscribed = ref(false);
 const isDialogGenerateBuildShow = ref(false);
 const isDialogDeleteBuildShow = ref(false);
+const isDialogDeleteBuildVersionShow = shallowRef(false);
 const generateBuildVersion = ref<string | null>(null);
 const generateBuildTypes = ref<EServerBuildType[]>([...buildTypeOrder]);
 const serverBuildJobToDelete = ref<string | null>(null);
+const serverBuildVersionToDelete = shallowRef<ServerBuildVersion | null>(null);
 
 const activeJob = computed(() => serverBuildStore.active_job);
 const buildJobs = computed(() => serverBuildStore.jobs);
 const versionsByType = computed(() => serverBuildStore.versions_by_type);
+
+const deleteBuildVersionConfirmation = computed(() => {
+  const version = serverBuildVersionToDelete.value;
+  if (!version) {
+    return '';
+  }
+
+  return t('build_remove_version_confirmation', {
+    version: version.version,
+    buildType: getBuildTypeLabel(version.build_type),
+  });
+});
 
 const hasActiveJob = computed(() => {
   const status = activeJob.value?.status;
@@ -196,37 +212,16 @@ const getRetryableItems = (job: ServerBuildJob): ServerBuildJobItem[] => {
 const getCompletedBuildTypesByVersion = (
   version: string
 ): Set<EServerBuildType> => {
-  const completedBuildTypes = new Set(
+  return new Set(
     buildTypeOrder.filter((buildType) =>
       (versionsByType.value[buildType] ?? []).some(
         (buildVersion) => buildVersion.version === version
       )
     )
   );
-
-  const jobsToInspect = [
-    activeJob.value,
-    ...buildJobs.value,
-  ].filter((job): job is ServerBuildJob => Boolean(job));
-
-  for (const job of jobsToInspect) {
-    if (job.version !== version) {
-      continue;
-    }
-
-    for (const item of job.items) {
-      if (item.status === EServerBuildJobItemStatus.success) {
-        completedBuildTypes.add(item.build_type);
-      }
-    }
-  }
-
-  return completedBuildTypes;
 };
 
-const getCompletableBuildTypes = (
-  job: ServerBuildJob
-): EServerBuildType[] => {
+const getCompletableBuildTypes = (job: ServerBuildJob): EServerBuildType[] => {
   if (!terminalStatusSet.has(job.status)) {
     return [];
   }
@@ -374,6 +369,38 @@ const handleDeleteBuild = async (): Promise<void> => {
   isDialogDeleteBuildShow.value = false;
 
   const deleted = await serverBuildStore.deleteBuild(serverBuildJobId);
+  if (!deleted) {
+    return;
+  }
+
+  await refreshBuilds();
+};
+
+const openDeleteBuildVersionDialog = (version: ServerBuildVersion): void => {
+  if (version.is_default) {
+    return;
+  }
+
+  serverBuildVersionToDelete.value = version;
+  isDialogDeleteBuildVersionShow.value = true;
+};
+
+const closeDeleteBuildVersionDialog = (): void => {
+  serverBuildVersionToDelete.value = null;
+  isDialogDeleteBuildVersionShow.value = false;
+};
+
+const handleDeleteBuildVersion = async (): Promise<void> => {
+  const version = serverBuildVersionToDelete.value;
+  if (!version) {
+    return;
+  }
+
+  closeDeleteBuildVersionDialog();
+
+  const deleted = await serverBuildStore.deleteBuildVersion(
+    version.server_build_version_id
+  );
   if (!deleted) {
     return;
   }
@@ -548,53 +575,15 @@ onBeforeUnmount(async () => {
                 </div>
 
                 <VList v-else density="compact" class="build-version-list">
-                  <VListItem
+                  <AppServerBuildVersionListItem
                     v-for="version in versionsByType[buildType]"
                     :key="version.server_build_version_id"
-                  >
-                    <template #title>
-                      <div
-                        class="d-flex justify-space-between align-center gap-2"
-                      >
-                        <span class="font-weight-medium">{{
-                          version.version
-                        }}</span>
-                        <VChip
-                          v-if="version.is_default"
-                          color="success"
-                          size="x-small"
-                        >
-                          {{ $t('build_default') }}
-                        </VChip>
-                      </div>
-                    </template>
-
-                    <template #subtitle>
-                      <div class="mt-1 d-flex flex-column gap-1">
-                        <span>{{ formatDateTime(version.created_at) }}</span>
-                        <span class="text-truncate build-image-cell">{{
-                          version.image_reference
-                        }}</span>
-                      </div>
-                    </template>
-
-                    <template #append>
-                      <VBtn
-                        v-if="
-                          !version.is_default && $canPermission(permissionsEdit)
-                        "
-                        size="x-small"
-                        variant="text"
-                        color="primary"
-                        :disabled="serverBuildStore.loading"
-                        @click="
-                          handleSetDefault(version.server_build_version_id)
-                        "
-                      >
-                        {{ $t('build_set_default') }}
-                      </VBtn>
-                    </template>
-                  </VListItem>
+                    :version="version"
+                    :can-edit="$canPermission(permissionsEdit)"
+                    :loading="serverBuildStore.loading"
+                    @set-default="handleSetDefault"
+                    @remove="openDeleteBuildVersionDialog"
+                  />
                 </VList>
               </VCardText>
             </VCard>
@@ -735,6 +724,16 @@ onBeforeUnmount(async () => {
       @confirm="handleDeleteBuild"
     />
 
+    <VDialogHandler
+      v-if="isDialogDeleteBuildVersionShow"
+      v-model="isDialogDeleteBuildVersionShow"
+      :title="$t('build_remove_version')"
+      :message="deleteBuildVersionConfirmation"
+      :confirm-text="$t('build_remove_version')"
+      @confirm="handleDeleteBuildVersion"
+      @cancel="closeDeleteBuildVersionDialog"
+    />
+
     <VSnackbar
       v-model="serverBuildStore.snackbar.status"
       transition="scroll-y-reverse-transition"
@@ -751,10 +750,6 @@ onBeforeUnmount(async () => {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-}
-
-.build-version-list :deep(.v-list-item) {
-  padding-inline: 0;
 }
 
 .build-image-cell {

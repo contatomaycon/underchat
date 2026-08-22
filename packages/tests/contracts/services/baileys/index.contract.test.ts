@@ -41,8 +41,9 @@ describe('BaileysService', () => {
     const connection = {
       connected: true,
       connect: jest.fn(async () => ({ connected: true })),
-      reconnect: jest.fn(),
+      reconnect: jest.fn(() => true),
       disconnect: jest.fn(async () => undefined),
+      hasCentralOnlineAcknowledgement: jest.fn(() => true),
       getStatus: jest.fn(() => 'online'),
       getCode: jest.fn(() => 'code'),
       hasSession: jest.fn(() => true),
@@ -50,6 +51,7 @@ describe('BaileysService', () => {
       clearUserRequestedDisconnect: jest.fn(),
       republishLastState: jest.fn(),
       shutdown: jest.fn(async () => undefined),
+      suspend: jest.fn(async () => undefined),
     };
 
     const validatePhone = jest.fn(async () => ({ valid: true }));
@@ -62,15 +64,17 @@ describe('BaileysService', () => {
     await expect(service.connect({} as never)).resolves.toEqual({
       connected: true,
     });
-    service.reconnect({} as never);
+    expect(service.reconnect({} as never)).toBe(true);
     await expect(service.disconnect({} as never)).resolves.toBeUndefined();
     expect(service.isConnected()).toBe(true);
+    expect(service.hasCentralOnlineAcknowledgement()).toBe(true);
     expect(service.getStatus()).toBe('online');
     expect(service.getCode()).toBe('code');
     expect(service.hasSession()).toBe(true);
     expect(service.socket).toEqual({ socket: true });
     service.clearUserRequestedDisconnect();
     service.republishLastState();
+    await expect(service.suspend()).resolves.toBeUndefined();
     await expect(service.shutdown()).resolves.toBeUndefined();
     await expect(service.validatePhone('55', '1199999')).resolves.toEqual({
       valid: true,

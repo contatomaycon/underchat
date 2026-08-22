@@ -13,7 +13,40 @@ export const KAFKA_GLOBAL_TOPIC_CONFIG: IKafkaTopicConfig = {
   replicationFactor: 3,
 };
 
+const KAFKA_DURABLE_WORKER_TOPIC_SUFFIXES = [
+  'send.message',
+  'schedule.send.message',
+  'validate.phone',
+  'notification.message',
+  'webhook.integration',
+  'webhook.integration.dlq',
+  'send.message.dlq',
+  'consumer.dlq',
+] as const;
+
+const KAFKA_DURABLE_WORKER_TOPIC_MATCH_SUFFIXES = [
+  ...KAFKA_DURABLE_WORKER_TOPIC_SUFFIXES,
+].sort((left, right) => right.length - left.length);
+
 const GLOBAL_WORKER_TOPIC_SEGMENTS = new Set(['config', 'warm', 'lifecycle']);
+
+export function durableWorkerIdFromKafkaTopic(topic: string): string | null {
+  if (!topic.startsWith('worker.')) {
+    return null;
+  }
+
+  for (const suffix of KAFKA_DURABLE_WORKER_TOPIC_MATCH_SUFFIXES) {
+    const topicSuffix = `.${suffix}`;
+    if (!topic.endsWith(topicSuffix)) {
+      continue;
+    }
+
+    const workerId = topic.slice('worker.'.length, -topicSuffix.length);
+    return workerId.trim() ? workerId : null;
+  }
+
+  return null;
+}
 
 export function isWorkerScopedKafkaTopic(topic: string): boolean {
   const parts = topic.split('.');

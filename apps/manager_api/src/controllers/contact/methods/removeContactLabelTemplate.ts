@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { RemoveContactLabelTemplateRequest } from '@core/schema/contact/removeContactLabelTemplate/request.schema';
 import { ContactLabelTemplateRemoverUseCase } from '@core/useCases/contact/ContactLabelTemplateRemover.useCase';
+import { resolveOutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 
 export const removeContactLabelTemplate = async (
   request: FastifyRequest<{
@@ -22,7 +23,9 @@ export const removeContactLabelTemplate = async (
       t,
       tokenJwtData.account_id,
       request.params.contact_id,
-      request.params.label_template_id
+      request.params.label_template_id,
+      tokenJwtData.user_id,
+      resolveOutboundWebhookRequestSource(request.module)
     );
 
     if (response) {

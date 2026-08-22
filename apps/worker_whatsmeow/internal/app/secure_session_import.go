@@ -80,11 +80,6 @@ type secureSessionWhatsAppWebCreds struct {
 	} `json:"signedIdentityKey"`
 }
 
-const (
-	secureImportStableReadyWindow       = 30 * time.Second
-	secureImportStableReadyPollInterval = 500 * time.Millisecond
-)
-
 func (m *WhatsAppManager) importSecureSessionPackage(ctx context.Context, req SecureSessionImportRequest) (ConnectionState, error) {
 	if req.DebugTraceID != "" {
 		m.setDebugTraceID(req.DebugTraceID)
@@ -117,6 +112,7 @@ func (m *WhatsAppManager) importSecureSessionPackage(ctx context.Context, req Se
 
 	storeDB, err := extractWhatsmeowStoreDB(ctx, pkg)
 	if err != nil {
+		errorCode := safeOperationalErrorCode(err)
 		connectionFlowLog("whatsmeow.provider.secure_import.unsupported_payload", map[string]any{
 			"trace_id":              req.DebugTraceID,
 			"layer":                 "worker_whatsmeow.provider",
@@ -127,7 +123,7 @@ func (m *WhatsAppManager) importSecureSessionPackage(ctx context.Context, req Se
 			"runtime_generation":    req.RuntimeGeneration,
 			"format_version":        pkg.FormatVersion,
 			"target_provider":       pkg.TargetProvider,
-			"reason":                err.Error(),
+			"reason":                errorCode,
 			"payload_bytes":         len(pkg.Payload),
 		})
 		return m.secureImportFailureState(req, "secure_session_payload_unsupported", err.Error()), nil
@@ -264,6 +260,9 @@ func buildWhatsmeowStoreDBFromWebCreds(ctx context.Context, creds secureSessionW
 	if err != nil {
 		_ = container.Close()
 		return nil, fmt.Errorf("parse whatsapp web me.id: %w", err)
+	}
+	if jid.Server == types.LegacyUserServer {
+		jid.Server = types.DefaultUserServer
 	}
 	device.ID = &jid
 	if strings.TrimSpace(creds.Me.LID) != "" {
@@ -468,6 +467,9 @@ func derefString(value *string) string {
 }
 
 func (m *WhatsAppManager) restoreWhatsmeowSQLStore(ctx context.Context, req SecureSessionImportRequest, storeDB []byte) (ConnectionState, error) {
+	if m.cfg.SessionStorage == SessionStoragePostgres {
+		return m.restoreWhatsmeowPostgresStore(ctx, req, storeDB)
+	}
 	m.sessionMu.Lock()
 	defer m.sessionMu.Unlock()
 
@@ -523,7 +525,7 @@ func (m *WhatsAppManager) restoreWhatsmeowSQLStore(ctx context.Context, req Secu
 		_ = os.RemoveAll(storeDir)
 		if backupCreated {
 			if err := os.Rename(backupDir, storeDir); err != nil {
-				log.Printf("whatsmeow secure import rollback failed worker_id=%s reason=%s error=%v", m.cfg.WorkerID, reason, err)
+				log.Printf("whatsmeow secure import rollback failed worker_id=%s reason=%s error_code=%s", m.cfg.WorkerID, reason, safeOperationalErrorCode(err))
 			}
 		}
 	}
@@ -582,22 +584,15 @@ func (m *WhatsAppManager) restoreWhatsmeowSQLStore(ctx context.Context, req Secu
 		return state, nil
 	}
 
-	state, stable := m.waitForSecureImportStableReadiness(ctx, req, phone)
-	if !stable {
-		state = ensureSecureImportNotReadyState(state, "secure_session_import_not_stable", "Imported whatsmeow store did not remain connected during the stability check.")
-		restoreBackup("stability_check_failed")
-		_ = m.initClient(ctx)
-		return state, nil
-	}
-
 	if backupCreated {
 		_ = os.RemoveAll(backupDir)
 	}
 
-	state = m.secureImportCurrentState(req, phone)
+	state := m.secureImportCurrentState(req, phone)
 	state.Code = CodeConnectionEstablished
 	state.Status = "connected"
 	state.WorkerStatusID = WorkerStatusOnline
+	m.enrichReadiness(&state)
 	connectionFlowLog("whatsmeow.provider.secure_import.connected", map[string]any{
 		"trace_id":              req.DebugTraceID,
 		"layer":                 "worker_whatsmeow.provider",
@@ -630,15 +625,6 @@ func (m *WhatsAppManager) secureImportCurrentState(req SecureSessionImportReques
 	return state
 }
 
-func secureImportStateReady(state ConnectionState) bool {
-	return state.SessionReady &&
-		state.Authenticated &&
-		state.CanSend &&
-		state.CanReceiveRuntime &&
-		state.Phone != "" &&
-		state.ProviderState == "connected"
-}
-
 func ensureSecureImportNotReadyState(state ConnectionState, reason string, message string) ConnectionState {
 	state.WorkerStatusID = WorkerStatusDisponible
 	if state.Status == "" || state.Status == "connected" {
@@ -657,125 +643,6 @@ func ensureSecureImportNotReadyState(state ConnectionState, reason string, messa
 	state.CanSend = false
 	state.CanReceiveRuntime = false
 	return state
-}
-
-func (m *WhatsAppManager) waitForSecureImportStableReadiness(ctx context.Context, req SecureSessionImportRequest, phone string) (ConnectionState, bool) {
-	startedAt := time.Now()
-	state := m.secureImportCurrentState(req, phone)
-	if !secureImportStateReady(state) {
-		connectionFlowLog("whatsmeow.provider.secure_import.stability_wait.initial_not_ready", map[string]any{
-			"trace_id":              req.DebugTraceID,
-			"layer":                 "worker_whatsmeow.provider",
-			"worker_id":             m.cfg.WorkerID,
-			"account_id":            m.cfg.AccountID,
-			"worker_type_id":        WorkerTypeWhatsmeow,
-			"connection_attempt_id": req.ConnectionAttemptID,
-			"runtime_generation":    req.RuntimeGeneration,
-			"session_ready":         state.SessionReady,
-			"can_send":              state.CanSend,
-			"can_receive_runtime":   state.CanReceiveRuntime,
-			"authenticated":         state.Authenticated,
-			"provider_state":        state.ProviderState,
-			"degraded_reason":       state.DegradedReason,
-			"phone_present":         state.Phone != "",
-		})
-		return state, false
-	}
-
-	connectionFlowLog("whatsmeow.provider.secure_import.stability_wait.start", map[string]any{
-		"trace_id":              req.DebugTraceID,
-		"layer":                 "worker_whatsmeow.provider",
-		"worker_id":             m.cfg.WorkerID,
-		"account_id":            m.cfg.AccountID,
-		"worker_type_id":        WorkerTypeWhatsmeow,
-		"connection_attempt_id": req.ConnectionAttemptID,
-		"runtime_generation":    req.RuntimeGeneration,
-		"stable_window_ms":      secureImportStableReadyWindow.Milliseconds(),
-		"poll_interval_ms":      secureImportStableReadyPollInterval.Milliseconds(),
-		"phone_present":         state.Phone != "",
-	})
-
-	deadline := time.NewTimer(secureImportStableReadyWindow)
-	ticker := time.NewTicker(secureImportStableReadyPollInterval)
-	defer deadline.Stop()
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			state = m.secureImportCurrentState(req, phone)
-			connectionFlowLog("whatsmeow.provider.secure_import.stability_wait.failed", map[string]any{
-				"trace_id":              req.DebugTraceID,
-				"layer":                 "worker_whatsmeow.provider",
-				"worker_id":             m.cfg.WorkerID,
-				"account_id":            m.cfg.AccountID,
-				"worker_type_id":        WorkerTypeWhatsmeow,
-				"connection_attempt_id": req.ConnectionAttemptID,
-				"runtime_generation":    req.RuntimeGeneration,
-				"reason":                "context_done",
-				"error":                 ctx.Err().Error(),
-				"elapsed_ms":            time.Since(startedAt).Milliseconds(),
-				"session_ready":         state.SessionReady,
-				"can_send":              state.CanSend,
-				"can_receive_runtime":   state.CanReceiveRuntime,
-				"authenticated":         state.Authenticated,
-				"provider_state":        state.ProviderState,
-				"degraded_reason":       state.DegradedReason,
-				"phone_present":         state.Phone != "",
-			})
-			return state, false
-		case <-deadline.C:
-			state = m.secureImportCurrentState(req, phone)
-			ok := secureImportStateReady(state)
-			event := "whatsmeow.provider.secure_import.stability_wait.done"
-			if !ok {
-				event = "whatsmeow.provider.secure_import.stability_wait.failed"
-			}
-			connectionFlowLog(event, map[string]any{
-				"trace_id":              req.DebugTraceID,
-				"layer":                 "worker_whatsmeow.provider",
-				"worker_id":             m.cfg.WorkerID,
-				"account_id":            m.cfg.AccountID,
-				"worker_type_id":        WorkerTypeWhatsmeow,
-				"connection_attempt_id": req.ConnectionAttemptID,
-				"runtime_generation":    req.RuntimeGeneration,
-				"elapsed_ms":            time.Since(startedAt).Milliseconds(),
-				"stable_window_ms":      secureImportStableReadyWindow.Milliseconds(),
-				"session_ready":         state.SessionReady,
-				"can_send":              state.CanSend,
-				"can_receive_runtime":   state.CanReceiveRuntime,
-				"authenticated":         state.Authenticated,
-				"provider_state":        state.ProviderState,
-				"degraded_reason":       state.DegradedReason,
-				"phone_present":         state.Phone != "",
-			})
-			return state, ok
-		case <-ticker.C:
-			state = m.secureImportCurrentState(req, phone)
-			if secureImportStateReady(state) {
-				continue
-			}
-			connectionFlowLog("whatsmeow.provider.secure_import.stability_wait.failed", map[string]any{
-				"trace_id":              req.DebugTraceID,
-				"layer":                 "worker_whatsmeow.provider",
-				"worker_id":             m.cfg.WorkerID,
-				"account_id":            m.cfg.AccountID,
-				"worker_type_id":        WorkerTypeWhatsmeow,
-				"connection_attempt_id": req.ConnectionAttemptID,
-				"runtime_generation":    req.RuntimeGeneration,
-				"reason":                "readiness_lost",
-				"elapsed_ms":            time.Since(startedAt).Milliseconds(),
-				"session_ready":         state.SessionReady,
-				"can_send":              state.CanSend,
-				"can_receive_runtime":   state.CanReceiveRuntime,
-				"authenticated":         state.Authenticated,
-				"provider_state":        state.ProviderState,
-				"degraded_reason":       state.DegradedReason,
-				"phone_present":         state.Phone != "",
-			})
-			return state, false
-		}
-	}
 }
 
 func validateWhatsmeowStoreDB(ctx context.Context, dbPath string) error {
@@ -800,11 +667,12 @@ func validateWhatsmeowStoreDB(ctx context.Context, dbPath string) error {
 func (m *WhatsAppManager) closeCurrentWhatsmeowClient() {
 	client := m.getClient()
 	if client != nil {
-		client.Disconnect()
-		if client.Store != nil {
+		invalidateWhatsmeowClientCaches(client)
+		m.stopAndPublishNativeConnectionStatus(context.Background(), client)
+		if m.cfg.SessionStorage == SessionStorageLegacyVolume && client.Store != nil {
 			if container, ok := client.Store.Container.(*sqlstore.Container); ok {
 				if err := container.Close(); err != nil {
-					log.Printf("whatsmeow close current sqlstore failed worker_id=%s error=%v", m.cfg.WorkerID, err)
+					log.Printf("whatsmeow close current sqlstore failed worker_id=%s error_code=%s", m.cfg.WorkerID, safeOperationalErrorCode(err))
 				}
 			}
 		}
@@ -812,10 +680,21 @@ func (m *WhatsAppManager) closeCurrentWhatsmeowClient() {
 
 	m.mu.Lock()
 	m.client = nil
+	m.nativeStatusClient = nil
+	m.nativeStatus = WhatsappConnectionStatus{}
+	m.nativeStatusSourceID = ""
 	m.connected = false
 	m.status = "connecting"
 	m.code = CodeAwaitConnection
 	m.mu.Unlock()
+}
+
+func (m *WhatsAppManager) Close(ctx context.Context) error {
+	m.closeCurrentWhatsmeowClient()
+	if m.cfg.SessionStorage == SessionStoragePostgres && m.postgres != nil {
+		return m.postgres.ReleaseSessionLease(ctx)
+	}
+	return nil
 }
 
 func (m *WhatsAppManager) secureImportFailureState(req SecureSessionImportRequest, reason string, message string) ConnectionState {

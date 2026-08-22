@@ -18,7 +18,7 @@ import path from 'node:path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(({ mode }) => {
-  const rootEnv = loadEnv(mode, path.resolve(__dirname, '../..'), ['APP_']);
+  const rootEnv = loadEnv(mode, path.resolve(__dirname, '../..'), '');
   const isProduction = mode === 'production';
   const chunkGroups = [
     {
@@ -174,9 +174,27 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: { exclude: ['vuetify'], entries: ['./src/**/*.vue'] },
     define: {
+      // Expose only the non-secret debug switch. Never expose the broader
+      // WHATSAPP_SESSION_* namespace because it also contains runtime secrets.
+      'import.meta.env.WHATSAPP_SESSION_DEBUG_ENABLED': JSON.stringify(
+        rootEnv.WHATSAPP_SESSION_DEBUG_ENABLED ??
+          process.env.WHATSAPP_SESSION_DEBUG_ENABLED ??
+          ''
+      ),
       'import.meta.env.APP_ENVIRONMENT': JSON.stringify(
         rootEnv.APP_ENVIRONMENT ?? process.env.APP_ENVIRONMENT ?? ''
       ),
+      'import.meta.env.OUTBOUND_WEBHOOK_ALLOW_LOCALHOST_HTTP': JSON.stringify(
+        rootEnv.OUTBOUND_WEBHOOK_ALLOW_LOCALHOST_HTTP ??
+          process.env.OUTBOUND_WEBHOOK_ALLOW_LOCALHOST_HTTP ??
+          ''
+      ),
+      'import.meta.env.CHATBOT_API_REQUEST_ALLOW_LOCALHOST_HTTP':
+        JSON.stringify(
+          rootEnv.CHATBOT_API_REQUEST_ALLOW_LOCALHOST_HTTP ??
+            process.env.CHATBOT_API_REQUEST_ALLOW_LOCALHOST_HTTP ??
+            ''
+        ),
     },
   };
 });

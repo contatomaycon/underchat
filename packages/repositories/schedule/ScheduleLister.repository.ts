@@ -8,6 +8,7 @@ import {
   count,
   desc,
   eq,
+  inArray,
   SQL,
   SQLWrapper,
   or,
@@ -55,7 +56,10 @@ export class ScheduleListerRepository {
     return orders;
   };
 
-  private readonly setFilters = (query: ListScheduleRequest): SQLWrapper[] => {
+  private readonly setFilters = (
+    query: ListScheduleRequest,
+    allowedWorkerIds?: readonly string[]
+  ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
     if (query.search) {
@@ -74,6 +78,10 @@ export class ScheduleListerRepository {
 
     if (query.send_to) {
       filters.push(eq(schedule.send_to, query.send_to as EScheduleSendTo));
+    }
+
+    if (allowedWorkerIds?.length) {
+      filters.push(inArray(schedule.worker_id, [...allowedWorkerIds]));
     }
 
     return filters;
@@ -131,9 +139,10 @@ export class ScheduleListerRepository {
     perPage: number,
     currentPage: number,
     query: ListScheduleRequest,
-    accountId: string
+    accountId: string,
+    allowedWorkerIds?: readonly string[]
   ): Promise<ListScheduleResponse[]> => {
-    const filters = this.setFilters(query);
+    const filters = this.setFilters(query, allowedWorkerIds);
     const orders = this.setOrders(query);
 
     const queryBuilder = this.dbRo
@@ -187,9 +196,10 @@ export class ScheduleListerRepository {
 
   listScheduleTotal = async (
     query: ListScheduleRequest,
-    accountId: string
+    accountId: string,
+    allowedWorkerIds?: readonly string[]
   ): Promise<number> => {
-    const filters = this.setFilters(query);
+    const filters = this.setFilters(query, allowedWorkerIds);
 
     const result = await this.dbRo
       .select({

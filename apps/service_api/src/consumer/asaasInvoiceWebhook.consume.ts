@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { AsaasInvoiceWebhookConsume } from '@core/consumer/webhook/AsaasInvoiceWebhook.consume';
+import { launchServiceApiConsumerStartup } from './startupAttempt';
 
 export function startAsaasInvoiceWebhookConsume(
   server: FastifyInstance
@@ -9,12 +10,13 @@ export function startAsaasInvoiceWebhookConsume(
     AsaasInvoiceWebhookConsume
   );
 
-  asaasInvoiceWebhookConsume.execute(server).catch((error: unknown) => {
-    server.log.error(
-      { err: error },
-      'Error starting asaas invoice webhook consume'
-    );
-  });
-
-  return asaasInvoiceWebhookConsume;
+  return launchServiceApiConsumerStartup(
+    asaasInvoiceWebhookConsume,
+    () => asaasInvoiceWebhookConsume.execute(server),
+    (error) =>
+      server.log.error(
+        { err: error },
+        'Error starting asaas invoice webhook consume'
+      )
+  );
 }

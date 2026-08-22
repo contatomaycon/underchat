@@ -5,6 +5,7 @@ import {
   ensureMessageSendHash,
   resolveMessageSendQueueKey,
   resolveMessageSendIdentity,
+  resolveMessageSendOperationId,
 } from '@core/common/functions/messageIdentity';
 
 describe('messageIdentity', () => {
@@ -85,6 +86,38 @@ describe('messageIdentity', () => {
   it('ensureMessageSendHash returns null when identity cannot be resolved', () => {
     const message = { chat_id: 'chat' } as never;
     expect(ensureMessageSendHash(message)).toBeNull();
+  });
+
+  it('uses the explicit action hash as operation id', () => {
+    expect(
+      resolveMessageSendOperationId({
+        account: { id: 'acc' },
+        chat_id: 'chat',
+        message_id: 'message-1',
+        hash: ' action-1 ',
+      })
+    ).toBe('action-1');
+  });
+
+  it('falls back to the raw message id when no action hash was provided', () => {
+    expect(
+      resolveMessageSendOperationId({
+        account: { id: 'acc' },
+        chat_id: 'chat',
+        message_id: ' message-1 ',
+      })
+    ).toBe('message-1');
+  });
+
+  it('keeps the message id after a deterministic transport hash is added', () => {
+    const payload = {
+      account: { id: 'acc' },
+      chat_id: 'chat',
+      message_id: 'message-1',
+      hash: buildDeterministicMessageHash('acc', 'chat', 'message-1'),
+    };
+
+    expect(resolveMessageSendOperationId(payload)).toBe('message-1');
   });
 
   it('builds queue keys used by Kafka producers and ordered consumers', () => {

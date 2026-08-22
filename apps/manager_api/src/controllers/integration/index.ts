@@ -14,6 +14,23 @@ import { listUsers } from './methods/listUsers';
 import { listSectors } from './methods/listSectors';
 import { listSectorUsers } from './methods/listSectorUsers';
 import { listInputChatbots } from './methods/listInputChatbots';
+import { viewPublicApiToken } from './methods/viewPublicApiToken';
+import { generatePublicApiToken } from './methods/generatePublicApiToken';
+import { revokePublicApiToken } from './methods/revokePublicApiToken';
+import {
+  activateOutboundWebhook,
+  createOutboundWebhook,
+  deleteOutboundWebhook,
+  listOutboundWebhookDeliveries,
+  listOutboundWebhookEvents,
+  listOutboundWebhooks,
+  redeliverOutboundWebhookDelivery,
+  rotateOutboundWebhookSecret,
+  testOutboundWebhook,
+  updateOutboundWebhook,
+  viewOutboundWebhook,
+  viewOutboundWebhookDelivery,
+} from './methods/outboundWebhook';
 
 @injectable()
 class IntegrationController {
@@ -32,6 +49,21 @@ class IntegrationController {
   public listSectors = listSectors;
   public listSectorUsers = listSectorUsers;
   public listInputChatbots = listInputChatbots;
+  public viewPublicApiToken = viewPublicApiToken;
+  public generatePublicApiToken = generatePublicApiToken;
+  public revokePublicApiToken = revokePublicApiToken;
+  public listOutboundWebhookEvents = listOutboundWebhookEvents;
+  public listOutboundWebhooks = listOutboundWebhooks;
+  public viewOutboundWebhook = viewOutboundWebhook;
+  public createOutboundWebhook = createOutboundWebhook;
+  public updateOutboundWebhook = updateOutboundWebhook;
+  public deleteOutboundWebhook = deleteOutboundWebhook;
+  public testOutboundWebhook = testOutboundWebhook;
+  public rotateOutboundWebhookSecret = rotateOutboundWebhookSecret;
+  public activateOutboundWebhook = activateOutboundWebhook;
+  public listOutboundWebhookDeliveries = listOutboundWebhookDeliveries;
+  public viewOutboundWebhookDelivery = viewOutboundWebhookDelivery;
+  public redeliverOutboundWebhookDelivery = redeliverOutboundWebhookDelivery;
 }
 
 export default IntegrationController;

@@ -18,6 +18,9 @@ export const aiAgentPromptEmbeddingMappings = (embeddingDimensions: number) => {
         chunk_index: {
           type: 'integer',
         },
+        chunk_count: {
+          type: 'integer',
+        },
         chunk_text: {
           type: 'text',
         },
@@ -36,7 +39,13 @@ export const aiAgentPromptEmbeddingMappings = (embeddingDimensions: number) => {
         content_fingerprint: {
           type: 'keyword',
         },
+        content_revision: {
+          type: 'keyword',
+        },
         embedding_model: {
+          type: 'keyword',
+        },
+        embedding_generation: {
           type: 'keyword',
         },
         updated_at: {

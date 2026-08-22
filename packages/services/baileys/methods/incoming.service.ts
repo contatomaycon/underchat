@@ -2,6 +2,8 @@ import { inject, singleton } from 'tsyringe';
 import Redis from 'ioredis';
 import { Buffer } from 'node:buffer';
 import { inspect } from 'node:util';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   AnyMessageContent,
   Contact,
@@ -21,10 +23,7 @@ import { unwrapMessage } from '@core/common/functions/unwrapMessage';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
-import {
-  baileysEnvironment,
-  generalEnvironment,
-} from '@core/config/environments';
+import { baileysEnvironment } from '@core/config/environments';
 import { getChatKind } from '@core/common/functions/getChatKind';
 import { EChatKind } from '@core/common/enums/EChatKind';
 import { EMessageUpsertType } from '@core/common/enums/EMessageUpsertType';
@@ -44,28 +43,143 @@ import { IBaileysPendingMessage } from '@core/common/interfaces/IBaileysPendingM
 import { BaileysUpsertMediaEnricher } from './upsertMediaEnricher.service';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { BaileysDeliveryConfirmationService } from './deliveryConfirmation.service';
-import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { resolveCallEventJidAndPhone } from '../util/callEventResolver';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
-import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
+import {
+  IInboundMessageSpoolScope,
+  InboundMessageSpoolService,
+} from '@core/services/inboundMessageSpool.service';
 import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
+import type { IWhatsappRuntimeFenceConnectionAuthorization } from '@core/common/interfaces/IWhatsappRuntimeFenceConnectionAuthorization';
 import { LidJidCacheService } from '@core/services/lidJidCache.service';
+import { ensureInboundEventId } from '@core/common/functions/inboundEventIdentity';
+import { ensureMessageStatusEventId } from '@core/common/functions/messageStatusIdentity';
+import {
+  IMessageSendAcquiredClaim,
+  MessageSendIdempotencyService,
+} from '@core/services/messageSendIdempotency.service';
+import {
+  IWhatsappRuntimeFence,
+  IWhatsappRuntimeEffectLease,
+  WhatsappRuntimeFenceService,
+} from '@core/services/whatsappRuntimeFence.service';
+import { resolveHistoryReconciliationConfig } from '@core/common/functions/historyReconciliationConfig';
+import { resolveBaileysSendMessageTimeoutMs } from '../util/providerSendTimeout';
+import { waitRuntimeFenceRetry } from '@core/common/functions/runtimeFenceRetry';
+import { workerErrorDiagnostics } from '@core/common/functions/workerErrorDiagnostics';
+import {
+  ProviderInvocationInFlightError,
+  ProviderInvocationSingleFlight,
+} from '@core/common/functions/providerInvocationSingleFlight';
+import {
+  isProviderAuxiliaryInvocationFenceError,
+  invokeProviderAuxiliaryWithTimeout,
+  ProviderAuxiliaryInvocationTimeoutError,
+  resolveProviderAuxiliaryTimeoutMs,
+} from '@core/common/functions/providerAuxiliaryInvocation';
+import type { IProviderInvocationBoundary } from '@core/common/interfaces/IProviderInvocationBoundary';
 
 const UNSUPPORTED_INCOMING_MESSAGE_TEXT =
   'Mensagem recebida não suportada pelo provedor. Verifique no WhatsApp.';
 
-function readPositiveIntEnv(key: string, fallback: number): number {
-  const raw = process.env[key];
-  if (!raw) {
-    return fallback;
-  }
+const SAFE_INCOMING_LOG_STRING_KEYS = new Set([
+  'stage',
+  'rawtype',
+  'rawsubtype',
+  'mappedtype',
+  'providerupserttype',
+  'status',
+  'decision',
+  'outcome',
+  'reason',
+]);
 
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback;
-  }
+function normalizeIncomingLogKey(key: string): string {
+  return key.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+}
 
-  return Math.floor(parsed);
+function hashIncomingLogIdentifier(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return `sha256:${createHash('sha256').update(value.trim()).digest('hex')}`;
+}
+
+function safeIncomingLogFieldNames(value: Record<string, unknown>): string[] {
+  return Object.keys(value)
+    .map((key) =>
+      /^[a-zA-Z0-9_.:-]{1,80}$/.test(key) ? key : '[invalid-field-name]'
+    )
+    .sort();
+}
+
+function isIncomingLogIdentifierKey(key: string): boolean {
+  const normalized = normalizeIncomingLogKey(key);
+  if (normalized === 'workerid' || normalized === 'accountid') return false;
+  return (
+    normalized === 'id' ||
+    normalized.endsWith('id') ||
+    normalized.endsWith('jid') ||
+    normalized.endsWith('key') ||
+    normalized === 'from' ||
+    normalized === 'to' ||
+    normalized === 'author' ||
+    normalized === 'participant'
+  );
+}
+
+function sanitizeIncomingLogValue(key: string, value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+
+  const normalizedKey = normalizeIncomingLogKey(key);
+  if (isIncomingLogIdentifierKey(key)) {
+    return hashIncomingLogIdentifier(value);
+  }
+  if (typeof value === 'boolean' || typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    if (
+      normalizedKey === 'workerid' ||
+      normalizedKey === 'accountid' ||
+      SAFE_INCOMING_LOG_STRING_KEYS.has(normalizedKey)
+    ) {
+      return value;
+    }
+    return { kind: 'string', bytes: Buffer.byteLength(value) };
+  }
+  if (Buffer.isBuffer(value) || ArrayBuffer.isView(value)) {
+    return { kind: 'binary', bytes: value.byteLength };
+  }
+  if (Array.isArray(value)) {
+    if (
+      normalizedKey.endsWith('fields') &&
+      value.every((item) => typeof item === 'string')
+    ) {
+      return value
+        .map((item) =>
+          /^[a-zA-Z0-9_.:-]{1,80}$/.test(item) ? item : '[invalid-field-name]'
+        )
+        .sort();
+    }
+    return { kind: 'array', count: value.length };
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return {
+      kind: 'object',
+      field_count: Object.keys(record).length,
+      fields: safeIncomingLogFieldNames(record),
+    };
+  }
+  return { kind: typeof value };
+}
+
+function sanitizeIncomingLogPayload(
+  value: Record<string, unknown>
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      sanitizeIncomingLogValue(key, item),
+    ])
+  );
 }
 
 function readBooleanEnv(key: string): boolean {
@@ -94,31 +208,82 @@ function csvEnvIncludes(key: string, value: string): boolean {
     .some((item) => item === '*' || item === normalizedValue);
 }
 
-const HISTORY_RECONCILIATION_ENABLED =
-  process.env.HISTORY_RECONCILIATION_ENABLED !== 'false';
-const HISTORY_RECONCILIATION_MESSAGE_LIMIT = readPositiveIntEnv(
-  'HISTORY_RECONCILIATION_MESSAGE_LIMIT',
-  100
-);
-const HISTORY_RECONCILIATION_WINDOW_MS = 60 * 60 * 1000;
+function isHistoryReconciliationEnabled(): boolean {
+  return resolveHistoryReconciliationConfig().enabled;
+}
+const HISTORY_RECONCILIATION_CONFIG = resolveHistoryReconciliationConfig();
+const HISTORY_RECONCILIATION_MESSAGE_LIMIT =
+  HISTORY_RECONCILIATION_CONFIG.messageLimit;
+const HISTORY_RECONCILIATION_WINDOW_MS = HISTORY_RECONCILIATION_CONFIG.windowMs;
+const TERMINAL_RUNTIME_FENCE_GRPC_CODES = new Set([3, 7, 9, 16]);
+
+function isTerminalRuntimeFenceActivationError(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    return true;
+  }
+  const code =
+    error && typeof error === 'object'
+      ? Number((error as { code?: unknown }).code)
+      : Number.NaN;
+  return (
+    Number.isSafeInteger(code) && TERMINAL_RUNTIME_FENCE_GRPC_CODES.has(code)
+  );
+}
 
 interface ProcessIncomingOptions {
   allowHistoricalUpsert?: boolean;
   fromHistorySync?: boolean;
 }
 
-function getWAMessageTimestampMs(message: WAMessage): number | null {
+interface BaileysConnectionScope extends IInboundMessageSpoolScope {
+  activatedAt: number;
+  activationOrder: number;
+  connectionSequence: number;
+  connectionAttemptId?: string;
+  activation: Promise<boolean>;
+}
+
+function getWAMessageTimestampMs(
+  message: WAMessage | null | undefined
+): number | null {
+  if (!message) {
+    return null;
+  }
+
   const raw: unknown = message.messageTimestamp;
   if (raw === null || raw === undefined) {
     return null;
   }
 
-  const value =
-    typeof raw === 'object' && raw && 'toNumber' in raw
-      ? (raw as { toNumber: () => number }).toNumber()
-      : Number(raw);
+  let value: number;
+  if (
+    typeof raw === 'object' &&
+    raw &&
+    'toNumber' in raw &&
+    typeof (raw as { toNumber?: unknown }).toNumber === 'function'
+  ) {
+    value = (raw as { toNumber: () => number }).toNumber();
+  } else if (typeof raw === 'object' && raw) {
+    const serialized = raw as {
+      low?: unknown;
+      high?: unknown;
+      unsigned?: unknown;
+    };
+    const low = Number(serialized.low);
+    const high = Number(serialized.high);
+    const isInt32Word = (word: number) =>
+      Number.isInteger(word) && word >= -0x80000000 && word <= 0xffffffff;
+    if (!isInt32Word(low) || !isInt32Word(high)) {
+      return null;
+    }
+    value =
+      (serialized.unsigned === true ? high >>> 0 : high | 0) * 0x100000000 +
+      (low >>> 0);
+  } else {
+    value = Number(raw);
+  }
 
-  if (!Number.isFinite(value) || value <= 0) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
     return null;
   }
 
@@ -128,6 +293,7 @@ function getWAMessageTimestampMs(message: WAMessage): number | null {
 @singleton()
 export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
+  private currentConnectionAuthorization?: IWhatsappRuntimeFenceConnectionAuthorization;
   private readonly processedMessages = new Map<string, number>();
   private readonly processedCalls = new Map<string, number>();
   private readonly contactNamesByJid = new Map<string, string>();
@@ -146,6 +312,10 @@ export class BaileysIncomingMessageService {
   private readonly DESTROY_TIMEOUT_MS = 30000;
   private queueProcessorInterval?: ReturnType<typeof setTimeout>;
   private isDestroying = false;
+  private activeConnectionScope: BaileysConnectionScope | undefined;
+  private runtimeFenceTransition: Promise<void> = Promise.resolve();
+  private readonly connectionScopeStorage =
+    new AsyncLocalStorage<BaileysConnectionScope>();
 
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
@@ -157,11 +327,20 @@ export class BaileysIncomingMessageService {
   private readonly MESSAGE_CACHE_TTL_SECONDS_DEFAULT = 60 * 60 * 8;
   private readonly MESSAGE_CACHE_TTL_SECONDS_POLL = 60 * 60 * 24 * 7;
   private readonly MESSAGE_CACHE_PREFIX = 'wa:msg:';
-  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 1;
   private readonly SEND_CONFIRMATION_TIMEOUT_MS = 20_000;
-  private readonly CALL_AUTO_REPLY_DEDUPE_PREFIX = 'call:auto-reply';
-  private readonly CALL_AUTO_REPLY_DEDUPE_TTL_SECONDS =
-    generalEnvironment.automationSendDedupeTtlSeconds;
+  private readonly SEND_MESSAGE_TIMEOUT_MS =
+    resolveBaileysSendMessageTimeoutMs();
+  private readonly AUXILIARY_PROVIDER_TIMEOUT_MS =
+    resolveProviderAuxiliaryTimeoutMs();
+  private readonly auxiliaryProviderInvocationFence =
+    new ProviderInvocationSingleFlight();
+  private auxiliaryProviderFailureRecovery:
+    | ((
+        socket: WASocket,
+        error: unknown,
+        options: { timedOut: boolean }
+      ) => void)
+    | undefined;
   private readonly FORWARDABLE_CACHE_TYPES = new Set<EMessageType>([
     EMessageType.text,
     EMessageType.image,
@@ -189,9 +368,12 @@ export class BaileysIncomingMessageService {
     private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
     @inject(BaileysDeliveryConfirmationService)
     private readonly deliveryConfirmation: BaileysDeliveryConfirmationService,
+    @inject(MessageSendIdempotencyService)
+    private readonly messageSendIdempotencyService: MessageSendIdempotencyService,
     @inject(InboundMessageSpoolService)
     private readonly inboundMessageSpoolService: InboundMessageSpoolService = {
       startPublisher: () => undefined,
+      stopPublisher: async () => undefined,
       publish: async (
         payload: IInboundMessageSpoolPayload,
         publisher: (payload: IInboundMessageSpoolPayload) => Promise<void>
@@ -209,15 +391,14 @@ export class BaileysIncomingMessageService {
       rememberFromUpsert: async () => null,
       rememberFromChat: async () => null,
       extractPhoneJidFromChat: () => null,
-    } as unknown as LidJidCacheService
+    } as unknown as LidJidCacheService,
+    @inject(WhatsappRuntimeFenceService)
+    private readonly whatsappRuntimeFenceService: WhatsappRuntimeFenceService = new WhatsappRuntimeFenceService(
+      redis
+    )
   ) {
     this.startCleanupInterval();
     this.startQueueProcessor();
-    this.inboundMessageSpoolService.startPublisher(
-      'baileys',
-      baileysEnvironment.baileysWorkerId,
-      (payload) => this.publishSpoolPayload(payload)
-    );
   }
 
   private getMessageKey(m: WAMessage): string | null {
@@ -354,7 +535,7 @@ export class BaileysIncomingMessageService {
     return Object.keys(message).sort();
   }
 
-  private getIncomingMessageTextPreview(m: WAMessage): string | null {
+  private getIncomingMessageTextByteLength(m: WAMessage): number | null {
     const message = m.message as proto.IMessage | undefined;
     if (!message) {
       return null;
@@ -377,7 +558,7 @@ export class BaileysIncomingMessageService {
       return null;
     }
 
-    return text.trim().slice(0, 500);
+    return Buffer.byteLength(text.trim());
   }
 
   private logIncomingMessageSummary(
@@ -387,19 +568,22 @@ export class BaileysIncomingMessageService {
   ): void {
     console.info(
       '[BAILEYS_INCOMING_SUMMARY]',
-      this.inspectDebugPayload({
-        stage,
-        worker_id: baileysEnvironment.baileysWorkerId,
-        account_id: baileysEnvironment.baileysAccountId,
-        message_id: m.key?.id ?? null,
-        remote_jid: m.key?.remoteJid ?? null,
-        remote_jid_alt: (m.key as { remoteJidAlt?: string | null } | undefined)
-          ?.remoteJidAlt,
-        from_me: m.key?.fromMe ?? null,
-        message_fields: this.getIncomingMessageFieldNames(m),
-        text_preview: this.getIncomingMessageTextPreview(m),
-        ...meta,
-      })
+      this.inspectDebugPayload(
+        sanitizeIncomingLogPayload({
+          stage,
+          worker_id: baileysEnvironment.baileysWorkerId,
+          account_id: baileysEnvironment.baileysAccountId,
+          message_id: m.key?.id ?? null,
+          remote_jid: m.key?.remoteJid ?? null,
+          remote_jid_alt: (
+            m.key as { remoteJidAlt?: string | null } | undefined
+          )?.remoteJidAlt,
+          from_me: m.key?.fromMe ?? null,
+          message_fields: this.getIncomingMessageFieldNames(m),
+          text_bytes: this.getIncomingMessageTextByteLength(m),
+          ...meta,
+        })
+      )
     );
   }
 
@@ -463,13 +647,15 @@ export class BaileysIncomingMessageService {
   ): void {
     console.log(
       '[BAILEYS_INCOMING_DEBUG]',
-      this.inspectDebugPayload({
-        stage,
-        worker_id: baileysEnvironment.baileysWorkerId,
-        account_id: baileysEnvironment.baileysAccountId,
-        ...meta,
-        payload,
-      })
+      this.inspectDebugPayload(
+        sanitizeIncomingLogPayload({
+          stage,
+          worker_id: baileysEnvironment.baileysWorkerId,
+          account_id: baileysEnvironment.baileysAccountId,
+          ...meta,
+          payload,
+        })
+      )
     );
   }
 
@@ -879,7 +1065,10 @@ export class BaileysIncomingMessageService {
 
       batch = [];
     } catch (error) {
-      console.error('[CRITICAL] Error in processRetryQueue:', error);
+      console.error(
+        '[CRITICAL] Error in processRetryQueue:',
+        workerErrorDiagnostics(error)
+      );
 
       if (batch.length > 0) {
         this.pendingQueue.unshift(...batch);
@@ -894,7 +1083,6 @@ export class BaileysIncomingMessageService {
     reason: string,
     error?: unknown
   ): void {
-    const errorMessage = error instanceof Error ? error.message : String(error);
     const message = item.inputUpsert.message as WAMessage | undefined;
 
     this.logLifecycle(message, {
@@ -904,32 +1092,477 @@ export class BaileysIncomingMessageService {
       reason,
       level: 'error',
       topic: item.topic,
-      kafka_key: item.kafkaKey ?? item.messageKey,
+      kafka_key_hash: hashIncomingLogIdentifier(
+        item.kafkaKey ?? item.messageKey
+      ),
       retry_count: item.retries,
       max_retries: this.MAX_RETRIES,
       queue_size: this.pendingQueue.length,
-      error: error ? errorMessage : undefined,
+      ...(error ? workerErrorDiagnostics(error) : {}),
     });
 
     console.error('[BaileysIncoming] Discarding pending message:', {
       reason,
       topic: item.topic,
-      kafka_key: item.kafkaKey ?? item.messageKey,
-      message_key: item.messageKey,
+      kafka_key_hash: hashIncomingLogIdentifier(
+        item.kafkaKey ?? item.messageKey
+      ),
+      message_key_hash: hashIncomingLogIdentifier(item.messageKey),
       account_id: item.inputUpsert.account_id,
       worker_id: item.inputUpsert.worker_id,
-      message_key_id: item.inputUpsert.message?.key?.id,
+      message_key_id_hash: hashIncomingLogIdentifier(
+        item.inputUpsert.message?.key?.id
+      ),
       retries: item.retries,
       max_retries: this.MAX_RETRIES,
-      error: error ? errorMessage : undefined,
+      ...(error ? workerErrorDiagnostics(error) : {}),
     });
+  }
+
+  private activateConnectionScope(): BaileysConnectionScope {
+    const runtimeGeneration = Number(baileysEnvironment.runtimeGeneration);
+    const authorization = this.currentConnectionAuthorization;
+    const scope = {
+      runtimeGeneration,
+      connectionEpoch: authorization?.connection_epoch ?? randomUUID(),
+      connectionAttemptId: authorization?.connection_attempt_id,
+      activationOrder: 0,
+      connectionSequence: 0,
+      activatedAt: Date.now(),
+    } as BaileysConnectionScope;
+
+    this.activeConnectionScope = scope;
+    scope.activation =
+      Number.isSafeInteger(runtimeGeneration) && runtimeGeneration > 0
+        ? this.enqueueRuntimeFenceTransition(async () => {
+            if (this.activeConnectionScope !== scope) {
+              return false;
+            }
+
+            let retryDelayMs = 100;
+            let durableActivation:
+              | {
+                  connection_sequence: number;
+                }
+              | undefined;
+            while (this.activeConnectionScope === scope) {
+              let begin;
+              try {
+                begin = await this.whatsappRuntimeFenceService.beginActivation({
+                  worker_id: baileysEnvironment.baileysWorkerId,
+                  runtime_generation: runtimeGeneration,
+                  connection_epoch: scope.connectionEpoch,
+                  source_provider: 'baileys',
+                });
+              } catch {
+                await waitRuntimeFenceRetry(retryDelayMs);
+                retryDelayMs = Math.min(retryDelayMs * 2, 2000);
+                continue;
+              }
+
+              if (this.activeConnectionScope !== scope) {
+                await this.whatsappRuntimeFenceService.deactivate(
+                  baileysEnvironment.baileysWorkerId,
+                  runtimeGeneration,
+                  scope.connectionEpoch
+                );
+                return false;
+              }
+              if (begin.status === 'superseded') {
+                return false;
+              }
+              scope.activationOrder = begin.activation_order;
+              if (begin.activated_at > 0) {
+                scope.activatedAt = begin.activated_at;
+              }
+              if (begin.status === 'active') {
+                scope.connectionSequence = begin.connection_sequence;
+                break;
+              }
+              if (begin.status === 'waiting' || begin.status === 'draining') {
+                await waitRuntimeFenceRetry(retryDelayMs);
+                retryDelayMs = Math.min(retryDelayMs * 2, 2000);
+                continue;
+              }
+
+              if (!durableActivation) {
+                try {
+                  durableActivation =
+                    await this.balanceWorkerStatusGrpcClientService.activateWhatsappRuntimeFence(
+                      {
+                        worker_id: baileysEnvironment.baileysWorkerId,
+                        account_id: baileysEnvironment.baileysAccountId,
+                        source_provider: 'baileys',
+                        runtime_generation: runtimeGeneration,
+                        connection_epoch: scope.connectionEpoch,
+                        connection_attempt_id: scope.connectionAttemptId,
+                      }
+                    );
+                  scope.connectionSequence =
+                    durableActivation.connection_sequence;
+                } catch (error) {
+                  if (isTerminalRuntimeFenceActivationError(error)) {
+                    await this.whatsappRuntimeFenceService.deactivate(
+                      baileysEnvironment.baileysWorkerId,
+                      runtimeGeneration,
+                      scope.connectionEpoch
+                    );
+                    throw error;
+                  }
+                  await waitRuntimeFenceRetry(retryDelayMs);
+                  retryDelayMs = Math.min(retryDelayMs * 2, 2000);
+                  continue;
+                }
+              }
+
+              if (this.activeConnectionScope !== scope) {
+                await this.whatsappRuntimeFenceService.deactivate(
+                  baileysEnvironment.baileysWorkerId,
+                  runtimeGeneration,
+                  scope.connectionEpoch
+                );
+                return false;
+              }
+
+              try {
+                const finalized =
+                  await this.whatsappRuntimeFenceService.finalizeActivation({
+                    worker_id: baileysEnvironment.baileysWorkerId,
+                    runtime_generation: runtimeGeneration,
+                    connection_epoch: scope.connectionEpoch,
+                    connection_sequence: scope.connectionSequence,
+                    source_provider: 'baileys',
+                    activation_order: scope.activationOrder,
+                  });
+                if (finalized) {
+                  break;
+                }
+              } catch {
+                // The exact epoch is retried. Until finalize succeeds, Redis
+                // intentionally rejects every fenced side effect.
+              }
+
+              if (this.activeConnectionScope === scope) {
+                await waitRuntimeFenceRetry(retryDelayMs);
+                retryDelayMs = Math.min(retryDelayMs * 2, 2000);
+              }
+            }
+            if (
+              this.activeConnectionScope !== scope ||
+              scope.connectionSequence <= 0 ||
+              scope.activationOrder <= 0
+            ) {
+              return false;
+            }
+
+            const view = (
+              this.whatsappRuntimeFenceService as unknown as {
+                view?: (
+                  workerId: string
+                ) => Promise<IWhatsappRuntimeFence | null>;
+              }
+            ).view;
+            if (!view) {
+              return true;
+            }
+
+            const activeFence = await view.call(
+              this.whatsappRuntimeFenceService,
+              baileysEnvironment.baileysWorkerId
+            );
+            if (
+              activeFence?.runtime_generation !== runtimeGeneration ||
+              activeFence.connection_epoch !== scope.connectionEpoch ||
+              activeFence.connection_sequence !== scope.connectionSequence ||
+              activeFence.activation_order !== scope.activationOrder ||
+              activeFence.state !== 'active' ||
+              activeFence.source_provider !== 'baileys' ||
+              this.activeConnectionScope !== scope
+            ) {
+              await this.whatsappRuntimeFenceService.deactivate(
+                baileysEnvironment.baileysWorkerId,
+                runtimeGeneration,
+                scope.connectionEpoch
+              );
+              return false;
+            }
+
+            scope.activatedAt = activeFence.activated_at;
+            return true;
+          })
+        : Promise.resolve(false);
+
+    void scope.activation
+      .then((accepted) => {
+        if (accepted && this.activeConnectionScope === scope) {
+          const fence: IWhatsappRuntimeFence = {
+            worker_id: baileysEnvironment.baileysWorkerId,
+            runtime_generation: scope.runtimeGeneration,
+            connection_epoch: scope.connectionEpoch,
+            connection_sequence: scope.connectionSequence,
+            source_provider: 'baileys',
+            activated_at: scope.activatedAt,
+            state: 'active',
+            activation_order: scope.activationOrder,
+          };
+          this.inboundMessageSpoolService.startPublisher(
+            'baileys',
+            baileysEnvironment.baileysWorkerId,
+            scope,
+            (payload) => this.publishSpoolPayload(payload),
+            () => this.whatsappRuntimeFenceService.isCurrent(fence)
+          );
+        } else if (this.activeConnectionScope === scope) {
+          void this.inboundMessageSpoolService.stopPublisher(
+            'baileys',
+            baileysEnvironment.baileysWorkerId,
+            scope
+          );
+        }
+      })
+      .catch((error) => {
+        console.error('[baileys] runtime fence activation failed:', {
+          worker_id: baileysEnvironment.baileysWorkerId,
+          runtime_generation: scope.runtimeGeneration,
+          connection_epoch: scope.connectionEpoch,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (this.activeConnectionScope === scope) {
+          void this.inboundMessageSpoolService.stopPublisher(
+            'baileys',
+            baileysEnvironment.baileysWorkerId,
+            scope
+          );
+        }
+      });
+    return scope;
+  }
+
+  private stopActiveConnectionScope(): void {
+    const scope = this.activeConnectionScope;
+    if (!scope) {
+      return;
+    }
+    this.activeConnectionScope = undefined;
+    const deactivate = this.enqueueRuntimeFenceTransition(async () => {
+      await this.whatsappRuntimeFenceService.deactivate(
+        baileysEnvironment.baileysWorkerId,
+        scope.runtimeGeneration,
+        scope.connectionEpoch
+      );
+    });
+    void Promise.allSettled([
+      deactivate,
+      this.inboundMessageSpoolService.stopPublisher(
+        'baileys',
+        baileysEnvironment.baileysWorkerId,
+        scope
+      ),
+    ]);
+  }
+
+  private enqueueRuntimeFenceTransition<T>(
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const transition = this.runtimeFenceTransition.then(operation, operation);
+    this.runtimeFenceTransition = transition.then(
+      () => undefined,
+      () => undefined
+    );
+    return transition;
+  }
+
+  private async prepareFencedPayload(
+    payload: unknown,
+    previouslyAcceptedSpoolPayload = false
+  ): Promise<boolean> {
+    if (typeof payload !== 'object' || payload === null) {
+      return false;
+    }
+
+    const record = payload as Record<string, unknown>;
+    const payloadGeneration = Number(record.runtime_generation);
+    const payloadEpoch =
+      typeof record.connection_epoch === 'string'
+        ? record.connection_epoch.trim()
+        : '';
+    const contextualScope =
+      this.connectionScopeStorage.getStore() ?? this.activeConnectionScope;
+    const scope =
+      Number.isSafeInteger(payloadGeneration) &&
+      payloadGeneration > 0 &&
+      payloadEpoch
+        ? {
+            runtimeGeneration: payloadGeneration,
+            connectionEpoch: payloadEpoch,
+          }
+        : contextualScope;
+    const active = this.activeConnectionScope;
+
+    if (
+      !scope ||
+      !active ||
+      scope.runtimeGeneration !== active.runtimeGeneration ||
+      scope.connectionEpoch !== active.connectionEpoch
+    ) {
+      return false;
+    }
+
+    record.source_provider = 'baileys';
+    record.runtime_generation = String(scope.runtimeGeneration);
+    record.connection_epoch = scope.connectionEpoch;
+
+    if (!(await active.activation)) {
+      return false;
+    }
+
+    const envelope = record.message;
+    if (
+      !previouslyAcceptedSpoolPayload &&
+      typeof envelope === 'object' &&
+      envelope !== null
+    ) {
+      const timestampMs = getWAMessageTimestampMs(envelope as WAMessage) ?? 0;
+      // WhatsApp timestamps frequently have only second precision. Discard the
+      // complete activation second so a pre-connection event cannot be
+      // rounded into the current connection.
+      const connectionCutoffMs =
+        (Math.floor(active.activatedAt / 1000) + 1) * 1000;
+      if (record.from_history_sync === true) {
+        if (
+          timestampMs <= 0 ||
+          timestampMs < Date.now() - HISTORY_RECONCILIATION_WINDOW_MS
+        ) {
+          return false;
+        }
+      } else if (timestampMs > 0 && timestampMs < connectionCutoffMs) {
+        return false;
+      }
+    }
+
+    return this.whatsappRuntimeFenceService.isCurrent({
+      worker_id: baileysEnvironment.baileysWorkerId,
+      runtime_generation: scope.runtimeGeneration,
+      connection_epoch: scope.connectionEpoch,
+      source_provider: 'baileys',
+    });
+  }
+
+  private isConnectionScopeCurrent(): Promise<boolean> {
+    return this.prepareFencedPayload({});
+  }
+
+  public async captureActiveConnectionScope(): Promise<IWhatsappRuntimeFence | null> {
+    const active = this.activeConnectionScope;
+    if (!active || !(await active.activation)) {
+      return null;
+    }
+    const fence: IWhatsappRuntimeFence = {
+      worker_id: baileysEnvironment.baileysWorkerId,
+      runtime_generation: active.runtimeGeneration,
+      connection_epoch: active.connectionEpoch,
+      connection_sequence: active.connectionSequence,
+      source_provider: 'baileys',
+      activated_at: active.activatedAt,
+    };
+    return (await this.whatsappRuntimeFenceService.isCurrent(fence))
+      ? fence
+      : null;
+  }
+
+  /**
+   * Returns the already-activated durable fence without performing I/O. Status
+   * persistence uses this to bind the event to the exact provider connection.
+   */
+  public getActiveRuntimeFenceIdentity(): {
+    connection_epoch: string;
+    connection_sequence: number;
+  } | null {
+    const active = this.activeConnectionScope;
+    if (!active || active.connectionSequence <= 0) {
+      return null;
+    }
+    return {
+      connection_epoch: active.connectionEpoch,
+      connection_sequence: active.connectionSequence,
+    };
+  }
+
+  public async acquireActiveRuntimeEffectLease(): Promise<IWhatsappRuntimeEffectLease | null> {
+    const active = this.activeConnectionScope;
+    if (!active || !(await active.activation)) {
+      return null;
+    }
+    if (this.activeConnectionScope !== active) {
+      return null;
+    }
+    return this.whatsappRuntimeFenceService.acquireEffectLease({
+      worker_id: baileysEnvironment.baileysWorkerId,
+      runtime_generation: active.runtimeGeneration,
+      connection_epoch: active.connectionEpoch,
+      source_provider: 'baileys',
+    });
+  }
+
+  private async runWithRuntimeEffectLease<T>(
+    payload: unknown,
+    operation: () => Promise<T>,
+    previouslyAcceptedSpoolPayload = false
+  ): Promise<{ executed: boolean; value?: T }> {
+    if (
+      !(await this.prepareFencedPayload(
+        payload,
+        previouslyAcceptedSpoolPayload
+      ))
+    ) {
+      return { executed: false };
+    }
+    const lease = await this.whatsappRuntimeFenceService.acquireEffectLease(
+      payload as IWhatsappRuntimeFence
+    );
+    if (!lease) {
+      return { executed: false };
+    }
+    try {
+      lease.assertOwned();
+      return { executed: true, value: await operation() };
+    } finally {
+      await lease.release().catch((error) => {
+        console.error(
+          '[baileys] Failed to release runtime effect lease; TTL cleanup will fence cutover',
+          error
+        );
+      });
+    }
   }
 
   private async publishSpoolPayload(
     payload: IInboundMessageSpoolPayload
   ): Promise<void> {
+    const active = this.activeConnectionScope;
+    if (
+      !active ||
+      !(await active.activation) ||
+      this.activeConnectionScope !== active
+    ) {
+      throw new Error('baileys_inbound_spool_without_active_runtime');
+    }
+
+    const replayingPreviousRuntime =
+      Number(payload.runtime_generation) !== active.runtimeGeneration ||
+      payload.connection_epoch !== active.connectionEpoch ||
+      payload.source_provider !== 'baileys';
+    const upsert: IUpsertMessage = {
+      ...payload.upsert,
+      source_provider: 'baileys',
+      runtime_generation: String(active.runtimeGeneration),
+      connection_epoch: active.connectionEpoch,
+      ...(replayingPreviousRuntime ? { from_history_sync: true } : {}),
+    };
+    ensureInboundEventId(upsert);
+
     const item: IBaileysPendingMessage = {
-      inputUpsert: payload.upsert,
+      inputUpsert: upsert,
       messageKey: payload.dedupe_key,
       kafkaKey: payload.kafka_key,
       topic: payload.kafka_topic,
@@ -937,12 +1570,29 @@ export class BaileysIncomingMessageService {
       addedAt: Date.now(),
     };
 
-    await this.sendToKafkaWithRetry(item);
+    // Every durable spool record already passed the provider timestamp and
+    // runtime checks before it was persisted. Reapplying the history window
+    // after a long Kafka outage would turn at-least-once delivery into data
+    // loss, so replay only revalidates the active runtime fence and effect
+    // lease. The deterministic event id keeps the downstream replay
+    // idempotent.
+    if (!(await this.sendToKafkaWithRetry(item, true))) {
+      throw new Error('baileys_inbound_spool_runtime_lease_revoked');
+    }
   }
 
   private async sendToKafkaWithRetry(
-    item: IBaileysPendingMessage
-  ): Promise<void> {
+    item: IBaileysPendingMessage,
+    previouslyAcceptedSpoolPayload = false
+  ): Promise<boolean> {
+    if (
+      !(await this.prepareFencedPayload(
+        item.inputUpsert,
+        previouslyAcceptedSpoolPayload
+      ))
+    ) {
+      return false;
+    }
     const kafkaKey =
       item.kafkaKey ??
       buildUpsertMessageKafkaKey(item.inputUpsert, item.messageKey);
@@ -1007,11 +1657,19 @@ export class BaileysIncomingMessageService {
     });
 
     try {
-      await this.streamProducerService.send(
-        item.topic,
+      const publish = await this.runWithRuntimeEffectLease(
         item.inputUpsert,
-        kafkaKey
+        () =>
+          this.streamProducerService.send(
+            item.topic,
+            item.inputUpsert,
+            kafkaKey
+          ),
+        previouslyAcceptedSpoolPayload
       );
+      if (!publish.executed) {
+        return false;
+      }
 
       this.logLifecycle(item.inputUpsert.message as WAMessage, {
         stage: 'baileys.kafka.publish.success',
@@ -1021,6 +1679,7 @@ export class BaileysIncomingMessageService {
         kafka_key: kafkaKey,
         retry_count: item.retries,
       });
+      return true;
     } catch (error) {
       this.logLifecycle(item.inputUpsert.message as WAMessage, {
         stage: 'baileys.kafka.publish.error',
@@ -1041,6 +1700,10 @@ export class BaileysIncomingMessageService {
     messageKey: string,
     topic: string = this.kafkaServiceQueueService.upsertMessage()
   ): Promise<boolean> {
+    if (!(await this.prepareFencedPayload(inputUpsert))) {
+      return false;
+    }
+    const eventId = ensureInboundEventId(inputUpsert);
     if (this.isDestroying) {
       this.logLifecycle(inputUpsert.message as WAMessage, {
         stage: 'baileys.queue.enqueue',
@@ -1048,41 +1711,51 @@ export class BaileysIncomingMessageService {
         outcome: 'accepted',
         reason: 'destroying_but_spooled',
         topic,
-        kafka_key: messageKey,
+        kafka_key_hash: hashIncomingLogIdentifier(messageKey),
       });
     }
 
     const kafkaKey = buildUpsertMessageKafkaKey(inputUpsert, messageKey);
+    const connectionEpoch = inputUpsert.connection_epoch?.trim();
+    if (!connectionEpoch) {
+      throw new TypeError('Baileys upsert is missing a connection epoch');
+    }
     const payload: IInboundMessageSpoolPayload = {
       provider: 'baileys',
+      source_provider: 'baileys',
       account_id: inputUpsert.account_id,
       worker_id: inputUpsert.worker_id,
+      runtime_generation: String(inputUpsert.runtime_generation),
+      connection_epoch: connectionEpoch,
       event_source: inputUpsert.from_history_sync
         ? 'history_reconciliation_upsert'
         : 'incoming_upsert',
-      dedupe_key: messageKey,
+      dedupe_key: eventId ?? messageKey,
       kafka_topic: topic,
       kafka_key: kafkaKey,
       upsert: inputUpsert,
       raw_meta: {
         message_key_id: inputUpsert.message?.key?.id,
+        event_id: eventId,
         type: inputUpsert.type,
       },
       received_at: new Date().toISOString(),
       attempts: 0,
     };
-    const published = await this.inboundMessageSpoolService.publish(
-      payload,
-      (spooledPayload) => this.publishSpoolPayload(spooledPayload)
+    const spool = await this.runWithRuntimeEffectLease(inputUpsert, () =>
+      this.inboundMessageSpoolService.publish(payload, (spooledPayload) =>
+        this.publishSpoolPayload(spooledPayload)
+      )
     );
+    const accepted = spool.executed && spool.value === true;
     this.logLifecycle(inputUpsert.message as WAMessage, {
       stage: 'baileys.queue.enqueue',
       decision: 'enqueue',
-      outcome: published ? 'published' : 'spooled',
+      outcome: accepted ? 'queued' : 'rejected',
       topic,
       kafka_key: kafkaKey,
     });
-    return published;
+    return accepted;
   }
 
   private isDuplicate(messageKey: string): boolean {
@@ -1097,115 +1770,169 @@ export class BaileysIncomingMessageService {
     return false;
   }
 
-  bindTo(socket: WASocket) {
+  bindTo(
+    socket: WASocket,
+    authorization?: IWhatsappRuntimeFenceConnectionAuthorization
+  ) {
     if (this.currentSocket === socket) return;
 
     this.unbind();
+    const connectionEpoch = authorization?.connection_epoch.trim();
+    const connectionAttemptId = authorization?.connection_attempt_id?.trim();
+    if (authorization && !connectionEpoch) {
+      throw new TypeError('baileys_runtime_fence_authorization_invalid');
+    }
+    this.currentConnectionAuthorization = connectionEpoch
+      ? {
+          connection_epoch: connectionEpoch,
+          connection_attempt_id: connectionAttemptId || undefined,
+        }
+      : undefined;
     this.currentSocket = socket;
-
-    socket.ev.on('messages.upsert', (e) => {
-      if (!e?.messages?.length) return;
-
-      const isHistoryUpsert = e.type && e.type !== EMessageUpsertType.notify;
-
-      const messages = isHistoryUpsert
-        ? this.selectLatestHistoryMessages(e.messages)
-        : e.messages;
-
-      for (const m of messages) {
-        const mappedType = mapIncomingToType(m) ?? null;
-        this.logIncomingMessageSummary('messages.upsert.message', m, {
-          provider_upsert_type: e.type ?? null,
-          selected_from_history: Boolean(isHistoryUpsert),
-          mapped_type: mappedType,
-        });
-        if (this.shouldLogIncomingRawDebug()) {
-          this.logIncomingProviderPayloadDebug(
-            'messages.upsert.message_raw',
-            m,
-            {
-              provider_upsert_type: e.type ?? null,
-              selected_from_history: Boolean(isHistoryUpsert),
-              mapped_type: mappedType,
-            }
-          );
+    const scoped = <TArgs extends unknown[]>(
+      listener: (...args: TArgs) => void
+    ): ((...args: TArgs) => void) => {
+      return (...args: TArgs) => {
+        const connectionScope = this.activeConnectionScope;
+        if (!connectionScope || this.currentSocket !== socket) {
+          return;
         }
-        this.logLifecycle(m, {
-          stage: 'baileys.event.messages_upsert',
-          decision: 'receive_provider_event',
-          outcome: 'received',
-          provider_upsert_type: e.type,
-          raw_payload: e,
-        });
-        if (this.hasIncomingEditSignal(m.message)) {
-          this.logIncomingProviderPayloadDebug(
-            'messages.upsert.edit_signal',
-            m,
-            {
-              provider_upsert_type: e.type,
-              mapped_type: mapIncomingToType(m) ?? null,
-              message_id: m.key?.id,
-              remote_jid: m.key?.remoteJid,
-              from_me: m.key?.fromMe,
-            }
-          );
+
+        this.connectionScopeStorage.run(connectionScope, () =>
+          listener(...args)
+        );
+      };
+    };
+
+    socket.ev.on(
+      'messages.upsert',
+      scoped((e) => {
+        if (!e?.messages?.length) return;
+
+        const isHistoryUpsert = e.type && e.type !== EMessageUpsertType.notify;
+
+        const messages = isHistoryUpsert
+          ? this.selectLatestHistoryMessages(e.messages)
+          : e.messages;
+
+        for (const m of messages) {
+          const mappedType = mapIncomingToType(m) ?? null;
+          this.logIncomingMessageSummary('messages.upsert.message', m, {
+            provider_upsert_type: e.type ?? null,
+            selected_from_history: Boolean(isHistoryUpsert),
+            mapped_type: mappedType,
+          });
+          if (this.shouldLogIncomingRawDebug()) {
+            this.logIncomingProviderPayloadDebug(
+              'messages.upsert.message_raw',
+              m,
+              {
+                provider_upsert_type: e.type ?? null,
+                selected_from_history: Boolean(isHistoryUpsert),
+                mapped_type: mappedType,
+              }
+            );
+          }
+          this.logLifecycle(m, {
+            stage: 'baileys.event.messages_upsert',
+            decision: 'receive_provider_event',
+            outcome: 'received',
+            provider_upsert_type: e.type,
+            raw_payload: e,
+          });
+          if (this.hasIncomingEditSignal(m.message)) {
+            this.logIncomingProviderPayloadDebug(
+              'messages.upsert.edit_signal',
+              m,
+              {
+                provider_upsert_type: e.type,
+                mapped_type: mapIncomingToType(m) ?? null,
+                message_id: m.key?.id,
+                remote_jid: m.key?.remoteJid,
+                from_me: m.key?.fromMe,
+              }
+            );
+          }
+          void this.cacheMessage(m);
+          if (isHistoryUpsert) {
+            this.processHistoryMessage(socket, m, e.type);
+          } else {
+            this.processMessage(socket, m, e.type);
+          }
         }
-        void this.cacheMessage(m);
-        if (isHistoryUpsert) {
-          this.processHistoryMessage(socket, m, e.type);
-        } else {
-          this.processMessage(socket, m, e.type);
+      })
+    );
+
+    socket.ev.on(
+      'messaging-history.set',
+      scoped((event) => {
+        if (!isHistoryReconciliationEnabled()) {
+          return;
         }
-      }
-    });
+        if (!Array.isArray(event?.messages) || event.messages.length === 0) {
+          return;
+        }
 
-    socket.ev.on('messaging-history.set', (event) => {
-      if (!HISTORY_RECONCILIATION_ENABLED) {
-        return;
-      }
-      if (!Array.isArray(event?.messages) || event.messages.length === 0) {
-        return;
-      }
+        const messages = this.selectLatestHistoryMessages(event.messages);
 
-      const messages = this.selectLatestHistoryMessages(event.messages);
+        for (const message of messages) {
+          void this.cacheMessage(message);
+          this.processHistoryMessage(socket, message, 'messaging-history.set');
+        }
+      })
+    );
 
-      for (const message of messages) {
-        void this.cacheMessage(message);
-        this.processHistoryMessage(socket, message, 'messaging-history.set');
-      }
-    });
+    socket.ev.on(
+      'contacts.upsert',
+      scoped((contacts) => {
+        if (!Array.isArray(contacts) || contacts.length === 0) return;
+        this.upsertContactNames(contacts);
+      })
+    );
 
-    socket.ev.on('contacts.upsert', (contacts) => {
-      if (!Array.isArray(contacts) || contacts.length === 0) return;
-      this.upsertContactNames(contacts);
-    });
+    socket.ev.on(
+      'contacts.update',
+      scoped((contacts) => {
+        if (!Array.isArray(contacts) || contacts.length === 0) return;
+        this.upsertContactNames(contacts as Array<Contact | Partial<Contact>>);
+      })
+    );
 
-    socket.ev.on('contacts.update', (contacts) => {
-      if (!Array.isArray(contacts) || contacts.length === 0) return;
-      this.upsertContactNames(contacts as Array<Contact | Partial<Contact>>);
-    });
+    socket.ev.on(
+      'messages.update',
+      scoped((events) => {
+        void this.handleMessagesUpdate(events);
+      })
+    );
 
-    socket.ev.on('messages.update', (events) => {
-      void this.handleMessagesUpdate(events);
-    });
+    socket.ev.on(
+      'message-receipt.update',
+      scoped((events) => {
+        void this.handleMessageReceiptUpdate(events);
+      })
+    );
 
-    socket.ev.on('message-receipt.update', (events) => {
-      void this.handleMessageReceiptUpdate(events);
-    });
+    socket.ev.on(
+      'presence.update',
+      scoped((data) => {
+        void this.handlePresenceUpdate(data);
+      })
+    );
 
-    socket.ev.on('presence.update', (data) => {
-      void this.handlePresenceUpdate(data);
-    });
+    socket.ev.on(
+      'call',
+      scoped((callEvents: WACallEvent[]) => {
+        if (!callEvents) return;
 
-    socket.ev.on('call', (callEvents: WACallEvent[]) => {
-      if (!callEvents) return;
+        const eventsArray = Array.isArray(callEvents)
+          ? callEvents
+          : [callEvents];
 
-      const eventsArray = Array.isArray(callEvents) ? callEvents : [callEvents];
-
-      for (const callEvent of eventsArray) {
-        void this.processCallEvent(socket, callEvent);
-      }
-    });
+        for (const callEvent of eventsArray) {
+          void this.processCallEvent(socket, callEvent);
+        }
+      })
+    );
   }
 
   private processMessage(
@@ -1266,7 +1993,7 @@ export class BaileysIncomingMessageService {
   }
 
   private isHistoryMessageCandidate(m: WAMessage | null | undefined): boolean {
-    if (!HISTORY_RECONCILIATION_ENABLED || !m) {
+    if (!isHistoryReconciliationEnabled() || !m) {
       return false;
     }
 
@@ -1281,7 +2008,7 @@ export class BaileysIncomingMessageService {
     const timestampMs = getWAMessageTimestampMs(m);
     if (
       !timestampMs ||
-      Date.now() - timestampMs > HISTORY_RECONCILIATION_WINDOW_MS
+      timestampMs < Date.now() - HISTORY_RECONCILIATION_WINDOW_MS
     ) {
       return false;
     }
@@ -1332,7 +2059,9 @@ export class BaileysIncomingMessageService {
 
       const messageKey = this.getMessageKey(m);
       if (!messageKey) {
-        console.warn('[WARN] Message without key, skipping:', m.key?.id);
+        console.warn('[WARN] Message without key, skipping', {
+          message_id_hash: hashIncomingLogIdentifier(m.key?.id),
+        });
         this.logLifecycle(m, {
           stage: 'baileys.incoming.skip',
           decision: 'message_key',
@@ -1348,7 +2077,7 @@ export class BaileysIncomingMessageService {
           decision: 'message_type_mapping',
           outcome: 'skipped',
           reason: 'raw_secret_encrypted_message_edit',
-          kafka_key: messageKey,
+          kafka_key_hash: hashIncomingLogIdentifier(messageKey),
         });
         return;
       }
@@ -1371,8 +2100,8 @@ export class BaileysIncomingMessageService {
       const unsupportedFallback = !mappedType;
       if (unsupportedFallback) {
         console.warn(
-          '[WARN] Unknown message type, publishing system fallback:',
-          messageKey
+          '[WARN] Unknown message type, publishing system fallback',
+          { message_key_hash: hashIncomingLogIdentifier(messageKey) }
         );
         this.logIncomingProviderPayloadDebug(
           'messages.upsert.unknown_message_type',
@@ -1392,7 +2121,7 @@ export class BaileysIncomingMessageService {
           decision: 'message_type_mapping',
           outcome: 'fallback_system_message',
           reason: 'unknown_message_type',
-          kafka_key: messageKey,
+          kafka_key_hash: hashIncomingLogIdentifier(messageKey),
         });
       }
 
@@ -1448,16 +2177,17 @@ export class BaileysIncomingMessageService {
             decision: 'persist_or_publish',
             outcome: 'error',
             level: 'error',
-            reason: error instanceof Error ? error.message : String(error),
+            reason: 'inbound_spool_failed',
+            ...workerErrorDiagnostics(error),
             topic,
-            kafka_key: messageKey,
+            kafka_key_hash: hashIncomingLogIdentifier(messageKey),
           });
           console.error('[BaileysIncoming] Failed to spool incoming message:', {
             topic,
-            kafka_key: messageKey,
+            kafka_key_hash: hashIncomingLogIdentifier(messageKey),
             account_id: inputUpsert.account_id,
             worker_id: inputUpsert.worker_id,
-            error: error instanceof Error ? error.message : String(error),
+            ...workerErrorDiagnostics(error),
           });
         }
       );
@@ -1469,16 +2199,20 @@ export class BaileysIncomingMessageService {
         message_type: type,
         has_quoted: hasQuoted,
         topic,
-        kafka_key: messageKey,
+        kafka_key_hash: hashIncomingLogIdentifier(messageKey),
       });
     } catch (error) {
-      console.error('[CRITICAL] Error processing message:', error, m.key?.id);
+      console.error('[CRITICAL] Error processing message:', {
+        message_id_hash: hashIncomingLogIdentifier(m.key?.id),
+        ...workerErrorDiagnostics(error),
+      });
       this.logLifecycle(m, {
         stage: 'baileys.incoming.error',
         decision: 'process_incoming',
         outcome: 'error',
         level: 'error',
-        reason: error instanceof Error ? error.message : String(error),
+        reason: 'incoming_processing_failed',
+        ...workerErrorDiagnostics(error),
       });
     }
   }
@@ -1580,7 +2314,7 @@ export class BaileysIncomingMessageService {
 
         if (!(await this.isCachedPhotoUsable(cached))) {
           console.warn('[baileys] shared profile photo cache is not usable', {
-            candidate,
+            candidate_hash: hashIncomingLogIdentifier(candidate),
             host: this.getUrlHost(cached),
           });
           continue;
@@ -1702,37 +2436,29 @@ export class BaileysIncomingMessageService {
     }
   }
 
-  private async withProfileTimeout(
-    promise: Promise<string | undefined>
-  ): Promise<string | undefined> {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-    try {
-      const timeout = new Promise<undefined>((resolve) => {
-        timeoutId = setTimeout(
-          () => resolve(undefined),
-          this.PROFILE_PIC_TIMEOUT_MS
-        );
-      });
-      const result = await Promise.race([promise, timeout]);
-      return this.toNonEmptyString(result);
-    } catch {
-      return undefined;
-    } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    }
-  }
-
   private async fetchPhotoByCandidates(
     socket: WASocket,
     candidates: string[]
   ): Promise<string | undefined> {
     const results = await Promise.all(
-      candidates.map((candidate) =>
-        this.withProfileTimeout(socket.profilePictureUrl(candidate, 'image'))
-      )
+      candidates.map(async (candidate) => {
+        try {
+          return this.toNonEmptyString(
+            await this.invokeAuxiliaryProvider(
+              socket,
+              'incoming_profile_photo_lookup',
+              () => socket.profilePictureUrl(candidate, 'image'),
+              undefined,
+              this.PROFILE_PIC_TIMEOUT_MS
+            )
+          );
+        } catch (error) {
+          if (isProviderAuxiliaryInvocationFenceError(error)) {
+            throw error;
+          }
+          return undefined;
+        }
+      })
     );
 
     return results.find((photo): photo is string => !!photo);
@@ -1773,34 +2499,60 @@ export class BaileysIncomingMessageService {
     if (!data?.id || !data?.presences) {
       return;
     }
-
-    const chatJid = data.id;
-    const presences = data.presences;
-
-    for (const [, presence] of Object.entries(presences)) {
-      if (!presence) continue;
-
-      const state = this.mapPresenceToTypingState(presence.lastKnownPresence);
-      if (!state) {
-        continue;
+    const lease = await this.acquireActiveRuntimeEffectLease().catch(
+      (error) => {
+        console.error(
+          '[baileys] Failed to acquire presence runtime effect lease',
+          error
+        );
+        return null;
       }
+    );
+    if (!lease) {
+      return;
+    }
 
-      const typingEvent: IChatTyping = {
-        type: 'typing',
-        jid: chatJid,
-        is_typing: state.is_typing,
-        is_recording: state.is_recording,
-        typing_state: state.typing_state,
-        account_id: baileysEnvironment.baileysAccountId,
-        worker_id: baileysEnvironment.baileysWorkerId,
-      };
+    try {
+      lease.assertOwned();
+      const chatJid = data.id;
+      const presences = data.presences;
 
-      this.centrifugoService
-        .publishSub(
+      for (const [, presence] of Object.entries(presences)) {
+        if (!presence) continue;
+
+        const state = this.mapPresenceToTypingState(presence.lastKnownPresence);
+        if (!state) {
+          continue;
+        }
+
+        const typingEvent: IChatTyping = {
+          type: 'typing',
+          jid: chatJid,
+          is_typing: state.is_typing,
+          is_recording: state.is_recording,
+          typing_state: state.typing_state,
+          account_id: baileysEnvironment.baileysAccountId,
+          worker_id: baileysEnvironment.baileysWorkerId,
+        };
+
+        if (!(await this.isConnectionScopeCurrent())) {
+          return;
+        }
+
+        await this.centrifugoService.publishSub(
           chatAccountCentrifugo(baileysEnvironment.baileysAccountId),
           typingEvent
-        )
-        .catch(() => {});
+        );
+      }
+    } catch {
+      return;
+    } finally {
+      await lease.release().catch((error) => {
+        console.error(
+          '[baileys] Failed to release presence runtime effect lease',
+          error
+        );
+      });
     }
   }
 
@@ -1857,27 +2609,278 @@ export class BaileysIncomingMessageService {
     return `${jid}:${callId}:${callEvent.status}`;
   }
 
-  private getCallAutoReplyDedupeKey(callIdentity: string): string {
-    return `${this.CALL_AUTO_REPLY_DEDUPE_PREFIX}:baileys:${baileysEnvironment.baileysAccountId}:${baileysEnvironment.baileysWorkerId}:${callIdentity}`;
+  private getCallAutoReplyOperationId(callId?: string | null): string | null {
+    const normalizedCallId = callId?.trim();
+    if (!normalizedCallId) {
+      return null;
+    }
+
+    return `call-auto-reply:${baileysEnvironment.baileysWorkerId}:${normalizedCallId}`;
   }
 
-  private async acquireCallAutoReplySendAttempt(
-    callIdentity: string
-  ): Promise<boolean> {
-    const dedupeKey = this.getCallAutoReplyDedupeKey(callIdentity);
+  private getCallAutoReplyRecoveryResult(result: unknown): {
+    upsert: IUpsertMessage;
+    kafkaKey: string;
+  } | null {
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+
+    const stored = result as {
+      call_auto_reply_system_upsert?: unknown;
+      kafka_key?: unknown;
+    };
+    const upsert = stored.call_auto_reply_system_upsert;
+    if (
+      !upsert ||
+      typeof upsert !== 'object' ||
+      !('worker_id' in upsert) ||
+      !('account_id' in upsert) ||
+      !('type' in upsert) ||
+      !('message' in upsert)
+    ) {
+      return null;
+    }
+
+    const typedUpsert = upsert as IUpsertMessage;
+    const storedKafkaKey =
+      typeof stored.kafka_key === 'string' && stored.kafka_key.trim()
+        ? stored.kafka_key.trim()
+        : null;
+    const messageKeyId = typedUpsert.message?.key?.id;
+    const kafkaKey = storedKafkaKey ?? messageKeyId;
+    if (!kafkaKey) {
+      return null;
+    }
+
+    return { upsert: typedUpsert, kafkaKey };
+  }
+
+  private async recoverSucceededCallAutoReply(result: unknown): Promise<void> {
+    const recovery = this.getCallAutoReplyRecoveryResult(result);
+    if (!recovery) {
+      return;
+    }
+
+    await this.enqueueMessage(recovery.upsert, recovery.kafkaKey);
+  }
+
+  private async releaseCallAutoReplyReservation(
+    claim: IMessageSendAcquiredClaim
+  ): Promise<void> {
+    await this.messageSendIdempotencyService
+      .releaseReservation(claim)
+      .catch(() => undefined);
+  }
+
+  private async sendCallAutoReply(input: {
+    socket: WASocket;
+    callId?: string | null;
+    callJid: string;
+    normalizedJid: string;
+    normalizedJidAlt: string | null;
+    text: string;
+    photo: string | null;
+  }): Promise<void> {
+    const lease = await this.acquireActiveRuntimeEffectLease();
+    if (!lease) {
+      return;
+    }
+    try {
+      lease.assertOwned();
+      await this.sendCallAutoReplyWithinLease(input, () => lease.assertOwned());
+    } finally {
+      await lease.release().catch((error) => {
+        console.error(
+          '[baileys] Failed to release call auto-reply runtime effect lease',
+          error
+        );
+      });
+    }
+  }
+
+  private async sendCallAutoReplyWithinLease(
+    input: {
+      socket: WASocket;
+      callId?: string | null;
+      callJid: string;
+      normalizedJid: string;
+      normalizedJidAlt: string | null;
+      text: string;
+      photo: string | null;
+    },
+    assertEffectLeaseOwned: () => void
+  ): Promise<void> {
+    const capturedScope =
+      this.connectionScopeStorage.getStore() ?? this.activeConnectionScope;
+    const assertProviderAuthorityRegistered = (): void => {
+      assertEffectLeaseOwned();
+      if (
+        !capturedScope ||
+        this.activeConnectionScope !== capturedScope ||
+        this.currentSocket !== input.socket
+      ) {
+        throw new Error('call_auto_reply_connection_scope_revoked');
+      }
+    };
+    assertProviderAuthorityRegistered();
+    if (!(await this.isConnectionScopeCurrent())) {
+      return;
+    }
+    assertProviderAuthorityRegistered();
+
+    const operationId = this.getCallAutoReplyOperationId(input.callId);
+    if (!operationId) {
+      console.warn(
+        '[WARN] Call event without stable call id, skipping auto-reply'
+      );
+      return;
+    }
+
+    const claim = await this.messageSendIdempotencyService.claimOperation({
+      accountId: baileysEnvironment.baileysAccountId,
+      operationType: 'direct',
+      operationId,
+      meta: {
+        worker_id: baileysEnvironment.baileysWorkerId,
+        call_id: input.callId?.trim(),
+        source: 'incoming_call_auto_reply',
+      },
+    });
+    if (claim.status === 'error') {
+      throw new Error('call_auto_reply_idempotency_error');
+    }
+
+    if (claim.status === 'duplicate') {
+      if (!(await this.isConnectionScopeCurrent())) {
+        return;
+      }
+      if (claim.state === 'succeeded') {
+        await this.recoverSucceededCallAutoReply(claim.result);
+      }
+      return;
+    }
+
+    let providerLifecycleStarted = false;
+    let providerInvocationTransitionUncertain = false;
+    let providerStartRejected: unknown | null = null;
+    let providerInvocationPromise: Promise<void> | null = null;
+    let succeeded = false;
+    const beforeProviderInvoke: IProviderInvocationBoundary =
+      (): Promise<void> => {
+        if (providerStartRejected !== null) {
+          return Promise.reject(providerStartRejected);
+        }
+        if (providerLifecycleStarted) {
+          return Promise.resolve();
+        }
+        if (!providerInvocationPromise) {
+          providerInvocationPromise = (async () => {
+            assertProviderAuthorityRegistered();
+            if (!(await this.isConnectionScopeCurrent())) {
+              throw new Error('call_auto_reply_connection_scope_revoked');
+            }
+            assertProviderAuthorityRegistered();
+            providerInvocationTransitionUncertain = true;
+            const invoked =
+              await this.messageSendIdempotencyService.markProviderInvoked(
+                claim
+              );
+            if (invoked !== 'transitioned') {
+              throw new Error(`call_auto_reply_idempotency_${invoked}`);
+            }
+            providerInvocationTransitionUncertain = false;
+            providerLifecycleStarted = true;
+          })();
+        }
+        return providerInvocationPromise;
+      };
+    beforeProviderInvoke.assertActive = (): void => {
+      if (providerStartRejected !== null) {
+        throw providerStartRejected;
+      }
+      assertProviderAuthorityRegistered();
+      if (!providerLifecycleStarted) {
+        throw new Error('call_auto_reply_provider_boundary_not_started');
+      }
+    };
+    beforeProviderInvoke.onStartRejected = async (
+      error: unknown
+    ): Promise<void> => {
+      if (!providerLifecycleStarted) {
+        return;
+      }
+      providerStartRejected = error;
+      const reverted =
+        await this.messageSendIdempotencyService.revertProviderInvocationBeforeStart(
+          claim
+        );
+      if (reverted !== 'transitioned') {
+        throw new Error(
+          `call_auto_reply_idempotency_provider_start_revert_${reverted}`
+        );
+      }
+      providerLifecycleStarted = false;
+    };
 
     try {
-      const acquired = await this.redis.set(
-        dedupeKey,
-        '1',
-        'EX',
-        this.CALL_AUTO_REPLY_DEDUPE_TTL_SECONDS,
-        'NX'
+      const sentMessage = await this.sendMessageWithConfirmation(
+        input.socket,
+        input.callJid,
+        { text: input.text },
+        undefined,
+        beforeProviderInvoke
       );
+      const sentMessageId =
+        sentMessage && typeof sentMessage.key?.id === 'string'
+          ? sentMessage.key.id
+          : undefined;
+      const systemMessageUpsert = this.buildCallAutoReplySystemUpsert(
+        input.normalizedJid,
+        input.normalizedJidAlt,
+        input.text,
+        sentMessageId
+      );
+      systemMessageUpsert.photo = input.photo;
+      const kafkaKey = systemMessageUpsert.message.key.id;
+      if (!kafkaKey) {
+        throw new Error('call_auto_reply_missing_system_message_id');
+      }
 
-      return acquired === 'OK';
-    } catch {
-      return false;
+      if (!(await this.prepareFencedPayload(systemMessageUpsert))) {
+        throw new Error('call_auto_reply_connection_scope_revoked');
+      }
+
+      const persisted = await this.messageSendIdempotencyService.markSucceeded(
+        claim,
+        {
+          schema_version: 'call_auto_reply_system_upsert_recovery_v1',
+          provider: 'baileys',
+          account_id: baileysEnvironment.baileysAccountId,
+          worker_id: baileysEnvironment.baileysWorkerId,
+          operation_id: operationId,
+          call_auto_reply_system_upsert: systemMessageUpsert,
+          kafka_key: kafkaKey,
+        }
+      );
+      if (persisted !== 'transitioned') {
+        throw new Error(`call_auto_reply_idempotency_${persisted}`);
+      }
+      succeeded = true;
+
+      await this.enqueueMessage(systemMessageUpsert, kafkaKey);
+    } catch (error) {
+      if (providerInvocationTransitionUncertain) {
+        // A timeout/disconnect while persisting `provider_invoked` has an
+        // unknown durable outcome. Never reopen this operation for replay.
+      } else if (!providerLifecycleStarted) {
+        await this.releaseCallAutoReplyReservation(claim);
+      } else if (!succeeded) {
+        await this.messageSendIdempotencyService
+          .markAmbiguous(claim, error)
+          .catch(() => undefined);
+      }
+      throw error;
     }
   }
 
@@ -1905,6 +2908,35 @@ export class BaileysIncomingMessageService {
   }
 
   private async processCallEvent(
+    socket: WASocket,
+    callEvent: WACallEvent | null
+  ): Promise<void> {
+    const lease = await this.acquireActiveRuntimeEffectLease().catch(
+      (error) => {
+        console.error(
+          '[baileys] Failed to acquire call-event runtime effect lease',
+          error
+        );
+        return null;
+      }
+    );
+    if (!lease) {
+      return;
+    }
+    try {
+      lease.assertOwned();
+      await this.processCallEventWithinLease(socket, callEvent);
+    } finally {
+      await lease.release().catch((error) => {
+        console.error(
+          '[baileys] Failed to release call-event runtime effect lease',
+          error
+        );
+      });
+    }
+  }
+
+  private async processCallEventWithinLease(
     socket: WASocket,
     callEvent: WACallEvent | null
   ): Promise<void> {
@@ -1941,7 +2973,8 @@ export class BaileysIncomingMessageService {
 
       const normalizedJid = normalizeJid(callJid) ?? callJid;
       const normalizedJidAlt = normalizedJid !== callJid ? callJid : null;
-      const callId = callEvent.id ?? Date.now().toString();
+      const stableCallId = callEvent.id?.trim() || null;
+      const callId = stableCallId ?? Date.now().toString();
       const isVideo = (callEvent as { isVideo?: boolean }).isVideo === true;
       const callText = isVideo
         ? 'Ligacão de vídeo recebida'
@@ -1987,6 +3020,7 @@ export class BaileysIncomingMessageService {
           photo: null,
           has_quoted: false,
           is_call_event: true,
+          event_revision: stableCallId ?? undefined,
           call_phone: callPhone,
           call_jid: normalizedJid,
           call_jid_alt: normalizedJidAlt,
@@ -2009,8 +3043,8 @@ export class BaileysIncomingMessageService {
         void this.enqueueMessage(callUpsert, callKey);
       } else {
         console.warn(
-          '[WARN] Call event without phone, skipping call upsert only:',
-          callJid
+          '[WARN] Call event without phone, skipping call upsert only',
+          { call_jid_hash: hashIncomingLogIdentifier(callJid) }
         );
       }
 
@@ -2025,41 +3059,41 @@ export class BaileysIncomingMessageService {
           }
         );
 
-      if (callAction.reject_call && callEvent.id) {
-        socket.rejectCall(callEvent.id, callJid).catch(() => {});
+      const providerCallId = callEvent.id;
+      if (callAction.reject_call && providerCallId) {
+        if (!(await this.isConnectionScopeCurrent())) {
+          return;
+        }
+        void this.invokeAuxiliaryProvider(socket, 'reject_call', () =>
+          socket.rejectCall(providerCallId, callJid)
+        ).catch((error) => {
+          console.warn('[baileys] reject call provider operation failed', {
+            call_id_hash: hashIncomingLogIdentifier(providerCallId),
+            call_jid_hash: hashIncomingLogIdentifier(callJid),
+            ...workerErrorDiagnostics(error),
+          });
+        });
       }
 
       const text = callAction.show_message_text?.trim();
       if (callAction.show_message_on_call && text) {
-        const callIdentity = callEvent.id?.trim() || callKey;
-        const canSendAutoReply =
-          await this.acquireCallAutoReplySendAttempt(callIdentity);
-        if (!canSendAutoReply) {
+        if (!(await this.isConnectionScopeCurrent())) {
           return;
         }
-
-        const sentMessage = await this.sendMessageWithConfirmation(
+        await this.sendCallAutoReply({
           socket,
+          callId: callEvent.id,
           callJid,
-          { text }
-        );
-        const sentMessageId =
-          sentMessage && typeof sentMessage.key?.id === 'string'
-            ? sentMessage.key.id
-            : undefined;
-        const systemMessageUpsert = this.buildCallAutoReplySystemUpsert(
           normalizedJid,
           normalizedJidAlt,
           text,
-          sentMessageId
-        );
-        systemMessageUpsert.photo = callPhoto;
-
-        const autoReplyKey = `${callKey}:auto_reply:${sentMessageId ?? Date.now().toString()}`;
-        this.enqueueMessage(systemMessageUpsert, autoReplyKey);
+          photo: callPhoto,
+        });
       }
     } catch (error) {
-      console.error('[CRITICAL] Error processing call event:', error);
+      console.error('[CRITICAL] Error processing call event', {
+        ...workerErrorDiagnostics(error),
+      });
     }
   }
 
@@ -2159,10 +3193,8 @@ export class BaileysIncomingMessageService {
     const candidate: WAMessage = {
       key: {
         ...event.key,
-        id: `edit_${event.key.id}_${Date.now()}`,
       },
       message: updateMessage,
-      messageTimestamp: Math.floor(Date.now() / 1000),
     } as WAMessage;
 
     if (mapIncomingToType(candidate) !== EMessageType.edit_text) {
@@ -2285,6 +3317,7 @@ export class BaileysIncomingMessageService {
 
     if (status === proto.WebMessageInfo.Status.ERROR) {
       this.deliveryConfirmation.markFailed(key.id);
+      void this.applyFailureStatusUpdate(key);
       return;
     }
 
@@ -2362,20 +3395,30 @@ export class BaileysIncomingMessageService {
     try {
       const statusUpdate: IMessageStatusUpdate = {
         account_id: baileysEnvironment.baileysAccountId,
+        worker_id: baileysEnvironment.baileysWorkerId,
+        source_provider: 'baileys',
         message_id: key.id,
         patch,
         key,
       };
+      ensureMessageStatusEventId(statusUpdate);
 
       const kafkaKey = MessageStatusService.statusKafkaKey(
         baileysEnvironment.baileysAccountId,
-        key.id
+        key.id,
+        baileysEnvironment.baileysWorkerId
       );
       const topic = this.kafkaServiceQueueService.updateMessageStatus();
 
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          await this.streamProducerService.send(topic, statusUpdate, kafkaKey);
+          const publish = await this.runWithRuntimeEffectLease(
+            statusUpdate,
+            () => this.streamProducerService.send(topic, statusUpdate, kafkaKey)
+          );
+          if (!publish.executed) {
+            return;
+          }
           return;
         } catch {
           if (attempt < 3) {
@@ -2386,6 +3429,45 @@ export class BaileysIncomingMessageService {
     } catch {}
   }
 
+  private async applyFailureStatusUpdate(
+    key: WAMessageKey | undefined
+  ): Promise<void> {
+    if (!key?.id || !key.fromMe) return;
+
+    const statusUpdate: IMessageStatusUpdate = {
+      account_id: baileysEnvironment.baileysAccountId,
+      worker_id: baileysEnvironment.baileysWorkerId,
+      source_provider: 'baileys',
+      message_id: key.id,
+      patch: {},
+      failed: true,
+      key,
+    };
+    ensureMessageStatusEventId(statusUpdate);
+    const kafkaKey = MessageStatusService.statusKafkaKey(
+      baileysEnvironment.baileysAccountId,
+      key.id,
+      baileysEnvironment.baileysWorkerId
+    );
+    const topic = this.kafkaServiceQueueService.updateMessageStatus();
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const publish = await this.runWithRuntimeEffectLease(statusUpdate, () =>
+          this.streamProducerService.send(topic, statusUpdate, kafkaKey)
+        );
+        if (!publish.executed) {
+          return;
+        }
+        return;
+      } catch {
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+        }
+      }
+    }
+  }
+
   isBoundTo(socket?: WASocket): boolean {
     if (!this.currentSocket) {
       return false;
@@ -2394,19 +3476,83 @@ export class BaileysIncomingMessageService {
     return socket ? this.currentSocket === socket : true;
   }
 
+  public markConnectionReady(socket?: WASocket): Promise<boolean> {
+    const currentSocket = this.currentSocket;
+    if (!currentSocket || (socket && currentSocket !== socket)) {
+      return Promise.resolve(false);
+    }
+
+    const existingScope = this.activeConnectionScope;
+    if (existingScope) {
+      return existingScope.activation.then(
+        (accepted) =>
+          accepted &&
+          this.currentSocket === currentSocket &&
+          this.activeConnectionScope === existingScope,
+        () => false
+      );
+    }
+
+    const connectionScope = this.activateConnectionScope();
+    return connectionScope.activation.then(
+      (accepted) => {
+        if (
+          !accepted ||
+          this.currentSocket !== currentSocket ||
+          this.activeConnectionScope !== connectionScope
+        ) {
+          if (this.activeConnectionScope === connectionScope) {
+            this.markConnectionUnavailable();
+          }
+          return false;
+        }
+        return true;
+      },
+      () => {
+        if (this.activeConnectionScope === connectionScope) {
+          this.markConnectionUnavailable();
+        }
+        return false;
+      }
+    );
+  }
+
+  public markConnectionUnavailable(socket?: WASocket): void {
+    if (socket && this.currentSocket !== socket) {
+      return;
+    }
+
+    this.stopActiveConnectionScope();
+    this.pendingQueue.length = 0;
+  }
+
+  public configureAuxiliaryProviderFailureRecovery(
+    recover: (
+      socket: WASocket,
+      error: unknown,
+      options: { timedOut: boolean }
+    ) => void
+  ): void {
+    this.auxiliaryProviderFailureRecovery = recover;
+  }
+
   unbind() {
-    if (!this.currentSocket) return;
-    try {
-      this.currentSocket.ev.removeAllListeners('messages.upsert');
-      this.currentSocket.ev.removeAllListeners('messaging-history.set');
-      this.currentSocket.ev.removeAllListeners('messages.update');
-      this.currentSocket.ev.removeAllListeners('message-receipt.update');
-      this.currentSocket.ev.removeAllListeners('contacts.upsert');
-      this.currentSocket.ev.removeAllListeners('contacts.update');
-      this.currentSocket.ev.removeAllListeners('presence.update');
-      this.currentSocket.ev.removeAllListeners('call');
-    } catch {}
+    this.markConnectionUnavailable(this.currentSocket);
+    if (this.currentSocket) {
+      try {
+        this.currentSocket.ev.removeAllListeners('messages.upsert');
+        this.currentSocket.ev.removeAllListeners('messaging-history.set');
+        this.currentSocket.ev.removeAllListeners('messages.update');
+        this.currentSocket.ev.removeAllListeners('message-receipt.update');
+        this.currentSocket.ev.removeAllListeners('contacts.upsert');
+        this.currentSocket.ev.removeAllListeners('contacts.update');
+        this.currentSocket.ev.removeAllListeners('presence.update');
+        this.currentSocket.ev.removeAllListeners('call');
+      } catch {}
+    }
     this.currentSocket = undefined;
+    this.currentConnectionAuthorization = undefined;
+    this.pendingQueue.length = 0;
   }
 
   async destroy(): Promise<void> {
@@ -2437,28 +3583,97 @@ export class BaileysIncomingMessageService {
     return this.pendingQueue.length;
   }
 
+  private async invokeAuxiliaryProvider<T>(
+    socket: WASocket,
+    operation: string,
+    invoke: () => Promise<T>,
+    beforeProviderInvoke?: IProviderInvocationBoundary,
+    timeoutMs = this.AUXILIARY_PROVIDER_TIMEOUT_MS
+  ): Promise<T> {
+    const providerLease = this.auxiliaryProviderInvocationFence.acquire(socket);
+    if (!providerLease) {
+      const stalled = this.auxiliaryProviderInvocationFence.isStalled(socket);
+      const error = new ProviderInvocationInFlightError(
+        stalled ? 'stalled' : 'capacity'
+      );
+      if (stalled) {
+        this.markConnectionUnavailable(socket);
+        this.auxiliaryProviderFailureRecovery?.(socket, error, {
+          timedOut: true,
+        });
+      }
+      throw error;
+    }
+    try {
+      await beforeProviderInvoke?.();
+    } catch (error) {
+      providerLease.releaseBeforeStart();
+      throw error;
+    }
+
+    try {
+      beforeProviderInvoke?.assertActive?.();
+    } catch (error) {
+      providerLease.releaseBeforeStart();
+      await beforeProviderInvoke?.onStartRejected?.(error);
+      throw error;
+    }
+
+    const providerCall = providerLease.start(invoke);
+    try {
+      return await invokeProviderAuxiliaryWithTimeout({
+        provider: 'baileys',
+        operation,
+        timeoutMs,
+        invoke: () => providerCall,
+      });
+    } catch (error) {
+      if (error instanceof ProviderAuxiliaryInvocationTimeoutError) {
+        providerLease.markStalled();
+        this.markConnectionUnavailable(socket);
+        this.auxiliaryProviderFailureRecovery?.(socket, error, {
+          timedOut: true,
+        });
+      } else {
+        this.auxiliaryProviderFailureRecovery?.(socket, error, {
+          timedOut: false,
+        });
+      }
+      throw error;
+    }
+  }
+
   async markRead(keys: WAMessageKey[]) {
-    if (!this.currentSocket) {
+    const socket = this.currentSocket;
+    if (!socket) {
       return;
     }
 
-    await this.currentSocket.readMessages(keys);
+    await this.invokeAuxiliaryProvider(socket, 'mark_read', () =>
+      socket.readMessages(keys)
+    );
   }
 
   async sendAckTyping(jid: string) {
-    if (!this.currentSocket) {
+    const socket = this.currentSocket;
+    if (!socket) {
       throw new Error('Socket not connected');
     }
 
-    await this.currentSocket.sendPresenceUpdate('composing', jid);
+    await this.invokeAuxiliaryProvider(socket, 'manual_presence', () =>
+      socket.sendPresenceUpdate('composing', jid)
+    );
   }
 
   async sendAckPaused(jid: string) {
-    if (!this.currentSocket) {
+    const socket = this.currentSocket;
+    if (!socket) {
       throw new Error('Socket not connected');
     }
 
-    await this.currentSocket.sendPresenceUpdate('paused', jid);
+    await this.invokeAuxiliaryProvider(socket, 'manual_presence', () =>
+      socket.sendPresenceUpdate('paused', jid)
+    );
   }
 
   private async sendMessageWithConfirmation(
@@ -2467,39 +3682,51 @@ export class BaileysIncomingMessageService {
     content: AnyMessageContent,
     options?: {
       quoted?: WAMessage;
-    }
+    },
+    beforeProviderInvoke?: () => Promise<void>
   ): Promise<WAMessage> {
-    const sentMessage = await socket.sendMessage(jid, content, options);
+    const sentMessage = await this.invokeAuxiliaryProvider(
+      socket,
+      'auto_reply_send',
+      () => socket.sendMessage(jid, content, options),
+      beforeProviderInvoke,
+      this.SEND_MESSAGE_TIMEOUT_MS
+    );
     const sentMessageId = sentMessage?.key?.id;
     if (!sentMessageId) {
       throw new Error('Baileys send returned message without key.id');
     }
 
-    const outcome = await this.deliveryConfirmation.waitForOutcome(
-      sentMessageId,
-      this.SEND_CONFIRMATION_TIMEOUT_MS
-    );
+    void this.observeAutoReplyDeliveryConfirmation(sentMessageId);
+    return sentMessage;
+  }
 
-    if (outcome === 'sent') {
-      return sentMessage;
+  private async observeAutoReplyDeliveryConfirmation(
+    sentMessageId: string
+  ): Promise<void> {
+    try {
+      const outcome = await this.deliveryConfirmation.waitForOutcome(
+        sentMessageId,
+        this.SEND_CONFIRMATION_TIMEOUT_MS
+      );
+      if (outcome !== 'sent') {
+        console.warn(
+          '[BaileysSend][auto_reply] delivery_confirmation_unconfirmed_after_provider_accept',
+          {
+            message_id_hash: hashIncomingLogIdentifier(sentMessageId),
+            outcome: outcome === 'failed' ? 'failed' : 'timeout',
+          }
+        );
+      }
+    } catch (error) {
+      console.warn(
+        '[BaileysSend][auto_reply] delivery_confirmation_observation_failed_after_provider_accept',
+        {
+          message_id_hash: hashIncomingLogIdentifier(sentMessageId),
+          ...workerErrorDiagnostics(error),
+        }
+      );
     }
-
-    const lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
-    const confirmationError =
-      outcome === 'failed'
-        ? new Error(
-            `Message delivery failed acknowledgement for ${sentMessageId}`
-          )
-        : new Error(
-            `Message delivery confirmation timeout for ${sentMessageId}`
-          );
-
-    throw new MessageDeliveryConfirmationFailedError({
-      maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
-      lastMessageId: sentMessageId,
-      lastOutcome,
-      cause: confirmationError,
-    });
   }
 
   async reply(jid: string, quoted: WAMessage, content: AnyMessageContent) {

@@ -6,6 +6,7 @@ import {
   updateChatLabelBodySchema,
 } from './request.schema';
 import { updateChatLabelResponseSchema } from './response.schema';
+import { chatMutationErrorResponseSchema } from '../mutationErrorResponse.schema';
 
 export const updateChatLabelSchema = {
   description: 'Atualizar etiqueta do chat',
@@ -64,6 +65,7 @@ export const updateChatLabelSchema = {
       },
       { description: 'Forbidden' }
     ),
+    404: chatMutationErrorResponseSchema('Not Found'),
     500: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

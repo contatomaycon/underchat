@@ -16,10 +16,6 @@ jest.mock('@core/services/elasticDatabase.service', () => ({
   ElasticDatabaseService: class ElasticDatabaseService {},
 }));
 
-jest.mock('@core/services/kafkaBaileysQueue.service', () => ({
-  KafkaBaileysQueueService: class KafkaBaileysQueueService {},
-}));
-
 jest.mock('@core/services/streamProducer.service', () => ({
   StreamProducerService: class StreamProducerService {},
 }));
@@ -52,20 +48,35 @@ jest.mock('@core/services/workerConfig.service', () => ({
   WorkerConfigService: class WorkerConfigService {},
 }));
 
+jest.mock('@core/services/workerCommandAdmission.service', () => ({
+  WorkerCommandAdmissionService: class WorkerCommandAdmissionService {},
+}));
+
 function buildService(
   securityKeyConfig: Record<string, boolean>,
   options?: { workerTypeId?: string | null }
 ) {
   const chatService = {
     saveMessageChat: jest.fn(async () => true),
+    markWorkerCommandAccepted: jest.fn(async () => undefined),
     findChatByChatId: jest.fn(async () => ({
       account: { id: 'account-1' },
       status: null,
     })),
     updateChatSummaryAtomically: jest.fn(async () => undefined),
   };
-  const kafkaBaileysQueueService = {
-    workerSendMessage: jest.fn((workerId: string) => `worker.send.${workerId}`),
+  const workerCommandAdmissionService = {
+    admit: jest.fn(async () => ({
+      receipt: {
+        command_id: 'command-1',
+        operation_id: 'message-1',
+        stream: 'UC_WORKER_COMMANDS_V1',
+        stream_sequence: 1,
+        duplicate: false,
+        accepted_at: '2026-05-07T12:00:00.100Z',
+        expires_at: '2026-05-07T12:05:00.000Z',
+      },
+    })),
   };
   const kafkaServiceQueueService = {
     officialWhatsappSendMessage: jest.fn(
@@ -92,7 +103,7 @@ function buildService(
     {} as never,
     chatService as never,
     {} as never,
-    kafkaBaileysQueueService as never,
+    workerCommandAdmissionService as never,
     kafkaServiceQueueService as never,
     streamProducerService as never,
     centrifugoService as never,
@@ -107,9 +118,9 @@ function buildService(
   return {
     centrifugoService,
     chatService,
-    kafkaBaileysQueueService,
     service: service as any,
     streamProducerService,
+    workerCommandAdmissionService,
     workerConfigService,
     workerService,
   };
@@ -139,12 +150,13 @@ describe('ChatMessageService security key append', () => {
   });
 
   it('appends the security key to chatbot text messages sent through sendMessage', async () => {
-    const { service, streamProducerService } = buildService({
-      enabled: true,
-      chatbot: true,
-      schedule: false,
-      quick_message: false,
-    });
+    const { service, streamProducerService, workerCommandAdmissionService } =
+      buildService({
+        enabled: true,
+        chatbot: true,
+        schedule: false,
+        quick_message: false,
+      });
 
     await expect(
       service.sendMessage(((key: string) => key) as never, {
@@ -164,16 +176,21 @@ describe('ChatMessageService security key append', () => {
       })
     ).resolves.toBe(true);
 
-    expect(streamProducerService.send).toHaveBeenCalledWith(
-      'worker.send.worker-1',
+    expect(streamProducerService.send).not.toHaveBeenCalled();
+    expect(workerCommandAdmissionService.admit).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: expect.objectContaining({
-          message: expect.stringMatching(
-            /^Menu Principal\n\n\*1\.\* Redirecionamento\n\n> ```Chave de segurança: [A-Z0-9]{10}```$/
-          ),
+        accountId: 'account-1',
+        workerId: 'worker-1',
+        entityKey: 'chat:account-1:worker-1:5511999999999@c.us',
+        operationId: 'message-id',
+        payload: expect.objectContaining({
+          content: expect.objectContaining({
+            message: expect.stringMatching(
+              /^Menu Principal\n\n\*1\.\* Redirecionamento\n\n> ```Chave de segurança: [A-Z0-9]{10}```$/
+            ),
+          }),
         }),
-      }),
-      'chat:account-1:chat-1'
+      })
     );
   });
 

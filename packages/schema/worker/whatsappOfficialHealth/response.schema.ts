@@ -105,6 +105,24 @@ const whatsappOfficialConversationAnalyticsSchema = Type.Object({
   }),
 });
 
+const whatsappOfficialTokenDiagnosticSchema = Type.Object({
+  valid: Type.Boolean(),
+  app_matches_config: Type.Boolean(),
+  type: nullableStringSchema,
+  issued_at: nullableStringSchema,
+  expires_at: nullableStringSchema,
+  data_access_expires_at: nullableStringSchema,
+  does_not_expire: Type.Boolean(),
+  scopes: Type.Array(Type.String()),
+  required_scopes: Type.Array(Type.String()),
+  missing_scopes: Type.Array(Type.String()),
+});
+
+const whatsappOfficialWebhookSubscriptionDiagnosticSchema = Type.Object({
+  subscribed: Type.Boolean(),
+  subscription_count: Type.Number(),
+});
+
 export const whatsappOfficialHealthResponseSchema = Type.Object({
   worker_id: Type.String(),
   account_id: Type.String(),
@@ -134,6 +152,13 @@ export const whatsappOfficialHealthResponseSchema = Type.Object({
     messages: metaSectionSchema(whatsappOfficialMessageAnalyticsSchema),
     conversations: metaSectionSchema(
       whatsappOfficialConversationAnalyticsSchema
+    ),
+  }),
+  diagnostics: Type.Object({
+    reauthentication_required: Type.Boolean(),
+    token: metaSectionSchema(whatsappOfficialTokenDiagnosticSchema),
+    webhook_subscription: metaSectionSchema(
+      whatsappOfficialWebhookSubscriptionDiagnosticSchema
     ),
   }),
   warnings: Type.Array(Type.String()),

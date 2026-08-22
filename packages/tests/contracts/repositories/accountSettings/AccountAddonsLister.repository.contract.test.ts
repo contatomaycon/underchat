@@ -176,4 +176,48 @@ describe('AccountAddonsListerRepository', () => {
     ]);
     expect(chain.execute).toHaveBeenCalledTimes(2);
   });
+
+  it('normalizes Integration plan and addon quantities as a boolean product', async () => {
+    const chain = createSelectChain([[{ quantity: 7 }]]);
+    const repository = new AccountAddonsListerRepository(
+      {
+        query: {
+          planCrossSellAccount: {
+            findMany: jest.fn(async () => [
+              {
+                plan_cross_sell_account_id: 'addon-integration',
+                plan_cross_sell_id: 'cross-integration',
+                cancellation_date: null,
+                pca: {
+                  quantity: 8,
+                  price: '15',
+                  ppt: {
+                    plan_product_id: EPlanProduct.integration,
+                    ppd: { name: 'Integration' },
+                  },
+                },
+              },
+            ]),
+          },
+        },
+        select: jest.fn(() => chain),
+      } as never,
+      { totalWorkerByAccountId: jest.fn(async () => 0) } as never,
+      { totalUserByAccount: jest.fn(async () => 0) } as never,
+      { totalRoleByAccount: jest.fn(async () => 0) } as never,
+      { totalAiAgentByAccountId: jest.fn(async () => 0) } as never
+    );
+
+    await expect(repository.listAccountAddons('acc-1')).resolves.toEqual([
+      expect.objectContaining({
+        plan_product_id: EPlanProduct.integration,
+        quantity: 1,
+        quantity_plan: 1,
+        quantity_addon: 1,
+        quantity_total: 1,
+        quantity_used: 1,
+        source: 'plan',
+      }),
+    ]);
+  });
 });

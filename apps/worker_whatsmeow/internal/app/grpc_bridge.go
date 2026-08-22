@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	grpcCodes "google.golang.org/grpc/codes"
+	grpcStatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
@@ -20,6 +21,113 @@ type WorkerConnectionHandler interface {
 	ValidatePhone(context.Context, PhoneValidationRequest) (PhoneValidationResponse, error)
 	ActivateRuntime(context.Context, WorkerRuntimeActivationRequest) (WorkerRuntimeActivationResponse, error)
 	RuntimeHealth(context.Context, WorkerRuntimeHealthRequest) (WorkerRuntimeHealthResponse, error)
+	PrepareProviderHandoff(context.Context, ProviderHandoffPrepareRequest) (ProviderHandoffPrepareResponse, error)
+	PrepareSessionStorageMigration(context.Context, SessionStorageMigrationPrepareRequest) (SessionStorageMigrationPrepareResponse, error)
+}
+
+func (s *WorkerConnectionGRPCServer) PrepareSessionStorageMigration(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	req := SessionStorageMigrationPrepareRequest{
+		MigrationID:       dynamicString(msg, "migration_id"),
+		WorkerID:          dynamicString(msg, "worker_id"),
+		AccountID:         dynamicString(msg, "account_id"),
+		Provider:          dynamicString(msg, "provider"),
+		RuntimeGeneration: int(dynamicInt32(msg, "runtime_generation")),
+		RuntimeCapability: dynamicString(msg, "runtime_capability"),
+		LegacyVolumeName:  dynamicString(msg, "source_volume_name"),
+		ExpectedPhone:     dynamicString(msg, "expected_phone"),
+	}
+	resp, err := s.handler.PrepareSessionStorageMigration(ctx, req)
+	if err != nil {
+		return nil, grpcStatus.Error(grpcCodes.FailedPrecondition, safeOperationalErrorCode(err))
+	}
+	out := newDynamicMessage(descs.sessionStorageMigrationPrepareResponse)
+	setDynamicString(out, "migration_id", resp.MigrationID)
+	setDynamicString(out, "worker_id", resp.WorkerID)
+	setDynamicString(out, "provider", resp.Provider)
+	setDynamicInt32(out, "runtime_generation", int32(resp.RuntimeGeneration))
+	setDynamicBool(out, "prepared", resp.Prepared)
+	setDynamicBool(out, "consumers_drained", resp.ConsumersDrained)
+	setDynamicBool(out, "writes_paused", resp.WritesPaused)
+	setDynamicBool(out, "checkpoint_persisted", resp.CheckpointPersisted)
+	setDynamicBool(out, "provider_disconnected", resp.ProviderDisconnected)
+	setDynamicBool(out, "volume_preserved", resp.VolumePreserved)
+	setDynamicString(out, "checkpoint_checksum_sha256", resp.CheckpointChecksumSHA256)
+	setDynamicInt64(out, "checkpoint_size_bytes", resp.CheckpointSizeBytes)
+	setDynamicInt64(out, "checkpoint_record_count", resp.CheckpointRecordCount)
+	setDynamicString(out, "phone", resp.Phone)
+	setDynamicString(out, "identity_hash", resp.IdentityHashSHA256)
+	setDynamicString(out, "prepared_at", resp.PreparedAt)
+	setDynamicString(out, "error", resp.Error)
+	return out, nil
+}
+
+func (s *WorkerConnectionGRPCServer) PrepareProviderHandoff(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	req := ProviderHandoffPrepareRequest{
+		WorkerID:             dynamicString(msg, "worker_id"),
+		AccountID:            dynamicString(msg, "account_id"),
+		HandoffID:            dynamicString(msg, "handoff_id"),
+		LifecycleOperationID: dynamicString(msg, "lifecycle_operation_id"),
+		SourceProvider:       dynamicString(msg, "source_provider"),
+		TargetProvider:       dynamicString(msg, "target_provider"),
+		SourceRevisionID:     dynamicInt64(msg, "source_revision_id"),
+		RuntimeGeneration:    int(dynamicInt32(msg, "runtime_generation")),
+		DebugTraceID:         dynamicString(msg, "debug_trace_id"),
+	}
+	startedAt := time.Now()
+	logWhatsappSessionDebug(s.cfg.WhatsappSessionDebugEnabled, "provider_handoff.grpc_received", map[string]any{
+		"trace_id": req.DebugTraceID, "session_id": req.WorkerID,
+		"provider": req.SourceProvider, "handoff_id": req.HandoffID,
+		"lifecycle_operation_id": req.LifecycleOperationID,
+		"revision":               req.SourceRevisionID, "generation": req.RuntimeGeneration,
+		"target_provider": req.TargetProvider,
+	})
+	resp, err := s.handler.PrepareProviderHandoff(ctx, req)
+	if err != nil {
+		errorCode := safeOperationalErrorCode(err)
+		logWhatsappSessionDebug(true, "provider_handoff.grpc_failed", map[string]any{
+			"trace_id": req.DebugTraceID, "session_id": req.WorkerID,
+			"provider": req.SourceProvider, "handoff_id": req.HandoffID,
+			"duration_ms": time.Since(startedAt).Milliseconds(),
+			"error":       errorCode,
+		})
+		return nil, grpcStatus.Error(grpcCodes.FailedPrecondition, errorCode)
+	}
+	out := newDynamicMessage(descs.providerHandoffPrepareResponse)
+	setDynamicString(out, "worker_id", resp.WorkerID)
+	setDynamicString(out, "provider", resp.Provider)
+	setDynamicString(out, "handoff_id", resp.HandoffID)
+	setDynamicString(out, "lifecycle_operation_id", resp.LifecycleOperationID)
+	setDynamicInt64(out, "source_revision_id", resp.SourceRevisionID)
+	setDynamicInt32(out, "runtime_generation", int32(resp.RuntimeGeneration))
+	setDynamicBool(out, "prepared", resp.Prepared)
+	setDynamicBool(out, "consumers_drained", resp.ConsumersDrained)
+	setDynamicBool(out, "writes_paused", resp.WritesPaused)
+	setDynamicBool(out, "checkpoint_persisted", resp.CheckpointPersisted)
+	setDynamicBool(out, "provider_disconnected", resp.ProviderDisconnected)
+	setDynamicBool(out, "lease_released", resp.LeaseReleased)
+	setDynamicString(out, "checkpoint_checksum_sha256", resp.CheckpointChecksumSHA256)
+	setDynamicInt64(out, "checkpoint_size_bytes", resp.CheckpointSizeBytes)
+	setDynamicInt64(out, "checkpoint_record_count", resp.CheckpointRecordCount)
+	setDynamicString(out, "prepared_at", resp.PreparedAt)
+	setDynamicString(out, "error", resp.Error)
+	logWhatsappSessionDebug(s.cfg.WhatsappSessionDebugEnabled, "provider_handoff.grpc_completed", map[string]any{
+		"trace_id": req.DebugTraceID, "session_id": resp.WorkerID,
+		"provider": resp.Provider, "handoff_id": resp.HandoffID,
+		"revision":                resp.SourceRevisionID,
+		"duration_ms":             time.Since(startedAt).Milliseconds(),
+		"checkpoint_size_bytes":   resp.CheckpointSizeBytes,
+		"checkpoint_record_count": resp.CheckpointRecordCount,
+		"lease_released":          resp.LeaseReleased,
+	})
+	return out, nil
 }
 
 type WorkerConnectionGRPCServer struct {
@@ -75,15 +183,17 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		return nil, err
 	}
 	req := StatusConnectionRequest{
-		WorkerID:            dynamicString(msg, "worker_id"),
-		Status:              dynamicString(msg, "status"),
-		Type:                dynamicString(msg, "type"),
-		PhoneConnection:     dynamicString(msg, "phone_connection"),
-		RemoveSession:       dynamicBool(msg, "remove_session"),
-		ConnectionAttemptID: dynamicString(msg, "connection_attempt_id"),
-		RuntimeGeneration:   int(dynamicInt32(msg, "runtime_generation")),
-		WarmPoolID:          dynamicString(msg, "warm_pool_id"),
-		DebugTraceID:        dynamicString(msg, "debug_trace_id"),
+		WorkerID:                  dynamicString(msg, "worker_id"),
+		Status:                    dynamicString(msg, "status"),
+		Type:                      dynamicString(msg, "type"),
+		PhoneConnection:           dynamicString(msg, "phone_connection"),
+		RemoveSession:             dynamicBool(msg, "remove_session"),
+		ConnectionAttemptID:       dynamicString(msg, "connection_attempt_id"),
+		AuthorizedConnectionEpoch: dynamicString(msg, "authorized_connection_epoch"),
+		RuntimeGeneration:         int(dynamicInt32(msg, "runtime_generation")),
+		WarmPoolID:                dynamicString(msg, "warm_pool_id"),
+		DebugTraceID:              dynamicString(msg, "debug_trace_id"),
+		QRPending:                 dynamicBool(msg, "qr_pending"),
 	}
 	startedAt := time.Now()
 	s.debug.Log(ctx, "whatsmeow.grpc.request_connection.received", map[string]any{
@@ -96,16 +206,18 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		"status":                req.Status,
 		"type":                  req.Type,
 		"remove_session":        req.RemoveSession,
+		"qr_pending":            req.QRPending,
 		"phone_connection_set":  req.PhoneConnection != "",
 		"grpc_method":           "RequestConnection",
 		"warm_pool_id":          req.WarmPoolID,
 	})
 	log.Printf(
-		"grpc RequestConnection received worker_id=%s status=%s type=%s remove_session=%t phone_connection_set=%t",
+		"grpc RequestConnection received worker_id=%s status=%s type=%s remove_session=%t qr_pending=%t phone_connection_set=%t",
 		req.WorkerID,
 		req.Status,
 		req.Type,
 		req.RemoveSession,
+		req.QRPending,
 		req.PhoneConnection != "",
 	)
 	connectionFlowLog("whatsmeow.grpc.request_connection.received", map[string]any{
@@ -118,12 +230,14 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		"status":                req.Status,
 		"type":                  req.Type,
 		"remove_session":        req.RemoveSession,
+		"qr_pending":            req.QRPending,
 		"phone_connection_set":  req.PhoneConnection != "",
 		"grpc_method":           "RequestConnection",
 		"warm_pool_id":          req.WarmPoolID,
 	})
 	resp, err := s.handler.RequestConnection(ctx, req)
 	if err != nil {
+		errorCode := safeOperationalErrorCode(err)
 		s.debug.Log(ctx, "whatsmeow.grpc.request_connection.error", map[string]any{
 			"trace_id":              req.DebugTraceID,
 			"layer":                 "worker_whatsmeow.grpc",
@@ -134,9 +248,9 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 			"status":                req.Status,
 			"type":                  req.Type,
 			"duration_ms":           time.Since(startedAt).Milliseconds(),
-			"error":                 err.Error(),
+			"error_code":            errorCode,
 		})
-		log.Printf("grpc RequestConnection failed worker_id=%s type=%s error=%v", req.WorkerID, req.Type, err)
+		log.Printf("grpc RequestConnection failed worker_id=%s type=%s error_code=%s", req.WorkerID, req.Type, errorCode)
 		connectionFlowLog("whatsmeow.grpc.request_connection.error", map[string]any{
 			"trace_id":              req.DebugTraceID,
 			"layer":                 "worker_whatsmeow.grpc",
@@ -147,7 +261,7 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 			"status":                req.Status,
 			"type":                  req.Type,
 			"duration_ms":           time.Since(startedAt).Milliseconds(),
-			"reason":                err.Error(),
+			"reason":                errorCode,
 		})
 		return nil, err
 	}
@@ -168,30 +282,34 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		"status":                        resp.Status,
 		"code":                          resp.Code,
 		"duration_ms":                   time.Since(startedAt).Milliseconds(),
-		"qrcode":                        resp.QRCode,
-		"pairing_code":                  resp.PairingCode,
+		"has_qr":                        resp.QRCode != "",
+		"qr_length":                     len(resp.QRCode),
+		"has_pairing_code":              resp.PairingCode != "",
+		"pairing_code_length":           len(resp.PairingCode),
 		"has_passkey_public_key":        resp.PasskeyPublicKey != "",
 		"has_passkey_confirmation_code": resp.PasskeyConfirmationCode != "",
 	})
 	log.Printf("grpc RequestConnection completed worker_id=%s type=%s has_qr=%t", req.WorkerID, req.Type, resp.QRCode != "")
 	connectionFlowLog("whatsmeow.grpc.request_connection.completed", map[string]any{
-		"trace_id":                      resp.DebugTraceID,
-		"layer":                         "worker_whatsmeow.grpc",
-		"worker_id":                     resp.WorkerID,
-		"account_id":                    resp.AccountID,
-		"worker_type_id":                WorkerTypeWhatsmeow,
-		"connection_attempt_id":         resp.ConnectionAttemptID,
-		"runtime_generation":            resp.RuntimeGeneration,
-		"status":                        resp.Status,
-		"code":                          resp.Code,
-		"reason":                        resp.Reason,
-		"duration_ms":                   time.Since(startedAt).Milliseconds(),
-		"qrcode":                        resp.QRCode,
-		"pairing_code":                  resp.PairingCode,
-		"has_passkey_public_key":        resp.PasskeyPublicKey != "",
-		"passkey_public_key":            resp.PasskeyPublicKey,
-		"has_passkey_confirmation_code": resp.PasskeyConfirmationCode != "",
-		"passkey_confirmation_code":     resp.PasskeyConfirmationCode,
+		"trace_id":                         resp.DebugTraceID,
+		"layer":                            "worker_whatsmeow.grpc",
+		"worker_id":                        resp.WorkerID,
+		"account_id":                       resp.AccountID,
+		"worker_type_id":                   WorkerTypeWhatsmeow,
+		"connection_attempt_id":            resp.ConnectionAttemptID,
+		"runtime_generation":               resp.RuntimeGeneration,
+		"status":                           resp.Status,
+		"code":                             resp.Code,
+		"reason":                           resp.Reason,
+		"duration_ms":                      time.Since(startedAt).Milliseconds(),
+		"has_qr":                           resp.QRCode != "",
+		"qr_length":                        len(resp.QRCode),
+		"has_pairing_code":                 resp.PairingCode != "",
+		"pairing_code_length":              len(resp.PairingCode),
+		"has_passkey_public_key":           resp.PasskeyPublicKey != "",
+		"passkey_public_key_length":        len(resp.PasskeyPublicKey),
+		"has_passkey_confirmation_code":    resp.PasskeyConfirmationCode != "",
+		"passkey_confirmation_code_length": len(resp.PasskeyConfirmationCode),
 	})
 	out := newDynamicMessage(descs.workerConnectionResponse)
 	setConnectionStateMessage(out, resp)
@@ -219,6 +337,7 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicInt32(out, "attempt", int32(state.Attempt))
 	setDynamicInt32(out, "max_attempts", int32(state.MaxAttempts))
 	setDynamicString(out, "connection_attempt_id", state.ConnectionAttemptID)
+	setDynamicString(out, "authorized_connection_epoch", state.AuthorizedConnectionEpoch)
 	setDynamicBool(out, "qr_pending", state.QRPending)
 	setDynamicString(out, "qr_generated_at", state.QRGeneratedAt)
 	setDynamicString(out, "expires_at", state.ExpiresAt)
@@ -241,6 +360,8 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicString(out, "degraded_reason", state.DegradedReason)
 	setDynamicString(out, "last_probe_at", state.LastProbeAt)
 	setDynamicInt32(out, "probe_latency_ms", int32(state.ProbeLatencyMS))
+	setDynamicConnectionStatus(out, "connection_status", state.ConnectionStatus)
+	setDynamicString(out, "connection_status_source_id", state.ConnectionStatusSourceID)
 }
 
 func (s *WorkerConnectionGRPCServer) SendPasskeyResponse(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
@@ -274,10 +395,12 @@ func (s *WorkerConnectionGRPCServer) SendPasskeyResponse(ctx context.Context, ms
 		"worker_type_id":        WorkerTypeWhatsmeow,
 		"connection_attempt_id": req.ConnectionAttemptID,
 		"grpc_method":           "SendPasskeyResponse",
-		"passkey_response":      req.PasskeyResponse,
+		"has_passkey_response":  req.PasskeyResponse != "",
+		"passkey_response_len":  len(req.PasskeyResponse),
 	})
 	resp, err := s.handler.SendPasskeyResponse(ctx, req)
 	if err != nil {
+		errorCode := safeOperationalErrorCode(err)
 		s.debug.Log(ctx, "whatsmeow.grpc.passkey_response.error", map[string]any{
 			"trace_id":              req.DebugTraceID,
 			"layer":                 "worker_whatsmeow.grpc",
@@ -286,7 +409,7 @@ func (s *WorkerConnectionGRPCServer) SendPasskeyResponse(ctx context.Context, ms
 			"worker_type_id":        WorkerTypeWhatsmeow,
 			"connection_attempt_id": req.ConnectionAttemptID,
 			"duration_ms":           time.Since(startedAt).Milliseconds(),
-			"error":                 err.Error(),
+			"error_code":            errorCode,
 		})
 		connectionFlowLog("whatsmeow.grpc.passkey_response.error", map[string]any{
 			"trace_id":              req.DebugTraceID,
@@ -296,7 +419,7 @@ func (s *WorkerConnectionGRPCServer) SendPasskeyResponse(ctx context.Context, ms
 			"worker_type_id":        WorkerTypeWhatsmeow,
 			"connection_attempt_id": req.ConnectionAttemptID,
 			"duration_ms":           time.Since(startedAt).Milliseconds(),
-			"reason":                err.Error(),
+			"reason":                errorCode,
 		})
 		return nil, err
 	}
@@ -357,6 +480,7 @@ func (s *WorkerConnectionGRPCServer) ConfirmPasskey(ctx context.Context, msg *dy
 	})
 	resp, err := s.handler.ConfirmPasskey(ctx, req)
 	if err != nil {
+		errorCode := safeOperationalErrorCode(err)
 		s.debug.Log(ctx, "whatsmeow.grpc.passkey_confirmation.error", map[string]any{
 			"trace_id":              req.DebugTraceID,
 			"layer":                 "worker_whatsmeow.grpc",
@@ -365,7 +489,7 @@ func (s *WorkerConnectionGRPCServer) ConfirmPasskey(ctx context.Context, msg *dy
 			"worker_type_id":        WorkerTypeWhatsmeow,
 			"connection_attempt_id": req.ConnectionAttemptID,
 			"duration_ms":           time.Since(startedAt).Milliseconds(),
-			"error":                 err.Error(),
+			"error_code":            errorCode,
 		})
 		connectionFlowLog("whatsmeow.grpc.passkey_confirmation.error", map[string]any{
 			"trace_id":              req.DebugTraceID,
@@ -375,7 +499,7 @@ func (s *WorkerConnectionGRPCServer) ConfirmPasskey(ctx context.Context, msg *dy
 			"worker_type_id":        WorkerTypeWhatsmeow,
 			"connection_attempt_id": req.ConnectionAttemptID,
 			"duration_ms":           time.Since(startedAt).Milliseconds(),
-			"reason":                err.Error(),
+			"reason":                errorCode,
 		})
 		return nil, err
 	}
@@ -440,6 +564,7 @@ func (s *WorkerConnectionGRPCServer) ImportSecureSession(ctx context.Context, ms
 	})
 	resp, err := s.handler.ImportSecureSession(ctx, req)
 	if err != nil {
+		errorCode := safeOperationalErrorCode(err)
 		connectionFlowLog("whatsmeow.grpc.secure_import.error", map[string]any{
 			"trace_id":              req.DebugTraceID,
 			"layer":                 "worker_whatsmeow.grpc",
@@ -448,7 +573,7 @@ func (s *WorkerConnectionGRPCServer) ImportSecureSession(ctx context.Context, ms
 			"worker_type_id":        WorkerTypeWhatsmeow,
 			"connection_attempt_id": req.ConnectionAttemptID,
 			"duration_ms":           time.Since(startedAt).Milliseconds(),
-			"reason":                err.Error(),
+			"reason":                errorCode,
 		})
 		return nil, err
 	}
@@ -478,7 +603,7 @@ func (s *WorkerConnectionGRPCServer) ValidatePhone(ctx context.Context, msg *dyn
 	log.Printf("grpc ValidatePhone received worker_id=%s request_id=%s", req.WorkerID, req.RequestID)
 	resp, err := s.handler.ValidatePhone(ctx, req)
 	if err != nil {
-		log.Printf("grpc ValidatePhone failed worker_id=%s request_id=%s error=%v", req.WorkerID, req.RequestID, err)
+		log.Printf("grpc ValidatePhone failed worker_id=%s request_id=%s error_code=%s", req.WorkerID, req.RequestID, safeOperationalErrorCode(err))
 		return nil, err
 	}
 	out := newDynamicMessage(descs.connectionPhoneValidationResponse)
@@ -506,11 +631,14 @@ func (s *WorkerConnectionGRPCServer) ActivateRuntime(ctx context.Context, msg *d
 		BalancerGRPCHost:  dynamicString(msg, "balancer_grpc_host"),
 		BalancerGRPCPort:  int(dynamicInt32(msg, "balancer_grpc_port")),
 		RuntimeGeneration: int(dynamicInt32(msg, "runtime_generation")),
+		SessionStorage:    dynamicString(msg, "session_storage"),
+		RuntimeCapability: dynamicString(msg, "runtime_capability"),
+		WriterEpoch:       dynamicString(msg, "writer_epoch"),
 	}
 	log.Printf("grpc ActivateRuntime received worker_id=%s warm_pool_id=%s", req.WorkerID, req.WarmPoolID)
 	resp, err := s.handler.ActivateRuntime(ctx, req)
 	if err != nil {
-		log.Printf("grpc ActivateRuntime failed worker_id=%s warm_pool_id=%s error=%v", req.WorkerID, req.WarmPoolID, err)
+		log.Printf("grpc ActivateRuntime failed worker_id=%s warm_pool_id=%s error_code=%s", req.WorkerID, req.WarmPoolID, safeOperationalErrorCode(err))
 		return nil, err
 	}
 	out := newDynamicMessage(descs.workerRuntimeActivationResponse)
@@ -534,7 +662,7 @@ func (s *WorkerConnectionGRPCServer) RuntimeHealth(ctx context.Context, msg *dyn
 	}
 	resp, err := s.handler.RuntimeHealth(ctx, req)
 	if err != nil {
-		log.Printf("grpc RuntimeHealth failed worker_id=%s warm_pool_id=%s error=%v", req.WorkerID, req.WarmPoolID, err)
+		log.Printf("grpc RuntimeHealth failed worker_id=%s warm_pool_id=%s error_code=%s", req.WorkerID, req.WarmPoolID, safeOperationalErrorCode(err))
 		return nil, err
 	}
 	out := newDynamicMessage(descs.workerRuntimeHealthResponse)
@@ -560,6 +688,16 @@ func (s *WorkerConnectionGRPCServer) RuntimeHealth(ctx context.Context, msg *dyn
 	setDynamicInt32(out, "probe_latency_ms", int32(resp.ProbeLatencyMS))
 	setDynamicString(out, "phone", resp.Phone)
 	setDynamicBool(out, "kafka_unhealthy", resp.KafkaUnhealthy)
+	setDynamicBool(out, "kafka_consumers_ready", resp.KafkaConsumersReady)
+	setDynamicBool(out, "kafka_consumers_authorized", resp.KafkaConsumersAuthorized)
+	setDynamicBool(out, "command_ingress_ready", resp.CommandIngressReady)
+	setDynamicBool(out, "command_ingress_authorized", resp.CommandIngressAuthorized)
+	setDynamicUint32(out, "runtime_health_schema_version", resp.RuntimeHealthSchemaVersion)
+	setDynamicConnectionStatus(out, "connection_status", resp.ConnectionStatus)
+	setDynamicString(out, "connection_status_source_id", resp.ConnectionStatusSourceID)
+	setDynamicString(out, "session_storage", resp.SessionStorage)
+	setDynamicInt64(out, "session_revision_id", resp.SessionRevisionID)
+	setDynamicString(out, "session_storage_migration_id", resp.SessionStorageMigrationID)
 	setDynamicString(out, "error", resp.Error)
 	return out, nil
 }
@@ -572,6 +710,8 @@ type dynamicWorkerConnectionService interface {
 	ValidatePhone(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	ActivateRuntime(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	RuntimeHealth(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
+	PrepareProviderHandoff(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
+	PrepareSessionStorageMigration(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 }
 
 func RegisterWorkerConnectionService(server *grpc.Server, service dynamicWorkerConnectionService) {
@@ -606,6 +746,14 @@ func RegisterWorkerConnectionService(server *grpc.Server, service dynamicWorkerC
 			{
 				MethodName: "RuntimeHealth",
 				Handler:    runtimeHealthHandler,
+			},
+			{
+				MethodName: "PrepareProviderHandoff",
+				Handler:    prepareProviderHandoffHandler,
+			},
+			{
+				MethodName: "PrepareSessionStorageMigration",
+				Handler:    prepareSessionStorageMigrationHandler,
 			},
 		},
 		Streams:  []grpc.StreamDesc{},
@@ -767,164 +915,46 @@ func runtimeHealthHandler(srv any, ctx context.Context, dec func(any) error, int
 	return interceptor(ctx, in, info, handler)
 }
 
-type BalanceGRPCClient struct {
-	cfg   Config
-	debug *ConnectionLifecycleDebugLogger
-}
-
-func NewBalanceGRPCClient(cfg Config, debugLoggers ...*ConnectionLifecycleDebugLogger) *BalanceGRPCClient {
-	var debug *ConnectionLifecycleDebugLogger
-	if len(debugLoggers) > 0 {
-		debug = debugLoggers[0]
-	}
-	return &BalanceGRPCClient{cfg: cfg, debug: debug}
-}
-
-func (c *BalanceGRPCClient) dial(ctx context.Context) (*grpc.ClientConn, error) {
-	return grpc.DialContext(ctx, c.cfg.BalanceGRPCAddress(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
-}
-
-func (c *BalanceGRPCClient) NotifyWorkerStatus(ctx context.Context, state ConnectionState) error {
+func prepareProviderHandoffHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	descs, err := getDescriptors()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	req := newDynamicMessage(descs.commandNotifyWorkerStatus)
-	setConnectionStateMessage(req, state)
-
-	startedAt := time.Now()
-	c.debug.Log(ctx, "whatsmeow.balance.notify_status.call", map[string]any{
-		"trace_id":              state.DebugTraceID,
-		"layer":                 "worker_whatsmeow.balance_grpc",
-		"worker_id":             state.WorkerID,
-		"account_id":            state.AccountID,
-		"worker_type_id":        WorkerTypeWhatsmeow,
-		"connection_attempt_id": state.ConnectionAttemptID,
-		"runtime_generation":    state.RuntimeGeneration,
-		"status":                state.Status,
-		"code":                  state.Code,
-		"qrcode":                state.QRCode,
-		"pairing_code":          state.PairingCode,
-	})
-	err = c.invoke(ctx, "/worker_command.WorkerCommand/NotifyWorkerStatus", req, newDynamicMessage(descs.commandResponse))
-	if err != nil {
-		c.debug.Log(ctx, "whatsmeow.balance.notify_status.error", map[string]any{
-			"trace_id":              state.DebugTraceID,
-			"layer":                 "worker_whatsmeow.balance_grpc",
-			"worker_id":             state.WorkerID,
-			"account_id":            state.AccountID,
-			"worker_type_id":        WorkerTypeWhatsmeow,
-			"connection_attempt_id": state.ConnectionAttemptID,
-			"runtime_generation":    state.RuntimeGeneration,
-			"status":                state.Status,
-			"code":                  state.Code,
-			"duration_ms":           time.Since(startedAt).Milliseconds(),
-			"error":                 err.Error(),
-		})
-		return err
+	in := newDynamicMessage(descs.providerHandoffPrepareRequest)
+	if err := dec(in); err != nil {
+		return nil, err
 	}
-	c.debug.Log(ctx, "whatsmeow.balance.notify_status.ok", map[string]any{
-		"trace_id":              state.DebugTraceID,
-		"layer":                 "worker_whatsmeow.balance_grpc",
-		"worker_id":             state.WorkerID,
-		"account_id":            state.AccountID,
-		"worker_type_id":        WorkerTypeWhatsmeow,
-		"connection_attempt_id": state.ConnectionAttemptID,
-		"runtime_generation":    state.RuntimeGeneration,
-		"status":                state.Status,
-		"code":                  state.Code,
-		"duration_ms":           time.Since(startedAt).Milliseconds(),
-	})
-	return nil
+	if interceptor == nil {
+		return srv.(dynamicWorkerConnectionService).PrepareProviderHandoff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/worker_connection.WorkerConnection/PrepareProviderHandoff",
+	}
+	handler := func(ctx context.Context, req any) (any, error) {
+		return srv.(dynamicWorkerConnectionService).PrepareProviderHandoff(ctx, req.(*dynamicpb.Message))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
-func (c *BalanceGRPCClient) RequestWorkerSelfHealing(ctx context.Context, payload SelfHealingRequest) error {
+func prepareSessionStorageMigrationHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	descs, err := getDescriptors()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	req := newDynamicMessage(descs.commandSelfHealingReq)
-	setDynamicString(req, "worker_id", payload.WorkerID)
-	setDynamicString(req, "account_id", payload.AccountID)
-	setDynamicString(req, "worker_type_id", payload.WorkerTypeID)
-	setDynamicString(req, "source", payload.Source)
-	setDynamicString(req, "reason", payload.Reason)
-	setDynamicString(req, "provider_state", payload.ProviderState)
-	setDynamicString(req, "degraded_reason", payload.DegradedReason)
-	setDynamicBool(req, "kafka_unhealthy", payload.KafkaUnhealthy)
-	setDynamicInt32(req, "runtime_generation", int32(payload.RuntimeGeneration))
-	setDynamicString(req, "debug_trace_id", payload.DebugTraceID)
-	setDynamicInt32(req, "recovery_window_seconds", int32(payload.RecoveryWindowSeconds))
-
-	return c.invoke(ctx, "/worker_command.WorkerCommand/RequestWorkerSelfHealing", req, newDynamicMessage(descs.commandResponse))
-}
-
-func (c *BalanceGRPCClient) RegisterS3BackupFallbackUpload(ctx context.Context, payload S3BackupFallbackUpload) error {
-	descs, err := getDescriptors()
-	if err != nil {
-		return err
+	in := newDynamicMessage(descs.sessionStorageMigrationPrepareRequest)
+	if err := dec(in); err != nil {
+		return nil, err
 	}
-	req := newDynamicMessage(descs.commandRegisterS3BackupFallback)
-	setDynamicString(req, "account_id", payload.AccountID)
-	setDynamicString(req, "bucket", payload.Bucket)
-	setDynamicString(req, "object_key", payload.ObjectKey)
-	setDynamicString(req, "file_name", payload.FileName)
-	setDynamicString(req, "content_type", payload.ContentType)
-	setDynamicInt64(req, "size_bytes", payload.SizeBytes)
-	setDynamicInt32(req, "primary_attempts", payload.PrimaryAttempts)
-	setDynamicInt32(req, "backup_attempts", payload.BackupAttempts)
-	setDynamicString(req, "primary_error", payload.PrimaryError)
-	setDynamicString(req, "backup_error", payload.BackupError)
-
-	return c.invoke(ctx, "/worker_command.WorkerCommand/RegisterS3BackupFallbackUpload", req, newDynamicMessage(descs.commandResponse))
-}
-
-func (c *BalanceGRPCClient) ResolveIncomingCallAction(ctx context.Context, workerID, accountID, callJID, callPhone string, isVideo bool) (bool, bool, string, error) {
-	descs, err := getDescriptors()
-	if err != nil {
-		return false, false, "", err
+	if interceptor == nil {
+		return srv.(dynamicWorkerConnectionService).PrepareSessionStorageMigration(ctx, in)
 	}
-	req := newDynamicMessage(descs.commandResolveIncomingCallReq)
-	setDynamicString(req, "worker_id", workerID)
-	setDynamicString(req, "account_id", accountID)
-	setDynamicString(req, "call_jid", callJID)
-	setDynamicString(req, "call_phone", callPhone)
-	setDynamicBool(req, "is_video", isVideo)
-
-	resp := newDynamicMessage(descs.commandResolveIncomingCallResp)
-	if err := c.invoke(ctx, "/worker_command.WorkerCommand/ResolveIncomingCallAction", req, resp); err != nil {
-		return false, false, "", err
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/worker_connection.WorkerConnection/PrepareSessionStorageMigration",
 	}
-	return dynamicBool(resp, "reject_call"), dynamicBool(resp, "show_message_on_call"), dynamicString(resp, "show_message_text"), nil
-}
-
-func (c *BalanceGRPCClient) GetTypingSimulationConfig(ctx context.Context, workerID, accountID string) (TypingSimulationConfig, error) {
-	descs, err := getDescriptors()
-	if err != nil {
-		return defaultTypingSimulationConfig(), err
+	handler := func(ctx context.Context, req any) (any, error) {
+		return srv.(dynamicWorkerConnectionService).PrepareSessionStorageMigration(ctx, req.(*dynamicpb.Message))
 	}
-	req := newDynamicMessage(descs.commandTypingSimulationReq)
-	setDynamicString(req, "worker_id", workerID)
-	setDynamicString(req, "account_id", accountID)
-
-	resp := newDynamicMessage(descs.commandTypingSimulationResp)
-	if err := c.invoke(ctx, "/worker_command.WorkerCommand/GetTypingSimulationConfig", req, resp); err != nil {
-		return defaultTypingSimulationConfig(), err
-	}
-
-	return normalizeTypingSimulationConfig(TypingSimulationConfig{
-		Enabled: dynamicBool(resp, "enabled"),
-		Speed:   int(dynamicInt32(resp, "speed")),
-	}), nil
-}
-
-func (c *BalanceGRPCClient) invoke(ctx context.Context, method string, req *dynamicpb.Message, resp *dynamicpb.Message) error {
-	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	conn, err := c.dial(callCtx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	return conn.Invoke(callCtx, method, req, resp)
+	return interceptor(ctx, in, info, handler)
 }

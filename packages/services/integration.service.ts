@@ -1,4 +1,3 @@
-import { ApiKeyViewerRepository } from '@core/repositories/apiKey/ApiKeyViewer.repository';
 import { IntegrationListerRepository } from '@core/repositories/integration/IntegrationLister.repository';
 import { IntegrationCreatorRepository } from '@core/repositories/integration/IntegrationCreator.repository';
 import { IntegrationUpdaterRepository } from '@core/repositories/integration/IntegrationUpdater.repository';
@@ -50,16 +49,37 @@ import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 import { IMappedWebhookData } from '@core/common/interfaces/IMappedWebhookData';
 import { Transaction } from '@core/common/types/Transaction.type';
-import { StreamProducerService } from './streamProducer.service';
-import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
 import { IWebhookIntegrationRequest } from '@core/common/interfaces/IWebhookIntegrationRequest';
+import Redis from 'ioredis';
+import { createKeyApiCacheKey } from '@core/common/functions/createCacheKey';
+import { v7 as uuidv7 } from 'uuid';
+import { serializePublicContact } from '@core/common/functions/outboundWebhookPayload';
+import type { ContactOutboundWebhookMarker } from '@core/repositories/contact/contactOutboundWebhookOutbox';
+import {
+  OutboundWebhookEventService,
+  type PreparedOutboundWebhookEvent,
+} from './outboundWebhookEvent.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import { PlanEntitlementService } from './planEntitlement.service';
+import { buildWebhookIntegrationEntityKey } from '@core/common/functions/webhookIntegrationIdentity';
+import { WorkerCommandAdmissionService } from './workerCommandAdmission.service';
+import { ContactPhoneValidationPolicyService } from './contactPhoneValidationPolicy.service';
+import {
+  CONTACT_VALIDATION_ORIGINS,
+  type ContactValidationOrigin,
+} from '@core/common/types/ContactValidationOrigin';
+
+interface WebhookPhoneValidationResult {
+  phone: string;
+  phone_ddi: string;
+  is_valided: boolean;
+  validation_origin: ContactValidationOrigin | null;
+}
 
 @injectable()
 export class IntegrationService {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
-    @inject(ApiKeyViewerRepository)
-    private readonly apiKeyViewerRepository: ApiKeyViewerRepository,
     @inject(IntegrationListerRepository)
     private readonly integrationListerRepository: IntegrationListerRepository,
     @inject(IntegrationCreatorRepository)
@@ -108,11 +128,31 @@ export class IntegrationService {
     private readonly encryptService: EncryptService,
     @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
+    @inject(WorkerCommandAdmissionService)
+    private readonly workerCommandAdmissionService: WorkerCommandAdmissionService,
+    @inject('Redis') private readonly redis: Redis,
+    @inject(PlanEntitlementService)
+    private readonly planEntitlementService: PlanEntitlementService,
+    @inject(OutboundWebhookEventService)
+    private readonly outboundWebhookEventService: OutboundWebhookEventService | null = null,
+    @inject(ContactPhoneValidationPolicyService)
+    private readonly contactPhoneValidationPolicyService: Pick<
+      ContactPhoneValidationPolicyService,
+      'resolve'
+    > = {
+      resolve: async () => ({
+        channelIds: [],
+        isOfficialOnly: false,
+        areAllChannelsResolved: true,
+      }),
+    }
   ) {}
+
+  private readonly invalidateWebhookKeyCache = async (key: string) => {
+    await this.redis
+      .del(createKeyApiCacheKey(key, 'public/webhook'))
+      .catch(() => undefined);
+  };
 
   listIntegrations = async (
     accountId: string,
@@ -162,7 +202,11 @@ export class IntegrationService {
       return null;
     }
 
-    const apiKey = await this.apiKeyViewerRepository.viewApiKeyById(apiKeyId);
+    const apiKey =
+      await this.integrationViewerByIdRepository.viewIntegrationById(
+        accountId,
+        apiKeyId
+      );
     if (!apiKey) {
       return null;
     }
@@ -178,22 +222,44 @@ export class IntegrationService {
     apiKeyId: string,
     request: UpdateIntegrationRequest
   ): Promise<boolean> => {
-    return this.integrationUpdaterRepository.updateIntegration(
+    const current =
+      await this.integrationViewerByIdRepository.viewIntegrationById(
+        accountId,
+        apiKeyId
+      );
+
+    if (!current) return false;
+
+    const updated = await this.integrationUpdaterRepository.updateIntegration(
       accountId,
       apiKeyId,
       request.name,
       request.worker_id
     );
+
+    if (updated) await this.invalidateWebhookKeyCache(current.key);
+    return updated;
   };
 
   deleteIntegration = async (
     accountId: string,
     apiKeyId: string
   ): Promise<boolean> => {
-    return this.integrationDeleterRepository.deleteIntegration(
+    const current =
+      await this.integrationViewerByIdRepository.viewIntegrationById(
+        accountId,
+        apiKeyId
+      );
+
+    if (!current) return false;
+
+    const deleted = await this.integrationDeleterRepository.deleteIntegration(
       accountId,
       apiKeyId
     );
+
+    if (deleted) await this.invalidateWebhookKeyCache(current.key);
+    return deleted;
   };
 
   viewIntegrationById = async (
@@ -211,21 +277,44 @@ export class IntegrationService {
     apiKeyId: string,
     status: EStatusApiKey
   ): Promise<boolean> => {
-    return this.integrationStatusUpdaterRepository.updateIntegrationStatus(
-      accountId,
-      apiKeyId,
-      status
-    );
+    const current =
+      await this.integrationViewerByIdRepository.viewIntegrationById(
+        accountId,
+        apiKeyId
+      );
+
+    if (!current) return false;
+
+    const updated =
+      await this.integrationStatusUpdaterRepository.updateIntegrationStatus(
+        accountId,
+        apiKeyId,
+        status
+      );
+
+    if (updated) await this.invalidateWebhookKeyCache(current.key);
+    return updated;
   };
 
   generateNewKey = async (
     accountId: string,
     apiKeyId: string
   ): Promise<string | null> => {
-    return this.integrationKeyGeneratorRepository.generateNewKey(
+    const current =
+      await this.integrationViewerByIdRepository.viewIntegrationById(
+        accountId,
+        apiKeyId
+      );
+
+    if (!current) return null;
+
+    const newKey = await this.integrationKeyGeneratorRepository.generateNewKey(
       accountId,
       apiKeyId
     );
+
+    if (newKey) await this.invalidateWebhookKeyCache(current.key);
+    return newKey;
   };
 
   viewWebhookMapping = async (
@@ -238,7 +327,11 @@ export class IntegrationService {
     created_at?: string;
     updated_at?: string;
   } | null> => {
-    const apiKey = await this.apiKeyViewerRepository.viewApiKeyById(apiKeyId);
+    const apiKey =
+      await this.integrationViewerByIdRepository.viewIntegrationById(
+        accountId,
+        apiKeyId
+      );
 
     if (!apiKey || !apiKey.worker_id) {
       return null;
@@ -255,7 +348,11 @@ export class IntegrationService {
     apiKeyId: string,
     mapping: Record<string, string | string[]>
   ): Promise<boolean> => {
-    const apiKey = await this.apiKeyViewerRepository.viewApiKeyById(apiKeyId);
+    const apiKey =
+      await this.integrationViewerByIdRepository.viewIntegrationById(
+        accountId,
+        apiKeyId
+      );
 
     if (!apiKey || !apiKey.worker_id) {
       return false;
@@ -272,7 +369,11 @@ export class IntegrationService {
     accountId: string,
     apiKeyId: string
   ): Promise<unknown | null> => {
-    const apiKey = await this.apiKeyViewerRepository.viewApiKeyById(apiKeyId);
+    const apiKey =
+      await this.integrationViewerByIdRepository.viewIntegrationById(
+        accountId,
+        apiKeyId
+      );
 
     if (!apiKey || !apiKey.worker_id) {
       return null;
@@ -326,8 +427,20 @@ export class IntegrationService {
     _t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string,
-    body: Record<string, unknown>
+    body: Record<string, unknown>,
+    integrationEntitlementRevision: string,
+    operationId?: string
   ): Promise<boolean> => {
+    const acceptedOperationId = operationId?.trim() || uuidv7();
+    const assertCurrentEntitlement = () =>
+      this.planEntitlementService.assertEntitled(
+        accountId,
+        EPlanProduct.integration,
+        { expectedRevision: integrationEntitlementRevision }
+      );
+
+    let entitlement = await assertCurrentEntitlement();
+
     const saved = await this.saveWebhookData(accountId, workerId, body);
     if (!saved) {
       return false;
@@ -348,6 +461,10 @@ export class IntegrationService {
       return true;
     }
 
+    // Contact resolution may persist a new contact. Revalidate immediately
+    // before crossing that side-effect boundary so a concurrent downgrade
+    // cannot reuse the request's earlier preflight.
+    entitlement = await assertCurrentEntitlement();
     const contact = await this.getOrCreateContact(
       accountId,
       workerId,
@@ -360,6 +477,10 @@ export class IntegrationService {
       contact
     );
 
+    // Kafka publication is a separate side-effect boundary and therefore gets
+    // its own epoch check. A B -> A transition also changes the revision, so
+    // traffic admitted by the previous grant cannot leak into the new epoch.
+    entitlement = await assertCurrentEntitlement();
     await this.sendToWebhookIntegrationConsumer(
       accountId,
       workerId,
@@ -367,7 +488,9 @@ export class IntegrationService {
       mappedData,
       webhookMapping.mapping,
       body,
-      interactionPhoneAndDdi
+      interactionPhoneAndDdi,
+      entitlement.revision,
+      acceptedOperationId
     );
 
     return true;
@@ -457,9 +580,23 @@ export class IntegrationService {
     accountId: string,
     workerId: string,
     phoneAndDdi: { phone: string; phone_ddi: string | null }
-  ): Promise<{ phone: string; phone_ddi: string; is_valided: boolean }> {
+  ): Promise<WebhookPhoneValidationResult> {
     const fallbackPhone = phoneAndDdi.phone;
     const fallbackPhoneDdi = phoneAndDdi.phone_ddi ?? '55';
+    const validationPolicy =
+      await this.contactPhoneValidationPolicyService.resolve({
+        accountId,
+        requestedChannelIds: [workerId],
+      });
+
+    if (validationPolicy.isOfficialOnly) {
+      return {
+        phone: fallbackPhone,
+        phone_ddi: fallbackPhoneDdi,
+        is_valided: true,
+        validation_origin: CONTACT_VALIDATION_ORIGINS.officialInbound,
+      };
+    }
 
     try {
       const validationResult = await this.phoneValidationService.validatePhone(
@@ -475,6 +612,7 @@ export class IntegrationService {
           phone: fallbackPhone,
           phone_ddi: fallbackPhoneDdi,
           is_valided: false,
+          validation_origin: null,
         };
       }
 
@@ -487,6 +625,7 @@ export class IntegrationService {
           phone: fallbackPhone,
           phone_ddi: fallbackPhoneDdi,
           is_valided: true,
+          validation_origin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
         };
       }
 
@@ -496,6 +635,7 @@ export class IntegrationService {
           phone: fallbackPhone,
           phone_ddi: fallbackPhoneDdi,
           is_valided: true,
+          validation_origin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
         };
       }
 
@@ -503,6 +643,7 @@ export class IntegrationService {
         phone: normalized.phone,
         phone_ddi: normalized.phone_ddi,
         is_valided: true,
+        validation_origin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
       };
     } catch (error) {
       if (
@@ -513,6 +654,7 @@ export class IntegrationService {
           phone: fallbackPhone,
           phone_ddi: fallbackPhoneDdi,
           is_valided: false,
+          validation_origin: null,
         };
       }
 
@@ -520,6 +662,7 @@ export class IntegrationService {
         phone: fallbackPhone,
         phone_ddi: fallbackPhoneDdi,
         is_valided: false,
+        validation_origin: null,
       };
     }
   }
@@ -539,6 +682,7 @@ export class IntegrationService {
       phone: string;
       phone_ddi: string;
       is_valided: boolean;
+      validation_origin: ContactValidationOrigin | null;
     }): {
       contactId: string;
       is_valided: boolean;
@@ -571,8 +715,10 @@ export class IntegrationService {
     if (existingContact) {
       return this.buildExistingContactResult(
         accountId,
+        workerId,
         existingContact.contact_id,
         existingContact.is_valided === true,
+        existingContact.validation_origin,
         existingContact.phone_ddi ?? null,
         validatedPhoneAndDdi,
         mappedData,
@@ -599,8 +745,10 @@ export class IntegrationService {
 
     const contactId = await this.createContactWithLabels(
       accountId,
+      workerId,
       mappedDataWithValidatedPhone,
-      validation.is_valided
+      validation.is_valided,
+      validation.validation_origin
     );
     if (!contactId) {
       return buildTransientValidationResult(validation);
@@ -658,10 +806,12 @@ export class IntegrationService {
     return Boolean(workerConfig?.auto_save_contacts);
   };
 
-  private buildExistingContactResult = async (
+  private async buildExistingContactResult(
     accountId: string,
+    workerId: string,
     contactId: string,
     isValided: boolean,
+    existingValidationOrigin: ContactValidationOrigin | null,
     contactPhoneDdi: string | null,
     phoneAndDdi: { phone: string; phone_ddi: string | null },
     mappedData: IMappedWebhookData,
@@ -669,19 +819,40 @@ export class IntegrationService {
       phone: string;
       phone_ddi: string;
       is_valided: boolean;
+      validation_origin: ContactValidationOrigin | null;
     }
   ): Promise<{
     contactId: string;
     is_valided: boolean;
     phone_validated?: string;
     phone_ddi_validated?: string | null;
-  }> => {
-    await this.addLabelsToExistingContact(accountId, contactId, mappedData);
+  }> {
+    await this.addLabelsToExistingContact(
+      accountId,
+      workerId,
+      contactId,
+      mappedData
+    );
 
     if (currentValidation.is_valided) {
+      const shouldSyncValidation =
+        !isValided ||
+        (currentValidation.validation_origin !== null &&
+          existingValidationOrigin !== currentValidation.validation_origin);
+      const synced = shouldSyncValidation
+        ? await this.contactService.updateContactValidation(
+            contactId,
+            `${currentValidation.phone_ddi}${currentValidation.phone}`,
+            true,
+            accountId,
+            undefined,
+            currentValidation.validation_origin
+          )
+        : true;
+
       return {
         contactId,
-        is_valided: isValided,
+        is_valided: synced ? true : isValided,
         phone_validated: currentValidation.phone,
         phone_ddi_validated: currentValidation.phone_ddi,
       };
@@ -708,7 +879,7 @@ export class IntegrationService {
       phone_validated: sensitive.phone,
       phone_ddi_validated: contactPhoneDdi ?? phoneAndDdi.phone_ddi ?? null,
     };
-  };
+  }
 
   listUsersForWebhook = async (
     accountId: string
@@ -766,6 +937,7 @@ export class IntegrationService {
 
   private addLabelsToExistingContact = async (
     accountId: string,
+    workerId: string,
     contactId: string,
     mappedData: IMappedWebhookData
   ): Promise<void> => {
@@ -782,7 +954,15 @@ export class IntegrationService {
       addLabelPromises.push(
         this.contactService.addContactLabelTemplateIfNotExists(
           contactId,
-          labelTemplateIds[i]
+          labelTemplateIds[i],
+          accountId,
+          {
+            source: 'integration_webhook',
+            idempotencyKey: `integration-contact-label-added:${contactId}:${labelTemplateIds[i]}`,
+            originChannelId: workerId,
+            actor: { type: 'system' },
+            changes: { added_label_template_id: labelTemplateIds[i] },
+          }
         )
       );
     }
@@ -791,10 +971,20 @@ export class IntegrationService {
 
   private createContactWithLabels = async (
     accountId: string,
+    workerId: string,
     mappedData: IMappedWebhookData,
-    isValidated: boolean
+    isValidated: boolean,
+    validationOrigin: ContactValidationOrigin | null
   ): Promise<string | null> => {
-    return this.dbRw.transaction(async (tx) => {
+    const requestedContactId = uuidv7();
+    const preparedEvent = await this.prepareIntegrationContactCreatedEvent(
+      accountId,
+      workerId,
+      requestedContactId,
+      mappedData,
+      isValidated
+    );
+    const contactId = await this.dbRw.transaction(async (tx) => {
       const labelTemplateIds = await this.processLabelsInTransaction(
         tx,
         accountId,
@@ -804,10 +994,90 @@ export class IntegrationService {
       return this.createContactFromWebhookInTransaction(
         tx,
         accountId,
+        workerId,
         mappedData,
         labelTemplateIds,
-        isValidated
+        isValidated,
+        validationOrigin,
+        requestedContactId,
+        preparedEvent?.state === 'preparing'
+          ? {
+              eventId: preparedEvent.eventId,
+              accountId,
+              envelope: preparedEvent.envelope,
+            }
+          : null
       );
+    });
+
+    if (contactId) {
+      await this.completeIntegrationContactCreatedEvent(
+        accountId,
+        preparedEvent
+      );
+    }
+
+    return contactId;
+  };
+
+  private prepareIntegrationContactCreatedEvent = async (
+    accountId: string,
+    workerId: string,
+    contactId: string,
+    mappedData: IMappedWebhookData,
+    isValidated: boolean
+  ): Promise<PreparedOutboundWebhookEvent | null> => {
+    if (!this.outboundWebhookEventService) return null;
+    const labelTemplates = (mappedData.labels ?? [])
+      .filter((label): label is string => typeof label === 'string')
+      .map((label) => label.trim())
+      .filter(Boolean)
+      .map((label) => ({ label: this.truncateLabelName(label, 255) }));
+
+    return this.outboundWebhookEventService.prepareBestEffort({
+      accountId,
+      eventType: 'contact.created',
+      aggregate: { type: 'contact', id: contactId },
+      data: {
+        contact: serializePublicContact({
+          contact_id: contactId,
+          name: mappedData.first_name ?? '',
+          last_name: mappedData.last_name ?? null,
+          nickname: mappedData.nickname ?? null,
+          photo: null,
+          birthday: nullIfEmpty(mappedData.birthday ?? null),
+          email: mappedData.email ?? null,
+          phone_ddi: mappedData.phone_ddi || '55',
+          phone: mappedData.phone ?? null,
+          notes: mappedData.notes ?? null,
+          document_partial: null,
+          contact_document_type_id: null,
+          user_id: null,
+          ignore: null,
+          is_valided: isValidated,
+          label_templates: labelTemplates,
+          channel_ids: [workerId],
+          contact_groups: [],
+        }),
+        changes: { origin: 'integration_webhook' },
+      },
+      previous: null,
+      source: 'integration_webhook',
+      channelIds: [workerId],
+      actor: { type: 'system' },
+      idempotencyKey: `integration-contact-created:${contactId}`,
+    });
+  };
+
+  private completeIntegrationContactCreatedEvent = async (
+    accountId: string,
+    prepared: PreparedOutboundWebhookEvent | null
+  ): Promise<void> => {
+    if (!prepared || !this.outboundWebhookEventService) return;
+
+    await this.outboundWebhookEventService.completePersistedBestEffort({
+      eventId: prepared.eventId,
+      accountId,
     });
   };
 
@@ -823,9 +1093,13 @@ export class IntegrationService {
     mappedData: IMappedWebhookData,
     mapping: Record<string, string | string[]>,
     body: Record<string, unknown>,
-    phoneAndDdi: { phone: string; phone_ddi: string | null }
+    phoneAndDdi: { phone: string; phone_ddi: string | null },
+    integrationEntitlementRevision: string,
+    operationId: string
   ): Promise<void> => {
     const request: IWebhookIntegrationRequest = {
+      operation_id: operationId,
+      integration_entitlement_revision: integrationEntitlementRevision,
       account_id: accountId,
       worker_id: workerId,
       contact_id: contact.contactId,
@@ -839,9 +1113,15 @@ export class IntegrationService {
       phone_ddi: phoneAndDdi.phone_ddi,
     };
 
-    const topic =
-      this.kafkaBaileysQueueService.workerWebhookIntegration(workerId);
-    await this.streamProducerService.send(topic, request);
+    await this.workerCommandAdmissionService.admit({
+      accountId,
+      workerId,
+      commandType: 'webhook_integration',
+      entityKey: buildWebhookIntegrationEntityKey(request),
+      operationId,
+      payload: request as unknown as Record<string, never>,
+      source: 'webhook_integration',
+    });
   };
 
   private extractLabelValue = (value: unknown): string[] => {
@@ -1234,9 +1514,13 @@ export class IntegrationService {
   private createContactFromWebhookInTransaction = async (
     tx: Transaction,
     accountId: string,
+    workerId: string,
     mappedData: IMappedWebhookData,
     labelTemplateIds: string[],
-    isValidated: boolean
+    isValidated: boolean,
+    validationOrigin: ContactValidationOrigin | null,
+    requestedContactId: string,
+    webhookMarker?: ContactOutboundWebhookMarker | null
   ): Promise<string | null> => {
     if (!mappedData.phone) {
       return null;
@@ -1246,18 +1530,26 @@ export class IntegrationService {
     const phoneFields = this.processPhoneFieldsForContact(mappedData.phone);
     const contactPayload = this.buildContactPayload(
       accountId,
+      workerId,
       mappedData,
       emailFields,
       phoneFields,
       labelTemplateIds,
-      isValidated
+      isValidated,
+      validationOrigin
     );
 
-    return this.contactCreatorRepository.createContact(contactPayload, tx);
+    return this.contactCreatorRepository.createContact(
+      contactPayload,
+      tx,
+      requestedContactId,
+      webhookMarker
+    );
   };
 
   private buildContactPayload = (
     accountId: string,
+    workerId: string,
     mappedData: IMappedWebhookData,
     emailFields: {
       emailCEncrypted: string | null;
@@ -1270,13 +1562,16 @@ export class IntegrationService {
       phoneC: string | null;
     },
     labelTemplateIds: string[],
-    isValidated: boolean
+    isValidated: boolean,
+    validationOrigin: ContactValidationOrigin | null
   ) => {
     return {
       account_id: accountId,
+      channel_ids: [workerId],
       label_template_ids: labelTemplateIds.length > 0 ? labelTemplateIds : null,
       contact_document_type_id: null,
       is_valided: isValidated,
+      validation_origin: isValidated ? validationOrigin : null,
       name: mappedData.first_name || '',
       last_name: mappedData.last_name || null,
       email: emailFields.emailCEncrypted,

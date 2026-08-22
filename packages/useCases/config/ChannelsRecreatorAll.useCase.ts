@@ -2,17 +2,22 @@ import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ConfigService } from '@core/services/config.service';
 import { ChannelRecreatorUseCase } from './ChannelRecreator.useCase';
-import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
+import { IConfigChannelsRecreateAllFilters } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IConfigChannelRecreateTarget } from '@core/common/interfaces/IConfigChannelRecreateTarget';
 import {
   WorkerRecreateServerSlotLease,
   WorkerRecreateServerSlotService,
 } from '@core/services/workerRecreateServerSlot.service';
+import { getErrorMessage } from '@core/common/functions/toError';
 
 interface IRecreateResultCounter {
   success: number;
   errors: number;
+}
+
+export interface ChannelsRecreatorAllExecutionOptions {
+  assertActive?: () => void;
 }
 
 @injectable()
@@ -28,19 +33,25 @@ export class ChannelsRecreatorAllUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+    filters: IConfigChannelsRecreateAllFilters,
+    options: ChannelsRecreatorAllExecutionOptions = {}
   ): Promise<{ success: number; errors: number }> {
+    options.assertActive?.();
     const channels = await this.getChannels(t, this.normalizeFilters(filters));
-    return this.recreateAllChannels(t, channels);
+    options.assertActive?.();
+    return this.recreateAllChannels(t, channels, options);
   }
 
   private normalizeFilters(
-    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
-  ): Omit<IConfigChannelsRecreateAllPayload, 'account_id'> {
+    filters: IConfigChannelsRecreateAllFilters
+  ): IConfigChannelsRecreateAllFilters {
     return {
       ...filters,
       status: filters.status ?? EWorkerStatus.online,
       type: filters.type ?? undefined,
+      ...(filters.session_storage
+        ? { session_storage: filters.session_storage }
+        : {}),
       account: filters.account || undefined,
       name: filters.name || undefined,
       number: filters.number || undefined,
@@ -49,7 +60,7 @@ export class ChannelsRecreatorAllUseCase {
 
   private async getChannels(
     t: TFunction<'translation', undefined>,
-    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+    filters: IConfigChannelsRecreateAllFilters
   ): Promise<IConfigChannelRecreateTarget[]> {
     const channels =
       await this.configService.listAllNonDeletedChannelRecreateTargets(filters);
@@ -63,14 +74,17 @@ export class ChannelsRecreatorAllUseCase {
 
   private async recreateAllChannels(
     t: TFunction<'translation', undefined>,
-    channels: IConfigChannelRecreateTarget[]
+    channels: IConfigChannelRecreateTarget[],
+    options: ChannelsRecreatorAllExecutionOptions
   ): Promise<IRecreateResultCounter> {
+    options.assertActive?.();
     const groups = this.groupByServer(channels);
     const counters = await Promise.all(
       Array.from(groups.entries()).map(([serverId, serverChannels]) =>
-        this.recreateServerChannels(t, serverId, serverChannels)
+        this.recreateServerChannels(t, serverId, serverChannels, options)
       )
     );
+    options.assertActive?.();
 
     return counters.reduce<IRecreateResultCounter>(
       (total, item) => ({
@@ -84,7 +98,8 @@ export class ChannelsRecreatorAllUseCase {
   private async recreateServerChannels(
     t: TFunction<'translation', undefined>,
     serverId: string,
-    channels: IConfigChannelRecreateTarget[]
+    channels: IConfigChannelRecreateTarget[],
+    options: ChannelsRecreatorAllExecutionOptions
   ): Promise<IRecreateResultCounter> {
     const counter: IRecreateResultCounter = { success: 0, errors: 0 };
     const workers = Math.min(
@@ -95,6 +110,7 @@ export class ChannelsRecreatorAllUseCase {
 
     const runNext = async (): Promise<void> => {
       while (nextIndex < channels.length) {
+        options.assertActive?.();
         const current = channels[nextIndex];
         nextIndex += 1;
 
@@ -105,7 +121,8 @@ export class ChannelsRecreatorAllUseCase {
         const recreated = await this.recreateChannelWithServerSlot(
           t,
           serverId,
-          current
+          current,
+          options
         );
         if (recreated) {
           counter.success += 1;
@@ -123,10 +140,13 @@ export class ChannelsRecreatorAllUseCase {
   private async recreateChannelWithServerSlot(
     t: TFunction<'translation', undefined>,
     serverId: string,
-    channel: IConfigChannelRecreateTarget
+    channel: IConfigChannelRecreateTarget,
+    options: ChannelsRecreatorAllExecutionOptions
   ): Promise<boolean> {
     let lease: WorkerRecreateServerSlotLease | null = null;
     let slotPassedToLifecycle = false;
+    const reservationTtlMs =
+      this.workerRecreateServerSlotService.getReservationTtlMs();
 
     try {
       const token = this.workerRecreateServerSlotService.buildToken(
@@ -134,8 +154,14 @@ export class ChannelsRecreatorAllUseCase {
       );
       lease = await this.workerRecreateServerSlotService.acquire(
         serverId,
-        token
+        token,
+        {
+          assertActive: options.assertActive,
+          ttlMs: reservationTtlMs,
+          reservation: true,
+        }
       );
+      options.assertActive?.();
       await this.channelRecreatorUseCase.execute(
         t,
         channel.worker_id,
@@ -143,19 +169,39 @@ export class ChannelsRecreatorAllUseCase {
         {
           recreate_server_slot_key: lease.key,
           recreate_server_slot_token: lease.token,
+          onLifecycleEnqueued: () => {
+            slotPassedToLifecycle = true;
+          },
         }
       );
-      slotPassedToLifecycle = true;
-      await this.workerRecreateServerSlotService.waitForRelease(lease);
+      options.assertActive?.();
+      if (!slotPassedToLifecycle) {
+        await this.workerRecreateServerSlotService.release(lease);
+        lease = null;
+        return true;
+      }
+
+      await this.workerRecreateServerSlotService.waitForRelease(lease, {
+        assertActive: options.assertActive,
+      });
+      options.assertActive?.();
 
       return true;
-    } catch {
+    } catch (error) {
       if (lease && !slotPassedToLifecycle) {
         await this.workerRecreateServerSlotService
           .release(lease)
           .catch(() => undefined);
       }
 
+      console.error('[ChannelsRecreatorAllUseCase] channel recreation failed', {
+        worker_id: channel.worker_id,
+        server_id: serverId,
+        slot_transferred_to_lifecycle: slotPassedToLifecycle,
+        error: getErrorMessage(error),
+      });
+
+      options.assertActive?.();
       return false;
     }
   }

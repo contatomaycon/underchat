@@ -8,4 +8,5 @@ export enum EPlanProduct {
   personalization = '019b32e5-6c1a-77aa-aabe-19b07d87ee1e',
   ai_agent = '019b9f13-63a8-74ca-b294-cd0c810c6c82',
   internal_chat = '867d1856-74f6-4e5d-a932-88c723af499d',
+  integration = '0eb84ca1-8145-4770-acd4-b6725fe1cf25',
 }

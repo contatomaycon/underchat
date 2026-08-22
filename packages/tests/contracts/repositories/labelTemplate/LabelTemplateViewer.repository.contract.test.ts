@@ -28,7 +28,7 @@ describe('LabelTemplateViewerRepository', () => {
     const repository = new LabelTemplateViewerRepository(dbRo as never);
 
     await expect(
-      repository.viewLabelTemplateById('label-1')
+      repository.viewLabelTemplateById('label-1', 'acc-1')
     ).resolves.toBeNull();
   });
 
@@ -54,7 +54,9 @@ describe('LabelTemplateViewerRepository', () => {
     const { dbRo, select } = createSelectChain([{ label_template_id: 'x' }]);
     const repository = new LabelTemplateViewerRepository(dbRo as never);
 
-    await expect(repository.viewLabelTemplatesByIds([])).resolves.toEqual([]);
+    await expect(
+      repository.viewLabelTemplatesByIds([], 'acc-1')
+    ).resolves.toEqual([]);
     expect(select).not.toHaveBeenCalled();
   });
 

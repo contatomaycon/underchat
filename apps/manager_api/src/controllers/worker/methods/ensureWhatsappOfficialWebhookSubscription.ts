@@ -5,10 +5,12 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { WhatsappOfficialWebhookSubscriptionEnsurerUseCase } from '@core/useCases/worker/WhatsappOfficialWebhookSubscriptionEnsurer.useCase';
 import { EnsureWhatsappOfficialWebhookSubscriptionParams } from '@core/schema/worker/ensureWhatsappOfficialWebhookSubscription/params.schema';
+import { EnsureWhatsappOfficialWebhookSubscriptionRequest } from '@core/schema/worker/ensureWhatsappOfficialWebhookSubscription/request.schema';
 
 export const ensureWhatsappOfficialWebhookSubscription = async (
   request: FastifyRequest<{
     Params: EnsureWhatsappOfficialWebhookSubscriptionParams;
+    Body: EnsureWhatsappOfficialWebhookSubscriptionRequest;
   }>,
   reply: FastifyReply
 ) => {
@@ -21,7 +23,8 @@ export const ensureWhatsappOfficialWebhookSubscription = async (
     const response = await useCase.execute(
       t,
       tokenJwtData.account_id,
-      request.params.worker_id
+      request.params.worker_id,
+      request.body
     );
 
     return sendResponse(reply, {

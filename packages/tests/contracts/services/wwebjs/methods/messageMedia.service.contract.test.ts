@@ -97,7 +97,7 @@ describe('WwebjsMessageMediaService', () => {
       getClient: jest.fn(() => client),
       sendMessage: jest.fn<
         Promise<{ id: string } | undefined>,
-        [string, unknown, Record<string, unknown>]
+        [string, unknown, Record<string, unknown>, (() => Promise<void>)?]
       >(async () => ({ id: 'wa-message-1' })),
     };
 
@@ -132,22 +132,31 @@ describe('WwebjsMessageMediaService', () => {
       'image.png',
       expect.any(Function)
     );
-    expect(mockFromUrl).toHaveBeenCalledWith('https://cdn.example/image.png');
-    expect(mockDownloadMediaBuffer).not.toHaveBeenCalled();
+    expect(mockFromUrl).not.toHaveBeenCalled();
+    expect(mockDownloadMediaBuffer).toHaveBeenCalledWith(
+      'https://cdn.example/image.png'
+    );
     expect(mockResolveQuotedMessageId).toHaveBeenCalledWith(
       client,
       '55110000@c.us',
-      { id: 'quoted-source' }
+      { id: 'quoted-source' },
+      expect.any(Function)
     );
     expect(helpers.sendMessage).toHaveBeenCalledWith(
       '55110000@c.us',
-      { __mediaUrl: 'https://cdn.example/image.png' },
+      expect.objectContaining({
+        mimetype: 'image/jpeg',
+        data: Buffer.from('downloaded-media').toString('base64'),
+        filename: 'image.png',
+        filesize: 16,
+      }),
       {
         caption: 'img',
         extra: { source: 'crm' },
         quotedMessageId: 'quoted-1',
         ignoreQuoteErrors: false,
-      }
+      },
+      undefined
     );
   });
 
@@ -193,7 +202,8 @@ describe('WwebjsMessageMediaService', () => {
         extra: { campaign: 'x' },
         quotedMessageId: 'quoted-video',
         ignoreQuoteErrors: false,
-      }
+      },
+      undefined
     );
   });
 
@@ -239,7 +249,8 @@ describe('WwebjsMessageMediaService', () => {
         extra: { trace: 'a1' },
         quotedMessageId: 'quoted-audio',
         ignoreQuoteErrors: false,
-      }
+      },
+      undefined
     );
 
     await service.sendAudio('55113333@c.us', 'audio-default.ogg' as never);
@@ -255,7 +266,8 @@ describe('WwebjsMessageMediaService', () => {
         sendAudioAsVoice: true,
         isViewOnce: undefined,
         extra: undefined,
-      }
+      },
+      undefined
     );
   });
 
@@ -275,13 +287,19 @@ describe('WwebjsMessageMediaService', () => {
 
     expect(helpers.sendMessage).toHaveBeenCalledWith(
       '55114444@c.us',
-      { __mediaUrl: 'https://cdn.example/sticker.webp' },
+      expect.objectContaining({
+        mimetype: 'image/webp',
+        data: Buffer.from('downloaded-media').toString('base64'),
+        filename: 'sticker.webp',
+        filesize: 16,
+      }),
       {
         sendMediaAsSticker: true,
         extra: { owner: 'cs' },
         quotedMessageId: 'quoted-sticker',
         ignoreQuoteErrors: false,
-      }
+      },
+      undefined
     );
     expect(mockMessageToWaLike).toHaveBeenCalledWith(undefined);
   });
@@ -317,7 +335,8 @@ describe('WwebjsMessageMediaService', () => {
         extra: { billing: true },
         quotedMessageId: 'quoted-doc',
         ignoreQuoteErrors: false,
-      }
+      },
+      undefined
     );
   });
 
@@ -347,5 +366,26 @@ describe('WwebjsMessageMediaService', () => {
       expect.objectContaining({ mimetype: 'video/mp4' })
     );
     expect(mockMessageToWaLike).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not cross the provider boundary when media download preflight fails', async () => {
+    const { service, helpers } = makeService();
+    const beforeProviderInvoke = jest.fn(async () => undefined);
+    mockDownloadMediaBuffer.mockRejectedValueOnce(
+      new Error('media download failed')
+    );
+
+    await expect(
+      service.sendVideo(
+        '55117777@c.us',
+        { url: 'https://cdn.example/broken.mp4' } as never,
+        undefined,
+        undefined,
+        beforeProviderInvoke
+      )
+    ).rejects.toThrow('media download failed');
+
+    expect(beforeProviderInvoke).not.toHaveBeenCalled();
+    expect(helpers.sendMessage).not.toHaveBeenCalled();
   });
 });

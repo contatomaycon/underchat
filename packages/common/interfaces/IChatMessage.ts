@@ -216,4 +216,26 @@ export interface IChatMessage {
   hash?: string | null;
   send_delay_ms?: number | null;
   sent_from_platform?: boolean | null;
+  /** Channel-command transport selected before the message is persisted. */
+  worker_command_transport?: 'jetstream' | 'kafka_global' | null;
+  /** Immutable server-side command clock; retries never move this timestamp. */
+  worker_command_issued_at?: string | null;
+  worker_command_retry_of?: string | null;
+  worker_command_deadline_at?: string | null;
+  broker_command_id?: string | null;
+  broker_operation_id?: string | null;
+  broker_stream?: string | null;
+  broker_stream_sequence?: number | null;
+  broker_accepted_at?: string | null;
+  broker_expires_at?: string | null;
+  broker_duplicate?: boolean | null;
+  worker_command_expired_at?: string | null;
+  worker_command_expiry_reason?: string | null;
+  delivery_status?: string | null;
+  provider_error_code?: number | null;
+  provider_status_at?: string | null;
+  /** Internal mutation markers used to reconcile the webhook journal. */
+  outbound_webhook_event_ids?: string[] | null;
+  /** Physical inbound events already applied to this message. */
+  inbound_event_ids?: string[] | null;
 }

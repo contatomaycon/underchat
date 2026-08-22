@@ -26,13 +26,22 @@ import { listS3BackupUploadsSchema } from '@core/schema/config/listS3BackupUploa
 import { reprocessS3BackupUploadSchema } from '@core/schema/config/reprocessS3BackupUpload';
 import { listWarmChannelsSchema } from '@core/schema/config/listWarmChannels';
 import { listWarmChannelServersSchema } from '@core/schema/config/listWarmChannelServers';
-import { recreateWarmChannelSchema } from '@core/schema/config/recreateWarmChannel';
 import { recreateWarmChannelsAllSchema } from '@core/schema/config/recreateWarmChannelsAll';
 import { viewWarmChannelSettingsSchema } from '@core/schema/config/viewWarmChannelSettings';
 import { updateWarmChannelSettingsSchema } from '@core/schema/config/updateWarmChannelSettings';
 import { viewWhatsappEmbeddedConfigSchema } from '@core/schema/config/viewWhatsappEmbeddedConfig';
 import { updateWhatsappEmbeddedConfigSchema } from '@core/schema/config/updateWhatsappEmbeddedConfig';
+import {
+  listDownloadArtifactsSchema,
+  updateDownloadArtifactsSchema,
+} from '@core/schema/config/downloadArtifacts';
 import { configPermissions } from '@/permissions';
+import {
+  createSessionStorageMigrationSchema,
+  deleteLegacyMigrationVolumeSchema,
+  latestSessionStorageMigrationSchema,
+} from '@core/schema/config/sessionStorageMigration';
+import { configChannelConnectionHealthSchema } from '@core/schema/config/channelConnectionHealth';
 
 export default async function configRoutes(server: FastifyInstance) {
   const configController = container.resolve(ConfigController);
@@ -163,6 +172,24 @@ export default async function configRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.get('/config/download-artifacts', {
+    schema: listDownloadArtifactsSchema,
+    handler: configController.listDownloadArtifacts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.patch('/config/download-artifacts', {
+    schema: updateDownloadArtifactsSchema,
+    handler: configController.updateDownloadArtifacts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
   server.get('/config/warm-channels', {
     schema: listWarmChannelsSchema,
     handler: configController.listWarmChannels,
@@ -208,18 +235,18 @@ export default async function configRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.patch('/config/warm-channels/:warm_pool_id/recreate', {
-    schema: recreateWarmChannelSchema,
-    handler: configController.recreateWarmChannel,
+  server.get('/config/channels', {
+    schema: listChannelsSchema,
+    handler: configController.listChannels,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),
     ],
   });
 
-  server.get('/config/channels', {
-    schema: listChannelsSchema,
-    handler: configController.listChannels,
+  server.get('/config/channels/:channel_id/health', {
+    schema: configChannelConnectionHealthSchema,
+    handler: configController.channelConnectionHealth,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),
@@ -252,6 +279,36 @@ export default async function configRoutes(server: FastifyInstance) {
         server.authenticateJwt(request, reply, configPermissions),
     ],
   });
+
+  server.post('/config/channels/:channel_id/session-storage-migrations', {
+    schema: createSessionStorageMigrationSchema,
+    handler: configController.createSessionStorageMigration,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.get('/config/channels/:channel_id/session-storage-migrations/latest', {
+    schema: latestSessionStorageMigrationSchema,
+    handler: configController.latestSessionStorageMigration,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.delete(
+    '/config/channels/:channel_id/session-storage-migrations/:migration_id/legacy-volume',
+    {
+      schema: deleteLegacyMigrationVolumeSchema,
+      handler: configController.deleteLegacyMigrationVolume,
+      preHandler: [
+        (request, reply) =>
+          server.authenticateJwt(request, reply, configPermissions),
+      ],
+    }
+  );
 
   server.get('/config/channels/:channel_id/open-conversations', {
     schema: checkChannelOpenConversationsSchema,

@@ -1,4 +1,5 @@
 import { IViewPermissionByUserId } from '@core/common/interfaces/IViewPermissionByUserId';
+import { EPermissionRoleStatus } from '@core/common/enums/EPermissionRoleStatus';
 import * as schema from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
@@ -17,7 +18,7 @@ export class PermissionAssignmentUserViewerRepository {
         SELECT DISTINCT
             paa.action AS action
         FROM "permission_assignment" pa
-        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id AND pr.status = '${EPermissionRoleStatus.active}'
         JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
         JOIN "permission_action" paa ON paa.permission_action_id = pra.permission_action_id
         WHERE pa.user_id = '${userId}' AND pra.permission_action_id IS NOT NULL
@@ -25,7 +26,7 @@ export class PermissionAssignmentUserViewerRepository {
         SELECT DISTINCT
             paa.action AS action
         FROM "permission_assignment" pa
-        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id AND pr.status = '${EPermissionRoleStatus.active}'
         JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
         JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
         JOIN "permission_action" paa ON paa.permission_action_group_id = pag.permission_action_group_id
@@ -34,7 +35,7 @@ export class PermissionAssignmentUserViewerRepository {
         SELECT DISTINCT
             pag.action AS action
         FROM "permission_assignment" pa
-        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id AND pr.status = '${EPermissionRoleStatus.active}'
         JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
         JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
         WHERE pa.user_id = '${userId}' AND pra.permission_action_group_id IS NOT NULL

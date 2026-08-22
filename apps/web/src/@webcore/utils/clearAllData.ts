@@ -1,4 +1,5 @@
 import { getActivePinia } from 'pinia';
+import { clearWorkerCommandActionAttempts } from '../workerCommandActionAttempts';
 
 export const clearAllStorages = (): void => {
   localStorage.clear();
@@ -82,6 +83,7 @@ export const resetAllPiniaStores = (): void => {
 
 export const clearAllData = (): void => {
   resetAllPiniaStores();
+  clearWorkerCommandActionAttempts();
   clearAllStorages();
   clearAllCookies();
 };

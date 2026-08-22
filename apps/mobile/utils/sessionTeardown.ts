@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BACKEND_URL } from '../config';
 import { clearAuth, getToken } from '../storage/authStorage';
 import { clearStoredPushSubscription } from '../storage/pushStorage';
+import { clearWorkerCommandActionAttempts } from '../storage/workerCommandActionAttemptStorage';
 import { emitAuthUnauthorized } from './authEvents';
 
 const EXTRA_STORAGE_KEYS = ['chat_reaction_recent_emojis_v1'];
@@ -93,6 +94,7 @@ export async function teardownMobileSession(
   await Promise.all([
     clearAuth(),
     clearStoredPushSubscription(),
+    clearWorkerCommandActionAttempts(),
     clearExtraStorage(),
   ]);
 

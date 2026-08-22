@@ -148,9 +148,9 @@ const sortInternalMessagesByDate = (
 ): InternalMessage[] =>
   messages.sort((a, b) => parseDate(a.date) - parseDate(b.date));
 
-let internalUnreadSummaryRefreshTimer: ReturnType<typeof setTimeout> | null =
-  null;
 let internalUnreadSummaryRequestInFlight = false;
+let internalUnreadSummaryRequestAccountId: string | null = null;
+let internalUnreadSummaryScopeGeneration = 0;
 
 export const useInternalChatStore = defineStore('internalChat', {
   state: () => ({
@@ -166,6 +166,10 @@ export const useInternalChatStore = defineStore('internalChat', {
     loadingMessages: false,
     loadingUnreadSummary: false,
     unreadSummaryCount: 0,
+    unreadSummaryAccountId: null as string | null,
+    unreadSummaryByConversationId: {} as Record<string, number>,
+    unreadSummaryMutationSequence: 0,
+    unreadSummarySequenceByConversationId: {} as Record<string, number>,
     loadingGroupMembers: false,
     sendingMessage: false,
     conversationSearch: '',
@@ -182,7 +186,6 @@ export const useInternalChatStore = defineStore('internalChat', {
     remoteActivities: {} as Record<string, RemoteActivity>,
     localMessageState: {} as Record<string, LocalMessageState>,
     refreshConversationsTimer: null as ReturnType<typeof setTimeout> | null,
-    unreadSummaryRefreshTimer: null as ReturnType<typeof setTimeout> | null,
   }),
   getters: {
     currentUserId: (state): string | null => state.user?.user_id ?? null,
@@ -198,6 +201,18 @@ export const useInternalChatStore = defineStore('internalChat', {
 
     hideSnackbar() {
       this.snackbar.status = false;
+    },
+    ensureUnreadSummaryAccountScope(accountId: string | null): void {
+      if (this.unreadSummaryAccountId === accountId) {
+        return;
+      }
+
+      this.unreadSummaryAccountId = accountId;
+      this.unreadSummaryByConversationId = {};
+      this.unreadSummarySequenceByConversationId = {};
+      this.unreadSummaryMutationSequence = 0;
+      this.setUnreadSummaryCount(0);
+      internalUnreadSummaryScopeGeneration += 1;
     },
 
     setUnreadSummaryCount(count: number): void {
@@ -219,49 +234,127 @@ export const useInternalChatStore = defineStore('internalChat', {
 
       this.setUnreadSummaryCount(this.unreadSummaryCount + delta);
     },
+    replaceUnreadSummary(
+      data: InternalChatUnreadSummaryData,
+      preserveChangesAfterSequence?: number
+    ): void {
+      const preservedSequence =
+        preserveChangesAfterSequence ?? this.unreadSummaryMutationSequence;
+      const currentProjection = this.unreadSummaryByConversationId;
+      const projection: Record<string, number> = {};
+      let unreadCount = Math.max(0, Math.trunc(data.unread_count));
 
-    resetUnreadSummary(): void {
-      if (internalUnreadSummaryRefreshTimer) {
-        clearTimeout(internalUnreadSummaryRefreshTimer);
-        internalUnreadSummaryRefreshTimer = null;
+      for (const item of data.unread_conversations ?? []) {
+        if (!item.conversation_id || item.unread_count <= 0) {
+          continue;
+        }
+
+        projection[item.conversation_id] = Math.max(
+          0,
+          Math.trunc(item.unread_count)
+        );
       }
 
+      for (const [conversationId, sequence] of Object.entries(
+        this.unreadSummarySequenceByConversationId
+      )) {
+        if (sequence <= preservedSequence) {
+          continue;
+        }
+
+        const current = currentProjection[conversationId] ?? 0;
+        unreadCount += current - (projection[conversationId] ?? 0);
+        projection[conversationId] = current;
+      }
+
+      this.unreadSummaryByConversationId = projection;
+      this.setUnreadSummaryCount(unreadCount);
+    },
+    setConversationUnreadCount(
+      conversationId: string,
+      unreadCount: number
+    ): void {
+      if (!conversationId || !Number.isFinite(unreadCount)) {
+        return;
+      }
+
+      const currentAccountId = this.user?.account_id ?? null;
+      this.ensureUnreadSummaryAccountScope(currentAccountId);
+
+      const previous = this.unreadSummaryByConversationId[conversationId] ?? 0;
+      const next = Math.max(0, Math.trunc(unreadCount));
+      if (previous !== next) {
+        this.unreadSummaryMutationSequence += 1;
+        this.unreadSummarySequenceByConversationId[conversationId] =
+          this.unreadSummaryMutationSequence;
+      }
+      this.unreadSummaryByConversationId[conversationId] = next;
+      this.adjustUnreadSummaryCount(next - previous);
+
+      const conversation = this.conversations.find(
+        (item) => item.conversation_id === conversationId
+      );
+      if (conversation) {
+        conversation.unread_count = next;
+      }
+      if (this.activeConversation?.conversation_id === conversationId) {
+        this.activeConversation.unread_count = next;
+      }
+    },
+
+    resetUnreadSummary(): void {
+      internalUnreadSummaryScopeGeneration += 1;
+      this.unreadSummaryByConversationId = {};
+      this.unreadSummaryMutationSequence = 0;
+      this.unreadSummarySequenceByConversationId = {};
+      this.unreadSummaryAccountId = null;
       this.setUnreadSummaryCount(0);
       if (this.loadingUnreadSummary) {
         this.loadingUnreadSummary = false;
       }
       internalUnreadSummaryRequestInFlight = false;
-    },
-
-    scheduleUnreadSummaryRefresh(delayMs = 700): void {
-      if (internalUnreadSummaryRefreshTimer) {
-        return;
-      }
-
-      internalUnreadSummaryRefreshTimer = setTimeout(() => {
-        internalUnreadSummaryRefreshTimer = null;
-        void this.viewUnreadSummary();
-      }, delayMs);
+      internalUnreadSummaryRequestAccountId = null;
     },
 
     async viewUnreadSummary(): Promise<number> {
-      if (internalUnreadSummaryRequestInFlight) {
+      const requestAccountId = this.user?.account_id ?? null;
+      this.ensureUnreadSummaryAccountScope(requestAccountId);
+      const requestScopeGeneration = internalUnreadSummaryScopeGeneration;
+      if (
+        internalUnreadSummaryRequestInFlight &&
+        internalUnreadSummaryRequestAccountId === requestAccountId
+      ) {
         return this.unreadSummaryCount;
       }
 
       internalUnreadSummaryRequestInFlight = true;
+      internalUnreadSummaryRequestAccountId = requestAccountId;
+      const requestMutationSequence = this.unreadSummaryMutationSequence;
 
       try {
         const response = await axios.get<
           IApiResponse<InternalChatUnreadSummaryData>
         >('/internal-chat/unread-summary');
-        this.setUnreadSummaryCount(response.data?.data?.unread_count ?? 0);
+        if (
+          (this.user?.account_id ?? null) !== requestAccountId ||
+          requestScopeGeneration !== internalUnreadSummaryScopeGeneration
+        ) {
+          return this.unreadSummaryCount;
+        }
+
+        const data = response.data?.data;
+        if (data) {
+          this.replaceUnreadSummary(data, requestMutationSequence);
+        }
       } catch {
         // The menu badge is opportunistic; navigation must not be blocked by it.
       } finally {
-        internalUnreadSummaryRequestInFlight = false;
-        if (this.loadingUnreadSummary) {
-          this.loadingUnreadSummary = false;
+        if (internalUnreadSummaryRequestAccountId === requestAccountId) {
+          internalUnreadSummaryRequestInFlight = false;
+          internalUnreadSummaryRequestAccountId = null;
+          if (this.loadingUnreadSummary) {
+            this.loadingUnreadSummary = false;
+          }
         }
       }
 
@@ -897,10 +990,7 @@ export const useInternalChatStore = defineStore('internalChat', {
           return false;
         }
 
-        const closedConversation = this.conversations.find(
-          (item) => item.conversation_id === conversationId
-        );
-        const closedUnreadCount = closedConversation?.unread_count ?? 0;
+        this.setConversationUnreadCount(conversationId, 0);
 
         this.conversations = this.conversations.filter(
           (item) => item.conversation_id !== conversationId
@@ -909,10 +999,6 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (this.activeConversation?.conversation_id === conversationId) {
           this.activeConversation = null;
           this.messages = [];
-        }
-
-        if (closedUnreadCount > 0) {
-          this.adjustUnreadSummaryCount(-closedUnreadCount);
         }
 
         return true;
@@ -943,20 +1029,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         const data = response?.data;
         if (!data?.status) return false;
 
-        const conversation = this.conversations.find(
-          (item) => item.conversation_id === conversationId
-        );
-        const previousUnreadCount = conversation?.unread_count ?? 0;
-
-        if (conversation) {
-          conversation.unread_count = 0;
-        }
-        if (this.activeConversation?.conversation_id === conversationId) {
-          this.activeConversation.unread_count = 0;
-        }
-        if (previousUnreadCount > 0) {
-          this.adjustUnreadSummaryCount(-previousUnreadCount);
-        }
+        this.setConversationUnreadCount(conversationId, 0);
 
         return true;
       } catch {
@@ -1576,15 +1649,33 @@ export const useInternalChatStore = defineStore('internalChat', {
       const data = payload as Record<string, unknown>;
 
       if (data.type === 'internal_chat_conversation_sync') {
+        const conversationId =
+          typeof data.conversation_id === 'string'
+            ? data.conversation_id
+            : null;
+        const unreadByUser =
+          data.unread_by_user && typeof data.unread_by_user === 'object'
+            ? (data.unread_by_user as Record<string, unknown>)
+            : null;
+        const currentUserUnread = this.currentUserId
+          ? unreadByUser?.[this.currentUserId]
+          : undefined;
+
+        if (
+          conversationId &&
+          typeof currentUserUnread === 'number' &&
+          Number.isFinite(currentUserUnread)
+        ) {
+          this.setConversationUnreadCount(conversationId, currentUserUnread);
+        }
+
         const isMessageSync = data.reason === 'message';
 
         if (isMessageSync) {
-          this.scheduleUnreadSummaryRefresh();
           return null;
         }
 
         this.scheduleRefreshConversations();
-        this.scheduleUnreadSummaryRefresh();
         return null;
       }
 
@@ -1636,20 +1727,17 @@ export const useInternalChatStore = defineStore('internalChat', {
         const fromMe =
           !!this.currentUserId && message.user?.id === this.currentUserId;
         if (isActive || fromMe) {
-          const previousUnreadCount = conversation.unread_count ?? 0;
-          conversation.unread_count = 0;
-          if (previousUnreadCount > 0) {
-            this.adjustUnreadSummaryCount(-previousUnreadCount);
-          }
+          this.setConversationUnreadCount(message.conversation_id, 0);
         } else {
-          conversation.unread_count += 1;
-          this.adjustUnreadSummaryCount(1);
+          this.setConversationUnreadCount(
+            message.conversation_id,
+            conversation.unread_count + 1
+          );
         }
 
         this.sortConversations();
       } else {
         this.scheduleRefreshConversations();
-        this.scheduleUnreadSummaryRefresh();
       }
 
       if (

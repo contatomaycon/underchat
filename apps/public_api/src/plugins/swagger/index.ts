@@ -8,17 +8,34 @@ import {
 } from 'fastify';
 import fp from 'fastify-plugin';
 import { generalEnvironment } from '@core/config/environments';
-import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { getPackageVersion } from '@core/common/functions/getPackageVersion';
 import { EDocumentation } from '@core/common/enums/EDocumentation';
+import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
+import { enrichPublicOpenApi } from '@core/common/functions/enrichPublicOpenApi';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function findPackageJson(startDirectory: string): string {
+  let directory = startDirectory;
+
+  while (true) {
+    const candidate = path.join(directory, 'package.json');
+    if (existsSync(candidate)) return candidate;
+
+    const parent = path.dirname(directory);
+    if (parent === directory) {
+      throw new Error('Public API package.json not found');
+    }
+    directory = parent;
+  }
+}
+
 const swaggerPlugin = async (fastify: FastifyInstance) => {
-  const patchPackage = path.join(__dirname, '../../../package.json');
+  const patchPackage = findPackageJson(__dirname);
 
   fastify.register(fastifySwagger, {
     openapi: {
@@ -31,27 +48,46 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
       },
       servers: [
         {
-          url: `${generalEnvironment.protocol}://${generalEnvironment.appUrlPublic}`,
+          url: `${generalEnvironment.protocol}://${generalEnvironment.appUrlPublic}/${EPrefixRoutes.v1}`,
+          description: 'API pública v1',
         },
       ],
       components: {
         securitySchemes: {
-          authenticateJwt: {
+          authenticateKeyApi: {
             type: 'apiKey',
             in: 'header',
-            name: 'Authorization',
-            description: 'Token JWT para autenticação',
+            name: 'keyapi',
+            description:
+              'Token da API pública gerado na tela Integrações. Envie o valor sem prefixo.',
           },
         },
       },
       tags: [
         {
-          name: ETagSwagger.health,
-          description: 'End-points relacionados à saúde da aplicação',
+          name: 'Health',
+          description: 'Disponibilidade e saúde da API',
         },
         {
-          name: ETagSwagger.webhook,
-          description: 'End-points relacionados ao webhook',
+          name: 'Webhook',
+          description: 'Entrada de dados de CRMs, formulários e automações',
+        },
+        {
+          name: 'Chat',
+          description: 'Atendimentos, contatos e mensagens',
+        },
+        {
+          name: 'Etiquetas',
+          description: 'Modelos de etiquetas da conta',
+        },
+        {
+          name: 'Setores',
+          description: 'Setores e seus usuários',
+        },
+        {
+          name: 'Usuários',
+          description:
+            'Usuários da conta, identidade executora e vínculos operacionais',
         },
       ],
     },
@@ -64,6 +100,7 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
     routePrefix: EDocumentation.scalar,
     configuration: {
       layout: 'classic',
+      content: () => enrichPublicOpenApi(fastify.swagger()),
     },
   });
 
@@ -90,6 +127,8 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
       },
     },
     staticCSP: false,
+    transformSpecification: (swaggerObject) =>
+      enrichPublicOpenApi(swaggerObject),
     transformStaticCSP: (header: string): string => {
       return header;
     },

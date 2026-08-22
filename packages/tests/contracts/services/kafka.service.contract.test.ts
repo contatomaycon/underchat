@@ -1,240 +1,109 @@
 import 'reflect-metadata';
 
-const mockKafkaEnvironment = {
-  securityProtocol: 'plaintext',
-  saslMechanism: 'plain',
-  kafkaUsername: 'user',
-  kafkaPassword: 'pass',
-};
+const mockEnsureKafkaTopic = jest.fn(async () => undefined);
 
-const mockCreateTopic = jest.fn();
-const mockDeleteTopic = jest.fn();
-const mockDisconnect = jest.fn();
-const mockAdminCreate = jest.fn(() => ({
-  createTopic: mockCreateTopic,
-  deleteTopic: mockDeleteTopic,
-  disconnect: mockDisconnect,
-}));
-
-jest.mock('@core/config/environments', () => ({
-  kafkaEnvironment: mockKafkaEnvironment,
-}));
-
-jest.mock('@core/common/vendors/nodeRdkafka', () => ({
-  rdkafka: {
-    AdminClient: {
-      create: mockAdminCreate,
-    },
-  },
+jest.mock('@core/common/functions/ensureKafkaTopic', () => ({
+  ensureKafkaTopic: mockEnsureKafkaTopic,
 }));
 
 import { KafkaService } from '@core/services/kafka.service';
 
-describe('KafkaService', () => {
-  const makeService = () => {
-    const kafka = {
-      getBroker: jest.fn(() => 'broker:9092'),
-    };
-
-    const service = new KafkaService(kafka as never);
-
-    return {
-      service,
-      kafka,
-    };
-  };
+describe('KafkaService global topic boundary', () => {
+  const kafka = { getBroker: jest.fn(() => 'broker:9092') };
+  const service = new KafkaService(kafka as never);
 
   beforeEach(() => {
-    mockKafkaEnvironment.securityProtocol = 'plaintext';
-    mockKafkaEnvironment.saslMechanism = 'plain';
-    mockKafkaEnvironment.kafkaUsername = 'user';
-    mockKafkaEnvironment.kafkaPassword = 'pass';
-
-    mockCreateTopic.mockReset();
-    mockDeleteTopic.mockReset();
-    mockDisconnect.mockReset();
-    mockAdminCreate.mockClear();
+    mockEnsureKafkaTopic.mockClear();
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 
-  it('builds admin config for plaintext protocol', () => {
-    makeService();
-
-    expect(mockAdminCreate).toHaveBeenCalledTimes(1);
-    expect(mockAdminCreate).toHaveBeenCalledWith({
-      'client.id': 'kafka-admin',
-      'metadata.broker.list': 'broker:9092',
-      'security.protocol': 'plaintext',
-    });
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
-  it('builds admin config with sasl and ssl options when protocol is sasl_ssl', () => {
-    mockKafkaEnvironment.securityProtocol = 'SASL_SSL';
-
-    makeService();
-
-    expect(mockAdminCreate).toHaveBeenCalledWith({
-      'client.id': 'kafka-admin',
-      'metadata.broker.list': 'broker:9092',
-      'security.protocol': 'sasl_ssl',
-      'sasl.mechanism': 'plain',
-      'sasl.username': 'user',
-      'sasl.password': 'pass',
-      'enable.ssl.certificate.verification': false,
-    });
-  });
-
-  it('does not include sasl credentials when protocol is not plaintext but credentials are incomplete', () => {
-    mockKafkaEnvironment.securityProtocol = 'SASL_PLAINTEXT';
-    mockKafkaEnvironment.kafkaPassword = '';
-
-    makeService();
-
-    expect(mockAdminCreate).toHaveBeenCalledWith({
-      'client.id': 'kafka-admin',
-      'metadata.broker.list': 'broker:9092',
-      'security.protocol': 'sasl_plaintext',
-    });
-  });
-
-  it('creates all topics and ignores already-existing errors', async () => {
-    const { service } = makeService();
-
-    mockCreateTopic.mockImplementation(
-      (
-        input: { topic: string },
-        timeout: number,
-        cb: (error: { message?: string; code?: number } | null) => void
-      ) => {
-        expect(timeout).toBe(4000);
-
-        if (input.topic === 'topic-1') {
-          cb(null);
-          return;
-        }
-
-        cb({
-          code: 36,
-          message: 'Topic already exists',
-        });
-      }
-    );
-
+  it('creates global topics with the shared topology default', async () => {
     await expect(
-      service.createTopics(['topic-1', 'topic-2'], 2, 3, 4000)
+      service.createTopics(['global.events.first', 'global.events.second'])
     ).resolves.toBeUndefined();
 
-    expect(mockCreateTopic).toHaveBeenCalledTimes(2);
-    expect(mockCreateTopic).toHaveBeenNthCalledWith(
+    expect(mockEnsureKafkaTopic).toHaveBeenCalledTimes(2);
+    expect(mockEnsureKafkaTopic).toHaveBeenNthCalledWith(
       1,
-      {
-        topic: 'topic-1',
-        num_partitions: 2,
-        replication_factor: 3,
-      },
-      4000,
-      expect.any(Function)
+      kafka,
+      'global.events.first',
+      30,
+      3,
+      30_000
+    );
+    expect(mockEnsureKafkaTopic).toHaveBeenNthCalledWith(
+      2,
+      kafka,
+      'global.events.second',
+      30,
+      3,
+      30_000
     );
   });
 
-  it('propagates create topic error when it is not an already-existing topic error', async () => {
-    const { service } = makeService();
+  it('honors an explicit topology for a global topic', async () => {
+    await service.createTopics(['global.events.custom'], 6, 2, 4_000);
 
-    mockCreateTopic.mockImplementation(
-      (
-        _: unknown,
-        __: number,
-        cb: (error: { message: string; code: number } | null) => void
-      ) => {
-        cb({
-          code: 500,
-          message: 'internal create failure',
-        });
-      }
-    );
-
-    await expect(service.createTopics(['topic-err'])).rejects.toThrow(
-      'internal create failure'
+    expect(mockEnsureKafkaTopic).toHaveBeenCalledWith(
+      kafka,
+      'global.events.custom',
+      6,
+      2,
+      4_000
     );
   });
 
-  it('returns early when createTopics receives empty list', async () => {
-    const { service } = makeService();
-
+  it('returns early for an empty create request', async () => {
     await expect(service.createTopics([])).resolves.toBeUndefined();
 
-    expect(mockCreateTopic).not.toHaveBeenCalled();
+    expect(mockEnsureKafkaTopic).not.toHaveBeenCalled();
   });
 
-  it('deletes topics and treats unknown topic/partition errors as success', async () => {
-    const { service } = makeService();
+  it.each([
+    'worker.worker-1.send.message',
+    'worker.worker-1.schedule.send.message',
+    'worker.worker-1.notification.message',
+    'worker.worker-1.webhook.integration',
+  ])(
+    'rejects per-worker topic provisioning through the global API: %s',
+    async (topic) => {
+      await expect(service.createTopics([topic])).rejects.toThrow(
+        `generic_durable_worker_topic_provisioning_disabled:${topic}`
+      );
 
-    mockDeleteTopic.mockImplementation(
-      (
-        topic: string,
-        timeout: number,
-        cb: (error: { message?: string; code?: number } | null) => void
-      ) => {
-        expect(timeout).toBe(5000);
+      expect(mockEnsureKafkaTopic).not.toHaveBeenCalled();
+    }
+  );
 
-        if (topic === 'topic-1') {
-          cb(null);
-          return;
-        }
-
-        cb({
-          code: 3,
-          message: 'Unknown topic or partition',
-        });
-      }
-    );
-
+  it('fails before partial creation when a request mixes global and worker topics', async () => {
     await expect(
-      service.deleteTopics(['topic-1', 'topic-unknown'])
-    ).resolves.toBeUndefined();
+      service.createTopics([
+        'global.events.must-not-be-created',
+        'worker.worker-1.send.message',
+      ])
+    ).rejects.toThrow('generic_durable_worker_topic_provisioning_disabled');
 
-    expect(mockDeleteTopic).toHaveBeenCalledTimes(2);
-    expect(mockDeleteTopic).toHaveBeenNthCalledWith(
-      1,
-      'topic-1',
-      5000,
-      expect.any(Function)
-    );
+    expect(mockEnsureKafkaTopic).not.toHaveBeenCalled();
   });
 
-  it('propagates delete topic error for non-retryable failures', async () => {
-    const { service } = makeService();
-
-    mockDeleteTopic.mockImplementation(
-      (
-        _: string,
-        __: number,
-        cb: (error: { message: string; code: number } | null) => void
-      ) => {
-        cb({
-          code: 2,
-          message: 'broker failure',
-        });
-      }
-    );
-
-    await expect(service.deleteTopics(['topic-err'])).rejects.toThrow(
-      'broker failure'
-    );
-  });
-
-  it('returns early when deleteTopics receives empty list', async () => {
-    const { service } = makeService();
-
+  it('returns early for an empty delete request', async () => {
     await expect(service.deleteTopics([])).resolves.toBeUndefined();
 
-    expect(mockDeleteTopic).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
   });
 
-  it('disconnects admin client on close', async () => {
-    const { service } = makeService();
+  it('keeps generic Kafka deletion disabled', async () => {
+    await expect(service.deleteTopics(['global.events'])).rejects.toThrow(
+      'runtime_generic_kafka_topic_deletion_disabled'
+    );
 
-    await expect(service.close()).resolves.toBeUndefined();
-
-    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith(
+      '[worker-kafka-topic-audit]',
+      expect.stringContaining('worker_topics.delete.admin_boundary_denied')
+    );
   });
 });

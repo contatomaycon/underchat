@@ -9,13 +9,16 @@ import {
 } from 'centrifuge';
 import jwt from 'jsonwebtoken';
 import WebSocket from 'ws';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
 import { centrifugoEnvironment } from '@core/config/environments';
 import {
   IQueuedPublish,
   ICachedPublish,
+  ICentrifugoPublishGuard,
 } from '@core/common/interfaces/ICentrifugo';
+
+type CentrifugoPublishFailurePolicy = 'best-effort' | 'strict';
 
 @singleton()
 export class CentrifugoService {
@@ -27,7 +30,6 @@ export class CentrifugoService {
   private readonly circuitBreakerThreshold = 100;
   private readonly circuitBreakerResetMs = 30_000;
   private readonly rateLimitPerSecond = 1_000;
-  private readonly debounceWindowMs = 50;
   private readonly queueProcessIntervalMs = 25;
   private readonly publishCacheWindowMs = 2_000;
   private readonly publishCacheCleanupIntervalMs = 5_000;
@@ -37,8 +39,8 @@ export class CentrifugoService {
   private tokenBucket = 100;
   private lastTokenRefill = Date.now();
   private publishQueue: IQueuedPublish[] = [];
-  private debounceMap = new Map<string, NodeJS.Timeout>();
   private publishCache = new Map<string, ICachedPublish>();
+  private inFlightPublishes = new Map<string, Promise<PublishResult>>();
   private queueProcessTimer: ReturnType<typeof setInterval> | null = null;
   private cacheCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private isProcessingQueue = false;
@@ -64,6 +66,7 @@ export class CentrifugoService {
 
     this.useDistributed =
       process.env.USE_DISTRIBUTED_CENTRIFUGO === 'true' && !!this.redis;
+    void this.redis?.del('centrifugo:status:retry').catch(() => undefined);
     this.startQueueProcessor();
     this.startCacheCleanup();
     this.startStatusRetryWorker();
@@ -106,6 +109,10 @@ export class CentrifugoService {
       return false;
     }
 
+    return this.isCircuitOpenLocal();
+  }
+
+  private isCircuitOpenLocal(): boolean {
     const now = Date.now();
 
     if (this.circuitBreakerState === 'open') {
@@ -122,6 +129,26 @@ export class CentrifugoService {
     }
 
     return false;
+  }
+
+  private async recordCircuitFailureForRequest(
+    localOnly: boolean
+  ): Promise<void> {
+    if (localOnly) {
+      this.recordCircuitFailureLocal();
+      return;
+    }
+    await this.recordCircuitFailure();
+  }
+
+  private async recordCircuitSuccessForRequest(
+    localOnly: boolean
+  ): Promise<void> {
+    if (localOnly) {
+      this.recordCircuitSuccessLocal();
+      return;
+    }
+    await this.recordCircuitSuccess();
   }
 
   private async recordCircuitFailure(): Promise<void> {
@@ -272,21 +299,31 @@ export class CentrifugoService {
     return false;
   }
 
-  private getDebounceKey(channel: string, data: unknown): string {
-    try {
-      const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
-      return `${channel}:${dataStr}`;
-    } catch {
-      return `${channel}:${Date.now()}`;
-    }
-  }
-
   private generateHash(channel: string, data: unknown): string {
     try {
       const dataStr =
         typeof data === 'string'
           ? data
-          : JSON.stringify(data, Object.keys(data as object).sort());
+          : JSON.stringify(data, (_key, value: unknown) => {
+              if (
+                value === null ||
+                typeof value !== 'object' ||
+                Array.isArray(value)
+              ) {
+                return value;
+              }
+
+              return Object.keys(value)
+                .sort()
+                .reduce<Record<string, unknown>>((sorted, key) => {
+                  sorted[key] = (value as Record<string, unknown>)[key];
+                  return sorted;
+                }, {});
+            });
+
+      if (dataStr === undefined) {
+        throw new Error('Publish payload is not JSON serializable');
+      }
 
       const hash = createHash('sha256')
         .update(channel)
@@ -310,6 +347,29 @@ export class CentrifugoService {
     }
   }
 
+  private createPublishIdempotencyKey(
+    channel: string,
+    data: unknown,
+    coalesceDuplicates: boolean,
+    stableForRedelivery = false
+  ): string {
+    if (!coalesceDuplicates) {
+      return randomUUID();
+    }
+
+    const publishHash = this.generateHash(channel, data);
+    if (stableForRedelivery) {
+      return createHash('sha256').update(publishHash).digest('hex');
+    }
+
+    const window = Math.floor(Date.now() / this.publishCacheWindowMs);
+    return createHash('sha256')
+      .update(publishHash)
+      .update(':')
+      .update(window.toString())
+      .digest('hex');
+  }
+
   private async isDuplicatePublish(
     channel: string,
     data: unknown
@@ -317,11 +377,9 @@ export class CentrifugoService {
     if (this.useDistributed && this.redis) {
       const hash = this.generateHash(channel, data);
       const key = `centrifugo:publish_cache:${hash}`;
-      const ttlSeconds = Math.ceil(this.publishCacheWindowMs / 1000);
 
       try {
-        const result = await this.redis.set(key, '1', 'EX', ttlSeconds, 'NX');
-        return result === null;
+        return (await this.redis.exists(key)) > 0;
       } catch {}
     }
 
@@ -347,8 +405,10 @@ export class CentrifugoService {
       const hash = this.generateHash(channel, data);
       const key = `centrifugo:publish_cache:${hash}`;
       const ttlSeconds = Math.ceil(this.publishCacheWindowMs / 1000);
-      await this.redis.expire(key, ttlSeconds).catch(() => {});
-      return;
+      try {
+        await this.redis.set(key, '1', 'EX', ttlSeconds);
+        return;
+      } catch {}
     }
 
     if (this.publishCache.size >= this.publishCacheMaxSize) {
@@ -459,9 +519,12 @@ export class CentrifugoService {
           }
 
           try {
+            await item.assertActive?.();
             const result = await this.publishViaHttpApiDirect(
               item.channel,
-              item.data
+              item.data,
+              item.assertActive,
+              item.idempotencyKey
             );
             item.resolve(result);
           } catch (error) {
@@ -478,13 +541,17 @@ export class CentrifugoService {
 
   private enqueuePublish(
     channel: string,
-    data: unknown
+    data: unknown,
+    assertActive?: ICentrifugoPublishGuard,
+    idempotencyKey?: string
   ): Promise<PublishResult> {
     return new Promise<PublishResult>((resolve, reject) => {
       this.publishQueue.push({
         channel,
         data,
         timestamp: Date.now(),
+        idempotencyKey,
+        assertActive,
         resolve,
         reject,
       });
@@ -626,19 +693,29 @@ export class CentrifugoService {
 
   private async withPublishRetry(
     action: () => Promise<PublishResult>,
-    options?: { failHard?: boolean }
+    options?: {
+      assertActive?: ICentrifugoPublishGuard;
+      attempts?: number;
+    }
   ): Promise<PublishResult> {
-    const failHard = options?.failHard ?? false;
     let lastError: Error | null = null;
+    const attempts = Math.max(
+      1,
+      Math.min(
+        this.publishRetryAttempts,
+        options?.attempts ?? this.publishRetryAttempts
+      )
+    );
 
-    for (let attempt = 1; attempt <= this.publishRetryAttempts; attempt++) {
+    for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
+        await options?.assertActive?.();
         return await action();
       } catch (error) {
         const normalizedError = this.toError(error);
         lastError = normalizedError;
         const isTransient = this.isTransientError(normalizedError);
-        const isLastAttempt = attempt === this.publishRetryAttempts;
+        const isLastAttempt = attempt === attempts;
         const isTimeout = this.isTimeoutError(normalizedError);
 
         if (!isTransient && !isTimeout) {
@@ -646,11 +723,7 @@ export class CentrifugoService {
         }
 
         if (isLastAttempt) {
-          if (failHard) {
-            throw normalizedError;
-          }
-
-          return {} as PublishResult;
+          throw normalizedError;
         }
 
         const backoff = Math.min(
@@ -662,18 +735,23 @@ export class CentrifugoService {
       }
     }
 
-    if (failHard && lastError) {
+    if (lastError) {
       throw lastError;
     }
 
-    return {} as PublishResult;
+    throw new Error('Centrifugo publish failed without an error');
   }
 
   private async publishViaHttpApiDirect(
     channel: string,
-    data: unknown
+    data: unknown,
+    assertActive?: ICentrifugoPublishGuard,
+    idempotencyKey?: string,
+    localCircuitOnly = false
   ): Promise<PublishResult> {
-    if (await this.isCircuitOpen()) {
+    if (
+      localCircuitOnly ? this.isCircuitOpenLocal() : await this.isCircuitOpen()
+    ) {
       throw new Error('Centrifugo circuit breaker is open');
     }
 
@@ -684,6 +762,7 @@ export class CentrifugoService {
       throw new Error('Centrifugo HTTP API is not configured.');
     }
 
+    await assertActive?.();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.httpApiTimeoutMs);
 
@@ -699,6 +778,9 @@ export class CentrifugoService {
           params: {
             channel,
             data,
+            ...(idempotencyKey && {
+              idempotency_key: idempotencyKey,
+            }),
           },
         }),
         signal: controller.signal,
@@ -712,7 +794,7 @@ export class CentrifugoService {
           }`
         );
         (error as { status?: number }).status = response.status;
-        await this.recordCircuitFailure();
+        await this.recordCircuitFailureForRequest(localCircuitOnly);
         throw error;
       }
 
@@ -722,17 +804,22 @@ export class CentrifugoService {
       } | null;
 
       if (payload?.error) {
-        await this.recordCircuitFailure();
+        await this.recordCircuitFailureForRequest(localCircuitOnly);
         throw new Error(
           `Centrifugo HTTP API error: ${payload.error.message ?? 'unknown'}`
         );
       }
 
-      await this.recordCircuitSuccess();
-      return (payload?.result ?? {}) as PublishResult;
+      if (!payload || !('result' in payload)) {
+        await this.recordCircuitFailureForRequest(localCircuitOnly);
+        throw new Error('Centrifugo HTTP API returned an invalid response');
+      }
+
+      await this.recordCircuitSuccessForRequest(localCircuitOnly);
+      return payload.result ?? ({} as PublishResult);
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        await this.recordCircuitFailure();
+        await this.recordCircuitFailureForRequest(localCircuitOnly);
         throw new Error('Centrifugo HTTP API timeout');
       }
 
@@ -741,7 +828,7 @@ export class CentrifugoService {
       }
 
       if (error instanceof Error) {
-        await this.recordCircuitFailure();
+        await this.recordCircuitFailureForRequest(localCircuitOnly);
         const wrapped = new Error('Centrifugo HTTP API connection error');
         (wrapped as { cause?: unknown }).cause = error;
         throw wrapped;
@@ -755,36 +842,24 @@ export class CentrifugoService {
 
   private async publishViaHttpApi(
     channel: string,
-    data: unknown
+    data: unknown,
+    assertActive?: ICentrifugoPublishGuard,
+    idempotencyKey?: string
   ): Promise<PublishResult> {
-    const debounceKey = this.getDebounceKey(channel, data);
-    const existingDebounce = this.debounceMap.get(debounceKey);
+    await assertActive?.();
+    const hasToken = this.useDistributed
+      ? await this.consumeTokenDistributed()
+      : this.consumeToken();
+    await assertActive?.();
 
-    if (existingDebounce) {
-      clearTimeout(existingDebounce);
-    }
-
-    return new Promise<PublishResult>((resolve, reject) => {
-      const debounceTimer = setTimeout(() => {
-        this.debounceMap.delete(debounceKey);
-
-        (async () => {
-          const hasToken = this.useDistributed
-            ? await this.consumeTokenDistributed()
-            : this.consumeToken();
-
-          if (hasToken) {
-            this.publishViaHttpApiDirect(channel, data)
-              .then(resolve)
-              .catch(reject);
-          } else {
-            this.enqueuePublish(channel, data).then(resolve).catch(reject);
-          }
-        })();
-      }, this.debounceWindowMs);
-
-      this.debounceMap.set(debounceKey, debounceTimer);
-    });
+    return hasToken
+      ? this.publishViaHttpApiDirect(
+          channel,
+          data,
+          assertActive,
+          idempotencyKey
+        )
+      : this.enqueuePublish(channel, data, assertActive, idempotencyKey);
   }
 
   private extractSubId(channel: string): string | null {
@@ -806,59 +881,229 @@ export class CentrifugoService {
     );
   }
 
-  private handlePublishError(): PublishResult {
-    return {} as PublishResult;
+  private async executePublishWithPolicy(
+    action: () => Promise<PublishResult>,
+    context: { operation: string; channel: string },
+    assertActive?: ICentrifugoPublishGuard,
+    failurePolicy: CentrifugoPublishFailurePolicy = 'best-effort'
+  ): Promise<PublishResult> {
+    try {
+      return await action();
+    } catch (error) {
+      const normalizedError = this.toError(error);
+
+      // Assignment-fenced Kafka publications and durable strict callers must
+      // observe the failure so they cannot commit an unconfirmed side effect.
+      if (failurePolicy === 'strict' || assertActive) {
+        await assertActive?.();
+        throw normalizedError;
+      }
+
+      // Preserve the long-standing best-effort contract for HTTP/domain call
+      // sites which may have already committed their source-of-truth write.
+      console.error('[CentrifugoService] best_effort_publish_failed', {
+        operation: context.operation,
+        channel: context.channel,
+        error: normalizedError.message,
+        queueSize: this.publishQueue.length,
+        circuitBreakerState: this.circuitBreakerState,
+        distributed: this.useDistributed,
+      });
+      return {} as PublishResult;
+    }
   }
 
-  async publish(channel: string, data: unknown): Promise<PublishResult> {
-    try {
-      if (await this.isDuplicatePublish(channel, data)) {
+  private async publishDeduplicated(
+    channel: string,
+    data: unknown,
+    assertActive?: ICentrifugoPublishGuard,
+    stableForRedelivery = false,
+    attempts?: number,
+    directHttp = false
+  ): Promise<PublishResult> {
+    await assertActive?.();
+    const publishHash = this.generateHash(channel, data);
+    const inFlightKey = stableForRedelivery
+      ? `${publishHash}:stable`
+      : publishHash;
+
+    if (!assertActive) {
+      const inFlight = this.inFlightPublishes.get(inFlightKey);
+      if (inFlight) {
+        return inFlight;
+      }
+    }
+
+    if (!directHttp) {
+      const duplicate = await this.isDuplicatePublish(channel, data);
+      await assertActive?.();
+      if (duplicate) {
         return {} as PublishResult;
       }
 
-      await this.cachePublish(channel, data);
-
-      return await this.withPublishRetry(() =>
-        this.publishViaHttpApi(channel, data)
-      );
-    } catch {
-      return this.handlePublishError();
+      // isDuplicatePublish can cross an async Redis boundary. Another local
+      // caller may have started the same publication while this one was waiting.
+      if (!assertActive) {
+        const inFlight = this.inFlightPublishes.get(inFlightKey);
+        if (inFlight) {
+          return inFlight;
+        }
+      }
     }
+
+    const idempotencyKey = this.createPublishIdempotencyKey(
+      channel,
+      data,
+      true,
+      stableForRedelivery || Boolean(assertActive)
+    );
+    const operation = (async () => {
+      const result = await this.withPublishRetry(
+        () =>
+          directHttp
+            ? this.publishViaHttpApiDirect(
+                channel,
+                data,
+                assertActive,
+                idempotencyKey,
+                true
+              )
+            : this.publishViaHttpApi(
+                channel,
+                data,
+                assertActive,
+                idempotencyKey
+              ),
+        { assertActive, attempts }
+      );
+      if (directHttp) {
+        // Centrifugo's stable idempotency key is the durable duplicate fence.
+        // A distributed cache write must not extend the lease-bound publish
+        // window or turn an already confirmed publication into a failure.
+        void this.cachePublish(channel, data).catch(() => undefined);
+      } else {
+        await this.cachePublish(channel, data);
+      }
+      return result;
+    })();
+
+    if (!assertActive) {
+      this.inFlightPublishes.set(inFlightKey, operation);
+    }
+
+    try {
+      return await operation;
+    } finally {
+      if (this.inFlightPublishes.get(inFlightKey) === operation) {
+        this.inFlightPublishes.delete(inFlightKey);
+      }
+    }
+  }
+
+  async publish(
+    channel: string,
+    data: unknown,
+    assertActive?: ICentrifugoPublishGuard
+  ): Promise<PublishResult> {
+    return this.executePublishWithPolicy(
+      () => this.publishDeduplicated(channel, data, assertActive),
+      { operation: 'publish', channel },
+      assertActive
+    );
+  }
+
+  /**
+   * Publishes only after the HTTP API confirms the request. Terminal transport
+   * failures are propagated so a durable caller can retry the same payload.
+   * The idempotency key is stable across those redeliveries.
+   */
+  async publishStrict(channel: string, data: unknown): Promise<PublishResult> {
+    return this.executePublishWithPolicy(
+      // The durable outbox owns retries. One bounded HTTP attempt per drain
+      // keeps an ONLINE lease proof valid for the whole external call while
+      // preserving the same Centrifugo idempotency key on redelivery.
+      // Bypass the best-effort rate-limit queue: it may wait longer than the
+      // lease safety margin. The outbox batch bound provides backpressure.
+      () => this.publishDeduplicated(channel, data, undefined, true, 1, true),
+      { operation: 'publishStrict', channel },
+      undefined,
+      'strict'
+    );
   }
 
   async publishImmediate(
     channel: string,
-    data: unknown
+    data: unknown,
+    assertActive?: ICentrifugoPublishGuard
   ): Promise<PublishResult> {
-    try {
-      return await this.withPublishRetry(() =>
-        this.publishViaHttpApiDirect(channel, data)
-      );
-    } catch {
-      return this.handlePublishError();
-    }
+    const idempotencyKey = this.createPublishIdempotencyKey(
+      channel,
+      data,
+      false
+    );
+    return this.executePublishWithPolicy(
+      () =>
+        this.withPublishRetry(
+          () =>
+            this.publishViaHttpApiDirect(
+              channel,
+              data,
+              assertActive,
+              idempotencyKey
+            ),
+          { assertActive }
+        ),
+      { operation: 'publishImmediate', channel },
+      assertActive
+    );
   }
 
-  async publishSub(channel: string, data: unknown): Promise<PublishResult> {
-    try {
-      const subId = this.extractSubId(channel);
+  async publishSub(
+    channel: string,
+    data: unknown,
+    assertActive?: ICentrifugoPublishGuard
+  ): Promise<PublishResult> {
+    return this.executePublishWithPolicy(
+      async () => {
+        await assertActive?.();
+        if (!this.extractSubId(channel)) {
+          throw new Error('Invalid channel format for publishSub');
+        }
 
-      if (!subId) {
-        return {} as PublishResult;
-      }
+        return this.publishDeduplicated(channel, data, assertActive);
+      },
+      { operation: 'publishSub', channel },
+      assertActive
+    );
+  }
 
-      if (await this.isDuplicatePublish(channel, data)) {
-        return {} as PublishResult;
-      }
+  /**
+   * Subscriber-channel variant of {@link publishStrict}. Invalid channels and
+   * unconfirmed transport failures are always propagated to the caller.
+   */
+  async publishSubStrict(
+    channel: string,
+    data: unknown
+  ): Promise<PublishResult> {
+    return this.executePublishWithPolicy(
+      async () => {
+        if (!this.extractSubId(channel)) {
+          throw new Error('Invalid channel format for publishSubStrict');
+        }
 
-      await this.cachePublish(channel, data);
-
-      return await this.withPublishRetry(() =>
-        this.publishViaHttpApi(channel, data)
-      );
-    } catch {
-      return this.handlePublishError();
-    }
+        return this.publishDeduplicated(
+          channel,
+          data,
+          undefined,
+          true,
+          1,
+          true
+        );
+      },
+      { operation: 'publishSubStrict', channel },
+      undefined,
+      'strict'
+    );
   }
 
   /**
@@ -868,19 +1113,30 @@ export class CentrifugoService {
    */
   async publishSubImmediate(
     channel: string,
-    data: unknown
+    data: unknown,
+    assertActive?: ICentrifugoPublishGuard
   ): Promise<PublishResult> {
+    await assertActive?.();
     const subId = this.extractSubId(channel);
 
     if (!subId) {
       throw new Error('Invalid channel format for publishSubImmediate');
     }
 
+    const idempotencyKey = this.createPublishIdempotencyKey(
+      channel,
+      data,
+      false
+    );
     return this.withPublishRetry(
-      () => this.publishViaHttpApiDirectWithHistory(channel, data),
-      {
-        failHard: true,
-      }
+      () =>
+        this.publishViaHttpApiDirectWithHistory(
+          channel,
+          data,
+          assertActive,
+          idempotencyKey
+        ),
+      { assertActive }
     );
   }
 
@@ -890,7 +1146,9 @@ export class CentrifugoService {
    */
   private async publishViaHttpApiDirectWithHistory(
     channel: string,
-    data: unknown
+    data: unknown,
+    assertActive?: ICentrifugoPublishGuard,
+    idempotencyKey?: string
   ): Promise<PublishResult> {
     if (await this.isCircuitOpen()) {
       throw new Error('Centrifugo circuit breaker is open');
@@ -903,6 +1161,7 @@ export class CentrifugoService {
       throw new Error('Centrifugo HTTP API is not configured.');
     }
 
+    await assertActive?.();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.httpApiTimeoutMs);
 
@@ -918,6 +1177,9 @@ export class CentrifugoService {
           params: {
             channel,
             data,
+            ...(idempotencyKey && {
+              idempotency_key: idempotencyKey,
+            }),
           },
         }),
         signal: controller.signal,
@@ -947,8 +1209,13 @@ export class CentrifugoService {
         );
       }
 
+      if (!payload || !('result' in payload)) {
+        await this.recordCircuitFailure();
+        throw new Error('Centrifugo HTTP API returned an invalid response');
+      }
+
       await this.recordCircuitSuccess();
-      return (payload?.result ?? {}) as PublishResult;
+      return payload.result ?? ({} as PublishResult);
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         await this.recordCircuitFailure();
@@ -1107,8 +1374,8 @@ export class CentrifugoService {
           safeReject(this.toError(err));
         }
       });
-    } catch {
-      this.handlePublishError();
+    } catch (error) {
+      throw this.toError(error);
     }
   }
 
@@ -1156,14 +1423,14 @@ export class CentrifugoService {
       queueSize: this.publishQueue.length,
       availableTokens: this.tokenBucket,
       isProcessing: this.isProcessingQueue,
-      debouncePending: this.debounceMap.size,
+      debouncePending: 0,
       cacheSize: this.publishCache.size,
       circuitBreakerFailures: this.circuitBreakerFailures,
       circuitBreakerOpen: circuitOpen,
     };
   }
 
-  private readonly statusRetryKey = 'centrifugo:status:retry';
+  private readonly statusRetryKey = 'centrifugo:status:retry:v2';
   private readonly statusRetryIntervalMs = 5_000;
   private readonly statusRetryMaxAttempts = 3;
   private readonly statusRetryBatchSize = 50;
@@ -1245,12 +1512,8 @@ export class CentrifugoService {
     this.stopCacheCleanup();
     this.stopStatusRetryWorker();
 
-    for (const timer of this.debounceMap.values()) {
-      clearTimeout(timer);
-    }
-
-    this.debounceMap.clear();
     this.publishCache.clear();
+    this.inFlightPublishes.clear();
 
     for (const item of this.publishQueue) {
       item.reject(new Error('Service cleanup'));

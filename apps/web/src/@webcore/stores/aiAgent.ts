@@ -141,13 +141,23 @@ export const useAiAgentStore = defineStore('aiAgent', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('ai_agent_type_list_error');
+          this.showSnackbar(message, EColor.error);
+
           return [];
         }
 
         this.types = data.data;
 
         return data.data;
-      } catch {
+      } catch (error) {
+        let message = this.i18n.global.t('ai_agent_type_list_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+        this.showSnackbar(message, EColor.error);
+
         return [];
       }
     },
@@ -273,6 +283,69 @@ export const useAiAgentStore = defineStore('aiAgent', {
 
         return false;
       }
+    },
+
+    async setAiAgentPlanBlockStatus(
+      aiAgentId: string,
+      action: 'block' | 'unblock'
+    ): Promise<boolean> {
+      const isBlock = action === 'block';
+
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/ai-agent/${aiAgentId}/${action}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ??
+            this.i18n.global.t(
+              isBlock ? 'ai_agent_block_error' : 'ai_agent_unblock_error'
+            );
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t(
+              isBlock ? 'ai_agent_block_success' : 'ai_agent_unblock_success'
+            ),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          isBlock ? 'ai_agent_block_error' : 'ai_agent_unblock_error'
+        );
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async blockAiAgent(aiAgentId: string): Promise<boolean> {
+      return this.setAiAgentPlanBlockStatus(aiAgentId, 'block');
+    },
+
+    async unblockAiAgent(aiAgentId: string): Promise<boolean> {
+      return this.setAiAgentPlanBlockStatus(aiAgentId, 'unblock');
     },
 
     async deleteAiAgent(aiAgentId: string): Promise<boolean> {

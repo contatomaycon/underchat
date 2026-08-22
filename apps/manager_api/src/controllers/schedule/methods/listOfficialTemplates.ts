@@ -1,6 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { handleControllerError } from '@core/common/functions/handleControllerError';
+import { handleScheduleControllerError } from '@core/controllers/schedule/methods/handleScheduleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ScheduleOfficialTemplatesRequest } from '@core/schema/schedule/officialTemplates/request.schema';
@@ -31,6 +31,6 @@ export const listOfficialTemplates = async (
       data: response,
     });
   } catch (error) {
-    handleControllerError(error, reply, t);
+    handleScheduleControllerError(error, reply, t);
   }
 };

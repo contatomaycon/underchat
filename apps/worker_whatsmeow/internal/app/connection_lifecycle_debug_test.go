@@ -70,8 +70,32 @@ func TestConnectionLifecycleDebugLoggerRedactsQRCodeAndPairingCode(t *testing.T)
 	}
 	assertDebugNumber(t, entries[0], "qr_length", len("raw-qr-value"))
 	assertDebugNumber(t, entries[0], "pairing_code_length", len("123-456"))
-	if entries[0]["qr_sha256_12"] == "" || entries[0]["pairing_code_sha256_12"] == "" {
-		t.Fatalf("expected QR and pairing hashes, got %+v", entries[0])
+	if _, ok := entries[0]["qr_sha256_12"]; ok {
+		t.Fatalf("QR-derived hashes must not be logged, got %+v", entries[0])
+	}
+	if _, ok := entries[0]["pairing_code_sha256_12"]; ok {
+		t.Fatalf("pairing-code-derived hashes must not be logged, got %+v", entries[0])
+	}
+}
+
+func TestConnectionLifecycleDebugLoggerRedactsPasskeyMaterial(t *testing.T) {
+	var buf bytes.Buffer
+	restore := captureConnectionLifecycleDebugLogs(&buf)
+	defer restore()
+
+	logger := NewConnectionLifecycleDebugLogger(true, nil)
+	logger.Log(context.Background(), "test.passkey", map[string]any{
+		"trace_id":         "trace-passkey",
+		"passkey_response": "raw-passkey-assertion",
+		"public_key":       "raw-public-key",
+	})
+	output := buf.String()
+	if strings.Contains(output, "raw-passkey-assertion") || strings.Contains(output, "raw-public-key") {
+		t.Fatalf("log leaked passkey material: %s", output)
+	}
+	entries := parseConnectionLifecycleDebugLogLines(t, output)
+	if len(entries) != 1 || entries[0]["has_passkey_response"] != true || entries[0]["has_passkey_public_key"] != true {
+		t.Fatalf("expected only passkey presence metadata, got %+v", entries)
 	}
 }
 

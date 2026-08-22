@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { WorkerService } from '@core/services/worker.service';
 import { WorkerBaileysGrpcClientService } from '@core/services/workerBaileysGrpcClient.service';
@@ -150,6 +151,10 @@ export class WorkerConnectionPasskeyUseCase {
     const worker = await this.workerService.viewWorker(accountId, workerId);
     if (!worker) {
       throw new Error(t('worker_not_found'));
+    }
+
+    if (worker.status?.id === EWorkerStatus.blocked) {
+      throw new Error(t('worker_blocked_by_plan'));
     }
 
     if (

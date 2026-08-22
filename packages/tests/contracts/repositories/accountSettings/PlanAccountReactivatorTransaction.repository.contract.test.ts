@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import type { TFunction } from 'i18next';
 import { currentTime } from '@core/common/functions/currentTime';
 import { PlanAccountReactivatorTransactionRepository } from '@core/repositories/accountSettings/PlanAccountReactivatorTransaction.repository';
+import { createSelectDbMock } from '@core/tests/helpers/drizzleMock';
 
 jest.mock('@core/common/functions/currentTime', () => ({
   currentTime: jest.fn(),
@@ -32,15 +33,21 @@ function createUpdateStepMock(rowCount: number): UpdateStepMock {
   return { execute, where, set };
 }
 
-function createRepositoryWithUpdateSteps(rowCounts: number[]) {
+function createRepositoryWithUpdateSteps(
+  rowCounts: number[],
+  currentPlans: Array<{ plan_account_id: string }> = [
+    { plan_account_id: 'plan-current' },
+  ]
+) {
   const steps = rowCounts.map((rowCount) => createUpdateStepMock(rowCount));
   const update = jest.fn();
+  const selectMock = createSelectDbMock(currentPlans);
 
   for (const step of steps) {
     update.mockReturnValueOnce({ set: step.set });
   }
 
-  const tx = { update };
+  const tx = { select: selectMock.db.select, update };
   const transaction = jest.fn(
     async (cb: (txArg: unknown) => Promise<unknown>) => cb(tx)
   );
@@ -49,6 +56,8 @@ function createRepositoryWithUpdateSteps(rowCounts: number[]) {
     repository: new PlanAccountReactivatorTransactionRepository({
       transaction,
     } as never),
+    selectMock,
+    update,
   };
 }
 
@@ -65,7 +74,9 @@ describe('PlanAccountReactivatorTransactionRepository', () => {
   });
 
   it('executeReactivation succeeds when both updates affect rows', async () => {
-    const { repository } = createRepositoryWithUpdateSteps([1, 1]);
+    const { repository, selectMock, update } = createRepositoryWithUpdateSteps([
+      1, 1,
+    ]);
     const currentTimeMock = currentTime as unknown as jest.Mock;
     currentTimeMock
       .mockReturnValueOnce('2026-04-21T19:20:00.000Z')
@@ -74,6 +85,11 @@ describe('PlanAccountReactivatorTransactionRepository', () => {
     await expect(
       repository.executeReactivation(createTranslator(), 'acc-1')
     ).resolves.toBeUndefined();
+    expect(selectMock.orderBy).toHaveBeenCalledTimes(1);
+    expect(selectMock.for).toHaveBeenCalledWith('update');
+    expect(update.mock.results[0]?.value.set).toHaveBeenCalledWith({
+      cancellation_date: null,
+    });
   });
 
   it('throws translated error when plan reactivation fails', async () => {
@@ -96,5 +112,14 @@ describe('PlanAccountReactivatorTransactionRepository', () => {
     await expect(
       repository.executeReactivation(createTranslator('tr_'), 'acc-1')
     ).rejects.toThrow('tr_account_reactivation_error');
+  });
+
+  it('throws translated error without updating any row when no current plan exists', async () => {
+    const { repository, update } = createRepositoryWithUpdateSteps([], []);
+
+    await expect(
+      repository.executeReactivation(createTranslator('tr_'), 'acc-1')
+    ).rejects.toThrow('tr_plan_reactivation_error');
+    expect(update).not.toHaveBeenCalled();
   });
 });

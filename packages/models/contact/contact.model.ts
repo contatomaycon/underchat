@@ -6,8 +6,9 @@ import {
   text,
   boolean,
   index,
+  check,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { account } from '../account';
 import { contactGroupAssignment } from './contactGroupAssignment.model';
 import { workerProfileStatusContact } from '../worker/workerProfileStatusContact.model';
@@ -17,6 +18,7 @@ import { contactChannel } from './contactChannel.model';
 import { contactLabelTemplate } from './contactLabelTemplate.model';
 import { user } from '../user/user.model';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
+import type { ContactValidationOrigin } from '@core/common/types/ContactValidationOrigin';
 
 export const contact = pgTable(
   'contact',
@@ -27,6 +29,7 @@ export const contact = pgTable(
       () => contactDocumentType.contact_document_type_id
     ),
     is_valided: boolean().default(false),
+    validation_origin: varchar({ length: 32 }).$type<ContactValidationOrigin>(),
     name: varchar({ length: 250 }).notNull(),
     last_name: varchar({ length: 250 }),
     email: varchar({ length: 500 }),
@@ -93,6 +96,10 @@ export const contact = pgTable(
       table.account_id,
       table.deleted_at,
       table.created_at
+    ),
+    check(
+      'contact_validation_origin_check',
+      sql`${table.validation_origin} IS NULL OR (${table.is_valided} IS TRUE AND ${table.validation_origin} IN ('whatsapp_lookup', 'official_assumed', 'official_inbound'))`
     ),
   ]
 );

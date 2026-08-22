@@ -100,6 +100,12 @@ const serverToEdit = ref<string | null>(null);
 
 const isConsoleServerVisible = ref(false);
 const serverToConsole = ref<string | null>(null);
+const consoleServerStatus = computed(
+  () =>
+    serverStore.list_servers.find(
+      (server) => server.id === serverToConsole.value
+    )?.status.id ?? null
+);
 
 const isLogsServerVisible = ref(false);
 const serverToLogs = ref<string | null>(null);
@@ -569,6 +575,7 @@ onBeforeUnmount(async () => {
         v-if="isConsoleServerVisible"
         v-model="isConsoleServerVisible"
         :server-id="serverToConsole"
+        :server-status="consoleServerStatus"
       />
 
       <AppLogsServer

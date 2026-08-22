@@ -28,7 +28,9 @@ function createTransactionContext(options: {
   accountStatus: string | null;
   updateRowCount?: number;
 }) {
-  const planAccountFindFirst = jest.fn(async () => options.existingPlanAccount);
+  const planAccountFindFirst = jest.fn<Promise<any>, [any]>(
+    async () => options.existingPlanAccount
+  );
   const planFindFirst = jest.fn(async () => options.planData);
   const accountFindFirst = jest.fn(async () =>
     options.accountStatus ? { account_status_id: options.accountStatus } : null
@@ -95,6 +97,58 @@ describe('PlanAccountUpdaterRepository', () => {
     });
   });
 
+  it('projects the exact cycle from primary with deterministic latest-plan ordering', async () => {
+    const planAccountFindFirst = jest.fn<Promise<any>, [any]>(async () => ({
+      last_payment_date: '2026-07-01T00:00:00.000Z',
+    }));
+    const planFindFirst = jest.fn(async () => ({
+      is_test: false,
+      days_trial: null,
+    }));
+    const dbRw = {
+      query: {
+        planAccount: { findFirst: planAccountFindFirst },
+        plan: { findFirst: planFindFirst },
+      },
+    };
+    const dbRo = {
+      query: {
+        planAccount: {
+          findFirst: jest.fn(() => {
+            throw new Error('replica must not be used for projection');
+          }),
+        },
+      },
+    };
+    const repository = new PlanAccountUpdaterRepository(
+      dbRw as never,
+      dbRo as never
+    );
+
+    await expect(
+      repository.projectPlanAccountCycle('acc-1', {
+        plan_id: 'plan-1',
+        next_payment_date: '2026-08-01T00:00:00.000Z',
+      } as never)
+    ).resolves.toEqual({
+      lastPaymentDate: '2026-07-01T00:00:00.000Z',
+      nextPaymentDate: '2026-08-01T00:00:00.000Z',
+    });
+
+    const orderBy = planAccountFindFirst.mock.calls[0]?.[0].orderBy;
+    expect(
+      orderBy(
+        {
+          updated_at: 'updated_at',
+          created_at: 'created_at',
+          plan_account_id: 'plan_account_id',
+        },
+        { desc: (value: string) => `desc:${value}` }
+      )
+    ).toEqual(['desc:updated_at', 'desc:created_at', 'desc:plan_account_id']);
+    expect(dbRo.query.planAccount.findFirst).not.toHaveBeenCalled();
+  });
+
   it('updates existing plan account with calculated annual value and activates account', async () => {
     const context = createTransactionContext({
       existingPlanAccount: {
@@ -141,6 +195,17 @@ describe('PlanAccountUpdaterRepository', () => {
       })
     );
     expect(context.update).toHaveBeenCalledTimes(2);
+    const latestOrder = context.planAccountFindFirst.mock.calls[0]?.[0].orderBy;
+    expect(
+      latestOrder(
+        {
+          updated_at: 'updated_at',
+          created_at: 'created_at',
+          plan_account_id: 'plan_account_id',
+        },
+        { desc: (value: string) => `desc:${value}` }
+      )
+    ).toHaveLength(3);
   });
 
   it('creates new plan account for test plan and keeps recurring false', async () => {

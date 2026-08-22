@@ -6,4 +6,8 @@ export interface IInactivityData {
   accountId: string;
   workerId: string;
   chatId: string;
+  trackingId?: string;
+  retryCount?: number;
+  stage?: 'waiting' | 'finishing';
+  expectedLastMessageId?: string | null;
 }

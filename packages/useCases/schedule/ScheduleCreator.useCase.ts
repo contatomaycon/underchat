@@ -17,6 +17,10 @@ import { formatDateToISO } from '@core/common/functions/formatDateToISO';
 import { APP_TIMEZONE } from '@core/common/constants/timezone';
 import { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 import { ScheduleOfficialMessageService } from '@core/services/scheduleOfficialMessage.service';
+import {
+  assertUserChannelAccess,
+  UserChannelScope,
+} from '@core/common/functions/assertUserChannelAccess';
 
 @injectable()
 export class ScheduleCreatorUseCase {
@@ -452,7 +456,8 @@ export class ScheduleCreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateScheduleRequest,
-    accountId: string
+    accountId: string,
+    userChannels: UserChannelScope = []
   ): Promise<boolean> {
     await this.validateAccountExists(accountId, t);
 
@@ -488,6 +493,7 @@ export class ScheduleCreatorUseCase {
     }
 
     await this.validateWorkerExists(workerId, accountId, t);
+    assertUserChannelAccess(t, workerId, userChannels);
     this.validateSendDate(sendDate, t);
 
     const messageType = this.resolveMessageType(
@@ -541,6 +547,7 @@ export class ScheduleCreatorUseCase {
           {
             t,
             accountId,
+            workerId,
             chatbotId: chatbotIdValue,
           }
         );

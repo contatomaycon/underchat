@@ -20,7 +20,9 @@ export const bulkDeleteContact = async (
   try {
     const response = await contactBulkDeleterUseCase.execute(
       t,
-      request.body.contact_ids
+      request.body.contact_ids,
+      request.tokenJwtData.account_id,
+      request.tokenJwtData.user_id
     );
 
     if (response.deleted_count > 0) {

@@ -32,6 +32,17 @@ export function workerCentrifugoQueue(accountId: string): string {
   return `worker:account#${accountId}`;
 }
 
+/**
+ * Uses the existing `worker` Centrifugo namespace while isolating control-
+ * plane handoff notifications from provider connection-state consumers.
+ */
+export function workerProviderHandoffRecoveryCentrifugoQueue(
+  accountId: string
+): string {
+  validateChannelId(accountId, 'workerProviderHandoffRecoveryCentrifugoQueue');
+  return `worker:handoff_recovery.account#${accountId}`;
+}
+
 export function statusServerCentrifugoQueue(): string {
   return 'status_server';
 }

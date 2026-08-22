@@ -16,6 +16,8 @@ import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
 import startJobs from '@core/jobs';
+import planEntitlementTelemetryPlugin from '@core/plugins/planEntitlementTelemetry';
+import { buildEnvironment } from '@core/config/environments';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -35,6 +37,9 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
 });
 server.register(safePlugin(dbConnector, 'database'));
 server.register(safePlugin(redisPlugin, 'redis'));
+server.register(
+  safePlugin(planEntitlementTelemetryPlugin, 'planEntitlementTelemetry')
+);
 server.register(safePlugin(s3Plugin, 's3'));
 server.register(safePlugin(i18nextPlugin, 'i18next'));
 server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
@@ -56,7 +61,11 @@ const start = async () => {
 
     console.log('Server running');
 
-    startJobs(server, { enableWarmPoolJobs: true });
+    startJobs(server, {
+      enableBalanceImageRollout: true,
+      enableWarmPoolJobs: true,
+      enableWorkerMonitor: buildEnvironment.scheduleWorkerMonitorEnabled,
+    });
   } catch (err) {
     console.log(err);
 

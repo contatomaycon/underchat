@@ -8,9 +8,14 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { validateCpf } from '@core/common/functions/validateCpf';
-import { validateCnpj } from '@core/common/functions/validateCnpj';
+import {
+  formatCnpj,
+  normalizeCnpj,
+  validateCnpj,
+} from '@core/common/functions/validateCnpj';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
+import { cnpjAlphanumericMask } from '@/@webcore/utils/masks';
 
 const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
@@ -91,9 +96,9 @@ const docConfig = {
     placeholder: '000.000.000-00',
   },
   cnpj: {
-    mask: '##.###.###/####-##',
+    mask: cnpjAlphanumericMask,
     label: t('cnpj'),
-    placeholder: '00.000.000/0000-00',
+    placeholder: '00.AAA.000/00AA-00',
   },
 };
 
@@ -115,31 +120,18 @@ const formatCpfDigits = (digits: string) => {
   return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9, 11)}`;
 };
 
-const formatCnpjDigits = (digits: string) => {
-  const clean = digits.slice(0, 14);
-  if (clean.length <= 2) return clean;
-  if (clean.length <= 5) {
-    return `${clean.slice(0, 2)}.${clean.slice(2)}`;
-  }
-  if (clean.length <= 8) {
-    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
-  }
-  if (clean.length <= 12) {
-    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
-  }
-  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
-};
-
 const documentFormatted = computed({
   get: () => {
     if (!document.value) return '';
     const digits = document.value.replaceAll(/\D/g, '');
     if (isCPF.value) return formatCpfDigits(digits);
-    if (isCNPJ.value) return formatCnpjDigits(digits);
+    if (isCNPJ.value) return formatCnpj(document.value);
     return document.value;
   },
   set: (value: string) => {
-    document.value = value.replaceAll(/\D/g, '');
+    document.value = isCNPJ.value
+      ? normalizeCnpj(value)
+      : value.replaceAll(/\D/g, '');
   },
 });
 
@@ -157,10 +149,7 @@ const documentValidator = (v: string | null | undefined) => {
     }
   }
   if (isCNPJ.value) {
-    if (digits.length !== 14) {
-      return t('cnpj_invalid');
-    }
-    if (!validateCnpj(digits)) {
+    if (!validateCnpj(s)) {
       return t('cnpj_invalid');
     }
   }
@@ -1154,12 +1143,12 @@ watch(
                 :placeholder="
                   currentDocType === 'cpf'
                     ? '000.000.000-00'
-                    : '00.000.000/0000-00'
+                    : '00.AAA.000/00AA-00'
                 "
                 :rules="[documentValidator]"
                 :maxlength="currentDocType === 'cpf' ? 14 : 18"
                 v-maska="docMask"
-                inputmode="numeric"
+                :inputmode="isCNPJ ? undefined : 'numeric'"
               />
             </VCol>
           </VRow>

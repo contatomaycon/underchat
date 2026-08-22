@@ -1,4 +1,5 @@
 import { Static, Type } from '@sinclair/typebox';
+import { officialWindowSchema } from '@core/schema/chat/officialWindow.schema';
 
 const officialTemplateVariableComponentSchema = Type.Union([
   Type.Literal('HEADER'),
@@ -11,6 +12,7 @@ const officialTemplateVariableSchema = Type.Object({
   key: Type.String(),
   component_type: officialTemplateVariableComponentSchema,
   index: Type.Number(),
+  parameter_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   button_index: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   sample: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
@@ -52,6 +54,9 @@ export const officialTemplateSchema = Type.Object({
   name: Type.String(),
   language: Type.String(),
   status: Type.Literal('APPROVED'),
+  parameter_format: Type.Optional(
+    Type.Union([Type.Literal('POSITIONAL'), Type.Literal('NAMED')])
+  ),
   category: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   components: Type.Array(officialTemplateComponentSchema),
   variables: Type.Array(officialTemplateVariableSchema),
@@ -62,6 +67,7 @@ export const officialOpeningContextResponseSchema = Type.Object({
   worker_id: Type.String(),
   is_official: Type.Boolean(),
   requires_template: Type.Boolean(),
+  official_window: officialWindowSchema,
   templates: Type.Array(officialTemplateSchema),
 });
 

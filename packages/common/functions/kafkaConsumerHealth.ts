@@ -1,5 +1,11 @@
 export interface IKafkaConsumerHealthSnapshot {
   group_id: string;
+  start_position?: 'committed' | 'latest-on-assignment';
+  assignment_epoch?: number;
+  assignments_ready?: boolean;
+  assignment_positioning_count?: number;
+  dispatch_authorized?: boolean;
+  pending_dispatch_authorization_count?: number;
   topics: string[];
   connected: boolean;
   consuming: boolean;
@@ -11,17 +17,35 @@ export interface IKafkaConsumerHealthSnapshot {
     topic: string;
     partition: number;
     committed_offset: number | null;
+    position_offset?: number | null;
+    low_watermark?: number | null;
     high_watermark: number | null;
+    effective_progress_offset?: number | null;
     lag: number;
   }>;
-  lag?: number;
+  lag?: number | null;
+  lag_measurement_complete?: boolean;
+  lag_measurement_failure_count?: number;
+  last_lag_measurement_at?: number;
   high_watermark?: number | null;
+  low_watermark?: number | null;
   committed_offset?: number | null;
+  position_offset?: number | null;
+  effective_progress_offset?: number | null;
   pending_count?: number;
+  pending_queued_count?: number;
+  pending_processing_count?: number;
+  pending_settled_count?: number;
   oldest_pending_age_ms?: number;
+  oldest_pending_no_progress_age_ms?: number;
+  pending_stall_budget_ms?: number;
   restart_count: number;
   consecutive_stall_restart_count?: number;
+  stall_recovery_exhausted?: boolean;
+  pod_replacement_required?: boolean;
+  pod_replacement_reason?: string;
   stall_restart_scope?: string;
+  stall_restart_effective_scope?: 'all' | 'durable' | 'none';
   stall_restart_enabled?: boolean;
   last_message_at: number;
   last_commit_at: number;
@@ -32,6 +56,10 @@ export interface IKafkaConsumerHealthSnapshot {
   missing?: boolean;
   registered_at?: number;
   missing_age_ms?: number;
+  health_snapshot_missing_since?: number;
+  health_snapshot_missing_age_ms?: number;
+  health_snapshot_recovery_timeout_ms?: number;
+  health_snapshot_recovery_exhausted?: boolean;
 }
 
 export interface IKafkaConsumerOwnerHealthSnapshot extends IKafkaConsumerHealthSnapshot {
@@ -107,13 +135,33 @@ export function buildMissingKafkaConsumerHealthSnapshot(input: {
     topics: [],
     connected: false,
     consuming: false,
+    assignments_ready: false,
+    assignment_positioning_count: 0,
+    dispatch_authorized: false,
+    pending_dispatch_authorization_count: 0,
     unhealthy,
     stall_reason: unhealthy ? 'missing_consumer_health_snapshot' : undefined,
-    lag: 0,
+    lag: null,
+    lag_measurement_complete: false,
+    lag_measurement_failure_count: 0,
+    last_lag_measurement_at: 0,
+    low_watermark: null,
+    high_watermark: null,
+    committed_offset: null,
+    position_offset: null,
+    effective_progress_offset: null,
     pending_count: 0,
+    pending_queued_count: 0,
+    pending_processing_count: 0,
+    pending_settled_count: 0,
     oldest_pending_age_ms: 0,
+    oldest_pending_no_progress_age_ms: 0,
     restart_count: 0,
     consecutive_stall_restart_count: 0,
+    stall_recovery_exhausted: false,
+    pod_replacement_required: false,
+    pod_replacement_reason: '',
+    stall_restart_effective_scope: 'none',
     last_message_at: 0,
     last_commit_at: 0,
     last_progress_at: 0,

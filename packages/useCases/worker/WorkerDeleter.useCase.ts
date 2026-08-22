@@ -5,13 +5,14 @@ import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
-import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { WorkerLifecycleQueueService } from '@core/services/workerLifecycleQueue.service';
+import { enqueuePermanentWorkerDeletion } from '@core/common/functions/workerPermanentDeletionLifecycle';
+import { ChatbotInactivityAlertChannelDeactivatorService } from '@core/services/chatbotInactivityAlertChannelDeactivator.service';
 
 @injectable()
 export class WorkerDeleterUseCase {
@@ -20,12 +21,10 @@ export class WorkerDeleterUseCase {
     private readonly workerService: WorkerService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
-    @inject(WorkerGrpcClientService)
-    private readonly workerGrpcClientService: WorkerGrpcClientService,
-    @inject(WorkerWhatsappOfficialConnectionRepository)
-    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository = {
-      softDeleteByWorkerId: async () => false,
-    } as unknown as WorkerWhatsappOfficialConnectionRepository
+    @inject(WorkerLifecycleQueueService)
+    private readonly workerLifecycleQueueService: WorkerLifecycleQueueService,
+    @inject(ChatbotInactivityAlertChannelDeactivatorService)
+    private readonly inactivityAlertChannelDeactivator: ChatbotInactivityAlertChannelDeactivatorService
   ) {}
 
   private async validate(
@@ -41,12 +40,6 @@ export class WorkerDeleterUseCase {
     if (!existsWorkerById) {
       throw new Error(t('worker_not_found'));
     }
-  }
-
-  private async onWorkerDeleted(payload: IWorkerPayload): Promise<void> {
-    void this.workerGrpcClientService.deleteWorker(payload).catch((err) => {
-      console.error('Failed to request worker deletion via gRPC:', err);
-    });
   }
 
   async execute(
@@ -67,12 +60,14 @@ export class WorkerDeleterUseCase {
       );
 
       if (deleted) {
-        await this.workerWhatsappOfficialConnectionRepository.softDeleteByWorkerId(
+        await this.inactivityAlertChannelDeactivator.deactivateByChannel(
+          accountId,
           workerId
         );
       }
 
       const statusPayload: IBaileysConnectionState = {
+        event_type: 'status',
         code: ECodeMessage.info,
         status: EBaileysConnectionStatus.info,
         worker_id: workerId,
@@ -90,20 +85,38 @@ export class WorkerDeleterUseCase {
       return deleted;
     }
 
-    const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
+    const deletionMessage = await enqueuePermanentWorkerDeletion(
+      {
+        workerService: this.workerService,
+        workerLifecycleQueueService: this.workerLifecycleQueueService,
+      },
+      {
+        account_id: accountId,
+        worker_id: workerId,
+        source: 'worker_delete',
+      }
+    );
+    if (!deletionMessage) {
+      return false;
+    }
+
+    await this.inactivityAlertChannelDeactivator.deactivateByChannel(
       accountId,
       workerId
     );
 
-    if (!viewWorkerBalancer) {
-      throw new Error(t('worker_not_found'));
-    }
-
-    const inputDeleter: IWorkerPayload = {
+    const inputDeleter: IWorkerPayload & IBaileysConnectionState = {
+      event_type: 'status',
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
       action: EWorkerAction.delete,
       worker_id: workerId,
-      server_id: viewWorkerBalancer.server_id,
-      account_id: viewWorkerBalancer.account_id,
+      server_id: deletionMessage.server_id,
+      account_id: deletionMessage.account_id,
+      worker_status_id: EWorkerStatus.deleting,
+      worker_type_id: deletionMessage.worker_type_id,
+      lifecycle_operation_id: deletionMessage.operation_id,
+      debug_trace_id: deletionMessage.debug_trace_id,
     };
 
     await this.centrifugoService.publishSub(
@@ -111,13 +124,6 @@ export class WorkerDeleterUseCase {
       inputDeleter
     );
 
-    const deleted = await this.workerService.deleteWorkerById(
-      accountId,
-      workerId
-    );
-
-    this.onWorkerDeleted(inputDeleter);
-
-    return deleted;
+    return true;
   }
 }

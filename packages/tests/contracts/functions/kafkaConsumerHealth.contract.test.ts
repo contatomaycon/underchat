@@ -26,6 +26,11 @@ describe('kafkaConsumerHealth', () => {
         consuming: false,
         missing: true,
         unhealthy: true,
+        pending_count: 0,
+        pending_queued_count: 0,
+        pending_processing_count: 0,
+        pending_settled_count: 0,
+        oldest_pending_no_progress_age_ms: 0,
         stall_reason: 'missing_consumer_health_snapshot',
         last_error: 'missing_consumer_health_snapshot',
       })

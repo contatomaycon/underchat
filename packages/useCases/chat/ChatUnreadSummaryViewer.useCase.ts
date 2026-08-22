@@ -19,6 +19,14 @@ type UnreadSummaryAggregations = {
   };
 };
 
+type UnreadChatProjectionSource = {
+  chat_id?: string | null;
+  summary?: {
+    unread_count?: number | null;
+    revision?: number | null;
+  } | null;
+};
+
 @injectable()
 export class ChatUnreadSummaryViewerUseCase {
   private readonly visibleMenuStatuses: EChatStatus[] = [
@@ -355,9 +363,7 @@ export class ChatUnreadSummaryViewerUseCase {
 
   private getUnreadCount(aggregations?: unknown): number {
     const unreadSummaryAggregations = aggregations as
-      | UnreadSummaryAggregations
-      | null
-      | undefined;
+      UnreadSummaryAggregations | null | undefined;
     const value = unreadSummaryAggregations?.summary?.unread_total?.value ?? 0;
 
     if (!Number.isFinite(value) || value <= 0) {
@@ -365,6 +371,39 @@ export class ChatUnreadSummaryViewerUseCase {
     }
 
     return Math.trunc(value);
+  }
+
+  private getUnreadChats(
+    hits?: Array<{ _source?: UnreadChatProjectionSource }>
+  ): ChatUnreadSummaryData['unread_chats'] {
+    if (!hits?.length) {
+      return [];
+    }
+
+    return hits.flatMap((hit) => {
+      const source = hit._source;
+      const chatId = source?.chat_id?.trim();
+      const unreadCount = source?.summary?.unread_count ?? 0;
+      const revision = source?.summary?.revision ?? 0;
+
+      if (
+        !chatId ||
+        !Number.isFinite(unreadCount) ||
+        unreadCount <= 0 ||
+        !Number.isFinite(revision) ||
+        revision < 0
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          chat_id: chatId,
+          unread_count: Math.trunc(unreadCount),
+          revision: Math.trunc(revision),
+        },
+      ];
+    });
   }
 
   async execute(
@@ -393,6 +432,18 @@ export class ChatUnreadSummaryViewerUseCase {
         actions,
         userSectors,
       }),
+      {
+        nested: {
+          path: 'summary',
+          query: {
+            range: {
+              'summary.unread_count': {
+                gt: 0,
+              },
+            },
+          },
+        },
+      } as unknown as IElasticsearchBoolClause,
     ];
 
     const channelIds = extractUserChannelIds(userChannels);
@@ -409,36 +460,40 @@ export class ChatUnreadSummaryViewerUseCase {
       } as unknown as IElasticsearchBoolClause);
     }
 
-    const result = await this.elasticDatabaseService.select(
-      EElasticIndex.chat,
-      {
-        size: 0,
-        track_total_hits: false,
-        query: {
-          bool: {
-            must: mustClauses,
-            filter: filterClauses,
-          },
-        },
-        aggs: {
-          summary: {
-            nested: {
-              path: 'summary',
+    const result =
+      await this.elasticDatabaseService.select<UnreadChatProjectionSource>(
+        EElasticIndex.chat,
+        {
+          size: 10_000,
+          _source: ['chat_id', 'summary.unread_count', 'summary.revision'],
+          sort: [{ chat_id: { order: 'asc' } }],
+          track_total_hits: false,
+          query: {
+            bool: {
+              must: mustClauses,
+              filter: filterClauses,
             },
-            aggs: {
-              unread_total: {
-                sum: {
-                  field: 'summary.unread_count',
+          },
+          aggs: {
+            summary: {
+              nested: {
+                path: 'summary',
+              },
+              aggs: {
+                unread_total: {
+                  sum: {
+                    field: 'summary.unread_count',
+                  },
                 },
               },
             },
           },
-        },
-      }
-    );
+        }
+      );
 
     return {
       unread_count: this.getUnreadCount(result?.aggregations),
+      unread_chats: this.getUnreadChats(result?.hits?.hits),
     };
   }
 }

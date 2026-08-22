@@ -5,6 +5,8 @@ import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { PlanReleaseRepository } from '@core/repositories/plan/PlanRelease.repository';
 import { NotificationMessageService } from './notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
+import { PlanEntitlementService } from './planEntitlement.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
 export class AccountTestService {
@@ -18,8 +20,105 @@ export class AccountTestService {
     @inject(PlanReleaseRepository)
     private readonly planReleaseRepository: PlanReleaseRepository,
     @inject(NotificationMessageService)
-    private readonly notificationMessageService: NotificationMessageService
+    private readonly notificationMessageService: NotificationMessageService,
+    @inject(PlanEntitlementService)
+    private readonly planEntitlementService: PlanEntitlementService
   ) {}
+
+  private readonly restoreIntegrationEntitlementAfterFailure = async (
+    accountId: string,
+    denyFenceOwnerToken?: string
+  ): Promise<void> => {
+    try {
+      await (denyFenceOwnerToken
+        ? this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration,
+            denyFenceOwnerToken
+          )
+        : this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration
+          ));
+    } catch (error) {
+      console.error(
+        'Could not restore integration entitlement after a failed test plan mutation.',
+        error
+      );
+    }
+  };
+
+  private readonly createTestPlanAccount = async (data: {
+    accountId: string;
+    planId: string;
+    daysTrial: number;
+  }): Promise<void> => {
+    const [currentEntitlement, hasPotentialGrant] = await Promise.all([
+      this.planEntitlementService.resolveAuthoritatively(
+        data.accountId,
+        EPlanProduct.integration
+      ),
+      this.planEntitlementService.willGrantAfterPlanAssignment({
+        accountId: data.accountId,
+        planId: data.planId,
+        planProductId: EPlanProduct.integration,
+        prospectiveLastPaymentDate: new Date().toISOString(),
+        includeExistingAddons: true,
+      }),
+    ]);
+
+    const hasIntegrationImpact =
+      currentEntitlement.allowed || hasPotentialGrant;
+
+    if (!hasIntegrationImpact) {
+      await this.planReleaseRepository.createTestPlanAccount(data);
+      return;
+    }
+
+    let denyFenceOwnerToken: string | null | undefined;
+    if (currentEntitlement.allowed && !hasPotentialGrant) {
+      try {
+        denyFenceOwnerToken =
+          await this.planEntitlementService.installDenyFence(
+            data.accountId,
+            EPlanProduct.integration
+          );
+      } catch (error) {
+        throw error;
+      }
+    }
+
+    let mutationCompleted = false;
+
+    try {
+      await this.planReleaseRepository.createTestPlanAccount(data);
+      mutationCompleted = true;
+      await (denyFenceOwnerToken
+        ? this.planEntitlementService.refreshAfterMutation(
+            data.accountId,
+            EPlanProduct.integration,
+            denyFenceOwnerToken
+          )
+        : this.planEntitlementService.refreshAfterMutation(
+            data.accountId,
+            EPlanProduct.integration
+          ));
+    } catch (error) {
+      await this.restoreIntegrationEntitlementAfterFailure(
+        data.accountId,
+        denyFenceOwnerToken ?? undefined
+      );
+
+      if (mutationCompleted) {
+        console.error(
+          'The test plan mutation completed, but its integration entitlement could not be reconciled.',
+          error
+        );
+      }
+
+      throw error;
+    }
+  };
 
   checkExistingTest = async (data: {
     document: string;
@@ -83,7 +182,7 @@ export class AccountTestService {
     const phoneC = this.encryptService.encrypt(data.phone);
     const emailC = this.encryptService.encrypt(data.email);
 
-    await this.planReleaseRepository.createTestPlanAccount({
+    await this.createTestPlanAccount({
       accountId: data.accountId,
       planId: data.planId,
       daysTrial: data.daysTrial,

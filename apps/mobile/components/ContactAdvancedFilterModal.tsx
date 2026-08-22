@@ -24,6 +24,7 @@ import { getCountryDialCodeOptions } from '../constants/countryCodes';
 import {
   formatDocumentByType,
   getDocumentMaskMaxLength,
+  normalizeDocumentDigits,
 } from '../utils/contactDocument';
 import {
   listChatUsers,
@@ -89,10 +90,10 @@ function cleanValue(value: string | null | undefined): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function cleanDigitsValue(value: string | null | undefined): string | null {
+function cleanDocumentValue(value: string | null | undefined): string | null {
   if (!value) return null;
-  const digits = value.replace(/\D/g, '');
-  return digits.length > 0 ? digits : null;
+  const normalized = normalizeDocumentDigits(value, null);
+  return normalized.length > 0 ? normalized : null;
 }
 
 export function ContactAdvancedFilterModal({
@@ -253,7 +254,7 @@ export function ContactAdvancedFilterModal({
       filter_nickname: cleanValue(filterNickname),
       filter_email: cleanValue(filterEmail),
       filter_birthday: normalizeBirthdayIso(filterBirthday),
-      filter_document: cleanDigitsValue(filterDocument),
+      filter_document: cleanDocumentValue(filterDocument),
       filter_user_id: cleanValue(filterUserId),
       sort_field: sortField ?? DEFAULT_SORT_FIELD,
       sort_order: sortOrder ?? DEFAULT_SORT_ORDER,

@@ -1,11 +1,13 @@
 import {
   Centrifuge,
-  PublicationContext,
+  type DisconnectedContext,
+  type PublicationContext,
+  type PublishResult,
   State,
-  Subscription,
   SubscriptionState,
-  PublishResult,
-  SubscribedContext,
+  type SubscribedContext,
+  type Subscription,
+  type UnsubscribedContext,
 } from 'centrifuge';
 import { isAxiosError } from 'axios';
 import axios from '@webcore/axios';
@@ -14,6 +16,42 @@ import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
 
 export type { Subscription };
+
+type StreamPosition = { offset: number; epoch: string };
+
+export type CentrifugoLifecycleEvent =
+  | {
+      type: 'connected';
+    }
+  | {
+      type: 'connection_lost';
+      code: number;
+      reason: string;
+    }
+  | {
+      type: 'subscription_unsubscribed';
+      channel: string;
+      code: number;
+      reason: string;
+    }
+  | {
+      type: 'recovery_failed';
+      channel: string;
+      reason: 'server_recovery_failed' | 'publication_handler_failed';
+    };
+
+export interface HistoryProcessResult {
+  processed: number;
+  newOffset?: number;
+  recovered: boolean;
+  requiresFallback: boolean;
+  reason?:
+    | 'not_subscribed'
+    | 'missing_position'
+    | 'history_unavailable'
+    | 'history_gap'
+    | 'handler_failed';
+}
 
 let centrifugeClient: Centrifuge | null = null;
 let connectionAuthKey: string | null = null;
@@ -37,11 +75,35 @@ const channelHandlers = new Map<
   Set<(data: any, ctx: PublicationContext) => void>
 >();
 const channelSubscriptions = new Map<string, Subscription>();
-const channelStreamPositions = new Map<
+const channelStreamPositions = new Map<string, StreamPosition>();
+const channelRecoveryStates = new Map<
   string,
-  { offset: number; epoch: string }
+  { head: StreamPosition; cursorBlocked: boolean }
 >();
 const subscriptionHandlersBound = new WeakSet<Subscription>();
+const subscriptionHandlerCleanups = new WeakMap<Subscription, () => void>();
+const clientHandlerCleanups = new WeakMap<Centrifuge, () => void>();
+const lifecycleListeners = new Set<(event: CentrifugoLifecycleEvent) => void>();
+
+const emitLifecycleEvent = (event: CentrifugoLifecycleEvent): void => {
+  for (const listener of lifecycleListeners) {
+    try {
+      listener(event);
+    } catch {}
+  }
+};
+
+const dispatchLegacyRecoveryFailedEvent = (channel: string): void => {
+  if (typeof globalThis.dispatchEvent !== 'function') {
+    return;
+  }
+
+  globalThis.dispatchEvent(
+    new CustomEvent('centrifugo-recovery-failed', {
+      detail: { channel },
+    })
+  );
+};
 
 const clearCachedToken = (): void => {
   cachedToken = null;
@@ -149,8 +211,6 @@ const waitForConnected = (
     let resolved = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const onDisconnected = (): void => {};
-
     let cleanup: () => void;
 
     const onError = (err: unknown): void => {
@@ -166,6 +226,18 @@ const waitForConnected = (
         resolved = true;
         cleanup();
         resolve();
+      }
+    };
+
+    const onDisconnected = (ctx: DisconnectedContext): void => {
+      if (!resolved) {
+        resolved = true;
+        cleanup();
+        reject(
+          new Error(
+            `Centrifugo disconnected before connect: ${ctx.reason || ctx.code}`
+          )
+        );
       }
     };
 
@@ -252,68 +324,173 @@ const waitForSubscribed = (
   });
 };
 
-/**
- * Sets up publication, subscribed, and unsubscribed event handlers on a subscription.
- * Extracted as helper to reuse in both onMessage() and reconnection re-subscription.
- */
+const markRecoveryFailed = (
+  channel: string,
+  head: StreamPosition,
+  reason: 'server_recovery_failed' | 'publication_handler_failed'
+): void => {
+  const wasAlreadyBlocked =
+    channelRecoveryStates.get(channel)?.cursorBlocked === true;
+
+  channelRecoveryStates.set(channel, {
+    head,
+    cursorBlocked: true,
+  });
+
+  if (wasAlreadyBlocked) {
+    return;
+  }
+
+  emitLifecycleEvent({ type: 'recovery_failed', channel, reason });
+  dispatchLegacyRecoveryFailedEvent(channel);
+};
+
+const processPublicationThroughHandlers = (
+  pub: { data: unknown; offset?: number },
+  handlers: Set<(data: any, ctx: PublicationContext) => void>
+): boolean => {
+  let processedSuccessfully = true;
+
+  for (const handler of handlers) {
+    try {
+      handler(pub.data, pub as PublicationContext);
+    } catch {
+      processedSuccessfully = false;
+    }
+  }
+
+  return processedSuccessfully;
+};
+
+const commitPublicationPosition = (channel: string, offset: number): void => {
+  const recoveryState = channelRecoveryStates.get(channel);
+  if (recoveryState?.cursorBlocked) {
+    return;
+  }
+
+  const currentPosition = channelStreamPositions.get(channel);
+  if (currentPosition && offset <= currentPosition.offset) {
+    return;
+  }
+
+  const epoch = recoveryState?.head.epoch ?? currentPosition?.epoch ?? '';
+  channelStreamPositions.set(channel, { offset, epoch });
+
+  if (recoveryState && offset >= recoveryState.head.offset) {
+    channelRecoveryStates.delete(channel);
+  }
+};
+
 const setupSubscriptionHandlers = (
   sub: Subscription,
   channel: string
 ): void => {
-  if (subscriptionHandlersBound.has(sub)) {
+  if (
+    subscriptionHandlersBound.has(sub) &&
+    subscriptionHandlerCleanups.has(sub)
+  ) {
     return;
   }
 
   subscriptionHandlersBound.add(sub);
 
-  sub.on('publication', (ctx) => {
-    // BUG 2 FIX: Update stream position on every publication
-    if (ctx.offset) {
-      const currentPos = channelStreamPositions.get(channel);
-      if (!currentPos || ctx.offset > currentPos.offset) {
-        channelStreamPositions.set(channel, {
-          offset: ctx.offset,
-          epoch: currentPos?.epoch ?? '',
-        });
-      }
-    }
-
+  const onPublication = (ctx: PublicationContext): void => {
     const handlersForChannel = channelHandlers.get(channel);
-    if (handlersForChannel) {
-      for (const h of handlersForChannel) {
-        try {
-          h(ctx.data, ctx);
-        } catch {}
-      }
+    if (!handlersForChannel || handlersForChannel.size === 0) {
+      return;
     }
-  });
 
-  sub.on('subscribed', (ctx: SubscribedContext) => {
-    if (ctx.streamPosition) {
-      channelStreamPositions.set(channel, {
-        offset: ctx.streamPosition.offset,
-        epoch: ctx.streamPosition.epoch,
-      });
+    const processedSuccessfully = processPublicationThroughHandlers(
+      ctx,
+      handlersForChannel
+    );
+
+    if (!processedSuccessfully) {
+      const currentPosition = channelStreamPositions.get(channel);
+      const recoveryHead = channelRecoveryStates.get(channel)?.head;
+      markRecoveryFailed(
+        channel,
+        recoveryHead ?? {
+          offset:
+            typeof ctx.offset === 'number'
+              ? ctx.offset
+              : (currentPosition?.offset ?? 0),
+          epoch: currentPosition?.epoch ?? '',
+        },
+        'publication_handler_failed'
+      );
+      return;
+    }
+
+    if (typeof ctx.offset === 'number') {
+      commitPublicationPosition(channel, ctx.offset);
+    }
+  };
+
+  const onSubscribed = (ctx: SubscribedContext): void => {
+    const streamPosition = ctx.streamPosition;
+    if (!streamPosition) {
+      return;
+    }
+
+    const currentPosition = channelStreamPositions.get(channel);
+
+    if (ctx.wasRecovering && !ctx.recovered) {
+      markRecoveryFailed(channel, streamPosition, 'server_recovery_failed');
+      return;
     }
 
     if (ctx.wasRecovering && ctx.recovered) {
-    } else if (ctx.wasRecovering && !ctx.recovered) {
-      globalThis.dispatchEvent(
-        new CustomEvent('centrifugo-recovery-failed', {
-          detail: { channel },
-        })
-      );
-    } else {
+      if (ctx.hasRecoveredPublications) {
+        channelRecoveryStates.set(channel, {
+          head: streamPosition,
+          cursorBlocked: false,
+        });
+      } else {
+        channelRecoveryStates.delete(channel);
+        channelStreamPositions.set(channel, streamPosition);
+      }
+      return;
     }
-  });
 
-  sub.on('unsubscribed', () => {});
+    if (!currentPosition) {
+      channelRecoveryStates.delete(channel);
+      channelStreamPositions.set(channel, {
+        offset: streamPosition.offset,
+        epoch: streamPosition.epoch,
+      });
+      return;
+    }
+
+    // A prior cursor existed but the server did not acknowledge a recovery.
+    // Keep that cursor until history or the authoritative API reconciles state.
+    markRecoveryFailed(channel, streamPosition, 'server_recovery_failed');
+  };
+
+  const onUnsubscribed = (ctx: UnsubscribedContext): void => {
+    if (!channelHandlers.has(channel)) {
+      return;
+    }
+
+    emitLifecycleEvent({
+      type: 'subscription_unsubscribed',
+      channel,
+      code: ctx.code,
+      reason: ctx.reason,
+    });
+  };
+
+  sub.on('publication', onPublication);
+  sub.on('subscribed', onSubscribed);
+  sub.on('unsubscribed', onUnsubscribed);
+
+  subscriptionHandlerCleanups.set(sub, () => {
+    sub.off('publication', onPublication);
+    sub.off('subscribed', onSubscribed);
+    sub.off('unsubscribed', onUnsubscribed);
+  });
 };
 
-/**
- * BUG 4 FIX: Re-subscribe all channels that had active handlers after creating a new client.
- * This ensures no messages are lost when the connection is recreated.
- */
 const resubscribeActiveChannels = (client: Centrifuge): void => {
   const channelsToResubscribe = Array.from(channelHandlers.keys());
 
@@ -351,6 +528,9 @@ const resubscribeActiveChannels = (client: Centrifuge): void => {
 };
 
 const disconnectClient = (client: Centrifuge): void => {
+  clientHandlerCleanups.get(client)?.();
+  clientHandlerCleanups.delete(client);
+
   try {
     client.disconnect();
   } catch {}
@@ -359,16 +539,70 @@ const disconnectClient = (client: Centrifuge): void => {
 const clearActiveConnection = (
   client: Centrifuge | null = centrifugeClient
 ): void => {
+  const clearsCurrentConnection = !client || centrifugeClient === client;
+
   if (client) {
     disconnectClient(client);
   }
 
-  if (!client || centrifugeClient === client) {
-    centrifugeClient = null;
-    connectionAuthKey = null;
+  if (!clearsCurrentConnection) {
+    return;
   }
 
+  centrifugeClient = null;
+  connectionAuthKey = null;
+
+  for (const subscription of channelSubscriptions.values()) {
+    subscriptionHandlerCleanups.get(subscription)?.();
+    subscriptionHandlerCleanups.delete(subscription);
+  }
   channelSubscriptions.clear();
+};
+
+const setupClientHandlers = (client: Centrifuge): void => {
+  const onConnected = (): void => {
+    emitLifecycleEvent({ type: 'connected' });
+  };
+
+  const onDisconnected = (ctx: DisconnectedContext): void => {
+    if (isTokenExpiredSignal(ctx.code, ctx.reason)) {
+      clearCachedToken();
+    }
+
+    emitLifecycleEvent({
+      type: 'connection_lost',
+      code: ctx.code,
+      reason: ctx.reason,
+    });
+  };
+
+  const onError = (error: unknown): void => {
+    if (!error || typeof error !== 'object') {
+      return;
+    }
+
+    const payload = error as { code?: unknown; message?: unknown };
+    const code =
+      typeof payload.code === 'number' && Number.isFinite(payload.code)
+        ? payload.code
+        : 0;
+    const reason =
+      typeof payload.message === 'string' ? payload.message : 'unknown';
+
+    if (isTokenExpiredSignal(code, reason)) {
+      clearCachedToken();
+    }
+  };
+
+  client.on('connected', onConnected);
+  client.on('disconnected', onDisconnected);
+  client.on('error', onError);
+
+  clientHandlerCleanups.set(client, () => {
+    client.off('connected', onConnected);
+    client.off('disconnected', onDisconnected);
+    client.off('error', onError);
+  });
 };
 
 const createConnection = async (): Promise<Centrifuge> => {
@@ -397,43 +631,7 @@ const createConnection = async (): Promise<Centrifuge> => {
 
   centrifugeClient = client;
   connectionAuthKey = authKey;
-
-  client.on('connected', () => {});
-
-  client.on('disconnected', (ctx) => {
-    if (isTokenExpiredSignal(ctx.code, ctx.reason)) {
-      clearCachedToken();
-    }
-
-    if (ctx.reason !== 'clean' && ctx.code !== 1000) {
-      setTimeout(() => {
-        if (
-          centrifugeClient === client &&
-          client.state === State.Disconnected
-        ) {
-          client.connect();
-        }
-      }, 1000);
-    }
-  });
-
-  client.on('error', (error) => {
-    if (!error || typeof error !== 'object') {
-      return;
-    }
-
-    const payload = error as { code?: unknown; message?: unknown };
-    const code =
-      typeof payload.code === 'number' && Number.isFinite(payload.code)
-        ? payload.code
-        : 0;
-    const reason =
-      typeof payload.message === 'string' ? payload.message : 'unknown';
-
-    if (isTokenExpiredSignal(code, reason)) {
-      clearCachedToken();
-    }
-  });
+  setupClientHandlers(client);
 
   client.connect();
 
@@ -516,10 +714,16 @@ export const onMessage = async (
   if (handlers.has(handler)) {
     const existingSub = channelSubscriptions.get(channel);
     if (existingSub) {
+      if (existingSub.state === SubscriptionState.Unsubscribed) {
+        existingSub.subscribe();
+      }
+
+      await waitForSubscribed(existingSub);
       return existingSub;
     }
   }
 
+  const handlerWasAdded = !handlers.has(handler);
   handlers.add(handler);
 
   let sub = channelSubscriptions.get(channel);
@@ -552,7 +756,20 @@ export const onMessage = async (
     sub.subscribe();
   }
 
-  await waitForSubscribed(sub);
+  try {
+    await waitForSubscribed(sub);
+  } catch (error) {
+    if (handlerWasAdded) {
+      handlers.delete(handler);
+    }
+
+    if (handlers.size === 0) {
+      channelHandlers.delete(channel);
+      removeSubscription(channel);
+    }
+
+    throw error;
+  }
 
   return sub;
 };
@@ -571,6 +788,9 @@ const removeSubscription = (channel: string): void => {
   if (!sub) {
     return;
   }
+
+  subscriptionHandlerCleanups.get(sub)?.();
+  subscriptionHandlerCleanups.delete(sub);
 
   if (sub.state !== SubscriptionState.Unsubscribed) {
     sub.unsubscribe();
@@ -608,20 +828,24 @@ export const isChannelSubscribed = (channel: string): boolean => {
   return sub !== undefined && sub.state === SubscriptionState.Subscribed;
 };
 
+export const addCentrifugoLifecycleListener = (
+  listener: (event: CentrifugoLifecycleEvent) => void
+): (() => void) => {
+  lifecycleListeners.add(listener);
+
+  return () => {
+    lifecycleListeners.delete(listener);
+  };
+};
+
 export const resetConnection = (): void => {
-  if (centrifugeClient) {
-    try {
-      centrifugeClient.disconnect();
-    } catch {}
-    centrifugeClient = null;
-  }
-  connectionAuthKey = null;
+  clearActiveConnection();
   connectionPromise = null;
   tokenGenerationPromise = null;
   cachedToken = null;
   channelHandlers.clear();
-  channelSubscriptions.clear();
   channelStreamPositions.clear();
+  channelRecoveryStates.clear();
 };
 
 export const getStreamPosition = (
@@ -637,7 +861,8 @@ export const clearStreamPosition = (channel: string): void => {
 export const fetchRecentHistoryAndProcess = async (
   channel: string,
   handler: (data: any, ctx: PublicationContext) => void,
-  limit = 100
+  limit = 100,
+  options: { commitCursor?: boolean } = {}
 ): Promise<number> => {
   const sub = channelSubscriptions.get(channel);
 
@@ -655,61 +880,86 @@ export const fetchRecentHistoryAndProcess = async (
   let processed = 0;
 
   for (const pub of publications) {
-    if (pub.offset) {
-      const currentPos = channelStreamPositions.get(channel);
-      if (!currentPos || pub.offset > currentPos.offset) {
-        channelStreamPositions.set(channel, {
-          offset: pub.offset,
-          epoch: currentPos?.epoch ?? historyResult.epoch ?? '',
-        });
+    try {
+      handler(pub.data, pub as PublicationContext);
+    } catch {
+      if (options.commitCursor === false) {
+        break;
       }
+      const currentPosition = channelStreamPositions.get(channel);
+      markRecoveryFailed(
+        channel,
+        {
+          offset:
+            typeof pub.offset === 'number'
+              ? pub.offset
+              : (currentPosition?.offset ?? 0),
+          epoch: historyResult.epoch ?? currentPosition?.epoch ?? '',
+        },
+        'publication_handler_failed'
+      );
+      break;
     }
 
-    handler(pub.data, pub as PublicationContext);
+    if (options.commitCursor !== false && typeof pub.offset === 'number') {
+      commitPublicationPosition(channel, pub.offset);
+    }
     processed++;
   }
 
   return processed;
 };
 
-const processPublicationThroughHandlers = (
-  pub: { data: unknown; offset?: number },
-  handlers: Set<(data: any, ctx: PublicationContext) => void>
-): void => {
-  for (const handler of handlers) {
-    try {
-      handler(pub.data, pub as PublicationContext);
-    } catch {}
-  }
-};
-
 /**
  * Fetches history from a channel since the last known position.
- * Returns publications that were missed and processes them through handlers.
+ * The committed cursor only advances after a complete, contiguous history page
+ * has been validated and every publication handler has succeeded.
  */
 export const fetchHistoryAndProcess = async (
   channel: string
-): Promise<{ processed: number; newOffset?: number }> => {
+): Promise<HistoryProcessResult> => {
   const sub = channelSubscriptions.get(channel);
 
   if (!sub || sub.state !== SubscriptionState.Subscribed) {
-    return { processed: 0 };
+    return {
+      processed: 0,
+      recovered: false,
+      requiresFallback: true,
+      reason: 'not_subscribed',
+    };
   }
 
   const currentPosition = channelStreamPositions.get(channel);
 
   if (!currentPosition) {
-    return { processed: 0 };
+    return {
+      processed: 0,
+      recovered: false,
+      requiresFallback: true,
+      reason: 'missing_position',
+    };
   }
 
   try {
     const handlers = channelHandlers.get(channel);
     if (!handlers || handlers.size === 0) {
-      return { processed: 0 };
+      return {
+        processed: 0,
+        newOffset: currentPosition.offset,
+        recovered: true,
+        requiresFallback: false,
+      };
     }
 
-    let totalProcessed = 0;
-    let maxOffset = currentPosition.offset;
+    const existingRecoveryHead = channelRecoveryStates.get(channel)?.head;
+    channelRecoveryStates.set(channel, {
+      head: existingRecoveryHead ?? currentPosition,
+      cursorBlocked: true,
+    });
+
+    const publications: PublicationContext[] = [];
+    let expectedOffset = currentPosition.offset;
+    let targetOffset = currentPosition.offset;
     let currentSince = {
       offset: currentPosition.offset,
       epoch: currentPosition.epoch,
@@ -717,55 +967,158 @@ export const fetchHistoryAndProcess = async (
     const FETCH_LIMIT = 100;
     const MAX_ITERATIONS = 10;
 
+    let recoveryComplete = false;
+
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       const historyResult = await sub.history({
         limit: FETCH_LIMIT,
         since: currentSince,
       });
 
+      const head = {
+        offset: historyResult.offset,
+        epoch: historyResult.epoch,
+      };
+      targetOffset = historyResult.offset;
+
       if (
-        !historyResult.publications ||
-        historyResult.publications.length === 0
+        historyResult.epoch !== currentPosition.epoch ||
+        targetOffset < expectedOffset
       ) {
-        break;
+        channelRecoveryStates.set(channel, {
+          head,
+          cursorBlocked: true,
+        });
+        return {
+          processed: 0,
+          recovered: false,
+          requiresFallback: true,
+          reason: 'history_gap',
+        };
       }
 
-      for (const pub of historyResult.publications) {
-        if (!pub.offset || pub.offset <= currentSince.offset) {
+      const orderedPublications = [...(historyResult.publications ?? [])]
+        .filter(
+          (
+            publication
+          ): publication is PublicationContext & { offset: number } =>
+            typeof publication.offset === 'number'
+        )
+        .sort((left, right) => left.offset - right.offset);
+
+      for (const publication of orderedPublications) {
+        if (publication.offset <= expectedOffset) {
           continue;
         }
 
-        processPublicationThroughHandlers(pub, handlers);
-
-        if (pub.offset > maxOffset) {
-          maxOffset = pub.offset;
+        if (publication.offset !== expectedOffset + 1) {
+          channelRecoveryStates.set(channel, {
+            head,
+            cursorBlocked: true,
+          });
+          return {
+            processed: 0,
+            recovered: false,
+            requiresFallback: true,
+            reason: 'history_gap',
+          };
         }
+
+        publications.push(publication);
+        expectedOffset = publication.offset;
+      }
+
+      if (expectedOffset === targetOffset) {
+        recoveryComplete = true;
+        break;
       }
 
       currentSince = {
-        offset: maxOffset,
-        epoch: historyResult.epoch || currentPosition.epoch,
+        offset: expectedOffset,
+        epoch: historyResult.epoch,
       };
 
-      totalProcessed += historyResult.publications.length;
-
-      if (historyResult.publications.length < FETCH_LIMIT) {
+      if (orderedPublications.length === 0) {
         break;
       }
     }
 
-    if (maxOffset > currentPosition.offset) {
-      channelStreamPositions.set(channel, {
-        offset: maxOffset,
-        epoch: currentSince.epoch,
+    if (!recoveryComplete) {
+      channelRecoveryStates.set(channel, {
+        head: {
+          offset: targetOffset,
+          epoch: currentPosition.epoch,
+        },
+        cursorBlocked: true,
       });
+      return {
+        processed: 0,
+        recovered: false,
+        requiresFallback: true,
+        reason: 'history_gap',
+      };
     }
 
+    for (const publication of publications) {
+      if (!processPublicationThroughHandlers(publication, handlers)) {
+        channelRecoveryStates.set(channel, {
+          head: {
+            offset: targetOffset,
+            epoch: currentPosition.epoch,
+          },
+          cursorBlocked: true,
+        });
+        return {
+          processed: 0,
+          recovered: false,
+          requiresFallback: true,
+          reason: 'handler_failed',
+        };
+      }
+    }
+
+    channelStreamPositions.set(channel, {
+      offset: targetOffset,
+      epoch: currentPosition.epoch,
+    });
+    channelRecoveryStates.delete(channel);
+
     return {
-      processed: totalProcessed,
-      newOffset: maxOffset,
+      processed: publications.length,
+      newOffset: targetOffset,
+      recovered: true,
+      requiresFallback: false,
     };
   } catch {
-    return { processed: 0 };
+    try {
+      const head = await sub.history({ limit: 0 });
+      channelRecoveryStates.set(channel, {
+        head: { offset: head.offset, epoch: head.epoch },
+        cursorBlocked: true,
+      });
+    } catch {}
+
+    return {
+      processed: 0,
+      recovered: false,
+      requiresFallback: true,
+      reason: 'history_unavailable',
+    };
   }
+};
+
+/**
+ * Marks the stream head captured before an authoritative API reload as the new
+ * baseline. A subsequent history pass must still run to cover publications
+ * that arrived while the API request was in flight.
+ */
+export const acknowledgeRecoveryFallback = (channel: string): boolean => {
+  const recoveryState = channelRecoveryStates.get(channel);
+  if (!recoveryState?.cursorBlocked) {
+    return false;
+  }
+
+  channelStreamPositions.set(channel, recoveryState.head);
+  channelRecoveryStates.delete(channel);
+  return true;
 };

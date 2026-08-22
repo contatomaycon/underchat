@@ -1,0 +1,16 @@
+export enum EWhatsappConnectionStatus {
+  initializing = 'initializing',
+  restoring = 'restoring',
+  connecting = 'connecting',
+  qr = 'qr',
+  online = 'online',
+  reconnecting = 'reconnecting',
+  offline = 'offline',
+  loggedOut = 'logged_out',
+  invalidSession = 'invalid_session',
+  conflict = 'conflict',
+  leaseLost = 'lease_lost',
+  handoff = 'handoff',
+  stopped = 'stopped',
+  error = 'error',
+}

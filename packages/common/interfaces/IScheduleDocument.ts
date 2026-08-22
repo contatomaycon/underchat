@@ -4,6 +4,9 @@ import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 export interface ScheduleDocument {
   id: string;
   schedule_id: string;
+  attempt_id?: string | null;
+  operational_state?:
+    'pending' | 'pre_provider_failed' | 'ambiguous' | 'succeeded' | null;
   message_key: {
     remote_jid: string | null;
   };
@@ -38,8 +41,9 @@ export interface ScheduleDocument {
   created_at: string;
   updated_at?: string;
   updated_at_epoch_millis?: number;
-  last_event_id?: string;
-  last_event_sort_key?: string;
+  last_event_id?: string | null;
+  last_event_sort_key?: string | null;
+  status_rank?: number | null;
 }
 
 export interface ScheduleCreateResult {

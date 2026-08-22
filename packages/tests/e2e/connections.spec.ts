@@ -1,4 +1,3 @@
-/* eslint-disable no-use-before-define */
 import {
   expect,
   test,
@@ -21,7 +20,8 @@ const WORKER_STATUS = {
   recreating: '019a930d-c6f6-766d-9c84-46093814d8e0',
   error: '019a930d-c6f6-766d-9c84-48cb970a9f21',
   mismatched: '019a930d-c6f6-766d-9c84-5056ccf66633',
-  stopped: '019bcd18-ce66-77a2-9d7c-e48159c253da',
+  blocked: '019bcd18-ce66-77a2-9d7c-e48159c253da',
+  stopped: '019feb94-c2ff-76b1-9d00-d7602a50affe',
 };
 
 const CONNECTION_TYPES = [
@@ -601,6 +601,10 @@ function assertDisposableWorker(
 
   if (worker.worker_status_id === WORKER_STATUS.stopped) {
     issues.push('worker is stopped');
+  }
+
+  if (worker.worker_status_id === WORKER_STATUS.blocked) {
+    issues.push('worker is blocked by plan');
   }
 
   if (worker.number) {

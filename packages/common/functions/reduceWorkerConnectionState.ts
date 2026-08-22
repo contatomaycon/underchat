@@ -8,6 +8,22 @@ export interface WorkerConnectionReducerResult {
   reason?: string;
 }
 
+export interface WorkerConnectionReducerOptions {
+  /**
+   * The incoming envelope was projected from a newly accepted, ordered
+   * provider-native snapshot. Such a transition is stronger evidence than
+   * legacy QR preservation heuristics, while the default remains conservative
+   * for unordered legacy publications.
+   */
+  authoritativeNativeTransition?: boolean;
+  /**
+   * The provider recycled its internal client before the credential was
+   * consumed, but the publication still belongs to the current QR attempt.
+   * Keep the last image visible until a replacement or terminal arrives.
+   */
+  preserveQrDuringActiveAttempt?: boolean;
+}
+
 const userActionCodes = new Set<ECodeMessage>([
   ECodeMessage.awaitingReadQrCode,
   ECodeMessage.awaitingPairingCode,
@@ -19,6 +35,8 @@ const userActionCodes = new Set<ECodeMessage>([
 
 const qrClearingCodes = new Set<ECodeMessage>([
   ECodeMessage.connectionEstablished,
+  ECodeMessage.pairingInProgress,
+  ECodeMessage.newLoginAttempt,
   ECodeMessage.logoutInProgress,
   ECodeMessage.loggedOut,
   ECodeMessage.connectionLost,
@@ -75,8 +93,16 @@ function protectsUserAction(
 
 export function reduceWorkerConnectionState(
   current: Partial<IBaileysConnectionState>,
-  incoming: Partial<IBaileysConnectionState>
+  incoming: Partial<IBaileysConnectionState>,
+  options: WorkerConnectionReducerOptions = {}
 ): WorkerConnectionReducerResult {
+  const preserveLegacyCredential =
+    options.authoritativeNativeTransition !== true;
+  const authoritativeNativeClearsQr =
+    options.authoritativeNativeTransition === true &&
+    options.preserveQrDuringActiveAttempt !== true &&
+    incoming.connection_status?.status !== undefined &&
+    incoming.connection_status.status !== 'qr';
   const currentAttempt = current.connection_attempt_id;
   const incomingAttempt = incoming.connection_attempt_id;
   const attemptMismatch =
@@ -86,6 +112,10 @@ export function reduceWorkerConnectionState(
   const sameOrUnknownAttempt =
     !currentAttempt || !incomingAttempt || currentAttempt === incomingAttempt;
 
+  // An explicit attempt mismatch is a hard fence even for an otherwise
+  // authoritative native snapshot. Native ordering can invalidate stale QR
+  // data inside the same attempt, but it cannot cross into another pairing
+  // lifecycle.
   if (attemptMismatch && isSuccessfulTerminal(incoming)) {
     return {
       state: current,
@@ -110,6 +140,7 @@ export function reduceWorkerConnectionState(
   }
 
   if (
+    preserveLegacyCredential &&
     isStartupWithoutQr(incoming) &&
     protectsUserAction(current) &&
     !shouldClearQr(incoming)
@@ -122,6 +153,7 @@ export function reduceWorkerConnectionState(
   }
 
   if (
+    preserveLegacyCredential &&
     current.qrcode &&
     !incoming.qrcode &&
     incoming.qr_pending === true &&
@@ -148,7 +180,7 @@ export function reduceWorkerConnectionState(
       delete next.passkey_pending;
       delete next.passkey_skip_handoff_ux;
     }
-  } else if (shouldClearQr(incoming)) {
+  } else if (shouldClearQr(incoming) || authoritativeNativeClearsQr) {
     delete next.qrcode;
   } else if (current.qrcode) {
     next.qrcode = current.qrcode;

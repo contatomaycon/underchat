@@ -16,6 +16,8 @@ import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearch
 import { buildPhoneSearchClause } from '@core/common/functions/buildPhoneSearchClause';
 import { ChatUserService } from '@core/services/chatUser.service';
 import { extractUserChannelIds } from '@core/common/functions/extractUserChannelIds';
+import { OfficialWhatsappConversationWindowService } from '@core/services/officialWhatsappConversationWindow.service';
+import { IChat } from '@core/common/interfaces/IChat';
 
 @injectable()
 export class ChatSearcherUseCase {
@@ -37,7 +39,11 @@ export class ChatSearcherUseCase {
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject(ChatUserService)
-    private readonly chatUserService: ChatUserService
+    private readonly chatUserService: ChatUserService,
+    @inject(OfficialWhatsappConversationWindowService)
+    private readonly officialWindowService: OfficialWhatsappConversationWindowService = {
+      hydrateChats: async <T extends IChat>(chats: T[]) => chats,
+    } as OfficialWhatsappConversationWindowService
   ) {}
 
   private sanitizeSort(
@@ -1290,6 +1296,9 @@ export class ChatSearcherUseCase {
       }
       return source;
     }) as ListChatsResult[];
+    const hydratedChats = await this.officialWindowService.hydrateChats(
+      chats as unknown as IChat[]
+    );
     const total = result.hits.total as { value: number; relation: string };
 
     const pagings = setPaginationData(
@@ -1301,7 +1310,7 @@ export class ChatSearcherUseCase {
 
     return {
       pagings,
-      results: chats,
+      results: hydratedChats as unknown as ListChatsResult[],
       counts: {
         total: totalCount,
         queue: queueTotal,

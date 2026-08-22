@@ -1,12 +1,24 @@
+import 'reflect-metadata';
 import dotenv from 'dotenv';
 import { Kafka, logLevel, type Admin, type KafkaConfig } from 'kafkajs';
 import { Pool, type PoolConfig } from 'pg';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import Redis, { type RedisOptions } from 'ioredis';
+import { WorkerDeletionProofService } from '../packages/services/workerDeletionProof.service';
+import {
+  buildKafkaJsAdminConfig,
+  buildKafkaJsRuntimeConfig,
+} from '../packages/common/functions/kafkaAdminConfig';
+import { EWorkerStatus } from '../packages/common/enums/EWorkerStatus';
 
 dotenv.config({ quiet: true });
 
 export const DELETE_CONFIRMATION_TOKEN = 'DELETE_DEAD_KAFKA_RESOURCES';
+export const PROTECTED_WORKER_KAFKA_CLEANUP_DISABLED =
+  'protected_worker_kafka_cleanup_disabled_use_lifecycle_finalizer';
 export const BLOCKED_ACCOUNT_STATUS_ID = '019a930d-c6f4-75ad-88ff-75403daff4e1';
+export const DELETING_WORKER_STATUS_ID = '019a930d-c6f6-766d-9c84-437433031776';
 
 const WORKER_UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -19,6 +31,9 @@ export const WORKER_TOPIC_SUFFIXES = [
   'validate.phone',
   'notification.message',
   'webhook.integration',
+  'webhook.integration.dlq',
+  'send.message.dlq',
+  'consumer.dlq',
 ] as const;
 
 const WORKER_CONSUMER_GROUP_PREFIXES = [
@@ -59,21 +74,15 @@ export interface ParsedWorkerConsumerGroup {
   prefix: string;
 }
 
-export type DeadWorkerReason =
-  | 'worker_not_found'
-  | 'account_not_found'
-  | 'account_deleted'
-  | 'account_blocked'
-  | 'plan_not_found'
-  | 'plan_next_payment_missing'
-  | 'plan_next_payment_invalid'
-  | 'plan_expired';
+export type DeadWorkerReason = 'worker_permanently_deleted';
 
 export interface WorkerDatabaseRow {
   requested_worker_id: string;
   worker_id: string | null;
   worker_account_id: string | null;
   worker_deleted_at: Date | string | null;
+  worker_status_id: string | null;
+  worker_lifecycle_operation_id: string | null;
   account_id: string | null;
   account_status_id: string | null;
   account_deleted_at: Date | string | null;
@@ -94,6 +103,8 @@ export interface WorkerClassification {
   planAccountId: string | null;
   nextPaymentDate: string | null;
   cancellationDate: string | null;
+  workerDeletedAt: string | null;
+  lifecycleOperationId: string | null;
 }
 
 export interface KafkaCleanupOptions {
@@ -105,6 +116,10 @@ export interface KafkaCleanupOptions {
   workerIds: string[];
   accountIds: string[];
   now?: Date;
+  confirmedDatabaseFingerprint?: string;
+  allowedDatabaseFingerprints?: string[];
+  confirmationTimeoutMs?: number;
+  confirmationPollIntervalMs?: number;
 }
 
 export interface KafkaAdminGateway {
@@ -116,12 +131,39 @@ export interface KafkaAdminGateway {
 
 export interface WorkerStateRepository {
   findWorkers(workerIds: string[]): Promise<WorkerDatabaseRow[]>;
+  assertAuthoritativePrimary(): Promise<DatabaseAuthority>;
+  readAuthoritativeWorkerSnapshot(
+    workerIds: string[]
+  ): Promise<AuthoritativeWorkerSnapshot>;
+}
+
+export interface DatabaseAuthority {
+  transaction_read_only: string;
+  pg_is_in_recovery: boolean;
+  database: string;
+  server_address: string;
+  server_port: number;
+  user: string;
+  database_oid: string;
+  server_version_num: string;
+  fingerprint: string;
+}
+
+export interface AuthoritativeWorkerSnapshot {
+  authority: DatabaseAuthority;
+  rows: WorkerDatabaseRow[];
+}
+
+export interface WorkerDeletionProofRepository {
+  assert(candidate: CleanupCandidate): Promise<void>;
 }
 
 export interface CleanupCandidate {
   worker_id: string;
   account_id: string | null;
   reason: DeadWorkerReason;
+  lifecycle_operation_id: string;
+  deleted_at: string;
   topics: string[];
   consumer_groups: string[];
 }
@@ -130,6 +172,8 @@ export interface ResourceOperationResult {
   type: 'topic' | 'consumer_group';
   name: string;
   worker_id: string;
+  account_id: string;
+  lifecycle_operation_id: string;
   status: 'planned' | 'deleted' | 'already_missing' | 'failed';
   error?: string;
 }
@@ -161,6 +205,7 @@ export interface CleanupReport {
     filtered_by_account: WorkerClassification[];
     dead_workers_without_resources: WorkerClassification[];
     limited_worker_ids: string[];
+    proof_unavailable_worker_ids: string[];
   };
   candidates: CleanupCandidate[];
   operations: {
@@ -177,7 +222,6 @@ interface CliOptions extends KafkaCleanupOptions {
   confirmBroker?: string;
   confirmDatabase?: string;
   broker?: string;
-  databaseUrl?: string;
 }
 
 interface RuntimeConfig {
@@ -194,6 +238,14 @@ interface RuntimeConfig {
       port: number;
       database: string;
       user: string | null;
+      source: string;
+    };
+  };
+  redis?: {
+    config: RedisOptions;
+    safe: {
+      host: string;
+      port: number;
       source: string;
     };
   };
@@ -272,8 +324,9 @@ export function buildWorkerConsumerGroupNames(workerId: string): string[] {
 
 export function classifyWorkerDatabaseRow(
   row: WorkerDatabaseRow,
-  now = new Date()
+  _now = new Date()
 ): WorkerClassification {
+  void _now;
   const workerId = row.requested_worker_id;
   const accountId = row.account_id ?? row.worker_account_id;
   const nextPaymentDate = normalizeDate(row.next_payment_date);
@@ -286,41 +339,25 @@ export function classifyWorkerDatabaseRow(
     planAccountId: row.plan_account_id,
     nextPaymentDate,
     cancellationDate: normalizeDate(row.cancellation_date),
+    workerDeletedAt: normalizeDate(row.worker_deleted_at),
+    lifecycleOperationId: row.worker_lifecycle_operation_id,
     workerExists: row.worker_id !== null,
     accountExists: row.account_id !== null,
   };
 
-  if (!row.worker_id) {
-    return dead(base, 'worker_not_found');
-  }
-
-  if (!row.account_id) {
-    return dead(base, 'account_not_found');
-  }
-
-  if (row.account_deleted_at) {
-    return dead(base, 'account_deleted');
-  }
-
-  if (row.account_status_id === BLOCKED_ACCOUNT_STATUS_ID) {
-    return dead(base, 'account_blocked');
-  }
-
-  if (!row.plan_account_id) {
-    return dead(base, 'plan_not_found');
-  }
-
-  if (!row.next_payment_date) {
-    return dead(base, 'plan_next_payment_missing');
-  }
-
-  const parsedNextPaymentDate = toDate(row.next_payment_date);
-  if (!parsedNextPaymentDate) {
-    return dead(base, 'plan_next_payment_invalid');
-  }
-
-  if (parsedNextPaymentDate.getTime() <= now.getTime()) {
-    return dead(base, 'plan_expired');
+  // Kafka resources are durable message queues. Entitlement transitions,
+  // account status, a missing plan and even a missing worker lookup are not
+  // proof that their backlog may be destroyed. Only an existing worker
+  // tombstone carrying the lifecycle operation that permanently deleted it is
+  // authoritative.
+  if (
+    row.worker_id &&
+    row.worker_account_id &&
+    row.worker_deleted_at &&
+    row.worker_lifecycle_operation_id &&
+    row.worker_status_id === DELETING_WORKER_STATUS_ID
+  ) {
+    return dead(base, 'worker_permanently_deleted');
   }
 
   return {
@@ -334,12 +371,39 @@ export async function runCleanup(
   deps: {
     kafka: KafkaAdminGateway;
     workerRepository: WorkerStateRepository;
+    deletionProofRepository?: WorkerDeletionProofRepository;
   },
   options: KafkaCleanupOptions
 ): Promise<CleanupReport> {
+  if (options.execute && options.workerIds.length === 0) {
+    throw new Error('execute_requires_explicit_worker_ids');
+  }
+  if (options.execute && options.accountIds.length === 0) {
+    throw new Error('execute_requires_explicit_account_ids');
+  }
+  if (options.execute && !deps.deletionProofRepository) {
+    throw new Error('execute_requires_immutable_deletion_proof_repository');
+  }
+
+  if (options.execute) {
+    /*
+     * Worker topics and consumer groups are lifecycle-protected resources.
+     * This offline cleaner has neither the renewable worker lease nor the
+     * joint topic/group quiet-window proof required by the runtime finalizer,
+     * so mutation is intentionally impossible here. Keep dry-run discovery
+     * for diagnostics and route every real deletion through the worker
+     * lifecycle boundary.
+     */
+    throw new Error(PROTECTED_WORKER_KAFKA_CLEANUP_DISABLED);
+  }
+
   const startedAt = new Date();
   const now = options.now ?? startedAt;
-  const topics = options.groupsOnly ? [] : await deps.kafka.listTopics();
+  // Even in --groups-only execute mode we must inspect the complete protected
+  // topic set. Consumer groups may never be deleted while one of the eight
+  // durable worker topics still exists.
+  const topics =
+    options.groupsOnly && !options.execute ? [] : await deps.kafka.listTopics();
   const consumerGroups = options.topicsOnly
     ? []
     : await deps.kafka.listConsumerGroups();
@@ -390,6 +454,7 @@ export async function runCleanup(
   const filteredByAccount: WorkerClassification[] = [];
   const deadWorkersWithoutResources: WorkerClassification[] = [];
   const limitedWorkerIds: string[] = [];
+  const proofUnavailableWorkerIds: string[] = [];
   const candidates: CleanupCandidate[] = [];
 
   for (const classification of classifications) {
@@ -407,11 +472,9 @@ export async function runCleanup(
       continue;
     }
 
-    const topicsForWorker = options.groupsOnly
-      ? []
-      : (topicsByWorkerId.get(classification.workerId) ?? []).map(
-          (parsed) => parsed.topic
-        );
+    const discoveredTopicsForWorker = (
+      topicsByWorkerId.get(classification.workerId) ?? []
+    ).map((parsed) => parsed.topic);
     const groupsForWorker = options.topicsOnly
       ? []
       : buildWorkerConsumerGroupNames(classification.workerId).filter(
@@ -421,7 +484,12 @@ export async function runCleanup(
               ?.some((parsed) => parsed.groupId === groupId) ?? false
         );
 
-    if (topicsForWorker.length === 0 && groupsForWorker.length === 0) {
+    const hasSelectedResources = options.groupsOnly
+      ? groupsForWorker.length > 0
+      : options.topicsOnly
+        ? discoveredTopicsForWorker.length > 0
+        : discoveredTopicsForWorker.length > 0 || groupsForWorker.length > 0;
+    if (!hasSelectedResources) {
       deadWorkersWithoutResources.push(classification);
       continue;
     }
@@ -430,16 +498,42 @@ export async function runCleanup(
       worker_id: classification.workerId,
       account_id: classification.accountId,
       reason: classification.reason as DeadWorkerReason,
-      topics: topicsForWorker.sort(),
+      lifecycle_operation_id: classification.lifecycleOperationId as string,
+      deleted_at: classification.workerDeletedAt as string,
+      // Delete and subsequently confirm the complete durable topic set rather
+      // than trusting a potentially stale initial Kafka metadata snapshot.
+      topics: options.groupsOnly
+        ? []
+        : buildWorkerTopicNames(classification.workerId),
       consumer_groups: groupsForWorker.sort(),
     });
   }
 
-  let selectedCandidates = candidates;
+  const candidatesWithProof: CleanupCandidate[] = [];
+  if (!options.execute) {
+    for (const candidate of candidates) {
+      if (!deps.deletionProofRepository) {
+        proofUnavailableWorkerIds.push(candidate.worker_id);
+        continue;
+      }
+      try {
+        await deps.deletionProofRepository.assert(candidate);
+        candidatesWithProof.push(candidate);
+      } catch {
+        proofUnavailableWorkerIds.push(candidate.worker_id);
+      }
+    }
+  } else {
+    candidatesWithProof.push(...candidates);
+  }
+
+  let selectedCandidates = candidatesWithProof;
   if (options.limit !== undefined) {
-    selectedCandidates = candidates.slice(0, options.limit);
+    selectedCandidates = candidatesWithProof.slice(0, options.limit);
     limitedWorkerIds.push(
-      ...candidates.slice(options.limit).map((candidate) => candidate.worker_id)
+      ...candidatesWithProof
+        .slice(options.limit)
+        .map((candidate) => candidate.worker_id)
     );
   }
 
@@ -448,56 +542,86 @@ export async function runCleanup(
   const failed: ResourceOperationResult[] = [];
 
   if (options.execute) {
-    const topicOperations = planned.filter(
-      (operation) => operation.type === 'topic'
-    );
-    const groupOperations = planned.filter(
-      (operation) => operation.type === 'consumer_group'
-    );
+    const deletionProofRepository = deps.deletionProofRepository;
+    if (!deletionProofRepository) {
+      throw new Error('execute_requires_immutable_deletion_proof_repository');
+    }
 
-    await processInBatches(
-      topicOperations,
-      options.batchSize,
-      async (operation) => {
-        try {
-          await deps.kafka.deleteTopic(operation.name);
-          succeeded.push({ ...operation, status: 'deleted' });
-        } catch (error) {
-          if (isMissingTopicError(error)) {
-            succeeded.push({ ...operation, status: 'already_missing' });
-            return;
-          }
+    for (const candidate of selectedCandidates) {
+      const topicOperations = planned.filter(
+        (operation) =>
+          operation.worker_id === candidate.worker_id &&
+          operation.type === 'topic'
+      );
+      const groupOperations = planned.filter(
+        (operation) =>
+          operation.worker_id === candidate.worker_id &&
+          operation.type === 'consumer_group'
+      );
 
+      for (const operation of topicOperations) {
+        await assertCandidateDeletionAuthority(
+          deps.workerRepository,
+          deletionProofRepository,
+          candidate,
+          options,
+          now
+        );
+        await deleteTopicOperation(deps.kafka, operation, succeeded, failed);
+      }
+
+      const remainingTopics = await waitForWorkerTopicsAbsent(
+        deps.kafka,
+        candidate.worker_id,
+        options
+      );
+      if (remainingTopics.length > 0) {
+        markTopicConfirmationFailures(
+          candidate,
+          remainingTopics,
+          succeeded,
+          failed
+        );
+        for (const operation of groupOperations) {
           failed.push({
             ...operation,
             status: 'failed',
-            error: formatError(error),
+            error: `worker_topics_still_present:${remainingTopics.join(',')}`,
           });
         }
+        continue;
       }
-    );
 
-    await processInBatches(
-      groupOperations,
-      options.batchSize,
-      async (operation) => {
-        try {
-          await deps.kafka.deleteConsumerGroup(operation.name);
-          succeeded.push({ ...operation, status: 'deleted' });
-        } catch (error) {
-          if (isMissingConsumerGroupError(error)) {
-            succeeded.push({ ...operation, status: 'already_missing' });
-            return;
-          }
-
-          failed.push({
-            ...operation,
-            status: 'failed',
-            error: formatError(error),
-          });
-        }
+      for (const operation of groupOperations) {
+        await assertCandidateDeletionAuthority(
+          deps.workerRepository,
+          deletionProofRepository,
+          candidate,
+          options,
+          now
+        );
+        await deleteConsumerGroupOperation(
+          deps.kafka,
+          operation,
+          succeeded,
+          failed
+        );
       }
-    );
+
+      if (groupOperations.length > 0) {
+        const remainingGroups = await waitForConsumerGroupsAbsent(
+          deps.kafka,
+          groupOperations.map((operation) => operation.name),
+          options
+        );
+        markConsumerGroupConfirmationFailures(
+          candidate,
+          remainingGroups,
+          succeeded,
+          failed
+        );
+      }
+    }
   }
 
   const finishedAt = new Date();
@@ -536,6 +660,7 @@ export async function runCleanup(
         compareClassification
       ),
       limited_worker_ids: limitedWorkerIds.sort(),
+      proof_unavailable_worker_ids: proofUnavailableWorkerIds.sort(),
     },
     candidates: selectedCandidates,
     operations: {
@@ -544,6 +669,50 @@ export async function runCleanup(
       failed,
     },
   };
+}
+
+async function deleteTopicOperation(
+  kafka: KafkaAdminGateway,
+  operation: ResourceOperationResult,
+  succeeded: ResourceOperationResult[],
+  failed: ResourceOperationResult[]
+): Promise<void> {
+  try {
+    await kafka.deleteTopic(operation.name);
+    succeeded.push({ ...operation, status: 'deleted' });
+  } catch (error) {
+    if (isMissingTopicError(error)) {
+      succeeded.push({ ...operation, status: 'already_missing' });
+      return;
+    }
+    failed.push({
+      ...operation,
+      status: 'failed',
+      error: formatError(error),
+    });
+  }
+}
+
+async function deleteConsumerGroupOperation(
+  kafka: KafkaAdminGateway,
+  operation: ResourceOperationResult,
+  succeeded: ResourceOperationResult[],
+  failed: ResourceOperationResult[]
+): Promise<void> {
+  try {
+    await kafka.deleteConsumerGroup(operation.name);
+    succeeded.push({ ...operation, status: 'deleted' });
+  } catch (error) {
+    if (isMissingConsumerGroupError(error)) {
+      succeeded.push({ ...operation, status: 'already_missing' });
+      return;
+    }
+    failed.push({
+      ...operation,
+      status: 'failed',
+      error: formatError(error),
+    });
+  }
 }
 
 export function parseArgs(argv: string[]): CliOptions {
@@ -598,11 +767,11 @@ export function parseArgs(argv: string[]): CliOptions {
       case '--confirm-database':
         options.confirmDatabase = readValue();
         break;
+      case '--confirm-database-fingerprint':
+        options.confirmedDatabaseFingerprint = readValue();
+        break;
       case '--broker':
         options.broker = readValue();
-        break;
-      case '--database-url':
-        options.databaseUrl = readValue();
         break;
       case '--limit':
         options.limit = parsePositiveInteger(readValue(), '--limit');
@@ -673,8 +842,57 @@ class KafkaJsAdminGateway implements KafkaAdminGateway {
   }
 }
 
-class PostgresWorkerStateRepository implements WorkerStateRepository {
+export class PostgresWorkerStateRepository implements WorkerStateRepository {
   constructor(private readonly pool: Pool) {}
+
+  async assertAuthoritativePrimary(): Promise<DatabaseAuthority> {
+    const result = await this.pool.query<{
+      transaction_read_only: string;
+      pg_is_in_recovery: boolean;
+      database: string;
+      server_address: string | null;
+      server_port: number | null;
+      user: string;
+      database_oid: string;
+      server_version_num: string;
+    }>(`
+      SELECT
+        current_setting('transaction_read_only') AS transaction_read_only,
+        pg_is_in_recovery() AS pg_is_in_recovery,
+        current_database() AS database,
+        inet_server_addr()::text AS server_address,
+        inet_server_port() AS server_port,
+        current_user AS user,
+        (
+          SELECT oid::text
+          FROM pg_database
+          WHERE datname = current_database()
+        ) AS database_oid,
+        current_setting('server_version_num') AS server_version_num
+    `);
+    const row = result.rows[0];
+    if (
+      !row ||
+      row.transaction_read_only !== 'off' ||
+      row.pg_is_in_recovery !== false
+    ) {
+      throw new Error('database_is_not_authoritative_read_write_primary');
+    }
+    const identity = {
+      transaction_read_only: row.transaction_read_only,
+      pg_is_in_recovery: row.pg_is_in_recovery,
+      database: row.database,
+      server_address: row.server_address ?? 'local-socket',
+      server_port: row.server_port ?? 5432,
+      user: row.user,
+      database_oid: row.database_oid,
+      server_version_num: row.server_version_num,
+    };
+    return {
+      ...identity,
+      fingerprint: databaseAuthorityFingerprint(identity),
+    };
+  }
 
   async findWorkers(workerIds: string[]): Promise<WorkerDatabaseRow[]> {
     if (workerIds.length === 0) {
@@ -688,6 +906,8 @@ class PostgresWorkerStateRepository implements WorkerStateRepository {
           w.worker_id::text AS worker_id,
           w.account_id::text AS worker_account_id,
           w.deleted_at AS worker_deleted_at,
+          w.worker_status_id::text AS worker_status_id,
+          w.lifecycle_operation_id::text AS worker_lifecycle_operation_id,
           a.account_id::text AS account_id,
           a.account_status_id::text AS account_status_id,
           a.deleted_at AS account_deleted_at,
@@ -717,6 +937,151 @@ class PostgresWorkerStateRepository implements WorkerStateRepository {
     );
 
     return result.rows;
+  }
+
+  async readAuthoritativeWorkerSnapshot(
+    workerIds: string[]
+  ): Promise<AuthoritativeWorkerSnapshot> {
+    const client = await this.pool.connect();
+    let transactionStarted = false;
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+      transactionStarted = true;
+
+      const authorityResult = await client.query<{
+        transaction_read_only: string;
+        pg_is_in_recovery: boolean;
+        database: string;
+        server_address: string | null;
+        server_port: number | null;
+        user: string;
+        database_oid: string;
+        server_version_num: string;
+      }>(`
+        SELECT
+          current_setting('transaction_read_only') AS transaction_read_only,
+          pg_is_in_recovery() AS pg_is_in_recovery,
+          current_database() AS database,
+          inet_server_addr()::text AS server_address,
+          inet_server_port() AS server_port,
+          current_user AS user,
+          (
+            SELECT oid::text
+            FROM pg_database
+            WHERE datname = current_database()
+          ) AS database_oid,
+          current_setting('server_version_num') AS server_version_num
+      `);
+      const authorityRow = authorityResult.rows[0];
+      if (
+        !authorityRow ||
+        authorityRow.transaction_read_only !== 'off' ||
+        authorityRow.pg_is_in_recovery !== false
+      ) {
+        throw new Error('database_is_not_authoritative_read_write_primary');
+      }
+      const authorityIdentity = {
+        transaction_read_only: authorityRow.transaction_read_only,
+        pg_is_in_recovery: authorityRow.pg_is_in_recovery,
+        database: authorityRow.database,
+        server_address: authorityRow.server_address ?? 'local-socket',
+        server_port: authorityRow.server_port ?? 5432,
+        user: authorityRow.user,
+        database_oid: authorityRow.database_oid,
+        server_version_num: authorityRow.server_version_num,
+      };
+
+      const workerResult =
+        workerIds.length === 0
+          ? { rows: [] as WorkerDatabaseRow[] }
+          : await client.query<WorkerDatabaseRow>(
+              `
+                SELECT
+                  requested.worker_id::text AS requested_worker_id,
+                  w.worker_id::text AS worker_id,
+                  w.account_id::text AS worker_account_id,
+                  w.deleted_at AS worker_deleted_at,
+                  w.worker_status_id::text AS worker_status_id,
+                  w.lifecycle_operation_id::text AS worker_lifecycle_operation_id,
+                  a.account_id::text AS account_id,
+                  a.account_status_id::text AS account_status_id,
+                  a.deleted_at AS account_deleted_at,
+                  latest_plan.plan_account_id::text AS plan_account_id,
+                  latest_plan.next_payment_date AS next_payment_date,
+                  latest_plan.cancellation_date AS cancellation_date
+                FROM unnest($1::uuid[]) AS requested(worker_id)
+                LEFT JOIN worker w
+                  ON w.worker_id = requested.worker_id
+                LEFT JOIN account a
+                  ON a.account_id = w.account_id
+                LEFT JOIN LATERAL (
+                  SELECT
+                    pa.plan_account_id,
+                    pa.next_payment_date,
+                    pa.cancellation_date
+                  FROM plan_account pa
+                  WHERE pa.account_id = a.account_id
+                  ORDER BY
+                    pa.created_at DESC NULLS LAST,
+                    pa.updated_at DESC NULLS LAST,
+                    pa.plan_account_id DESC
+                  LIMIT 1
+                ) latest_plan ON true
+              `,
+              [workerIds]
+            );
+
+      await client.query('COMMIT');
+      transactionStarted = false;
+      return {
+        authority: {
+          ...authorityIdentity,
+          fingerprint: databaseAuthorityFingerprint(authorityIdentity),
+        },
+        rows: workerResult.rows,
+      };
+    } catch (error) {
+      if (transactionStarted) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackError) {
+          console.error(
+            '[kafka-cleaner] database snapshot rollback failed',
+            formatError(rollbackError)
+          );
+        }
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
+
+class RedisWorkerDeletionProofRepository implements WorkerDeletionProofRepository {
+  constructor(private readonly proofService: WorkerDeletionProofService) {}
+
+  async assert(candidate: CleanupCandidate): Promise<void> {
+    const payload = await this.proofService.load(
+      candidate.worker_id,
+      candidate.lifecycle_operation_id
+    );
+    if (!payload) {
+      throw new Error(
+        `worker_deletion_immutable_proof_missing:${candidate.worker_id}`
+      );
+    }
+    if (
+      payload.action !== 'delete' ||
+      payload.worker_id !== candidate.worker_id ||
+      payload.account_id !== candidate.account_id ||
+      payload.operation_id !== candidate.lifecycle_operation_id ||
+      payload.worker_status_id !== EWorkerStatus.deleting
+    ) {
+      throw new Error(
+        `worker_deletion_immutable_proof_mismatch:${candidate.worker_id}`
+      );
+    }
   }
 }
 
@@ -779,6 +1144,8 @@ function missingWorkerRow(workerId: string): WorkerDatabaseRow {
     worker_id: null,
     worker_account_id: null,
     worker_deleted_at: null,
+    worker_status_id: null,
+    worker_lifecycle_operation_id: null,
     account_id: null,
     account_status_id: null,
     account_deleted_at: null,
@@ -796,25 +1163,266 @@ function buildPlannedOperations(
       type: 'topic',
       name: topic,
       worker_id: candidate.worker_id,
+      account_id: candidate.account_id as string,
+      lifecycle_operation_id: candidate.lifecycle_operation_id,
       status: 'planned',
     })),
     ...candidate.consumer_groups.map<ResourceOperationResult>((groupId) => ({
       type: 'consumer_group',
       name: groupId,
       worker_id: candidate.worker_id,
+      account_id: candidate.account_id as string,
+      lifecycle_operation_id: candidate.lifecycle_operation_id,
       status: 'planned',
     })),
   ]);
 }
 
-async function processInBatches<T>(
-  items: T[],
-  batchSize: number,
-  handler: (item: T) => Promise<void>
+export function databaseAuthorityFingerprint(
+  authority: Omit<DatabaseAuthority, 'fingerprint'>
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        transaction_read_only: authority.transaction_read_only,
+        pg_is_in_recovery: authority.pg_is_in_recovery,
+        database: authority.database,
+        server_address: authority.server_address,
+        server_port: authority.server_port,
+        user: authority.user,
+        database_oid: authority.database_oid,
+        server_version_num: authority.server_version_num,
+      }),
+      'utf8'
+    )
+    .digest('hex');
+}
+
+function assertDatabaseAuthorityMatchesExecution(
+  authority: DatabaseAuthority,
+  options: KafkaCleanupOptions
+): void {
+  const confirmedFingerprint = normalizeDatabaseFingerprint(
+    options.confirmedDatabaseFingerprint,
+    'confirmed_database_fingerprint'
+  );
+  const allowedFingerprints = new Set(
+    (options.allowedDatabaseFingerprints ?? []).map((fingerprint) =>
+      normalizeDatabaseFingerprint(fingerprint, 'allowed_database_fingerprint')
+    )
+  );
+  if (allowedFingerprints.size === 0) {
+    throw new Error('database_fingerprint_allowlist_is_empty');
+  }
+
+  if (
+    authority.transaction_read_only !== 'off' ||
+    authority.pg_is_in_recovery !== false
+  ) {
+    throw new Error('database_is_not_authoritative_read_write_primary');
+  }
+  const calculatedFingerprint = databaseAuthorityFingerprint({
+    transaction_read_only: authority.transaction_read_only,
+    pg_is_in_recovery: authority.pg_is_in_recovery,
+    database: authority.database,
+    server_address: authority.server_address,
+    server_port: authority.server_port,
+    user: authority.user,
+    database_oid: authority.database_oid,
+    server_version_num: authority.server_version_num,
+  });
+  if (authority.fingerprint.toLowerCase() !== calculatedFingerprint) {
+    throw new Error('database_authority_fingerprint_integrity_mismatch');
+  }
+  if (calculatedFingerprint !== confirmedFingerprint) {
+    throw new Error(
+      `database_fingerprint_confirmation_mismatch:${calculatedFingerprint}`
+    );
+  }
+  if (!allowedFingerprints.has(calculatedFingerprint)) {
+    throw new Error(
+      `database_fingerprint_not_allowlisted:${calculatedFingerprint}`
+    );
+  }
+}
+
+async function assertCandidateDeletionAuthority(
+  repository: WorkerStateRepository,
+  proofRepository: WorkerDeletionProofRepository,
+  candidate: CleanupCandidate,
+  options: KafkaCleanupOptions,
+  now: Date
 ): Promise<void> {
-  for (let index = 0; index < items.length; index += batchSize) {
-    const batch = items.slice(index, index + batchSize);
-    await Promise.all(batch.map((item) => handler(item)));
+  const snapshot = await repository.readAuthoritativeWorkerSnapshot([
+    candidate.worker_id,
+  ]);
+  assertDatabaseAuthorityMatchesExecution(snapshot.authority, options);
+  const freshRows = snapshot.rows;
+  const fresh = classifyWorkerDatabaseRow(
+    freshRows.find((row) => row.requested_worker_id === candidate.worker_id) ??
+      missingWorkerRow(candidate.worker_id),
+    now
+  );
+  const tombstoneStillMatches =
+    fresh.isDead &&
+    fresh.reason === 'worker_permanently_deleted' &&
+    fresh.accountId === candidate.account_id &&
+    fresh.lifecycleOperationId === candidate.lifecycle_operation_id &&
+    fresh.workerDeletedAt === candidate.deleted_at;
+  if (!tombstoneStillMatches) {
+    throw new Error(
+      `worker_deletion_tombstone_revalidation_failed:${candidate.worker_id}`
+    );
+  }
+
+  await proofRepository.assert(candidate);
+}
+
+function normalizeDatabaseFingerprint(
+  fingerprint: string | undefined,
+  source: string
+): string {
+  const normalized = fingerprint?.trim().toLowerCase();
+  if (!normalized || !/^[0-9a-f]{64}$/.test(normalized)) {
+    throw new Error(`${source}_must_be_sha256`);
+  }
+  return normalized;
+}
+
+async function waitForWorkerTopicsAbsent(
+  kafka: KafkaAdminGateway,
+  workerId: string,
+  options: KafkaCleanupOptions
+): Promise<string[]> {
+  const expected = new Set(buildWorkerTopicNames(workerId));
+  return waitForResourcesAbsent(() => kafka.listTopics(), expected, options);
+}
+
+async function waitForConsumerGroupsAbsent(
+  kafka: KafkaAdminGateway,
+  groupIds: string[],
+  options: KafkaCleanupOptions
+): Promise<string[]> {
+  return waitForResourcesAbsent(
+    () => kafka.listConsumerGroups(),
+    new Set(groupIds),
+    options
+  );
+}
+
+async function waitForResourcesAbsent(
+  list: () => Promise<string[]>,
+  expected: ReadonlySet<string>,
+  options: KafkaCleanupOptions
+): Promise<string[]> {
+  if (expected.size === 0) {
+    return [];
+  }
+  const timeoutMs = positiveIntegerOrFallback(
+    options.confirmationTimeoutMs ??
+      Number(process.env.KAFKA_RESOURCE_DELETION_CONFIRM_TIMEOUT_MS),
+    15_000
+  );
+  const pollIntervalMs = positiveIntegerOrFallback(
+    options.confirmationPollIntervalMs ??
+      Number(process.env.KAFKA_RESOURCE_DELETION_CONFIRM_POLL_MS),
+    100
+  );
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const remaining = (await list())
+      .filter((resource) => expected.has(resource))
+      .sort();
+    if (remaining.length === 0 || Date.now() >= deadline) {
+      return remaining;
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  } while (true);
+}
+
+function positiveIntegerOrFallback(value: number, fallback: number): number {
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
+function markTopicConfirmationFailures(
+  candidate: CleanupCandidate,
+  remainingTopics: string[],
+  succeeded: ResourceOperationResult[],
+  failed: ResourceOperationResult[]
+): void {
+  for (const topic of remainingTopics) {
+    removeOperationResult(succeeded, 'topic', topic, candidate.worker_id);
+    if (
+      failed.some(
+        (operation) =>
+          operation.type === 'topic' &&
+          operation.name === topic &&
+          operation.worker_id === candidate.worker_id
+      )
+    ) {
+      continue;
+    }
+    failed.push({
+      type: 'topic',
+      name: topic,
+      worker_id: candidate.worker_id,
+      account_id: candidate.account_id as string,
+      lifecycle_operation_id: candidate.lifecycle_operation_id,
+      status: 'failed',
+      error: 'topic_deletion_not_confirmed',
+    });
+  }
+}
+
+function markConsumerGroupConfirmationFailures(
+  candidate: CleanupCandidate,
+  remainingGroups: string[],
+  succeeded: ResourceOperationResult[],
+  failed: ResourceOperationResult[]
+): void {
+  for (const groupId of remainingGroups) {
+    removeOperationResult(
+      succeeded,
+      'consumer_group',
+      groupId,
+      candidate.worker_id
+    );
+    if (
+      failed.some(
+        (operation) =>
+          operation.type === 'consumer_group' &&
+          operation.name === groupId &&
+          operation.worker_id === candidate.worker_id
+      )
+    ) {
+      continue;
+    }
+    failed.push({
+      type: 'consumer_group',
+      name: groupId,
+      worker_id: candidate.worker_id,
+      account_id: candidate.account_id as string,
+      lifecycle_operation_id: candidate.lifecycle_operation_id,
+      status: 'failed',
+      error: 'consumer_group_deletion_not_confirmed',
+    });
+  }
+}
+
+function removeOperationResult(
+  results: ResourceOperationResult[],
+  type: ResourceOperationResult['type'],
+  name: string,
+  workerId: string
+): void {
+  const index = results.findIndex(
+    (operation) =>
+      operation.type === type &&
+      operation.name === name &&
+      operation.worker_id === workerId
+  );
+  if (index >= 0) {
+    results.splice(index, 1);
   }
 }
 
@@ -897,16 +1505,7 @@ function resolveRuntimeConfig(options: CliOptions): RuntimeConfig {
     throw new Error('Kafka broker list is empty.');
   }
 
-  const securityProtocol = (
-    readScopedEnv({
-      publicKey: 'KAFKA_PUBLIC_SECURITY_PROTOCOL',
-      privateKey: 'KAFKA_PRIVATE_SECURITY_PROTOCOL',
-      legacyKey: 'SECURITY_PROTOCOL',
-      fallback: 'PLAINTEXT',
-    }) ?? 'PLAINTEXT'
-  ).toUpperCase();
-
-  const kafkaConfig: KafkaConfig = {
+  const baseKafkaConfig: KafkaConfig = {
     clientId: 'underchat-kafka-dead-resource-cleaner',
     brokers,
     connectionTimeout: 10_000,
@@ -916,45 +1515,22 @@ function resolveRuntimeConfig(options: CliOptions): RuntimeConfig {
     },
     logLevel: logLevel.NOTHING,
   };
-
-  if (securityProtocol.includes('SSL')) {
-    kafkaConfig.ssl = true;
-  }
-
-  if (securityProtocol !== 'PLAINTEXT') {
-    const username = readScopedEnv({
-      publicKey: 'KAFKA_PUBLIC_USERNAME',
-      privateKey: 'KAFKA_PRIVATE_USERNAME',
-      legacyKey: 'KAFKA_USERNAME',
-    });
-    const password = readScopedEnv({
-      publicKey: 'KAFKA_PUBLIC_PASSWORD',
-      privateKey: 'KAFKA_PRIVATE_PASSWORD',
-      legacyKey: 'KAFKA_PASSWORD',
-    });
-    const mechanism = normalizeSaslMechanism(
-      readScopedEnv({
-        publicKey: 'KAFKA_PUBLIC_SASL_MECHANISM',
-        privateKey: 'KAFKA_PRIVATE_SASL_MECHANISM',
-        legacyKey: 'SASL_MECHANISM',
-        fallback: 'PLAIN',
-      }) ?? 'PLAIN'
-    );
-
-    if (!username || !password) {
-      throw new Error(
-        'Kafka SASL credentials are missing for non-PLAINTEXT protocol.'
-      );
-    }
-
-    kafkaConfig.sasl = {
-      mechanism,
-      username,
-      password,
-    } as KafkaConfig['sasl'];
-  }
+  const kafkaConfig = options.execute
+    ? {
+        ...baseKafkaConfig,
+        ...buildKafkaJsAdminConfig(
+          brokers,
+          'underchat-kafka-dead-resource-finalizer',
+          'finalizer'
+        ),
+      }
+    : {
+        ...baseKafkaConfig,
+        ...buildKafkaJsRuntimeReadConfig(brokers),
+      };
 
   const database = resolveDatabaseConfig(options);
+  const redis = resolveRedisConfig(options.execute);
 
   return {
     kafka: {
@@ -963,85 +1539,107 @@ function resolveRuntimeConfig(options: CliOptions): RuntimeConfig {
       config: kafkaConfig,
     },
     database,
+    redis,
   };
 }
 
-function resolveDatabaseConfig(options: CliOptions): RuntimeConfig['database'] {
-  if (options.databaseUrl) {
-    return databaseConfigFromUrl(options.databaseUrl, 'cli --database-url');
-  }
+function buildKafkaJsRuntimeReadConfig(brokers: string[]): KafkaConfig {
+  return buildKafkaJsRuntimeConfig(
+    brokers,
+    'underchat-kafka-dead-resource-reader'
+  );
+}
 
-  const readonlyHost = readScopedEnv({
-    publicKey: 'DB_PUBLIC_HOST_RO',
-    privateKey: 'DB_PRIVATE_HOST_RO',
-    legacyKey: 'DB_HOST_RO',
+function resolveRedisConfig(
+  required: boolean
+): RuntimeConfig['redis'] | undefined {
+  const host = readScopedEnv({
+    publicKey: 'DB_CACHE_PUBLIC_HOST',
+    privateKey: 'DB_CACHE_PRIVATE_HOST',
+    legacyKey: 'DB_CACHE_HOST',
   });
-  const readonlyPort = readScopedEnv({
-    publicKey: 'DB_PUBLIC_PORT_RO',
-    privateKey: 'DB_PRIVATE_PORT_RO',
-    legacyKey: 'DB_PORT_RO',
-    fallback: '5432',
+  const rawPort = readScopedEnv({
+    publicKey: 'DB_CACHE_PUBLIC_PORT',
+    privateKey: 'DB_CACHE_PRIVATE_PORT',
+    legacyKey: 'DB_CACHE_PORT',
   });
-  const user = process.env.DB_USER;
-  const password = process.env.DB_PASSWORD;
-  const database = process.env.DB_DATABASE;
-
-  if (readonlyHost && readonlyPort && user && password && database) {
-    const port = Number(readonlyPort);
-    if (!Number.isInteger(port) || port <= 0) {
-      throw new Error(`DB_PORT_RO is invalid: ${readonlyPort}.`);
+  if (!host || !rawPort) {
+    if (required) {
+      throw new Error(
+        'Redis deletion-proof store is missing. Set scoped DB_CACHE_HOST/PORT.'
+      );
     }
-
-    const poolConfig: PoolConfig = {
-      host: readonlyHost,
-      port,
-      user,
-      password,
-      database,
-      ssl: resolvePgSsl(),
-      max: 2,
-      idleTimeoutMillis: 10_000,
-      connectionTimeoutMillis: 10_000,
-    };
-
-    return {
-      identity: `${readonlyHost}:${port}/${database}`,
-      poolConfig,
-      safe: {
-        host: readonlyHost,
-        port,
-        database,
-        user,
-        source: 'readonly host env',
-      },
-    };
+    return undefined;
   }
+  const port = Number(rawPort);
+  if (!Number.isSafeInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error(`DB_CACHE_PORT is invalid: ${rawPort}.`);
+  }
+  return {
+    config: {
+      host,
+      port,
+      password: process.env.DB_CACHE_PASSWORD || undefined,
+      lazyConnect: true,
+      enableReadyCheck: true,
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 1,
+      connectTimeout: 10_000,
+    },
+    safe: {
+      host,
+      port,
+      source: 'scoped cache env',
+    },
+  };
+}
 
-  const databaseUrl = readScopedEnv({
-    publicKey: 'DB_PUBLIC_DATABASE_URL',
-    privateKey: 'DB_PRIVATE_DATABASE_URL',
-    legacyKey: 'DB_DATABASE_URL',
+export function resolveDatabaseConfig(options: {
+  execute: boolean;
+}): RuntimeConfig['database'] {
+  const databaseHost = readScopedEnv({
+    publicKey: options.execute ? 'DB_PUBLIC_HOST_RW' : 'DB_PUBLIC_HOST_RO',
+    privateKey: options.execute ? 'DB_PRIVATE_HOST_RW' : 'DB_PRIVATE_HOST_RO',
+    legacyKey: options.execute ? 'DB_HOST_RW' : 'DB_HOST_RO',
   });
+  const databasePort = readScopedEnv({
+    publicKey: options.execute ? 'DB_PUBLIC_PORT_RW' : 'DB_PUBLIC_PORT_RO',
+    privateKey: options.execute ? 'DB_PRIVATE_PORT_RW' : 'DB_PRIVATE_PORT_RO',
+    legacyKey: options.execute ? 'DB_PORT_RW' : 'DB_PORT_RO',
+  });
+  const user = readNonEmptyEnv('DB_USER');
+  const password = readNonEmptyEnv('DB_PASSWORD');
+  const database = readNonEmptyEnv('DB_DATABASE');
+  const sslMode = readNonEmptyEnv('DB_SSLMODE');
 
-  if (!databaseUrl) {
+  if (
+    !databaseHost ||
+    !databasePort ||
+    !user ||
+    !password ||
+    !database ||
+    !sslMode
+  ) {
     throw new Error(
-      'Database config is missing. Set DB_HOST_RO/DB_PORT_RO/DB_USER/DB_PASSWORD/DB_DATABASE, DB_DATABASE_URL, or use --database-url.'
+      `Database config is missing. Set ${
+        options.execute ? 'DB_HOST_RW/DB_PORT_RW' : 'DB_HOST_RO/DB_PORT_RO'
+      }/DB_USER/DB_PASSWORD/DB_DATABASE/DB_SSLMODE.`
     );
   }
 
-  return databaseConfigFromUrl(databaseUrl, 'database url env');
-}
+  const port = Number(databasePort);
+  if (!Number.isSafeInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error(
+      `${options.execute ? 'DB_PORT_RW' : 'DB_PORT_RO'} is invalid: ${databasePort}.`
+    );
+  }
 
-function databaseConfigFromUrl(
-  databaseUrl: string,
-  source: string
-): RuntimeConfig['database'] {
-  const parsed = new URL(databaseUrl);
-  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
-  const port = parsed.port ? Number(parsed.port) : 5432;
-  const sslMode = parsed.searchParams.get('sslmode') ?? process.env.DB_SSLMODE;
   const poolConfig: PoolConfig = {
-    connectionString: databaseUrl,
+    host: databaseHost,
+    port,
+    user,
+    password,
+    database,
     ssl: resolvePgSsl(sslMode),
     max: 2,
     idleTimeoutMillis: 10_000,
@@ -1049,55 +1647,35 @@ function databaseConfigFromUrl(
   };
 
   return {
-    identity: `${parsed.hostname}:${port}/${database}`,
+    identity: `${databaseHost}:${port}/${database}`,
     poolConfig,
     safe: {
-      host: parsed.hostname,
+      host: databaseHost,
       port,
       database,
-      user: parsed.username ? decodeURIComponent(parsed.username) : null,
-      source,
+      user,
+      source: options.execute
+        ? 'authoritative read-write host env'
+        : 'readonly host env',
     },
   };
 }
 
-function resolvePgSsl(
-  rawMode = process.env.DB_SSLMODE
-): PoolConfig['ssl'] | undefined {
-  const sslMode = rawMode?.trim().toLowerCase();
-  if (
-    !sslMode ||
-    sslMode === 'disable' ||
-    sslMode === 'false' ||
-    sslMode === '0'
-  ) {
+function resolvePgSsl(rawMode: string): PoolConfig['ssl'] {
+  const sslMode = rawMode.trim().toLowerCase();
+  if (['disable', 'false', '0', 'no'].includes(sslMode)) {
     return false;
   }
 
-  if (sslMode === 'no-verify' || sslMode === 'require' || sslMode === 'true') {
+  if (['no-verify', 'require', 'true', '1', 'yes'].includes(sslMode)) {
     return { rejectUnauthorized: false };
   }
 
-  return true;
-}
-
-function normalizeSaslMechanism(
-  value: string
-): 'plain' | 'scram-sha-256' | 'scram-sha-512' {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'plain') {
-    return 'plain';
+  if (['allow', 'prefer', 'verify-ca', 'verify-full'].includes(sslMode)) {
+    return true;
   }
 
-  if (normalized === 'scram-sha-256') {
-    return 'scram-sha-256';
-  }
-
-  if (normalized === 'scram-sha-512') {
-    return 'scram-sha-512';
-  }
-
-  throw new Error(`Unsupported Kafka SASL mechanism: ${value}.`);
+  throw new Error(`DB_SSLMODE is invalid: ${rawMode}.`);
 }
 
 function readScopedEnv(options: {
@@ -1158,6 +1736,35 @@ function validateExecutionConfirmation(
     );
   }
 
+  try {
+    normalizeDatabaseFingerprint(
+      options.confirmedDatabaseFingerprint,
+      '--confirm-database-fingerprint'
+    );
+  } catch {
+    failures.push(
+      '--confirm-database-fingerprint must be the exact 64-character SHA-256 fingerprint of the authoritative primary.'
+    );
+  }
+
+  if ((options.allowedDatabaseFingerprints ?? []).length === 0) {
+    failures.push(
+      'KAFKA_CLEANER_ALLOWED_DATABASE_FINGERPRINTS must contain the confirmed primary fingerprint.'
+    );
+  }
+
+  if (options.workerIds.length === 0) {
+    failures.push(
+      '--worker-id is required for --execute; unscoped bulk deletion is forbidden.'
+    );
+  }
+
+  if (options.accountIds.length === 0) {
+    failures.push(
+      '--account-id is required for --execute; account scope must be explicit.'
+    );
+  }
+
   if (failures.length > 0) {
     throw new Error(
       [
@@ -1170,11 +1777,34 @@ function validateExecutionConfirmation(
 
 function parsePositiveCli(argv: string[]): CliOptions {
   const options = parseArgs(argv);
+  options.allowedDatabaseFingerprints = parseDatabaseFingerprintAllowlist(
+    process.env.KAFKA_CLEANER_ALLOWED_DATABASE_FINGERPRINTS
+  );
   if (!options.execute) {
     options.dryRun = true;
   }
 
   return options;
+}
+
+function parseDatabaseFingerprintAllowlist(
+  rawValue: string | undefined
+): string[] {
+  if (!rawValue?.trim()) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      rawValue
+        .split(',')
+        .map((entry) =>
+          normalizeDatabaseFingerprint(
+            entry,
+            'KAFKA_CLEANER_ALLOWED_DATABASE_FINGERPRINTS'
+          )
+        )
+    )
+  ).sort();
 }
 
 async function main(): Promise<void> {
@@ -1183,18 +1813,32 @@ async function main(): Promise<void> {
     console.log(helpText());
     return;
   }
+  if (options.execute) {
+    throw new Error(PROTECTED_WORKER_KAFKA_CLEANUP_DISABLED);
+  }
 
   const runtime = resolveRuntimeConfig(options);
   validateExecutionConfirmation(options, runtime);
 
   const pool = new Pool(runtime.database.poolConfig);
-  const kafka = await KafkaJsAdminGateway.connect(runtime.kafka.config);
+  let kafka: KafkaJsAdminGateway | undefined;
+  let redis: Redis | undefined;
 
   try {
+    if (runtime.redis) {
+      redis = new Redis(runtime.redis.config);
+      await redis.connect();
+    }
+    kafka = await KafkaJsAdminGateway.connect(runtime.kafka.config);
     const report = await runCleanup(
       {
         kafka,
         workerRepository: new PostgresWorkerStateRepository(pool),
+        deletionProofRepository: redis
+          ? new RedisWorkerDeletionProofRepository(
+              new WorkerDeletionProofService(redis)
+            )
+          : undefined,
       },
       options
     );
@@ -1207,6 +1851,7 @@ async function main(): Promise<void> {
               brokers: runtime.kafka.brokers,
             },
             database: runtime.database.safe,
+            redis: runtime.redis?.safe ?? null,
           },
           ...report,
         },
@@ -1219,7 +1864,7 @@ async function main(): Promise<void> {
       process.exitCode = 2;
     }
   } finally {
-    await Promise.allSettled([kafka.disconnect(), pool.end()]);
+    await Promise.allSettled([kafka?.disconnect(), pool.end(), redis?.quit()]);
   }
 }
 
@@ -1227,20 +1872,22 @@ function helpText(): string {
   return `
 Usage:
   pnpm kafka:dead-resources:dry-run
-  pnpm kafka:dead-resources:delete -- --confirm ${DELETE_CONFIRMATION_TOKEN} --confirm-broker "<broker-list>" --confirm-database "<host:port/database>"
 
 Options:
   --dry-run                    Default. Print JSON report and do not delete anything.
-  --execute                    Delete only planned candidates.
+  --execute                    Disabled for protected worker resources. Use the
+                               renewable worker lifecycle finalizer.
   --confirm <token>            Required for --execute.
   --confirm-broker <brokers>   Required for --execute. Must match resolved brokers exactly.
   --confirm-database <db>      Required for --execute. Must match resolved host:port/database exactly.
+  --confirm-database-fingerprint <sha256>
+                               Required for --execute. Must match the live RW primary and
+                               KAFKA_CLEANER_ALLOWED_DATABASE_FINGERPRINTS.
   --broker <brokers>           Override KAFKA_*_BROKER.
-  --database-url <url>         Override DB_*_DATABASE_URL and readonly host env.
   --limit <n>                  Limit number of dead workers processed.
-  --batch-size <n>             Concurrent delete batch size. Default: 10.
-  --worker-id <uuid[,uuid]>    Restrict to specific worker_id values.
-  --account-id <uuid[,uuid]>   Restrict to specific account_id values.
+  --batch-size <n>             Report compatibility setting; deletion is always sequential.
+  --worker-id <uuid[,uuid]>    Required for --execute; exact worker scope.
+  --account-id <uuid[,uuid]>   Required for --execute; exact account scope.
   --topics-only                Only list/delete topics.
   --groups-only                Only list/delete consumer groups.
   --help                       Show this help.

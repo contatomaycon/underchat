@@ -30,6 +30,12 @@ export const chatHistoryEmbeddingMappings = (embeddingDimensions: number) => {
         has_embedding: {
           type: 'boolean' as const,
         },
+        embedding_model: {
+          type: 'keyword' as const,
+        },
+        embedding_generation: {
+          type: 'keyword' as const,
+        },
         created_at: {
           type: 'date' as const,
         },

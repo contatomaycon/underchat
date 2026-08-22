@@ -1,37 +1,62 @@
+const CNPJ_FIRST_DIGIT_MULTIPLIERS = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+const CNPJ_SECOND_DIGIT_MULTIPLIERS = [
+  6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2,
+];
+
+export const normalizeCnpj = (cnpj: string): string =>
+  cnpj.replaceAll(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+export const isCnpjFormat = (cnpj: string): boolean =>
+  /^[A-Z0-9]{12}\d{2}$/.test(normalizeCnpj(cnpj));
+
+export const formatCnpj = (cnpj: string): string => {
+  const clean = normalizeCnpj(cnpj).slice(0, 14);
+
+  if (clean.length <= 2) return clean;
+  if (clean.length <= 5) return `${clean.slice(0, 2)}.${clean.slice(2)}`;
+  if (clean.length <= 8) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
+  }
+  if (clean.length <= 12) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
+  }
+  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
+};
+
+const getCnpjCharacterValue = (character: string): number =>
+  character.charCodeAt(0) - 48;
+
+const calculateCnpjDigit = (base: string, multipliers: number[]): number => {
+  const sum = base
+    .split('')
+    .reduce(
+      (total, character, index) =>
+        total + getCnpjCharacterValue(character) * multipliers[index],
+      0
+    );
+  const remainder = sum % 11;
+
+  return remainder < 2 ? 0 : 11 - remainder;
+};
+
 export const validateCnpj = (cnpj: string): boolean => {
-  const digits = cnpj.replaceAll(/\D/g, '');
+  const normalized = normalizeCnpj(cnpj);
 
-  if (digits.length !== 14) return false;
+  if (!isCnpjFormat(normalized)) return false;
 
-  if (/^(\d)\1{13}$/.test(digits)) return false;
+  if (/^(\d)\1{13}$/.test(normalized)) return false;
 
-  let length = digits.length - 2;
-  let numbers = digits.substring(0, length);
-  const multipliers = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  let sum = 0;
+  const firstDigit = calculateCnpjDigit(
+    normalized.slice(0, 12),
+    CNPJ_FIRST_DIGIT_MULTIPLIERS
+  );
+  if (firstDigit !== Number.parseInt(normalized.charAt(12), 10)) return false;
 
-  for (let i = 0; i < length; i++) {
-    sum += Number.parseInt(numbers.charAt(i)) * multipliers[i];
-  }
-
-  let remainder = sum % 11;
-  let digit = remainder < 2 ? 0 : 11 - remainder;
-
-  if (digit !== Number.parseInt(digits.charAt(length))) return false;
-
-  length = length + 1;
-  numbers = digits.substring(0, length);
-  const multipliers2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  sum = 0;
-
-  for (let i = 0; i < length; i++) {
-    sum += Number.parseInt(numbers.charAt(i)) * multipliers2[i];
-  }
-
-  remainder = sum % 11;
-  digit = remainder < 2 ? 0 : 11 - remainder;
-
-  if (digit !== Number.parseInt(digits.charAt(length))) return false;
+  const secondDigit = calculateCnpjDigit(
+    normalized.slice(0, 13),
+    CNPJ_SECOND_DIGIT_MULTIPLIERS
+  );
+  if (secondDigit !== Number.parseInt(normalized.charAt(13), 10)) return false;
 
   return true;
 };

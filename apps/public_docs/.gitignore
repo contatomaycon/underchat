@@ -1,0 +1,6 @@
+.env
+.turbo/
+dist/
+node_modules/
+docs/.vitepress/.temp/
+docs/.vitepress/cache/

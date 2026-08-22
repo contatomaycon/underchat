@@ -6,6 +6,7 @@ import { WorkerProfileStatusDeleterTransactionRepository } from '@core/repositor
 import { WorkerProfileStatusViewerRepository } from '@core/repositories/worker/WorkerProfileStatusViewer.repository';
 import { WorkerProfileStatusContactListerRepository } from '@core/repositories/worker/WorkerProfileStatusContactLister.repository';
 import { WorkerProfileStatusExternalIdUpdaterRepository } from '@core/repositories/worker/WorkerProfileStatusExternalIdUpdater.repository';
+import type { WhatsappRuntimeDatabaseFence } from '@core/repositories/worker/WhatsappRuntimeDatabaseFence.repository';
 import { WorkerProfileStatusPermanentRenewalListerRepository } from '@core/repositories/worker/WorkerProfileStatusPermanentRenewalLister.repository';
 import { WorkerProfileStatusUpdatedAtUpdaterRepository } from '@core/repositories/worker/WorkerProfileStatusUpdatedAtUpdater.repository';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
@@ -14,14 +15,14 @@ import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { StorageService } from '@core/services/storage.service';
 import { ConverterService } from '@core/services/converter';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
-import { StreamProducerService } from '@core/services/streamProducer.service';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
 import { IProfileStatusDeleteMessage } from '@core/common/interfaces/IProfileStatusDeleteMessage';
 import { IVisibilityData } from '@core/common/interfaces/IVisibilityData';
 import { ContactService } from '@core/services/contact.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { TFunction } from 'i18next';
+import { WorkerCommandAdmissionService } from '@core/services/workerCommandAdmission.service';
+import { createHash } from 'node:crypto';
 
 interface IUploadProfileStatusContent {
   photos?: UploadFileRequest | UploadFileRequest[];
@@ -59,10 +60,8 @@ export class WorkerProfileStatusService {
     private readonly storageService: StorageService,
     @inject(ConverterService)
     private readonly converterService: ConverterService,
-    @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(WorkerCommandAdmissionService)
+    private readonly workerCommandAdmissionService: WorkerCommandAdmissionService,
     @inject(ContactService)
     private readonly contactService: ContactService
   ) {}
@@ -345,13 +344,15 @@ export class WorkerProfileStatusService {
         statusJidList,
       };
 
-      const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
-
-      await this.streamProducerService.send(
-        topic,
-        deleteMessage,
-        `profile_status_delete:${externalId || workerProfileStatusId}`
-      );
+      await this.workerCommandAdmissionService.admit({
+        accountId,
+        workerId,
+        commandType: 'provider_command',
+        entityKey: `control:${accountId}:${workerId}:profile-status`,
+        operationId: `profile-status-delete:${externalId || workerProfileStatusId}`,
+        payload: deleteMessage as unknown as Record<string, never>,
+        source: 'worker_profile_status',
+      });
     } catch (error) {
       throw error;
     }
@@ -359,11 +360,13 @@ export class WorkerProfileStatusService {
 
   async updateExternalId(
     workerProfileStatusId: string,
-    externalId: string
+    externalId: string,
+    runtimeFence: WhatsappRuntimeDatabaseFence
   ): Promise<boolean> {
     return this.workerProfileStatusExternalIdUpdaterRepository.updateExternalId(
       workerProfileStatusId,
-      externalId
+      externalId,
+      runtimeFence
     );
   }
 
@@ -406,15 +409,15 @@ export class WorkerProfileStatusService {
         statusJidList,
       };
 
-      const topic = this.kafkaBaileysQueueService.workerSendMessage(
-        status.worker_id
-      );
-
-      await this.streamProducerService.send(
-        topic,
-        statusMessage,
-        `profile_status:${status.worker_profile_status_id}`
-      );
+      await this.workerCommandAdmissionService.admit({
+        accountId,
+        workerId: status.worker_id,
+        commandType: 'provider_command',
+        entityKey: `control:${accountId}:${status.worker_id}:profile-status`,
+        operationId: `profile-status:${status.worker_profile_status_id}:${createHash('sha256').update(JSON.stringify(statusMessage)).digest('hex')}`,
+        payload: statusMessage as unknown as Record<string, never>,
+        source: 'worker_profile_status',
+      });
     } catch (error) {
       throw error;
     }

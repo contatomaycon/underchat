@@ -7,9 +7,11 @@ function createStatusChain(result: unknown[]) {
   const where = jest.fn(() => ({ groupBy }));
   const queryBuilder = {
     innerJoin: jest.fn(),
+    leftJoin: jest.fn(),
     where,
   } as any;
   queryBuilder.innerJoin.mockReturnValue(queryBuilder);
+  queryBuilder.leftJoin.mockReturnValue(queryBuilder);
   queryBuilder.where.mockReturnValue({ groupBy });
   const from = jest.fn(() => queryBuilder);
   const select = jest.fn(() => ({ from }));
@@ -39,13 +41,13 @@ describe('ChannelsStatisticsRepository', () => {
       { status_id: 'inactive', count: 1 },
     ]);
     const totalChain = createTotalChain([{ count: 4 }]);
-    const dbRo = {
+    const dbRw = {
       select: jest
         .fn()
         .mockImplementationOnce(statusChain.select)
         .mockImplementationOnce(totalChain.select),
     };
-    const repository = new ChannelsStatisticsRepository(dbRo as never);
+    const repository = new ChannelsStatisticsRepository(dbRw as never);
 
     await expect(repository.getChannelsStatistics()).resolves.toEqual({
       statusCounts: [

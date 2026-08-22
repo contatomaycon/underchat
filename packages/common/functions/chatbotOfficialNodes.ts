@@ -19,8 +19,20 @@ export const OFFICIAL_CHATBOT_NODE_TYPES = [
 export type OfficialChatbotNodeType =
   (typeof OFFICIAL_CHATBOT_NODE_TYPES)[number];
 
+export const OFFICIAL_WAIT_FOR_RESPONSE_NODE_TYPES = [
+  'officialReplyButtons',
+  'officialList',
+  'officialTemplate',
+] as const;
+
+export type OfficialWaitForResponseNodeType =
+  (typeof OFFICIAL_WAIT_FOR_RESPONSE_NODE_TYPES)[number];
+
 const OFFICIAL_CHATBOT_NODE_TYPE_SET = new Set<string>(
   OFFICIAL_CHATBOT_NODE_TYPES
+);
+const OFFICIAL_WAIT_FOR_RESPONSE_NODE_TYPE_SET = new Set<string>(
+  OFFICIAL_WAIT_FOR_RESPONSE_NODE_TYPES
 );
 
 export interface ChatbotFlowNodeLike {
@@ -42,6 +54,12 @@ export const isOfficialChatbotNodeType = (
   nodeType?: string | null
 ): nodeType is OfficialChatbotNodeType => {
   return !!nodeType && OFFICIAL_CHATBOT_NODE_TYPE_SET.has(nodeType);
+};
+
+export const isOfficialWaitForResponseNodeType = (
+  nodeType?: string | null
+): nodeType is OfficialWaitForResponseNodeType => {
+  return !!nodeType && OFFICIAL_WAIT_FOR_RESPONSE_NODE_TYPE_SET.has(nodeType);
 };
 
 export const hasOfficialChatbotNodes = (

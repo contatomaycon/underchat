@@ -1,4 +1,10 @@
 import 'reflect-metadata';
+
+jest.mock('@whiskeysockets/baileys', () => ({
+  jidNormalizedUser: jest.fn((jid: string) => jid),
+  proto: {},
+}));
+
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';

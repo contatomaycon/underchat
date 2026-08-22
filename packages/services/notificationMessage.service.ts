@@ -4,7 +4,6 @@ import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterVi
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { StreamProducerService } from '@core/services/streamProducer.service';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { notificationMappings } from '@core/mappings/notification.mappings';
 import { UserService } from './user.service';
 import { UserInfoViewerRepository } from '@core/repositories/user/UserInfoViewer.repository';
@@ -15,7 +14,7 @@ import {
   ENotificationType,
   ENotificationTypeId,
 } from '@core/common/enums/ENotificationType';
-import { webcrypto, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, webcrypto } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { EmailService } from './email.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
@@ -31,6 +30,13 @@ import {
   ActiveWhatsappValidationContext,
   IActiveWhatsappValidationResponse,
 } from '@core/common/interfaces/IActiveWhatsappValidation';
+import {
+  IMessageSendAcquiredClaim,
+  MessageSendIdempotencyService,
+} from './messageSendIdempotency.service';
+import { WorkerCommandAdmissionService } from './workerCommandAdmission.service';
+import { buildWorkerCommandChatEntityKey } from '@core/common/functions/messageIdentity';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
 
 @injectable()
 export class NotificationMessageService {
@@ -43,8 +49,8 @@ export class NotificationMessageService {
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(WorkerCommandAdmissionService)
+    private readonly workerCommandAdmissionService: WorkerCommandAdmissionService,
     @inject(UserService)
     private readonly userService: UserService,
     @inject(UserInfoViewerRepository)
@@ -63,7 +69,9 @@ export class NotificationMessageService {
     private readonly passwordEncryptorService: PasswordEncryptorService,
     @inject(EncryptService)
     private readonly encryptService: EncryptService,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    @inject(MessageSendIdempotencyService)
+    private readonly messageSendIdempotencyService: MessageSendIdempotencyService
   ) {}
 
   private async prepareNotificationMessages(
@@ -116,7 +124,7 @@ export class NotificationMessageService {
 
   private async saveNotificationToElastic(
     notificationMessage: INotificationMessage,
-    notificationId: string
+    documentId: string
   ): Promise<void> {
     await this.elasticDatabaseService.indices(
       EElasticIndex.notification,
@@ -125,12 +133,27 @@ export class NotificationMessageService {
 
     await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.notification,
-      notificationId,
+      documentId,
       notificationMessage as unknown as Record<string, unknown>,
       {
         upsert: true,
       }
     );
+  }
+
+  private buildNotificationDocumentId(
+    accountId: string,
+    operationId: string | null,
+    legacyNotificationId: string
+  ): string {
+    if (!operationId) {
+      return legacyNotificationId;
+    }
+
+    const digest = createHash('sha256')
+      .update(`${accountId.trim()}\0${operationId}`)
+      .digest('hex');
+    return `notification_message_v2_${digest}`;
   }
 
   private async sendWhatsAppNotification(
@@ -148,38 +171,64 @@ export class NotificationMessageService {
       return;
     }
 
-    const kafkaTopic =
-      this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
-    await this.streamProducerService.send(
-      kafkaTopic,
-      notificationMessage,
-      this.buildWhatsAppNotificationQueueKey(notificationMessage)
-    );
+    const accountId = notificationMessage.account?.id?.trim();
+    if (!accountId) {
+      throw new Error('Notification account id is required for WhatsApp');
+    }
+    const operationId =
+      notificationMessage.operation_id?.trim() ||
+      `${notificationMessage.notification_id}:${notificationMessage.id}`;
+    await this.workerCommandAdmissionService.admit({
+      accountId,
+      workerId,
+      commandType: 'notification_send',
+      entityKey: this.buildWhatsAppNotificationQueueKey(
+        notificationMessage,
+        workerId
+      ),
+      operationId,
+      payload: notificationMessage as unknown as Record<string, never>,
+      source: 'notification',
+    });
   }
 
   private buildWhatsAppNotificationQueueKey(
-    notificationMessage: INotificationMessage
+    notificationMessage: INotificationMessage,
+    workerId: string
   ): string {
     const accountId = notificationMessage.account?.id?.trim() ?? 'unknown';
     const remoteJid = notificationMessage.message_key?.remote_jid?.trim();
     if (remoteJid) {
-      return `chat:${accountId}:jid:${remoteJid}`;
+      return buildWorkerCommandChatEntityKey(
+        accountId,
+        workerId,
+        normalizeJid(remoteJid) ?? remoteJid
+      );
     }
 
-    return [
-      'chat',
-      accountId,
-      'phone',
-      notificationMessage.message_key.phone_ddi,
-      notificationMessage.message_key.phone_number,
-    ].join(':');
+    const phoneDigits =
+      `${notificationMessage.message_key.phone_ddi ?? ''}${notificationMessage.message_key.phone_number ?? ''}`.replace(
+        /\D/gu,
+        ''
+      );
+    if (!phoneDigits) {
+      throw new Error('Notification WhatsApp destination is required');
+    }
+    const canonicalJid =
+      normalizeJid(`${phoneDigits}@s.whatsapp.net`) ??
+      `${phoneDigits}@s.whatsapp.net`;
+
+    return buildWorkerCommandChatEntityKey(accountId, workerId, canonicalJid);
   }
 
   private async sendEmailNotification(
     notification: any,
+    accountId: string,
+    operationId: string,
     userEmail: string | null,
     emailMessage: string | null,
-    emailSubject: string | null
+    emailSubject: string | null,
+    assertActive: () => void
   ): Promise<void> {
     if (
       notification.email_enabled !== true ||
@@ -190,17 +239,115 @@ export class NotificationMessageService {
       return;
     }
 
-    await this.emailService.sendEmail({
-      to: userEmail,
-      subject: emailSubject || '',
-      html: emailMessage,
-      text: emailMessage,
+    const claim = await this.messageSendIdempotencyService.claimOperation({
+      accountId,
+      operationType: 'notification_email',
+      operationId,
+      meta: {
+        notification_id: notification.notification_id,
+        notification_type_id: notification.notification_type_id,
+        recipient: userEmail,
+      },
     });
+
+    if (claim.status === 'duplicate') {
+      return;
+    }
+    if (claim.status === 'error') {
+      throw new Error('Unable to reserve notification email delivery');
+    }
+
+    let providerBoundaryConfirmed = false;
+
+    try {
+      assertActive();
+      const providerInvoked =
+        await this.messageSendIdempotencyService.markProviderInvoked(claim);
+      if (providerInvoked !== 'transitioned') {
+        throw new Error(
+          `Unable to fence notification email delivery: ${providerInvoked}`
+        );
+      }
+      providerBoundaryConfirmed = true;
+
+      // The assignment can be revoked while the durable provider boundary is
+      // being recorded. Revalidate immediately before the irreversible call.
+      assertActive();
+      await this.emailService.sendEmail({
+        to: userEmail,
+        subject: emailSubject || '',
+        html: emailMessage,
+        text: emailMessage,
+      });
+    } catch (error) {
+      if (providerBoundaryConfirmed) {
+        await this.markEmailDeliveryAmbiguous(claim, error);
+      } else {
+        await this.releaseEmailReservation(claim);
+      }
+      throw error;
+    }
+
+    const succeeded =
+      await this.messageSendIdempotencyService.markSucceeded(claim);
+    if (succeeded !== 'transitioned') {
+      console.error(
+        `Unable to finalize notification email delivery: ${succeeded}`
+      );
+    }
+  }
+
+  private async markEmailDeliveryAmbiguous(
+    claim: IMessageSendAcquiredClaim,
+    error: unknown
+  ): Promise<void> {
+    try {
+      const marked = await this.messageSendIdempotencyService.markAmbiguous(
+        claim,
+        error
+      );
+      if (marked === 'transitioned') {
+        return;
+      }
+      console.error(
+        `Unable to mark notification email delivery ambiguous: ${marked}`
+      );
+    } catch (markError) {
+      console.error(
+        'Unable to mark notification email delivery ambiguous:',
+        markError
+      );
+    }
+  }
+
+  private async releaseEmailReservation(
+    claim: IMessageSendAcquiredClaim
+  ): Promise<void> {
+    try {
+      const released =
+        await this.messageSendIdempotencyService.releaseReservation(claim);
+      // invalid_state is safe here: markProviderInvoked may have reached Redis
+      // while its response was lost, and RELEASE_SCRIPT never deletes that
+      // provider_invoked record.
+      if (released === 'transitioned' || released === 'invalid_state') {
+        return;
+      }
+      console.error(
+        `Unable to release notification email reservation: ${released}`
+      );
+    } catch (releaseError) {
+      console.error(
+        'Unable to release notification email reservation:',
+        releaseError
+      );
+    }
   }
 
   async sendNotificationMessage(
     notificationTypeId: string,
-    accountId: string
+    accountId: string,
+    assertActive: () => void = () => undefined,
+    operationId?: string | null
   ): Promise<boolean> {
     const notification =
       await this.notificationMessageViewerRepository.findNotificationByTypeId(
@@ -290,8 +437,18 @@ export class NotificationMessageService {
       return true;
     }
 
+    const normalizedOperationId = operationId?.trim() || null;
+    if (shouldSendEmail && !normalizedOperationId) {
+      throw new Error('Notification operation id is required for email');
+    }
+    const notificationDocumentId = this.buildNotificationDocumentId(
+      accountId,
+      normalizedOperationId,
+      notification.notification_id
+    );
     const notificationMessage: INotificationMessage = {
-      id: notification.notification_id,
+      id: notificationDocumentId,
+      ...(normalizedOperationId ? { operation_id: normalizedOperationId } : {}),
       user_id: masterUser.user_id,
       notification_id: notification.notification_id,
       message_key: {
@@ -320,12 +477,14 @@ export class NotificationMessageService {
       date: new Date().toISOString(),
     };
 
+    assertActive();
     await this.saveNotificationToElastic(
       notificationMessage,
-      notification.notification_id
+      notificationDocumentId
     );
 
     if (shouldSendWhatsapp) {
+      assertActive();
       await this.sendWhatsAppNotification(
         notification,
         phone,
@@ -334,12 +493,16 @@ export class NotificationMessageService {
       );
     }
 
-    if (shouldSendEmail) {
+    if (shouldSendEmail && normalizedOperationId) {
+      assertActive();
       await this.sendEmailNotification(
         notification,
+        accountId,
+        normalizedOperationId,
         userEmail,
         emailMessage,
-        emailSubject
+        emailSubject,
+        assertActive
       );
     }
 
@@ -522,19 +685,23 @@ export class NotificationMessageService {
       lockKey,
       async () => {
         const topic = this.kafkaServiceQueueService.notificationMessage();
-        await this.streamProducerService.send(topic, {
-          notification_type_id: notificationTypeId,
-          account_id: accountId,
-        });
+        const operationId = randomUUID();
+        await this.streamProducerService.send(
+          topic,
+          {
+            notification_type_id: notificationTypeId,
+            account_id: accountId,
+            operation_id: operationId,
+          },
+          `${accountId}:${notificationTypeId}`
+        );
       },
       {
         ttlMs: 60000,
         preventDuplicate: true,
         duplicateTtlSeconds: 300,
       }
-    ).catch((error) => {
-      console.error('Erro ao enviar notificação de plano liberado:', error);
-    });
+    );
   }
 
   async sendTwoFactorCodeWithChannels(input: {

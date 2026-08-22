@@ -61,48 +61,64 @@ export class ContactGroupService {
   createContactGroup = async (
     t: TFunction<'translation', undefined>,
     accountId: string,
-    input: CreateContactGroupRequest
+    input: CreateContactGroupRequest,
+    actorUserId?: string
   ): Promise<boolean> => {
     return this.contactGroupCreatorTransactionRepository.createContactGroup(
       t,
       accountId,
-      input
+      input,
+      actorUserId
     );
   };
 
-  existsContactGroupById = async (contactGroupId: string): Promise<boolean> => {
+  existsContactGroupById = async (
+    contactGroupId: string,
+    accountId?: string
+  ): Promise<boolean> => {
     return this.contactGroupViewerExistsRepository.existsContactGroupById(
-      contactGroupId
+      contactGroupId,
+      accountId
     );
   };
 
   viewContactGroupById = async (
-    contactGroupId: string
+    contactGroupId: string,
+    accountId?: string
   ): Promise<ViewContactGroupResponse | null> => {
     return this.contactGroupViewerRepository.viewContactGroupById(
-      contactGroupId
+      contactGroupId,
+      accountId
     );
   };
 
   deleteContactGroup = async (
     t: TFunction<'translation', undefined>,
-    contactGroupId: string
+    contactGroupId: string,
+    accountId: string,
+    actorUserId?: string
   ): Promise<boolean> => {
     return this.contactGroupDeleterTransactionRepository.deleteContactGroup(
       t,
-      contactGroupId
+      contactGroupId,
+      accountId,
+      actorUserId
     );
   };
 
   updateContactGroupById = async (
     t: TFunction<'translation', undefined>,
     contactGroupId: string,
-    input: UpdateContactGroupRequest
+    input: UpdateContactGroupRequest,
+    accountId: string,
+    actorUserId?: string
   ): Promise<boolean> => {
     return this.contactGroupUpdaterTransactionRepository.updateContactGroup(
       t,
       contactGroupId,
-      input
+      input,
+      accountId,
+      actorUserId
     );
   };
 }

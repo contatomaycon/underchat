@@ -10,6 +10,72 @@ service WorkerConnection {
   rpc ValidatePhone(PhoneValidationRequest) returns (PhoneValidationResponse);
   rpc ActivateRuntime(WorkerRuntimeActivationRequest) returns (WorkerRuntimeActivationResponse);
   rpc RuntimeHealth(WorkerRuntimeHealthRequest) returns (WorkerRuntimeHealthResponse);
+  rpc PrepareProviderHandoff(ProviderHandoffPrepareRequest) returns (ProviderHandoffPrepareResponse);
+  rpc PrepareSessionStorageMigration(SessionStorageMigrationPrepareRequest) returns (SessionStorageMigrationPrepareResponse);
+}
+
+message SessionStorageMigrationPrepareRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string migration_id = 3;
+  string provider = 4;
+  string source_volume_name = 5;
+  int32 runtime_generation = 6;
+  string expected_phone = 7;
+  string debug_trace_id = 8;
+  string runtime_capability = 9;
+}
+
+message SessionStorageMigrationPrepareResponse {
+  string worker_id = 1;
+  string provider = 2;
+  string migration_id = 3;
+  int32 runtime_generation = 4;
+  bool prepared = 5;
+  bool consumers_drained = 6;
+  bool writes_paused = 7;
+  bool checkpoint_persisted = 8;
+  bool provider_disconnected = 9;
+  string checkpoint_checksum_sha256 = 10;
+  int64 checkpoint_size_bytes = 11;
+  int64 checkpoint_record_count = 12;
+  string phone = 13;
+  string identity_hash = 14;
+  string prepared_at = 15;
+  string error = 16;
+  bool volume_preserved = 17;
+}
+
+message ProviderHandoffPrepareRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string handoff_id = 3;
+  string lifecycle_operation_id = 4;
+  string source_provider = 5;
+  string target_provider = 6;
+  int64 source_revision_id = 7;
+  int32 runtime_generation = 8;
+  string debug_trace_id = 9;
+}
+
+message ProviderHandoffPrepareResponse {
+  string worker_id = 1;
+  string provider = 2;
+  string handoff_id = 3;
+  string lifecycle_operation_id = 4;
+  int64 source_revision_id = 5;
+  int32 runtime_generation = 6;
+  bool prepared = 7;
+  bool consumers_drained = 8;
+  bool writes_paused = 9;
+  bool checkpoint_persisted = 10;
+  bool provider_disconnected = 11;
+  bool lease_released = 12;
+  string checkpoint_checksum_sha256 = 13;
+  int64 checkpoint_size_bytes = 14;
+  int64 checkpoint_record_count = 15;
+  string prepared_at = 16;
+  string error = 17;
 }
 
 message StatusConnectionRequest {
@@ -24,6 +90,8 @@ message StatusConnectionRequest {
   int32 runtime_generation = 9;
   string warm_pool_id = 10;
   string debug_trace_id = 11;
+  bool qr_pending = 12;
+  optional string authorized_connection_epoch = 13;
 }
 
 message WorkerConnectionResponse {
@@ -71,6 +139,9 @@ message WorkerConnectionResponse {
   bool passkey_pending = 41;
   string passkey_confirmation_code = 42;
   bool passkey_skip_handoff_ux = 43;
+  WhatsappConnectionStatus connection_status = 44;
+  string connection_status_source_id = 45;
+  optional string authorized_connection_epoch = 46;
 }
 
 message PasskeyResponseRequest {
@@ -101,6 +172,7 @@ message SecureSessionImportRequest {
   string payload_json = 10;
   string checksum = 11;
   string debug_trace_id = 12;
+  optional string authorized_connection_epoch = 13;
 }
 
 message PhoneValidationRequest {
@@ -122,7 +194,7 @@ message PhoneValidationResponse {
 }
 
 message WorkerRuntimeActivationRequest {
-  reserved 8;
+  reserved 8, 13;
 
   string worker_id = 1;
   string account_id = 2;
@@ -132,6 +204,9 @@ message WorkerRuntimeActivationRequest {
   string balancer_grpc_host = 6;
   int32 balancer_grpc_port = 7;
   int32 runtime_generation = 9;
+  string session_storage = 10;
+  string runtime_capability = 11;
+  string writer_epoch = 12;
 }
 
 message WorkerRuntimeActivationResponse {
@@ -171,4 +246,28 @@ message WorkerRuntimeHealthResponse {
   int32 probe_latency_ms = 21;
   string phone = 22;
   bool kafka_unhealthy = 23;
+  bool kafka_consumers_ready = 24;
+  bool kafka_consumers_authorized = 25;
+  uint32 runtime_health_schema_version = 26;
+  WhatsappConnectionStatus connection_status = 27;
+  string connection_status_source_id = 28;
+  bool command_ingress_ready = 29;
+  bool command_ingress_authorized = 30;
+  string session_storage = 31;
+  int64 session_revision_id = 32;
+  string session_storage_migration_id = 33;
+}
+
+message WhatsappConnectionStatus {
+  string provider = 1;
+  string status = 2;
+  bool connected = 3;
+  bool authenticated = 4;
+  optional bool sessionValid = 5;
+  bool recoverable = 6;
+  bool qrAvailable = 7;
+  uint64 sequence = 8;
+  string changedAt = 9;
+  string reason = 10;
+  string errorCode = 11;
 }

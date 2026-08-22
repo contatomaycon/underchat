@@ -1,3 +1,5 @@
+import type { ContactValidationOrigin } from '@core/common/types/ContactValidationOrigin';
+
 export interface IScheduleContactValidated {
   contact_id: string;
   name: string;
@@ -6,4 +8,5 @@ export interface IScheduleContactValidated {
   phone_ddi: string | null;
   phone_partial: string | null;
   is_validated: boolean;
+  validation_origin: ContactValidationOrigin | null;
 }

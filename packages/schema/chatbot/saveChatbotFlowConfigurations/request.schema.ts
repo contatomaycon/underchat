@@ -10,24 +10,48 @@ const triggerEventsSchema = Type.Array(
   ])
 );
 
-const configurationsSchema = Type.Object({
-  inactivity_alert: Type.Optional(
-    Type.Object({
-      status: Type.String(),
-      quantity: Type.Optional(Type.Number()),
-      time: Type.Optional(Type.Number()),
-      action: Type.Optional(Type.String()),
-      redirect_type: Type.Optional(Type.String()),
-      selected_user: Type.Optional(Type.String()),
-      selected_sector: Type.Optional(Type.String()),
-      selected_sector_user: Type.Optional(Type.String()),
-    })
+const inactivityAlertTargetProperties = {
+  action: Type.Optional(
+    Type.Union([Type.Literal('finish'), Type.Literal('redirect')])
   ),
+  redirect_type: Type.Optional(
+    Type.Union([
+      Type.Literal('user'),
+      Type.Literal('sector'),
+      Type.Literal('chatbot'),
+    ])
+  ),
+  selected_user: Type.Optional(Type.String()),
+  selected_sector: Type.Optional(Type.String()),
+  selected_sector_user: Type.Optional(Type.String()),
+  selected_channel: Type.Optional(Type.String({ format: 'uuid' })),
+  selected_chatbot: Type.Optional(Type.String({ format: 'uuid' })),
+};
+
+const inactivityAlertSchema = Type.Union([
+  Type.Object({
+    status: Type.Literal('active'),
+    quantity: Type.Integer({ minimum: 1 }),
+    time: Type.Integer({ minimum: 1 }),
+    ...inactivityAlertTargetProperties,
+  }),
+  Type.Object({
+    status: Type.Literal('inactive'),
+    quantity: Type.Optional(Type.Integer({ minimum: 1 })),
+    time: Type.Optional(Type.Integer({ minimum: 1 })),
+    ...inactivityAlertTargetProperties,
+  }),
+]);
+
+const configurationsSchema = Type.Object({
+  inactivity_alert: Type.Optional(inactivityAlertSchema),
   redirect_failed_attempts: Type.Optional(
     Type.Object({
-      status: Type.String(),
-      quantity: Type.Optional(Type.Number()),
-      redirect_type: Type.Optional(Type.String()),
+      status: Type.Union([Type.Literal('active'), Type.Literal('inactive')]),
+      quantity: Type.Optional(Type.Integer({ minimum: 1 })),
+      redirect_type: Type.Optional(
+        Type.Union([Type.Literal('user'), Type.Literal('sector')])
+      ),
       selected_user: Type.Optional(Type.String()),
       selected_sector: Type.Optional(Type.String()),
       selected_sector_user: Type.Optional(Type.String()),

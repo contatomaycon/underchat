@@ -8,6 +8,7 @@ import {
   IMetaWhatsappWebhookEvent,
   IMetaWhatsappWebhookPayload,
 } from '@core/common/interfaces/IMetaWhatsappWebhookEvent';
+import { OfficialWhatsappWebhookWindowRecorderService } from '@core/services/officialWhatsappWebhookWindowRecorder.service';
 
 export interface VerifyWhatsappEmbeddedWebhookInput {
   mode?: string;
@@ -36,7 +37,9 @@ export class WhatsappEmbeddedWebhookUseCase {
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(OfficialWhatsappWebhookWindowRecorderService)
+    private readonly officialWindowRecorder: OfficialWhatsappWebhookWindowRecorderService
   ) {}
 
   async verify(
@@ -89,6 +92,8 @@ export class WhatsappEmbeddedWebhookUseCase {
         event
       )}`
     );
+
+    await this.officialWindowRecorder.record(event);
 
     await this.streamProducerService.send(
       this.kafkaServiceQueueService.officialWhatsappWebhookEvent(),

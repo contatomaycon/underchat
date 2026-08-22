@@ -13,18 +13,15 @@ import { PlanAccountCancellerRepository } from '@core/repositories/accountSettin
 import { AccountUpdaterRepository } from '@core/repositories/account/AccountUpdater.repository';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { WorkerService } from '@core/services/worker.service';
-import { CentrifugoService } from '@core/services/centrifugo.service';
-import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
-import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
-import { EWorkerAction } from '@core/common/enums/EWorkerAction';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
-import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
-import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 import { PlanAccountReactivatorTransactionRepository } from '@core/repositories/accountSettings/PlanAccountReactivatorTransaction.repository';
 import Redis from 'ioredis';
+import { PlanEntitlementService } from './planEntitlement.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import { getPaymentRefundEntitlementFenceOperationKey } from '@core/common/constants/planEntitlement';
+import { WorkerLifecycleQueueService } from '@core/services/workerLifecycleQueue.service';
+import { enqueuePermanentWorkerDeletion } from '@core/common/functions/workerPermanentDeletionLifecycle';
 
 @injectable()
 export class PlanAccountCancellationService {
@@ -37,16 +34,39 @@ export class PlanAccountCancellationService {
     private readonly accountUpdaterRepository: AccountUpdaterRepository,
     @inject(WorkerService)
     private readonly workerService: WorkerService,
-    @inject(CentrifugoService)
-    private readonly centrifugoService: CentrifugoService,
-    @inject(WorkerGrpcClientService)
-    private readonly workerGrpcClientService: WorkerGrpcClientService,
+    @inject(WorkerLifecycleQueueService)
+    private readonly workerLifecycleQueueService: WorkerLifecycleQueueService,
     @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
     @inject(PlanAccountReactivatorTransactionRepository)
     private readonly planAccountReactivatorTransactionRepository: PlanAccountReactivatorTransactionRepository,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    @inject(PlanEntitlementService)
+    private readonly planEntitlementService: PlanEntitlementService
   ) {}
+
+  private async restoreIntegrationEntitlementAfterFailure(
+    accountId: string,
+    denyFenceOwnerToken?: string
+  ): Promise<void> {
+    try {
+      await (denyFenceOwnerToken
+        ? this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration,
+            denyFenceOwnerToken
+          )
+        : this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration
+          ));
+    } catch (error) {
+      console.error(
+        'Could not restore integration entitlement after a failed plan cancellation mutation.',
+        error
+      );
+    }
+  }
 
   private shouldSkipKey(key: string, userIdToKeep?: string): boolean {
     if (!userIdToKeep) return false;
@@ -151,13 +171,15 @@ export class PlanAccountCancellationService {
     await Promise.all(updatePromises);
   }
 
-  private isWithin7DaysPeriod(lastPaymentDate: string | null): boolean {
-    if (!lastPaymentDate) return false;
+  private isWithin7DaysPeriod(subscriptionStartedAt: string | null): boolean {
+    if (!subscriptionStartedAt) return false;
 
-    const lastPayment = new Date(lastPaymentDate);
+    const subscriptionStart = new Date(subscriptionStartedAt);
+    if (Number.isNaN(subscriptionStart.getTime())) return false;
+
     const now = new Date();
     const daysDiff = Math.floor(
-      (now.getTime() - lastPayment.getTime()) / (1000 * 60 * 60 * 24)
+      (now.getTime() - subscriptionStart.getTime()) / (1000 * 60 * 60 * 24)
     );
 
     return daysDiff <= 7;
@@ -359,7 +381,9 @@ export class PlanAccountCancellationService {
   private async executeCancellation(
     data: IPlanAccountCancellationData
   ): Promise<IPlanAccountCancellationResult> {
-    const isWithin7Days = this.isWithin7DaysPeriod(data.last_payment_date);
+    const isWithin7Days = this.isWithin7DaysPeriod(
+      data.subscription_started_at
+    );
     const cancellationDate = currentTime();
     const shouldCancelNextPayment = isWithin7Days;
 
@@ -395,115 +419,49 @@ export class PlanAccountCancellationService {
     );
   }
 
-  private async findWorkersByAccountId(
-    accountId: string
-  ): Promise<Array<{ worker_id: string; workerData: IViewWorkerServer }>> {
-    try {
-      const workerIds =
-        await this.planAccountCancellerRepository.findWorkersByAccountId(
-          accountId
-        );
-
-      const workersWithBalancerPromises = workerIds.map(async (workerId) => {
-        const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
-          accountId,
-          workerId
-        );
-
-        if (viewWorkerBalancer) {
-          return {
-            worker_id: workerId,
-            workerData: viewWorkerBalancer,
-          };
-        }
-
-        return null;
-      });
-
-      const workersWithBalancer = await Promise.all(
-        workersWithBalancerPromises
-      );
-
-      return workersWithBalancer.filter(
-        (
-          worker
-        ): worker is { worker_id: string; workerData: IViewWorkerServer } =>
-          worker !== null
-      );
-    } catch (error) {
-      console.error('Erro ao buscar workers por account_id:', error);
-      return [];
-    }
-  }
-
-  private createWorkerDeleterPayload(
-    workerId: string,
-    workerData: IViewWorkerServer
-  ): IWorkerPayload {
-    return {
-      action: EWorkerAction.delete,
-      worker_id: workerId,
-      server_id: workerData.server_id,
-      account_id: workerData.account_id,
-    };
-  }
-
-  private async publishWorkerDeletionEvents(
-    t: TFunction<'translation', undefined>,
-    payload: IWorkerPayload
-  ): Promise<void> {
-    await Promise.all([
-      this.centrifugoService.publishSub(
-        workerCentrifugoQueue(payload.account_id),
-        payload
-      ),
-      this.workerGrpcClientService.deleteWorker(payload).catch((err) => {
-        throw new Error(t('grpc_error'), { cause: err });
-      }),
-    ]);
-  }
-
-  private async updateWorkerStatusToDeleting(
-    accountId: string,
-    workerId: string
-  ): Promise<boolean> {
-    const inputUpdate: IUpdateWorker = {
-      worker_id: workerId,
-      worker_status_id: EWorkerStatus.deleting,
-    };
-
-    return this.workerService.updateWorkerById(accountId, inputUpdate);
+  private async findWorkersByAccountId(accountId: string): Promise<string[]> {
+    return this.planAccountCancellerRepository.findWorkersByAccountId(
+      accountId
+    );
   }
 
   private async deleteWorkerByAccountId(
-    t: TFunction<'translation', undefined>,
     accountId: string,
-    workerId: string,
-    workerData: IViewWorkerServer
-  ): Promise<boolean> {
-    try {
-      const payload = this.createWorkerDeleterPayload(workerId, workerData);
-
-      await this.publishWorkerDeletionEvents(t, payload);
-
-      return await this.updateWorkerStatusToDeleting(accountId, workerId);
-    } catch (error) {
-      console.error('Erro ao deletar worker:', error);
-      return false;
-    }
+    workerId: string
+  ): Promise<void> {
+    await enqueuePermanentWorkerDeletion(
+      {
+        workerService: this.workerService,
+        workerLifecycleQueueService: this.workerLifecycleQueueService,
+      },
+      {
+        account_id: accountId,
+        worker_id: workerId,
+        source: 'plan_cancellation',
+      }
+    );
   }
 
-  private async deleteAllWorkersByAccountId(
-    t: TFunction<'translation', undefined>,
-    accountId: string
-  ): Promise<void> {
-    const workers = await this.findWorkersByAccountId(accountId);
-
-    await Promise.all(
-      workers.map(({ worker_id, workerData }) =>
-        this.deleteWorkerByAccountId(t, accountId, worker_id, workerData)
+  private async deleteAllWorkersByAccountId(accountId: string): Promise<void> {
+    const workerIds = await this.findWorkersByAccountId(accountId);
+    const results = await Promise.allSettled(
+      workerIds.map((workerId) =>
+        this.deleteWorkerByAccountId(accountId, workerId)
       )
     );
+    const failures = results
+      .filter(
+        (result): result is PromiseRejectedResult =>
+          result.status === 'rejected'
+      )
+      .map((result) => result.reason);
+
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        'One or more worker deletion commands could not be delivered'
+      );
+    }
   }
 
   private buildActionMessages(
@@ -615,17 +573,17 @@ export class PlanAccountCancellationService {
       account_payment_id: planAccountData.account_payment_id,
       billing: planAccountData.apy?.billing || null,
       last_payment_date: planAccountData.last_payment_date,
+      subscription_started_at: planAccountData.created_at,
     });
   }
 
   private async finalizeCancellation(
-    t: TFunction<'translation', undefined>,
     accountId: string,
     accountStatusId: EAccountStatus
   ): Promise<void> {
     await Promise.all([
       this.updateAccountStatus(accountId, accountStatusId),
-      this.deleteAllWorkersByAccountId(t, accountId),
+      this.deleteAllWorkersByAccountId(accountId),
     ]);
   }
 
@@ -662,48 +620,96 @@ export class PlanAccountCancellationService {
       );
 
     this.validatePlanAccountData(t, planAccountData);
-
-    const cancellationResult =
-      await this.executeCancellationWithData(planAccountData);
-
-    const success = await this.updatePlanAccountInDatabase(
-      planAccountId,
-      cancellationResult.cancellationDate,
-      cancellationResult.shouldCancelNextPayment
-    );
-
-    if (!success) {
-      throw new Error(t('subscription_cancellation_error'));
+    let denyFenceOwnerToken: string | null | undefined;
+    let externalPaymentRefunded = false;
+    const refundAccountPaymentId =
+      planAccountData.account_payment_id ??
+      planAccountData.apy?.account_payment_id;
+    const fenceOperationKey = refundAccountPaymentId
+      ? getPaymentRefundEntitlementFenceOperationKey(refundAccountPaymentId)
+      : `plan-cancellation:${planAccountId}`;
+    try {
+      // A scheduled cancellation normally keeps the current cycle active, but
+      // the cycle may expire between the initial read and the local writer.
+      // Fence every cancellation conservatively so that an expiry discovered
+      // at commit cannot become an unfenced true -> false transition.
+      denyFenceOwnerToken =
+        await this.planEntitlementService.installDenyFenceForRevocationOperation(
+          accountId,
+          EPlanProduct.integration,
+          fenceOperationKey
+        );
+    } catch (error) {
+      throw error;
     }
 
-    const userIdToKeep = tokenJwtData?.user_id;
-    const tasks: Array<Promise<void>> = [
-      this.finalizeCancellation(t, accountId, accountStatusId),
-      this.sendCancellationNotification(
-        accountId,
+    try {
+      const cancellationResult =
+        await this.executeCancellationWithData(planAccountData);
+      externalPaymentRefunded = cancellationResult.asaasActions.paymentRefunded;
+
+      const success = await this.updatePlanAccountInDatabase(
         planAccountId,
-        cancellationResult.isWithin7Days
-      ),
-      this.deleteAccountJwtCache(
-        accountId,
-        cancellationResult.isWithin7Days,
-        userIdToKeep
-      ),
-    ];
-
-    if (cancellationResult.isWithin7Days && userIdToKeep) {
-      tasks.push(
-        this.updateCurrentUserJwtCachePlanInactive(accountId, userIdToKeep)
+        cancellationResult.cancellationDate,
+        cancellationResult.shouldCancelNextPayment
       );
+
+      if (!success) {
+        throw new Error(t('subscription_cancellation_error'));
+      }
+
+      const userIdToKeep = tokenJwtData?.user_id;
+      const tasks: Array<Promise<void>> = [
+        this.finalizeCancellation(accountId, accountStatusId),
+        this.sendCancellationNotification(
+          accountId,
+          planAccountId,
+          cancellationResult.isWithin7Days
+        ),
+        this.deleteAccountJwtCache(
+          accountId,
+          cancellationResult.isWithin7Days,
+          userIdToKeep
+        ),
+      ];
+
+      if (cancellationResult.isWithin7Days && userIdToKeep) {
+        tasks.push(
+          this.updateCurrentUserJwtCachePlanInactive(accountId, userIdToKeep)
+        );
+      }
+
+      if (cancellationResult.isWithin7Days && tokenJwtData) {
+        tokenJwtData.plan_is_active = false;
+      }
+
+      await Promise.all(tasks);
+      await (denyFenceOwnerToken
+        ? this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration,
+            denyFenceOwnerToken
+          )
+        : this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration
+          ));
+
+      return this.buildCancellationMessage(t, cancellationResult);
+    } catch (error) {
+      if (!externalPaymentRefunded) {
+        await this.restoreIntegrationEntitlementAfterFailure(
+          accountId,
+          denyFenceOwnerToken ?? undefined
+        );
+      } else {
+        console.error(
+          'Keeping the integration deny fence after the external payment refund succeeded but the local cancellation failed.',
+          error
+        );
+      }
+      throw error;
     }
-
-    if (cancellationResult.isWithin7Days && tokenJwtData) {
-      tokenJwtData.plan_is_active = false;
-    }
-
-    await Promise.all(tasks);
-
-    return this.buildCancellationMessage(t, cancellationResult);
   }
 
   async reactivatePlanAccount(
@@ -719,9 +725,17 @@ export class PlanAccountCancellationService {
       throw new Error(t('plan_not_cancelled'));
     }
 
+    await this.planEntitlementService.refreshAfterMutation(
+      accountId,
+      EPlanProduct.integration
+    );
     await this.planAccountReactivatorTransactionRepository.executeReactivation(
       t,
       accountId
+    );
+    await this.planEntitlementService.refreshAfterMutation(
+      accountId,
+      EPlanProduct.integration
     );
 
     return t('plan_reactivated_successfully');

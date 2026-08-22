@@ -27,6 +27,8 @@ import { upsertAiAgentHumanTransferSchema } from '@core/schema/aiAgent/upsertAiA
 import { listAiAgentHumanTransferSectorsSchema } from '@core/schema/aiAgent/listAiAgentHumanTransferSectors';
 import { listAiAgentHumanTransferSectorUsersSchema } from '@core/schema/aiAgent/listAiAgentHumanTransferSectorUsers';
 import { listAiAgentHumanTransferSectorUsersBySectorIdsSchema } from '@core/schema/aiAgent/listAiAgentHumanTransferSectorUsersBySectorIds';
+import { blockAiAgentSchema } from '@core/schema/aiAgent/blockAiAgent';
+import { unblockAiAgentSchema } from '@core/schema/aiAgent/unblockAiAgent';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -102,6 +104,28 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
   server.patch('/ai-agent/:ai_agent_id', {
     schema: updateAiAgentSchema,
     handler: aiAgentController.updateAiAgent,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentUpdatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/ai-agent/:ai_agent_id/block', {
+    schema: blockAiAgentSchema,
+    handler: aiAgentController.blockAiAgent,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentUpdatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/ai-agent/:ai_agent_id/unblock', {
+    schema: unblockAiAgentSchema,
+    handler: aiAgentController.unblockAiAgent,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentUpdatePermissions),

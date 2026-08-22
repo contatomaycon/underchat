@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -116,17 +114,21 @@ func connectionLifecycleTraceID(fields map[string]any) string {
 func sanitizeConnectionLifecycleDebugFields(fields map[string]any) map[string]any {
 	sanitized := make(map[string]any, len(fields)+8)
 	for key, value := range fields {
-		sanitized[key] = value
+		if isConnectionFlowSensitiveKey(key) {
+			prefix := connectionLifecycleSensitivePrefix(key)
+			raw := fmt.Sprint(value)
+			sanitized["has_"+prefix] = raw != "" && raw != "<nil>"
+			if raw != "" && raw != "<nil>" {
+				sanitized[prefix+"_length"] = len(raw)
+			}
+			continue
+		}
+		if isConnectionFlowIdentifierKey(key) {
+			sanitized[key+"_hash"] = hashConnectionFlowIdentifier(value)
+			continue
+		}
+		sanitized[key] = sanitizeConnectionFlowValue(key, value)
 	}
-
-	redactQRCodeField(sanitized, "qr", "qr")
-	redactQRCodeField(sanitized, "qrcode", "qr")
-	redactQRCodeField(sanitized, "qr_code", "qr")
-	redactQRCodeField(sanitized, "qrCode", "qr")
-	redactQRCodeField(sanitized, "QRCode", "qr")
-	redactQRCodeField(sanitized, "pairing_code", "pairing_code")
-	redactQRCodeField(sanitized, "pairingCode", "pairing_code")
-	redactQRCodeField(sanitized, "PairingCode", "pairing_code")
 
 	if _, ok := sanitized["debug_trace_id"]; ok {
 		if _, hasTraceID := sanitized["trace_id"]; !hasTraceID {
@@ -137,20 +139,19 @@ func sanitizeConnectionLifecycleDebugFields(fields map[string]any) map[string]an
 	return sanitized
 }
 
-func redactQRCodeField(fields map[string]any, key string, prefix string) {
-	value, ok := fields[key]
-	if !ok {
-		return
+func connectionLifecycleSensitivePrefix(key string) string {
+	switch normalizeConnectionFlowKey(key) {
+	case "qr", "qrcode":
+		return "qr"
+	case "pairingcode":
+		return "pairing_code"
+	case "passkeypublickey", "publickey":
+		return "passkey_public_key"
+	case "passkeyconfirmationcode":
+		return "passkey_confirmation_code"
+	case "passkeyresponse", "webauthnassertion":
+		return "passkey_response"
+	default:
+		return "sensitive_value"
 	}
-	delete(fields, key)
-
-	raw := fmt.Sprint(value)
-	if raw == "" || raw == "<nil>" {
-		fields["has_"+prefix] = false
-		return
-	}
-	sum := sha256.Sum256([]byte(raw))
-	fields["has_"+prefix] = true
-	fields[prefix+"_length"] = len(raw)
-	fields[prefix+"_sha256_12"] = hex.EncodeToString(sum[:])[:12]
 }

@@ -27,6 +27,14 @@ import type {
   IPlanReleaseUpdatePaymentStatusInput,
 } from '@core/common/interfaces/IPlanReleaseService';
 import { APP_TIMEZONE } from '@core/common/constants/timezone';
+import { PlanEntitlementService } from './planEntitlement.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import { getPaymentRefundEntitlementFenceOperationKey } from '@core/common/constants/planEntitlement';
+
+interface PaymentStatusObservation {
+  readonly observedAt: string;
+  readonly eventId: string;
+}
 
 @injectable()
 export class PlanReleaseService {
@@ -47,8 +55,126 @@ export class PlanReleaseService {
     private readonly nfseCentiDocumentService: NfseCentiDocumentService,
     @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    @inject(PlanEntitlementService)
+    private readonly planEntitlementService: PlanEntitlementService
   ) {}
+
+  private readonly restoreIntegrationEntitlementAfterFailure = async (
+    accountId: string,
+    denyFenceOwnerToken?: string
+  ): Promise<void> => {
+    try {
+      await (denyFenceOwnerToken
+        ? this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration,
+            denyFenceOwnerToken
+          )
+        : this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration
+          ));
+    } catch (error) {
+      console.error(
+        'Could not restore integration entitlement after a failed plan release mutation.',
+        error
+      );
+    }
+  };
+
+  private readonly runEntitlementMutation = async <T>(input: {
+    accountId: string;
+    installFence: boolean;
+    allowFenceAdoption?: boolean;
+    fenceOperationKey?: string;
+    preserveFenceOnMutationFailure?: boolean;
+    shouldReleaseFenceAfterMutation?: (
+      result: T,
+      context: { adopted: boolean }
+    ) => boolean;
+    mutate: (denyFenceOwnerToken?: string) => Promise<T>;
+  }): Promise<T> => {
+    let denyFenceOwnerToken: string | null | undefined;
+    let denyFenceWasAdopted = false;
+    if (input.installFence) {
+      try {
+        if (input.allowFenceAdoption) {
+          if (!input.fenceOperationKey) {
+            throw new Error('plan_entitlement_fence_operation_key_required');
+          }
+          const acquiredFence =
+            await this.planEntitlementService.installOrAdoptDenyFenceForRevocationRetry(
+              input.accountId,
+              EPlanProduct.integration,
+              input.fenceOperationKey
+            );
+          denyFenceOwnerToken = acquiredFence?.ownerToken;
+          denyFenceWasAdopted = acquiredFence?.adopted ?? false;
+        } else {
+          denyFenceOwnerToken =
+            await this.planEntitlementService.installDenyFence(
+              input.accountId,
+              EPlanProduct.integration
+            );
+        }
+      } catch (error) {
+        throw error;
+      }
+    } else {
+      if (denyFenceOwnerToken) {
+        await this.planEntitlementService.refreshAfterMutation(
+          input.accountId,
+          EPlanProduct.integration,
+          denyFenceOwnerToken
+        );
+      } else {
+        await this.planEntitlementService.refreshAfterMutation(
+          input.accountId,
+          EPlanProduct.integration
+        );
+      }
+    }
+
+    let mutationCompleted = false;
+
+    try {
+      const result = await input.mutate(denyFenceOwnerToken ?? undefined);
+      mutationCompleted = true;
+      const shouldReleaseFence =
+        !denyFenceOwnerToken ||
+        (input.shouldReleaseFenceAfterMutation?.(result, {
+          adopted: denyFenceWasAdopted,
+        }) ??
+          true);
+      if (denyFenceOwnerToken && shouldReleaseFence) {
+        await this.planEntitlementService.refreshAfterMutation(
+          input.accountId,
+          EPlanProduct.integration,
+          denyFenceOwnerToken
+        );
+      } else if (!denyFenceOwnerToken) {
+        await this.planEntitlementService.refreshAfterMutation(
+          input.accountId,
+          EPlanProduct.integration
+        );
+      }
+      return result;
+    } catch (error) {
+      if (
+        input.installFence &&
+        !mutationCompleted &&
+        !denyFenceWasAdopted &&
+        !input.preserveFenceOnMutationFailure
+      ) {
+        await this.restoreIntegrationEntitlementAfterFailure(
+          input.accountId,
+          denyFenceOwnerToken ?? undefined
+        );
+      }
+      throw error;
+    }
+  };
 
   private readonly mapAsaasStatusToPaymentStatus = (
     asaasStatus: string
@@ -97,6 +223,21 @@ export class PlanReleaseService {
     return statusMap[paymentStatusId] || null;
   };
 
+  private readonly normalizePaymentStatusObservation = (
+    data: AsaasInvoiceWebhookRequest
+  ): PaymentStatusObservation => {
+    const timestamp = Date.parse(data.dateCreated);
+    const eventId = data.id?.trim();
+    if (!Number.isFinite(timestamp) || !eventId || eventId.length > 255) {
+      throw new Error('payment_status_event_order_invalid');
+    }
+
+    return {
+      observedAt: new Date(timestamp).toISOString(),
+      eventId,
+    };
+  };
+
   private readonly isPaymentStatusSuccessful = (
     paymentStatusId: string
   ): boolean => {
@@ -113,6 +254,19 @@ export class PlanReleaseService {
       paymentStatusId === EPaymentStatus.overdue ||
       paymentStatusId === EPaymentStatus.awaiting_risk_analysis ||
       paymentStatusId === EPaymentStatus.dunning_requested
+    );
+  };
+
+  private readonly isPaymentStatusRevoking = (
+    paymentStatusId: string
+  ): boolean => {
+    return (
+      paymentStatusId === EPaymentStatus.refunded ||
+      paymentStatusId === EPaymentStatus.refund_requested ||
+      paymentStatusId === EPaymentStatus.refund_in_progress ||
+      paymentStatusId === EPaymentStatus.chargeback_requested ||
+      paymentStatusId === EPaymentStatus.chargeback_dispute ||
+      paymentStatusId === EPaymentStatus.awaiting_chargeback_reversal
     );
   };
 
@@ -268,8 +422,8 @@ export class PlanReleaseService {
 
   private readonly updatePaymentStatusOnly = async (
     data: IPlanReleaseUpdatePaymentStatusInput
-  ): Promise<void> => {
-    await withLock(
+  ): Promise<boolean> => {
+    return withLock(
       this.redis,
       `plan-account:${data.accountId}`,
       () =>
@@ -290,6 +444,9 @@ export class PlanReleaseService {
           releaseStatus: data.releaseStatus,
           releaseProcessedAt: data.releaseProcessedAt,
           releaseLastError: data.releaseLastError,
+          statusObservedAt: data.statusObservedAt,
+          statusEventId: data.statusEventId,
+          allowFinancialReversal: data.allowFinancialReversal,
         }),
       { ttlMs: 20000 }
     );
@@ -297,42 +454,55 @@ export class PlanReleaseService {
 
   private readonly releaseAddonOnlyForPayment = async (
     data: IPlanReleaseAddonOnlyPaymentInput
-  ): Promise<void> => {
-    await withLock(
-      this.redis,
-      `plan-account:${data.accountId}`,
-      () =>
-        this.planReleaseRepository.processPaymentAndReleasePlan({
-          accountPaymentId: data.accountPaymentId,
-          paymentStatusId: data.paymentStatusId,
-          paymentDate: data.paymentDate,
-          pixTransaction: data.pixTransaction,
-          accountId: data.accountId,
-          planId: data.planId,
-          accountPaymentIdForPlan: data.accountPaymentId,
-          recurringPayment: false,
-          billingPeriodId: null,
-          lastPaymentDate: data.paymentDate,
-          nextPaymentDate: data.paymentDate,
-          value: '0',
-          shouldReleasePlan: false,
-          isAddonOnly: true,
-          releaseStatus: EAccountPaymentReleaseStatus.processed,
-          releaseProcessedAt: data.paymentDate,
-          releaseLastError: null,
-        }),
-      { ttlMs: 20000 }
-    );
+  ): Promise<boolean> => {
+    const applied = await this.runEntitlementMutation({
+      accountId: data.accountId,
+      installFence: false,
+      mutate: () =>
+        withLock(
+          this.redis,
+          `plan-account:${data.accountId}`,
+          () =>
+            this.planReleaseRepository.processPaymentAndReleasePlan({
+              accountPaymentId: data.accountPaymentId,
+              paymentStatusId: data.paymentStatusId,
+              paymentDate: data.paymentDate,
+              pixTransaction: data.pixTransaction,
+              accountId: data.accountId,
+              planId: data.planId,
+              accountPaymentIdForPlan: data.accountPaymentId,
+              recurringPayment: false,
+              billingPeriodId: null,
+              lastPaymentDate: data.paymentDate,
+              nextPaymentDate: data.paymentDate,
+              value: '0',
+              shouldReleasePlan: false,
+              isAddonOnly: true,
+              releaseStatus: EAccountPaymentReleaseStatus.processed,
+              releaseProcessedAt: data.paymentDate,
+              releaseLastError: null,
+              allowFinancialReversal: data.allowFinancialReversal,
+              statusObservedAt: data.statusObservedAt,
+              statusEventId: data.statusEventId,
+            }),
+          { ttlMs: 20000 }
+        ),
+    });
+
+    if (!applied) {
+      return false;
+    }
 
     await this.createInvoiceForPayment(
       data.accountPaymentId,
       data.paymentAsaasId
     );
+    return true;
   };
 
   private readonly releasePlanForPayment = async (
     data: IPlanReleasePaymentInput
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const currentPlanAccount =
       await this.planReleaseRepository.findPlanAccountByAccountId(
         data.accountId
@@ -359,32 +529,56 @@ export class PlanReleaseService {
           data.value
         )
       : data.value;
+    const projectedAllowed =
+      new Date(nextPaymentDate).getTime() > Date.now() &&
+      (await this.planEntitlementService.willGrantAfterPlanAssignment({
+        accountId: data.accountId,
+        planId: data.planId,
+        planProductId: EPlanProduct.integration,
+        prospectiveLastPaymentDate: data.paymentDate,
+        // Existing assignments only survive the mutation when the repository
+        // appends. Same-plan releases replace them from this payment too.
+        includeExistingAddons: shouldPreserveExistingAddons,
+        prospectiveAccountPaymentId: data.accountPaymentId,
+      }));
 
-    await withLock(
-      this.redis,
-      `plan-account:${data.accountId}`,
-      () =>
-        this.planReleaseRepository.processPaymentAndReleasePlan({
-          accountPaymentId: data.accountPaymentId,
-          paymentStatusId: data.paymentStatusId,
-          paymentDate: data.paymentDate,
-          pixTransaction: data.pixTransaction,
-          accountId: data.accountId,
-          planId: data.planId,
-          accountPaymentIdForPlan: data.accountPaymentId,
-          recurringPayment: data.recurringPayment,
-          billingPeriodId: data.billingPeriodId,
-          lastPaymentDate: data.paymentDate,
-          nextPaymentDate,
-          value: finalValue,
-          shouldReleasePlan: true,
-          replaceExistingAddons: !shouldPreserveExistingAddons,
-          releaseStatus: EAccountPaymentReleaseStatus.processed,
-          releaseProcessedAt: data.paymentDate,
-          releaseLastError: null,
-        }),
-      { ttlMs: 20000 }
-    );
+    const applied = await this.runEntitlementMutation({
+      accountId: data.accountId,
+      installFence: !projectedAllowed,
+      mutate: () =>
+        withLock(
+          this.redis,
+          `plan-account:${data.accountId}`,
+          () =>
+            this.planReleaseRepository.processPaymentAndReleasePlan({
+              accountPaymentId: data.accountPaymentId,
+              paymentStatusId: data.paymentStatusId,
+              paymentDate: data.paymentDate,
+              pixTransaction: data.pixTransaction,
+              accountId: data.accountId,
+              planId: data.planId,
+              accountPaymentIdForPlan: data.accountPaymentId,
+              recurringPayment: data.recurringPayment,
+              billingPeriodId: data.billingPeriodId,
+              lastPaymentDate: data.paymentDate,
+              nextPaymentDate,
+              value: finalValue,
+              shouldReleasePlan: true,
+              replaceExistingAddons: !shouldPreserveExistingAddons,
+              releaseStatus: EAccountPaymentReleaseStatus.processed,
+              releaseProcessedAt: data.paymentDate,
+              releaseLastError: null,
+              allowFinancialReversal: data.allowFinancialReversal,
+              statusObservedAt: data.statusObservedAt,
+              statusEventId: data.statusEventId,
+            }),
+          { ttlMs: 20000 }
+        ),
+    });
+
+    if (!applied) {
+      return false;
+    }
 
     await this.createInvoiceForPayment(
       data.accountPaymentId,
@@ -408,6 +602,7 @@ export class PlanReleaseService {
         notificationTypeId
       );
     }
+    return true;
   };
 
   private readonly processSuccessfulPayment = async (
@@ -415,10 +610,12 @@ export class PlanReleaseService {
     paymentStatusId: string,
     paymentDate: string,
     pixTransaction: string | null,
-    paymentAsaasId: string
-  ): Promise<void> => {
+    paymentAsaasId: string,
+    observation: PaymentStatusObservation,
+    isFinancialReversal = false
+  ): Promise<boolean> => {
     if (accountPaymentData.is_addon_only) {
-      await this.releaseAddonOnlyForPayment({
+      return this.releaseAddonOnlyForPayment({
         accountPaymentId: accountPaymentData.account_payment_id,
         paymentStatusId,
         paymentDate,
@@ -426,9 +623,10 @@ export class PlanReleaseService {
         accountId: accountPaymentData.account_id,
         planId: accountPaymentData.plan_id,
         paymentAsaasId,
+        allowFinancialReversal: isFinancialReversal,
+        statusObservedAt: observation.observedAt,
+        statusEventId: observation.eventId,
       });
-
-      return;
     }
 
     const releasedPlanAccount = await this.findReleasedPlanAccountByPayment(
@@ -436,8 +634,39 @@ export class PlanReleaseService {
       accountPaymentData.plan_id
     );
 
-    if (releasedPlanAccount) {
-      await this.updatePaymentStatusOnly({
+    if (isFinancialReversal && !releasedPlanAccount) {
+      // The payment became historical after another plan was materialized.
+      // Reconcile its financial status without replacing the account's newer
+      // plan assignment.
+      return this.updatePaymentStatusOnly({
+        accountPaymentId: accountPaymentData.account_payment_id,
+        paymentStatusId,
+        paymentDate,
+        pixTransaction,
+        accountId: accountPaymentData.account_id,
+        planId: accountPaymentData.plan_id,
+        recurringPayment: accountPaymentData.recurring_payment,
+        billingPeriodId: accountPaymentData.billing_period_id,
+        value: accountPaymentData.value,
+        nextPaymentDate: new Date().toISOString(),
+        releaseStatus: EAccountPaymentReleaseStatus.processed,
+        releaseProcessedAt: paymentDate,
+        releaseLastError: null,
+        statusObservedAt: observation.observedAt,
+        statusEventId: observation.eventId,
+        allowFinancialReversal: true,
+      });
+    }
+
+    const releasedPlanIsStillActive = releasedPlanAccount?.next_payment_date
+      ? new Date(releasedPlanAccount.next_payment_date).getTime() > Date.now()
+      : false;
+    if (
+      releasedPlanAccount &&
+      !isFinancialReversal &&
+      releasedPlanIsStillActive
+    ) {
+      const applied = await this.updatePaymentStatusOnly({
         accountPaymentId: accountPaymentData.account_payment_id,
         paymentStatusId,
         paymentDate,
@@ -452,17 +681,23 @@ export class PlanReleaseService {
         releaseStatus: EAccountPaymentReleaseStatus.processed,
         releaseProcessedAt: paymentDate,
         releaseLastError: null,
+        statusObservedAt: observation.observedAt,
+        statusEventId: observation.eventId,
       });
+
+      if (!applied) {
+        return false;
+      }
 
       await this.createInvoiceForPayment(
         accountPaymentData.account_payment_id,
         paymentAsaasId
       );
 
-      return;
+      return true;
     }
 
-    await this.releasePlanForPayment({
+    return this.releasePlanForPayment({
       accountPaymentId: accountPaymentData.account_payment_id,
       paymentStatusId,
       paymentDate,
@@ -474,6 +709,9 @@ export class PlanReleaseService {
       value: accountPaymentData.value,
       paymentAsaasId,
       shouldSendNotification: true,
+      allowFinancialReversal: isFinancialReversal,
+      statusObservedAt: observation.observedAt,
+      statusEventId: observation.eventId,
     });
   };
 
@@ -482,14 +720,15 @@ export class PlanReleaseService {
     paymentStatusId: string,
     paymentDate: string,
     pixTransaction: string | null,
-    paymentAsaasId: string
-  ): Promise<void> => {
+    paymentAsaasId: string,
+    observation: PaymentStatusObservation
+  ): Promise<boolean> => {
     const releasedPlanAccount = await this.findReleasedPlanAccountByPayment(
       accountPaymentData.account_payment_id,
       accountPaymentData.plan_id
     );
 
-    await this.updatePaymentStatusOnly({
+    const applied = await this.updatePaymentStatusOnly({
       accountPaymentId: accountPaymentData.account_payment_id,
       paymentStatusId,
       paymentDate,
@@ -504,21 +743,29 @@ export class PlanReleaseService {
       releaseStatus: EAccountPaymentReleaseStatus.processed,
       releaseProcessedAt: paymentDate,
       releaseLastError: null,
+      statusObservedAt: observation.observedAt,
+      statusEventId: observation.eventId,
     });
+
+    if (!applied) {
+      return false;
+    }
 
     await this.createInvoiceForPayment(
       accountPaymentData.account_payment_id,
       paymentAsaasId
     );
+    return true;
   };
 
   private readonly processUnsuccessfulPayment = async (
     accountPaymentData: IPlanReleaseAccountPaymentData,
     paymentStatusId: string,
     paymentDate: string | null,
-    pixTransaction: string | null
-  ): Promise<void> => {
-    await this.updatePaymentStatusOnly({
+    pixTransaction: string | null,
+    observation: PaymentStatusObservation
+  ): Promise<boolean> => {
+    return this.updatePaymentStatusOnly({
       accountPaymentId: accountPaymentData.account_payment_id,
       paymentStatusId,
       paymentDate,
@@ -529,7 +776,66 @@ export class PlanReleaseService {
       billingPeriodId: accountPaymentData.billing_period_id,
       value: accountPaymentData.value,
       nextPaymentDate: new Date().toISOString(),
+      statusObservedAt: observation.observedAt,
+      statusEventId: observation.eventId,
     });
+  };
+
+  private readonly processRevokingPayment = async (
+    accountPaymentData: IPlanReleaseAccountPaymentData,
+    paymentStatusId: string,
+    paymentDate: string | null,
+    pixTransaction: string | null,
+    observation: PaymentStatusObservation
+  ): Promise<boolean> => {
+    const revoke = async (
+      installFence: boolean
+    ): Promise<{
+      applied: boolean;
+      requiresDenyFence: boolean;
+      ignoredAsStale: boolean;
+    }> =>
+      this.runEntitlementMutation({
+        accountId: accountPaymentData.account_id,
+        installFence,
+        allowFenceAdoption: true,
+        fenceOperationKey: getPaymentRefundEntitlementFenceOperationKey(
+          accountPaymentData.account_payment_id
+        ),
+        // Refund/chargeback state is already external and authoritative. Any
+        // fence (new or adopted) must survive a technical local retry failure.
+        preserveFenceOnMutationFailure: true,
+        shouldReleaseFenceAfterMutation: (result) =>
+          result.applied || result.ignoredAsStale,
+        mutate: (denyFenceOwnerToken) =>
+          this.planReleaseRepository.processPaymentRevocation({
+            accountPaymentId: accountPaymentData.account_payment_id,
+            accountId: accountPaymentData.account_id,
+            paymentStatusId,
+            paymentDate,
+            pixTransaction,
+            planProductId: EPlanProduct.integration,
+            denyFenceOwnerToken,
+            statusObservedAt: observation.observedAt,
+            statusEventId: observation.eventId,
+          }),
+      });
+
+    // Always use the explicit install-or-adopt path for an external revocation.
+    // Even when another source projects continued access, a previous refund
+    // attempt may have left an active owner that this retry must reconcile.
+    let result = await revoke(true);
+    if (result.requiresDenyFence) {
+      result = await revoke(true);
+    }
+
+    if (result.ignoredAsStale) {
+      return false;
+    }
+    if (!result.applied) {
+      throw new Error('payment_revocation_could_not_confirm_deny_fence');
+    }
+    return true;
   };
 
   processPaymentWebhook = async (
@@ -542,6 +848,7 @@ export class PlanReleaseService {
     if (!paymentStatusId) {
       throw new Error(`Status desconhecido: ${data.payment.status}`);
     }
+    const observation = this.normalizePaymentStatusObservation(data);
 
     const accountPaymentData =
       await this.planReleaseRepository.findAccountPaymentByBilling(
@@ -576,6 +883,9 @@ export class PlanReleaseService {
     const wasAlreadySuccessful = this.isPaymentStatusSuccessful(
       accountPaymentData.payment_status_id
     );
+    const wasRevoking = this.isPaymentStatusRevoking(
+      accountPaymentData.payment_status_id
+    );
     const releaseAlreadyProcessed = this.isReleaseProcessed(
       accountPaymentData.release_status
     );
@@ -590,15 +900,39 @@ export class PlanReleaseService {
         new Date().toISOString()
       : accountPaymentData.payment_date;
 
+    if (this.isPaymentStatusRevoking(paymentStatusId)) {
+      const applied = await this.processRevokingPayment(
+        accountPaymentData,
+        paymentStatusId,
+        paymentDate || null,
+        pixTransaction,
+        observation
+      );
+
+      if (!applied) return;
+
+      await this.notifyPaymentStatusUpdate(
+        accountPaymentData.account_id,
+        data.payment.id,
+        data.payment.status,
+        paymentDate
+      );
+
+      return;
+    }
+
     if (isSuccessful && paymentDate) {
-      if (releaseAlreadyProcessed) {
-        await this.processAlreadySuccessfulPayment(
+      if (releaseAlreadyProcessed && !wasRevoking) {
+        const applied = await this.processAlreadySuccessfulPayment(
           accountPaymentData,
           paymentStatusId,
           paymentDate,
           pixTransaction,
-          data.payment.id
+          data.payment.id,
+          observation
         );
+
+        if (!applied) return;
 
         await this.notifyPaymentStatusUpdate(
           accountPaymentData.account_id,
@@ -611,14 +945,17 @@ export class PlanReleaseService {
       }
 
       if (accountPaymentData.is_addon_only) {
-        if (isLegacyReleaseStatus && wasAlreadySuccessful) {
-          await this.processAlreadySuccessfulPayment(
+        if (!wasRevoking && isLegacyReleaseStatus && wasAlreadySuccessful) {
+          const applied = await this.processAlreadySuccessfulPayment(
             accountPaymentData,
             paymentStatusId,
             paymentDate,
             pixTransaction,
-            data.payment.id
+            data.payment.id,
+            observation
           );
+
+          if (!applied) return;
 
           await this.notifyPaymentStatusUpdate(
             accountPaymentData.account_id,
@@ -631,13 +968,16 @@ export class PlanReleaseService {
         }
 
         try {
-          await this.processSuccessfulPayment(
+          const applied = await this.processSuccessfulPayment(
             accountPaymentData,
             paymentStatusId,
             paymentDate,
             pixTransaction,
-            data.payment.id
+            data.payment.id,
+            observation,
+            wasRevoking
           );
+          if (!applied) return;
         } catch (error) {
           await this.markReleaseFailed(
             accountPaymentData.account_payment_id,
@@ -661,14 +1001,20 @@ export class PlanReleaseService {
         accountPaymentData.plan_id
       );
 
-      if (releasedPlanAccount) {
-        await this.processAlreadySuccessfulPayment(
+      const releasedPlanIsStillActive = releasedPlanAccount?.next_payment_date
+        ? new Date(releasedPlanAccount.next_payment_date).getTime() > Date.now()
+        : false;
+      if (releasedPlanAccount && !wasRevoking && releasedPlanIsStillActive) {
+        const applied = await this.processAlreadySuccessfulPayment(
           accountPaymentData,
           paymentStatusId,
           paymentDate,
           pixTransaction,
-          data.payment.id
+          data.payment.id,
+          observation
         );
+
+        if (!applied) return;
 
         await this.notifyPaymentStatusUpdate(
           accountPaymentData.account_id,
@@ -681,13 +1027,16 @@ export class PlanReleaseService {
       }
 
       try {
-        await this.processSuccessfulPayment(
+        const applied = await this.processSuccessfulPayment(
           accountPaymentData,
           paymentStatusId,
           paymentDate,
           pixTransaction,
-          data.payment.id
+          data.payment.id,
+          observation,
+          wasRevoking
         );
+        if (!applied) return;
       } catch (error) {
         await this.markReleaseFailed(
           accountPaymentData.account_payment_id,
@@ -707,12 +1056,14 @@ export class PlanReleaseService {
     }
 
     if (!isSuccessful) {
-      await this.processUnsuccessfulPayment(
+      const applied = await this.processUnsuccessfulPayment(
         accountPaymentData,
         paymentStatusId,
         paymentDate || null,
-        pixTransaction
+        pixTransaction,
+        observation
       );
+      if (!applied) return;
     }
 
     await this.notifyPaymentStatusUpdate(

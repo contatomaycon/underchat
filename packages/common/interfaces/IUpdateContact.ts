@@ -1,3 +1,5 @@
+import type { ContactValidationOrigin } from '@core/common/types/ContactValidationOrigin';
+
 export interface IUpdateContact {
   channel_ids?: string[] | null;
   label_template_ids?: string[] | null;
@@ -21,4 +23,5 @@ export interface IUpdateContact {
   user_id?: string | null;
   ignore?: string | null;
   is_valided: boolean;
+  validation_origin?: ContactValidationOrigin | null;
 }

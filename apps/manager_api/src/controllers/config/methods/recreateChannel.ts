@@ -4,27 +4,43 @@ import { handleControllerError } from '@core/common/functions/handleControllerEr
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ChannelRecreatorUseCase } from '@core/useCases/config/ChannelRecreator.useCase';
-import { RecreateChannelRequest } from '@core/schema/config/recreateChannel/request.schema';
+import {
+  RecreateChannelBody,
+  RecreateChannelRequest,
+} from '@core/schema/config/recreateChannel/request.schema';
 import { extractConnectionLifecycleDebugTraceIdFromHeaders } from '@core/services/connectionLifecycleDebug.service';
+import { EWorkerConnectionStrategy } from '@core/common/enums/EWorkerConnectionStrategy';
+import { ChannelConnectionResetterUseCase } from '@core/useCases/config/ChannelConnectionResetter.useCase';
 
 export const recreateChannel = async (
   request: FastifyRequest<{
     Params: RecreateChannelRequest;
+    Body: RecreateChannelBody | undefined;
   }>,
   reply: FastifyReply
 ) => {
   const channelRecreatorUseCase = container.resolve(ChannelRecreatorUseCase);
+  const channelConnectionResetterUseCase = container.resolve(
+    ChannelConnectionResetterUseCase
+  );
   const { t } = request;
   const debugTraceId = extractConnectionLifecycleDebugTraceIdFromHeaders(
     request.headers as Record<string, string | string[] | undefined>
   );
 
   try {
-    const response = await channelRecreatorUseCase.execute(
-      t,
-      request.params.channel_id,
-      debugTraceId
-    );
+    const response =
+      request.body?.connection_strategy === EWorkerConnectionStrategy.fresh
+        ? await channelConnectionResetterUseCase.execute(
+            t,
+            request.params.channel_id,
+            debugTraceId
+          )
+        : await channelRecreatorUseCase.execute(
+            t,
+            request.params.channel_id,
+            debugTraceId
+          );
 
     if (response) {
       return sendResponse(reply, {

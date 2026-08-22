@@ -25,6 +25,14 @@ import {
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
+import {
+  IPrepareProviderHandoffRequestProto,
+  IPrepareProviderHandoffResponseProto,
+} from '@core/common/interfaces/IProviderHandoffPrepareProto';
+import {
+  IPrepareSessionStorageMigrationRequestProto,
+  IPrepareSessionStorageMigrationResponseProto,
+} from '@core/common/interfaces/ISessionStorageMigrationPrepareProto';
 
 const protoPath = resolveProtoPath('worker_connection.proto');
 const packageDefinition = loadSync(protoPath, {
@@ -45,6 +53,28 @@ if (!WorkerConnectionClient) {
 const GRPC_DEADLINE_MS = 10_000;
 const GRPC_READY_DEADLINE_MS = 10_000;
 const SECURE_IMPORT_GRPC_DEADLINE_MS = 120_000;
+const REQUEST_CONNECTION_GRPC_DEADLINE_MS = Math.min(
+  120_000,
+  Math.max(
+    10_000,
+    Number(process.env.WORKER_REQUEST_CONNECTION_GRPC_DEADLINE_MS) || 45_000
+  )
+);
+const PROVIDER_HANDOFF_GRPC_DEADLINE_MS = Math.min(
+  180_000,
+  Math.max(
+    10_000,
+    Number(process.env.WORKER_PROVIDER_HANDOFF_GRPC_DEADLINE_MS) || 120_000
+  )
+);
+const SESSION_STORAGE_MIGRATION_GRPC_DEADLINE_MS = 5 * 60 * 1000;
+
+export const isWorkerConnectionDeadlineExceeded = (error: unknown): boolean =>
+  Boolean(
+    error &&
+    typeof error === 'object' &&
+    (error as ServiceError).code === status.DEADLINE_EXCEEDED
+  );
 
 export interface WorkerPasskeyResponseProtoPayload {
   worker_id: string;
@@ -90,6 +120,8 @@ export class WorkerBaileysGrpcClientService {
     debug_trace_id?: string;
     runtime_generation?: number;
     warm_pool_id?: string;
+    qr_pending?: boolean;
+    authorized_connection_epoch?: string;
   } {
     const protoPayload = {
       worker_id: payload.worker_id,
@@ -112,13 +144,26 @@ export class WorkerBaileysGrpcClientService {
       (protoPayload as { debug_trace_id?: string }).debug_trace_id =
         payload.debug_trace_id;
     }
-    if (payload.runtime_generation) {
+    const runtimeGeneration =
+      Number.isSafeInteger(payload.runtime_generation) &&
+      (payload.runtime_generation ?? 0) > 0
+        ? payload.runtime_generation
+        : undefined;
+    if (runtimeGeneration !== undefined) {
       (protoPayload as { runtime_generation?: number }).runtime_generation =
-        payload.runtime_generation;
+        runtimeGeneration;
     }
     if (payload.warm_pool_id) {
       (protoPayload as { warm_pool_id?: string }).warm_pool_id =
         payload.warm_pool_id;
+    }
+    if (payload.qr_pending === true) {
+      (protoPayload as { qr_pending?: boolean }).qr_pending = true;
+    }
+    if (payload.authorized_connection_epoch) {
+      (
+        protoPayload as { authorized_connection_epoch?: string }
+      ).authorized_connection_epoch = payload.authorized_connection_epoch;
     }
 
     return protoPayload;
@@ -179,6 +224,8 @@ export class WorkerBaileysGrpcClientService {
       debug_trace_id?: string;
       runtime_generation?: number;
       warm_pool_id?: string;
+      qr_pending?: boolean;
+      authorized_connection_epoch?: string;
     }
   ): Promise<IBaileysConnectionState> {
     const startedAt = Date.now();
@@ -186,7 +233,7 @@ export class WorkerBaileysGrpcClientService {
       address,
       credentials.createInsecure()
     );
-    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+    const deadline = new Date(Date.now() + REQUEST_CONNECTION_GRPC_DEADLINE_MS);
     const metadata = new Metadata();
 
     void this.connectionLifecycleDebugService.log(
@@ -210,6 +257,7 @@ export class WorkerBaileysGrpcClientService {
       status: protoPayload.status,
       type: protoPayload.type,
       remove_session: protoPayload.remove_session === true,
+      qr_pending: protoPayload.qr_pending === true,
       method: 'RequestConnection',
       grpc_address: address,
     });
@@ -250,8 +298,8 @@ export class WorkerBaileysGrpcClientService {
             code: state.code,
             reason: state.reason,
             duration_ms: Date.now() - startedAt,
-            qrcode: state.qrcode,
-            pairing_code: state.pairing_code,
+            has_qrcode: Boolean(state.qrcode),
+            has_pairing_code: Boolean(state.pairing_code),
             method: 'RequestConnection',
             grpc_address: address,
           }
@@ -269,14 +317,12 @@ export class WorkerBaileysGrpcClientService {
           code: state.code,
           reason: state.reason,
           duration_ms: Date.now() - startedAt,
-          qrcode: state.qrcode,
-          pairing_code: state.pairing_code,
+          has_qrcode: Boolean(state.qrcode),
+          has_pairing_code: Boolean(state.pairing_code),
           has_passkey_public_key: Boolean(state.passkey_public_key),
-          passkey_public_key: state.passkey_public_key,
           has_passkey_confirmation_code: Boolean(
             state.passkey_confirmation_code
           ),
-          passkey_confirmation_code: state.passkey_confirmation_code,
           method: 'RequestConnection',
           grpc_address: address,
         });
@@ -548,6 +594,7 @@ export class WorkerBaileysGrpcClientService {
       payload_json: payload.payload_json ?? '',
       checksum: payload.checksum ?? '',
       debug_trace_id: payload.debug_trace_id ?? '',
+      authorized_connection_epoch: payload.authorized_connection_epoch ?? '',
     };
 
     this.logFlow('service.worker_connection_grpc.secure_import_call', {
@@ -557,6 +604,9 @@ export class WorkerBaileysGrpcClientService {
       worker_type_id: payload.worker_type_id,
       connection_attempt_id: payload.connection_attempt_id,
       runtime_generation: payload.runtime_generation,
+      authorized_connection_epoch_set: Boolean(
+        payload.authorized_connection_epoch
+      ),
       format_version: payload.format_version,
       source: payload.source,
       target_provider: payload.target_provider,
@@ -720,6 +770,97 @@ export class WorkerBaileysGrpcClientService {
     });
   }
 
+  private async prepareProviderHandoffByAddress(
+    address: string,
+    payload: IPrepareProviderHandoffRequestProto
+  ): Promise<IPrepareProviderHandoffResponseProto> {
+    const client = new WorkerConnectionClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + PROVIDER_HANDOFF_GRPC_DEADLINE_MS);
+    return new Promise((resolve, reject) => {
+      (client as any).PrepareProviderHandoff(
+        payload,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IPrepareProviderHandoffResponseProto
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          if (!response) {
+            reject(new Error('prepare_provider_handoff_empty_grpc_response'));
+            return;
+          }
+          resolve({
+            ...response,
+            worker_id: String(response.worker_id ?? ''),
+            provider: String(
+              response.provider ?? ''
+            ) as IPrepareProviderHandoffResponseProto['provider'],
+            handoff_id: String(response.handoff_id ?? ''),
+            lifecycle_operation_id: String(
+              response.lifecycle_operation_id ?? ''
+            ),
+            source_revision_id: String(response.source_revision_id ?? ''),
+            runtime_generation: Number(response.runtime_generation) || 0,
+            checkpoint_size_bytes: String(response.checkpoint_size_bytes ?? ''),
+            checkpoint_record_count: String(
+              response.checkpoint_record_count ?? ''
+            ),
+          });
+        }
+      );
+    });
+  }
+
+  private async prepareSessionStorageMigrationByAddress(
+    address: string,
+    payload: IPrepareSessionStorageMigrationRequestProto
+  ): Promise<IPrepareSessionStorageMigrationResponseProto> {
+    const client = new WorkerConnectionClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(
+      Date.now() + SESSION_STORAGE_MIGRATION_GRPC_DEADLINE_MS
+    );
+    return new Promise((resolve, reject) => {
+      (client as any).PrepareSessionStorageMigration(
+        payload,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IPrepareSessionStorageMigrationResponseProto
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          if (!response) {
+            reject(
+              new Error('prepare_session_storage_migration_empty_response')
+            );
+            return;
+          }
+          resolve({
+            ...response,
+            runtime_generation: Number(response.runtime_generation) || 0,
+            checkpoint_size_bytes: String(response.checkpoint_size_bytes ?? ''),
+            checkpoint_record_count: String(
+              response.checkpoint_record_count ?? ''
+            ),
+          });
+        }
+      );
+    });
+  }
+
   private async callWithFallback<T>(
     workerId: string,
     workerType: EWorkerType | undefined,
@@ -808,6 +949,76 @@ export class WorkerBaileysGrpcClientService {
   ): Promise<IWorkerRuntimeHealthResponseProto> {
     return this.callWithFallback(containerName, workerType, (address) =>
       this.runtimeHealthByAddress(address, payload)
+    );
+  }
+
+  async prepareProviderHandoff(
+    workerId: string,
+    payload: IPrepareProviderHandoffRequestProto,
+    workerType: EWorkerType
+  ): Promise<IPrepareProviderHandoffResponseProto> {
+    const startedAt = Date.now();
+    this.logFlow('service.worker_connection_grpc.provider_handoff.start', {
+      trace_id: payload.debug_trace_id,
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      handoff_id: payload.handoff_id,
+      lifecycle_operation_id: payload.lifecycle_operation_id,
+      source_provider: payload.source_provider,
+      target_provider: payload.target_provider,
+      source_revision_id: payload.source_revision_id,
+      runtime_generation: payload.runtime_generation,
+      method: 'PrepareProviderHandoff',
+    });
+    try {
+      const response = await this.callWithFallback(
+        workerId,
+        workerType,
+        (address) => this.prepareProviderHandoffByAddress(address, payload)
+      );
+      this.logFlow('service.worker_connection_grpc.provider_handoff.done', {
+        trace_id: payload.debug_trace_id,
+        worker_id: response.worker_id,
+        handoff_id: response.handoff_id,
+        lifecycle_operation_id: response.lifecycle_operation_id,
+        source_provider: response.provider,
+        source_revision_id: response.source_revision_id,
+        runtime_generation: response.runtime_generation,
+        prepared: response.prepared,
+        consumers_drained: response.consumers_drained,
+        writes_paused: response.writes_paused,
+        checkpoint_persisted: response.checkpoint_persisted,
+        provider_disconnected: response.provider_disconnected,
+        lease_released: response.lease_released,
+        duration_ms: Date.now() - startedAt,
+        method: 'PrepareProviderHandoff',
+      });
+      return response;
+    } catch (error) {
+      this.logFlow('service.worker_connection_grpc.provider_handoff.failed', {
+        trace_id: payload.debug_trace_id,
+        worker_id: payload.worker_id,
+        handoff_id: payload.handoff_id,
+        lifecycle_operation_id: payload.lifecycle_operation_id,
+        source_provider: payload.source_provider,
+        target_provider: payload.target_provider,
+        source_revision_id: payload.source_revision_id,
+        runtime_generation: payload.runtime_generation,
+        reason: error instanceof Error ? error.message : String(error),
+        duration_ms: Date.now() - startedAt,
+        method: 'PrepareProviderHandoff',
+      });
+      throw error;
+    }
+  }
+
+  async prepareSessionStorageMigration(
+    workerId: string,
+    payload: IPrepareSessionStorageMigrationRequestProto,
+    workerType: EWorkerType
+  ): Promise<IPrepareSessionStorageMigrationResponseProto> {
+    return this.callWithFallback(workerId, workerType, (address) =>
+      this.prepareSessionStorageMigrationByAddress(address, payload)
     );
   }
 

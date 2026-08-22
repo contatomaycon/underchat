@@ -38,6 +38,7 @@ export interface WorkerConnectionQrCodeRedisStateInvalidationResult {
   group_destroy_count?: number;
   group_destroy_timeout_count?: number;
   scan_timeout_count?: number;
+  delete_timeout_count?: number;
 }
 
 export interface WorkerConnectionQrCodeRedisStreamMessage {
@@ -72,23 +73,6 @@ export class WorkerConnectionQrCodeRedisQueueService {
     Math.min(
       5_000,
       Number(process.env.CONNECTION_QRCODE_REDIS_INVALIDATE_SCAN_COUNT) || 1000
-    )
-  );
-  static readonly INVALIDATE_SCAN_TIMEOUT_MS = Math.max(
-    500,
-    Math.min(
-      10_000,
-      Number(process.env.CONNECTION_QRCODE_REDIS_INVALIDATE_SCAN_TIMEOUT_MS) ||
-        2_000
-    )
-  );
-  static readonly INVALIDATE_COMMAND_TIMEOUT_MS = Math.max(
-    500,
-    Math.min(
-      10_000,
-      Number(
-        process.env.CONNECTION_QRCODE_REDIS_INVALIDATE_COMMAND_TIMEOUT_MS
-      ) || 2_000
     )
   );
   static readonly SUPPORTED_WORKER_TYPES = [
@@ -182,8 +166,13 @@ export class WorkerConnectionQrCodeRedisQueueService {
       keys.add(this.streamKey(workerId, workerTypeId));
     }
 
-    const groupDestroyResults = await Promise.all([
-      this.destroyGroupByKeyWithTimeout(
+    const cleanupErrors: unknown[] = [];
+    let groupDestroyCount = 0;
+    let deletedKeys = 0;
+    let processedKeys: string[] = [];
+
+    const groupDestroyResults = await Promise.allSettled([
+      this.destroyGroupByKey(
         this.legacyStreamKey(workerId),
         this.legacyConsumerGroup(workerId)
       ),
@@ -191,36 +180,84 @@ export class WorkerConnectionQrCodeRedisQueueService {
         this.destroyGroupIfPresent(workerId, workerTypeId)
       ),
     ]);
-    const groupDestroyTimeoutCount = groupDestroyResults.filter(
-      (result) => result.timedOut
-    ).length;
+    for (const settled of groupDestroyResults) {
+      if (settled.status === 'fulfilled') {
+        groupDestroyCount += 1;
+      } else {
+        cleanupErrors.push(settled.reason);
+      }
+    }
 
-    const [typedScan, legacyScan] = await Promise.all([
-      this.scanKeysWithTimeout(`connection:qrcode:*:${workerId}:processed:*`),
-      this.scanKeysWithTimeout(`connection:qrcode:${workerId}:processed:*`),
+    const scanResults = await Promise.allSettled([
+      this.scanKeys(`connection:qrcode:*:${workerId}:processed:*`),
+      this.scanKeys(`connection:qrcode:${workerId}:processed:*`),
     ]);
-    const typedProcessedKeys = typedScan.keys;
-    const legacyProcessedKeys = legacyScan.keys;
-    const processedKeys = [...typedProcessedKeys, ...legacyProcessedKeys];
+    for (const settled of scanResults) {
+      if (settled.status === 'fulfilled') {
+        processedKeys.push(...settled.value);
+      } else {
+        cleanupErrors.push(settled.reason);
+      }
+    }
+    processedKeys = [...new Set(processedKeys)];
     for (const key of processedKeys) {
       keys.add(key);
     }
-    const scanTimeoutCount =
-      Number(typedScan.timedOut) + Number(legacyScan.timedOut);
 
     const keyList = [...keys];
-    const deletedKeys = keyList.length
-      ? await this.deleteKeysWithTimeout(keyList)
-      : 0;
+    if (keyList.length > 0) {
+      try {
+        deletedKeys = await this.deleteKeys(keyList);
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+
+    // Stream deletion also removes every consumer group. Recreate the typed
+    // infrastructure before returning so already-running workers can consume a
+    // future QR request without requiring a process restart.
+    const groupRecoveryResults = await Promise.allSettled(
+      workerTypes.map((workerTypeId) =>
+        this.ensureGroup(workerId, workerTypeId)
+      )
+    );
+    for (const settled of groupRecoveryResults) {
+      if (settled.status === 'rejected') {
+        cleanupErrors.push(settled.reason);
+      }
+    }
+
+    if (cleanupErrors.length > 0) {
+      void this.connectionLifecycleDebugService.log(
+        'redis.qr_stream.invalidate_failed',
+        {
+          trace_id: options.debugTraceId,
+          layer: 'redis',
+          worker_id: workerId,
+          account_id: options.accountId,
+          worker_type_id: options.workerTypeId,
+          runtime_generation: options.runtimeGeneration,
+          reason: options.reason,
+          duration_ms: Date.now() - startedAt,
+          failure_count: cleanupErrors.length,
+          failures: cleanupErrors.map((error) => getErrorMessage(error)),
+        }
+      );
+      throw new AggregateError(
+        cleanupErrors,
+        'Unable to fully invalidate and recover the QR Redis stream state'
+      );
+    }
 
     const result = {
       deleted_keys: deletedKeys,
       scanned_processed_keys: processedKeys.length,
       keys: keyList,
       duration_ms: Date.now() - startedAt,
-      group_destroy_count: groupDestroyResults.length,
-      group_destroy_timeout_count: groupDestroyTimeoutCount,
-      scan_timeout_count: scanTimeoutCount,
+      group_destroy_count: groupDestroyCount,
+      group_destroy_timeout_count: 0,
+      scan_timeout_count: 0,
+      delete_timeout_count: 0,
     };
     void this.connectionLifecycleDebugService.log(
       'redis.qr_stream.invalidate_done',
@@ -243,6 +280,7 @@ export class WorkerConnectionQrCodeRedisQueueService {
   async enqueue(payload: IWorkerConnectionQrCodeQueueMessage): Promise<string> {
     const streamKey = this.streamKey(payload.worker_id, payload.worker_type_id);
     const fields = this.payloadToFields(payload);
+    await this.ensureGroup(payload.worker_id, payload.worker_type_id);
     void this.connectionLifecycleDebugService.log('redis.qr_stream.enqueue', {
       trace_id: payload.debug_trace_id,
       layer: 'redis',
@@ -250,6 +288,7 @@ export class WorkerConnectionQrCodeRedisQueueService {
       account_id: payload.account_id,
       worker_type_id: payload.worker_type_id,
       connection_attempt_id: payload.connection_attempt_id,
+      authorized_connection_epoch: payload.authorized_connection_epoch,
       runtime_generation: payload.runtime_generation,
       stream_key: streamKey,
       source: payload.source,
@@ -267,6 +306,12 @@ export class WorkerConnectionQrCodeRedisQueueService {
       throw new Error('Redis stream XADD did not return a stream id');
     }
 
+    // An invalidation may have removed the stream between the first group
+    // ensure and XADD. Ensuring again gives enqueue a postcondition that the
+    // just-created stream is consumable. Readers independently heal NOGROUP as
+    // the final protection against a concurrent invalidation.
+    await this.ensureGroup(payload.worker_id, payload.worker_type_id);
+
     void this.connectionLifecycleDebugService.log('redis.qr_stream.enqueued', {
       trace_id: payload.debug_trace_id,
       layer: 'redis',
@@ -274,12 +319,70 @@ export class WorkerConnectionQrCodeRedisQueueService {
       account_id: payload.account_id,
       worker_type_id: payload.worker_type_id,
       connection_attempt_id: payload.connection_attempt_id,
+      authorized_connection_epoch: payload.authorized_connection_epoch,
       runtime_generation: payload.runtime_generation,
       stream_key: streamKey,
       stream_id: streamId,
       source: payload.source,
     });
     return streamId;
+  }
+
+  /**
+   * Writes QR material only while the exact attempt envelope is still active.
+   * The compare-and-set is atomic with the cache write, so an invalidation
+   * cannot delete the active key and then be followed by a stale in-flight
+   * provider response recreating the QR cache.
+   */
+  async cacheAttemptStateIfActive(
+    payload: IWorkerConnectionQrCodeQueueMessage,
+    serializedState: string,
+    ttlSeconds: number
+  ): Promise<boolean> {
+    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds <= 0) {
+      throw new TypeError('QR attempt cache TTL must be a positive integer');
+    }
+    const result = await this.redis.eval(
+      `
+        local raw = redis.call('GET', KEYS[1])
+        if not raw then
+          return 0
+        end
+        local decoded_ok, envelope = pcall(cjson.decode, raw)
+        if not decoded_ok or type(envelope) ~= 'table'
+          or type(envelope['ack']) ~= 'table'
+        then
+          return 0
+        end
+        local ack = envelope['ack']
+        if tostring(ack['connection_attempt_id'] or '') ~= ARGV[1] then
+          return 0
+        end
+        local worker_type = envelope['worker_type_id']
+          or ack['worker_type_id']
+        if worker_type ~= nil and tostring(worker_type) ~= ARGV[2] then
+          return 0
+        end
+        local generation = envelope['runtime_generation']
+          or ack['runtime_generation']
+        if ARGV[3] ~= '' and tostring(generation or '') ~= ARGV[3] then
+          return 0
+        end
+        redis.call('SET', KEYS[2], ARGV[4], 'EX', ARGV[5])
+        return 1
+      `,
+      2,
+      this.activeAttemptKey(payload.worker_id, payload.worker_type_id),
+      this.qrAttemptCacheKey(payload.worker_id, payload.worker_type_id),
+      payload.connection_attempt_id,
+      payload.worker_type_id,
+      payload.runtime_generation === undefined
+        ? ''
+        : String(payload.runtime_generation),
+      serializedState,
+      String(ttlSeconds)
+    );
+    return Number(result) === 1;
   }
 
   async ensureGroup(workerId: string, workerTypeId: string): Promise<void> {
@@ -310,19 +413,25 @@ export class WorkerConnectionQrCodeRedisQueueService {
   ): Promise<WorkerConnectionQrCodeRedisStreamMessage[]> {
     const streamKey = this.streamKey(workerId, workerTypeId);
     const consumerGroup = this.consumerGroup(workerId, workerTypeId);
-    const response = await this.runStreamReadWithTimeout('XREADGROUP', () =>
-      this.readClient().xreadgroup(
-        'GROUP',
-        consumerGroup,
-        consumerName,
-        'COUNT',
-        WorkerConnectionQrCodeRedisQueueService.READ_COUNT,
-        'BLOCK',
-        WorkerConnectionQrCodeRedisQueueService.READ_BLOCK_MS,
-        'STREAMS',
-        streamKey,
-        '>'
-      )
+    const response = await this.runWithConsumerGroupRecovery(
+      workerId,
+      workerTypeId,
+      'XREADGROUP',
+      () =>
+        this.runStreamReadWithTimeout('XREADGROUP', () =>
+          this.readClient().xreadgroup(
+            'GROUP',
+            consumerGroup,
+            consumerName,
+            'COUNT',
+            WorkerConnectionQrCodeRedisQueueService.READ_COUNT,
+            'BLOCK',
+            WorkerConnectionQrCodeRedisQueueService.READ_BLOCK_MS,
+            'STREAMS',
+            streamKey,
+            '>'
+          )
+        )
     );
 
     return this.parseReadResponse(response, {
@@ -340,16 +449,22 @@ export class WorkerConnectionQrCodeRedisQueueService {
   ): Promise<WorkerConnectionQrCodeRedisStreamMessage[]> {
     const streamKey = this.streamKey(workerId, workerTypeId);
     const consumerGroup = this.consumerGroup(workerId, workerTypeId);
-    const response = await this.runStreamReadWithTimeout('XAUTOCLAIM', () =>
-      this.readClient().xautoclaim(
-        streamKey,
-        consumerGroup,
-        consumerName,
-        WorkerConnectionQrCodeRedisQueueService.CLAIM_MIN_IDLE_MS,
-        '0-0',
-        'COUNT',
-        WorkerConnectionQrCodeRedisQueueService.READ_COUNT
-      )
+    const response = await this.runWithConsumerGroupRecovery(
+      workerId,
+      workerTypeId,
+      'XAUTOCLAIM',
+      () =>
+        this.runStreamReadWithTimeout('XAUTOCLAIM', () =>
+          this.readClient().xautoclaim(
+            streamKey,
+            consumerGroup,
+            consumerName,
+            WorkerConnectionQrCodeRedisQueueService.CLAIM_MIN_IDLE_MS,
+            '0-0',
+            'COUNT',
+            WorkerConnectionQrCodeRedisQueueService.READ_COUNT
+          )
+        )
     );
 
     return this.parseAutoClaimResponse(response, {
@@ -499,6 +614,47 @@ export class WorkerConnectionQrCodeRedisQueueService {
     });
   }
 
+  private async runWithConsumerGroupRecovery<T>(
+    workerId: string,
+    workerTypeId: string,
+    operation: string,
+    action: () => Promise<T>
+  ): Promise<T> {
+    try {
+      return await action();
+    } catch (error) {
+      if (!this.isNoGroupError(error)) {
+        throw error;
+      }
+
+      void this.connectionLifecycleDebugService.log(
+        'redis.qr_stream.consumer_group_recovery_start',
+        {
+          layer: 'redis',
+          worker_id: workerId,
+          worker_type_id: workerTypeId,
+          stream_key: this.streamKey(workerId, workerTypeId),
+          consumer_group: this.consumerGroup(workerId, workerTypeId),
+          operation,
+        }
+      );
+      await this.ensureGroup(workerId, workerTypeId);
+      const result = await action();
+      void this.connectionLifecycleDebugService.log(
+        'redis.qr_stream.consumer_group_recovered',
+        {
+          layer: 'redis',
+          worker_id: workerId,
+          worker_type_id: workerTypeId,
+          stream_key: this.streamKey(workerId, workerTypeId),
+          consumer_group: this.consumerGroup(workerId, workerTypeId),
+          operation,
+        }
+      );
+      return result;
+    }
+  }
+
   private payloadToFields(
     payload: IWorkerConnectionQrCodeQueueMessage
   ): RedisStreamValue[] {
@@ -521,6 +677,13 @@ export class WorkerConnectionQrCodeRedisQueueService {
 
     if (payload.runtime_generation !== undefined) {
       fields.push('runtime_generation', payload.runtime_generation);
+    }
+
+    if (payload.authorized_connection_epoch) {
+      fields.push(
+        'authorized_connection_epoch',
+        payload.authorized_connection_epoch
+      );
     }
 
     if (payload.debug_trace_id) {
@@ -660,6 +823,7 @@ export class WorkerConnectionQrCodeRedisQueueService {
       account_id: fields.account_id,
       worker_type_id: fields.worker_type_id,
       runtime_generation: this.optionalNumber(fields.runtime_generation),
+      authorized_connection_epoch: fields.authorized_connection_epoch,
       debug_trace_id: fields.debug_trace_id,
       source: fields.source,
       requested_at: fields.requested_at,
@@ -698,26 +862,11 @@ export class WorkerConnectionQrCodeRedisQueueService {
   private async destroyGroupIfPresent(
     workerId: string,
     workerTypeId: string
-  ): Promise<{ timedOut: boolean }> {
+  ): Promise<void> {
     const streamKey = this.streamKey(workerId, workerTypeId);
     const consumerGroup = this.consumerGroup(workerId, workerTypeId);
 
-    return this.destroyGroupByKeyWithTimeout(streamKey, consumerGroup);
-  }
-
-  private async destroyGroupByKeyWithTimeout(
-    streamKey: string,
-    consumerGroup: string
-  ): Promise<{ timedOut: boolean }> {
-    try {
-      await this.withTimeout(
-        () => this.destroyGroupByKey(streamKey, consumerGroup),
-        WorkerConnectionQrCodeRedisQueueService.INVALIDATE_COMMAND_TIMEOUT_MS
-      );
-      return { timedOut: false };
-    } catch {
-      return { timedOut: true };
-    }
+    await this.destroyGroupByKey(streamKey, consumerGroup);
   }
 
   private async destroyGroupByKey(
@@ -726,20 +875,11 @@ export class WorkerConnectionQrCodeRedisQueueService {
   ): Promise<void> {
     try {
       await this.client().xgroup('DESTROY', streamKey, consumerGroup);
-    } catch {}
-  }
-
-  private async scanKeysWithTimeout(
-    match: string
-  ): Promise<{ keys: string[]; timedOut: boolean }> {
-    try {
-      const keys = await this.withTimeout(
-        () => this.scanKeys(match),
-        WorkerConnectionQrCodeRedisQueueService.INVALIDATE_SCAN_TIMEOUT_MS
-      );
-      return { keys, timedOut: false };
-    } catch {
-      return { keys: [], timedOut: true };
+    } catch (error) {
+      if (this.isMissingStreamError(error)) {
+        return;
+      }
+      throw error;
     }
   }
 
@@ -765,17 +905,6 @@ export class WorkerConnectionQrCodeRedisQueueService {
     return keys;
   }
 
-  private async deleteKeysWithTimeout(keys: string[]): Promise<number> {
-    try {
-      return await this.withTimeout(
-        () => this.deleteKeys(keys),
-        WorkerConnectionQrCodeRedisQueueService.INVALIDATE_COMMAND_TIMEOUT_MS
-      );
-    } catch {
-      return 0;
-    }
-  }
-
   private async deleteKeys(keys: string[]): Promise<number> {
     const redis = this.redis as RedisDeleteClient;
     if (typeof redis.unlink === 'function') {
@@ -785,37 +914,16 @@ export class WorkerConnectionQrCodeRedisQueueService {
     return this.redis.del(...keys);
   }
 
-  private withTimeout<T>(
-    action: () => Promise<T>,
-    timeoutMs: number
-  ): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      let settled = false;
-      const timeout = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          reject(new Error(`Redis operation timeout after ${timeoutMs}ms`));
-        }
-      }, timeoutMs);
+  private isNoGroupError(error: unknown): boolean {
+    return getErrorMessage(error).toUpperCase().includes('NOGROUP');
+  }
 
-      const finish = (callback: () => void): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timeout);
-        callback();
-      };
-
-      try {
-        action().then(
-          (value) => finish(() => resolve(value)),
-          (error) => finish(() => reject(error))
-        );
-      } catch (error) {
-        finish(() => reject(error));
-      }
-    });
+  private isMissingStreamError(error: unknown): boolean {
+    const message = getErrorMessage(error).toLowerCase();
+    return (
+      message.includes('no such key') ||
+      message.includes('requires the key to exist')
+    );
   }
 
   private optionalNumber(value: string | undefined): number | undefined {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { watch, onBeforeUnmount, computed } from 'vue';
-import { useGenerateImageVariant } from '@/@webcore/composable/useGenerateImageVariant';
+import { themeConfig } from '@themeConfig';
+import { VNodeRenderer } from '@layouts/components/VNodeRenderer';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { useBrazilianDDDs } from '@/composables/useBrazilianDDDs';
 import { useRegisterStatesAndCities } from '@/composables/useRegisterStatesAndCities';
@@ -16,6 +17,8 @@ import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue
 import { Centrifuge, Subscription, SubscriptionState, State } from 'centrifuge';
 import type { PublicationContext } from 'centrifuge';
 import ActiveWhatsappValidationCard from '@/components/auth/ActiveWhatsappValidationCard.vue';
+import RegisterHero from '@/components/auth/register/RegisterHero.vue';
+import RegisterProgress from '@/components/auth/register/RegisterProgress.vue';
 import { useActiveWhatsappValidation } from '@/composables/useActiveWhatsappValidation';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { ECountry } from '@core/common/enums/ECountry';
@@ -23,6 +26,11 @@ import type { AuthRegisterSendTwoFactorResponse } from '@core/schema/register/se
 import { ViewRegisterZipcodeRequest } from '@core/schema/register/viewZipcode/request.schema';
 import { ListRegisterPlanWithItemsResponse } from '@core/schema/register/listPlanWithItems/response.schema';
 import { ListRegisterAvailableCrossSellResponse } from '@core/schema/register/listAvailableCrossSell/response.schema';
+import {
+  normalizeCnpj,
+  validateCnpj,
+} from '@core/common/functions/validateCnpj';
+import { cnpjAlphanumericMask } from '@/@webcore/utils/masks';
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
 import { CreateRegisterOrderPaymentRequest } from '@core/schema/register/createOrderPayment/request.schema';
 import { ListMethodPaymentsResponse } from '@core/schema/register/listMethodPayments/response.schema';
@@ -38,10 +46,7 @@ import maestroSvg from '@images/icons/payments/card/maestro.svg?url';
 import hipercardSvg from '@images/icons/payments/card/hipercard.svg?url';
 import meliSvg from '@images/icons/payments/card/meli.svg?url';
 import realSvg from '@images/icons/payments/card/real.svg?url';
-import registerMultistepIllustrationDark from '@images/illustrations/register-multi-step-illustration-dark.png';
-import registerMultistepIllustrationLight from '@images/illustrations/register-multi-step-illustration-light.png';
-import registerMultistepBgDark from '@images/pages/register-multi-step-bg-dark.png';
-import registerMultistepBgLight from '@images/pages/register-multi-step-bg-light.png';
+import registerHeroImage from '@images/pages/register/underchat-onboarding-gateway-blue.webp';
 
 interface IPaymentCentrifugoData {
   payment_id: string;
@@ -68,11 +73,6 @@ const recoverableActiveValidationReasons = new Set([
 const isRecoverableActiveValidationReason = (
   reason: string | null | undefined
 ): boolean => !!reason && recoverableActiveValidationReasons.has(reason);
-
-const registerMultistepBg = useGenerateImageVariant(
-  registerMultistepBgLight,
-  registerMultistepBgDark
-);
 
 const { t } = useI18n();
 const { items: countryCodes } = useCountryCodes();
@@ -105,11 +105,6 @@ const currentStep = computed({
     }
   },
 });
-
-const registerMultistepIllustration = useGenerateImageVariant(
-  registerMultistepIllustrationLight,
-  registerMultistepIllustrationDark
-);
 
 const stepConfig = computed(() => {
   const hasAddons = !isTestPlan(selectedPlanForCheckout.value);
@@ -601,7 +596,9 @@ const buildUserData = () => {
     phone_ddd: phone_ddd.value || undefined,
     phone: phone.value || '',
     document_type_id: user_document_type_id.value!,
-    document: document.value?.trim() || '',
+    document: isCNPJ.value
+      ? normalizeCnpj(document.value ?? '')
+      : document.value?.trim() || '',
     birth_date: birth_date.value || undefined,
     country_id: country_id.value!,
     zip_code: zip_code.value?.trim() || '',
@@ -1299,9 +1296,9 @@ const docConfig = {
     placeholder: '000.000.000-00',
   },
   cnpj: {
-    mask: '##.###.###/####-##',
+    mask: cnpjAlphanumericMask,
     label: t('cnpj'),
-    placeholder: '00.000.000/0000-00',
+    placeholder: '00.AAA.000/00AA-00',
   },
 };
 
@@ -1347,47 +1344,10 @@ const isValidCPF = (cpf: string): boolean => {
   return true;
 };
 
-const isValidCNPJ = (cnpj: string): boolean => {
-  const digits = onlyDigits(cnpj);
-
-  if (digits.length !== 14) return false;
-
-  if (/^(\d)\1{13}$/.test(digits)) return false;
-
-  let length = digits.length - 2;
-  let numbers = digits.substring(0, length);
-  const multipliers = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  let sum = 0;
-
-  for (let i = 0; i < length; i++) {
-    sum += Number.parseInt(numbers.charAt(i)) * multipliers[i];
-  }
-
-  let remainder = sum % 11;
-  let digit = remainder < 2 ? 0 : 11 - remainder;
-
-  if (digit !== Number.parseInt(digits.charAt(length))) return false;
-
-  length = length + 1;
-  numbers = digits.substring(0, length);
-  const multipliers2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  sum = 0;
-
-  for (let i = 0; i < length; i++) {
-    sum += Number.parseInt(numbers.charAt(i)) * multipliers2[i];
-  }
-
-  remainder = sum % 11;
-  digit = remainder < 2 ? 0 : 11 - remainder;
-
-  if (digit !== Number.parseInt(digits.charAt(length))) return false;
-
-  return true;
-};
-
 const docRules = computed(() => [
   (v: string | null) =>
-    (!!v && onlyDigits(v).length > 0) || t('document_required'),
+    (!!v && (onlyDigits(v).length > 0 || normalizeCnpj(v).length > 0)) ||
+    t('document_required'),
   (v: string | null) => {
     if (!v) return true;
     const digits = onlyDigits(v);
@@ -1396,8 +1356,7 @@ const docRules = computed(() => [
       return isValidCPF(v) || t('cpf_invalid');
     }
     if (isCNPJ.value) {
-      if (digits.length !== 14) return t('cnpj_invalid');
-      return isValidCNPJ(v) || t('cnpj_invalid');
+      return validateCnpj(v) || t('cnpj_invalid');
     }
     return true;
   },
@@ -1931,44 +1890,96 @@ watch(currentStep, async (newStep) => {
 </script>
 
 <template>
-  <VRow no-gutters class="auth-wrapper">
-    <VCol md="4" class="d-none d-md-flex">
-      <!-- here your illustration -->
-      <div class="d-flex justify-center align-center w-100 position-relative">
-        <VImg :src="registerMultistepIllustration" class="illustration-image" />
-        <VImg
-          :src="registerMultistepBg"
-          class="bg-image position-absolute w-100"
-        />
-      </div>
-    </VCol>
+  <div class="register-shell">
+    <aside class="register-shell__hero">
+      <RegisterHero
+        :app-title="themeConfig.app.title"
+        :logo="themeConfig.app.logo"
+        :image-src="registerHeroImage"
+        :eyebrow="$t('register_hero_kicker')"
+        :title="$t('register_hero_title')"
+        :description="$t('register_hero_description')"
+        :status="$t('register_hero_status')"
+        :channels="[
+          $t('register_hero_whatsapp'),
+          $t('register_hero_api_official'),
+        ]"
+      />
+    </aside>
 
-    <VCol
-      cols="12"
-      md="8"
-      class="auth-card-v2 d-flex align-center justify-center pa-4 pa-sm-6 pa-md-10"
-      style="background-color: rgb(var(--v-theme-surface))"
-    >
-      <VCard flat class="mt-12 mt-sm-0">
-        <AppStepper
-          v-model:current-step="currentStep"
+    <main class="register-workspace">
+      <div class="register-workspace__inner">
+        <header class="register-header">
+          <div class="register-header__mobile-brand">
+            <span class="register-header__mobile-logo">
+              <VNodeRenderer :nodes="themeConfig.app.logo" />
+            </span>
+            <span>{{ themeConfig.app.title }}</span>
+          </div>
+
+          <RouterLink to="/login" class="register-header__login">
+            {{ $t('register_already_have_account') }}
+            <VIcon icon="tabler-arrow-up-right" size="17" />
+          </RouterLink>
+        </header>
+
+        <section class="register-intro" aria-labelledby="register-page-title">
+          <p class="register-intro__eyebrow">
+            <VIcon icon="tabler-sparkles" size="16" />
+            {{ $t('register_guided_setup') }}
+          </p>
+          <h1 id="register-page-title" class="register-intro__title">
+            {{ $t('register_page_title') }}
+          </h1>
+          <p class="register-intro__description">
+            {{ $t('register_page_description') }}
+          </p>
+        </section>
+
+        <RegisterProgress
+          :current-step="currentStep"
           :items="items"
-          :direction="$vuetify.display.smAndUp ? 'horizontal' : 'vertical'"
-          icon-size="24"
-          :is-active-step-valid="
-            currentStep === 0 ? shouldShowValidationError : undefined
-          "
-          class="stepper-icon-step-bg mb-8"
+          :max-step-reached="maxStepReached"
+          class="register-workspace__progress"
+          @select-step="currentStep = $event"
         />
 
-        <VWindow v-model="currentStep" class="disable-tab-transition w-100">
+        <VCard flat class="register-flow-card">
+          <VWindow
+            v-model="currentStep"
+            class="disable-tab-transition register-flow-window"
+          >
           <VForm ref="refFormValidation" class="px-4">
             <VWindowItem>
-              <div class="register-step-content">
-                <h5 class="text-h5 mb-1">{{ $t('validation') }}</h5>
-                <p class="text-sm mb-6">
-                  {{ $t('validation_description') }}
-                </p>
+              <div class="register-step-content register-step-content--identity">
+                <div class="register-step-heading">
+                  <span
+                    class="register-step-heading__icon register-step__icon"
+                  >
+                    <VIcon
+                      :icon="
+                        items[currentStep]?.icon || 'tabler-device-mobile'
+                      "
+                      size="22"
+                    />
+                  </span>
+                  <div>
+                    <p class="register-step-heading__count">
+                      {{
+                        $t('register_step_counter', {
+                          current: currentStep + 1,
+                          total: items.length,
+                        })
+                      }}
+                    </p>
+                    <h2 class="register-step-heading__title">
+                      {{ $t('validation') }}
+                    </h2>
+                    <p class="register-step-heading__description">
+                      {{ $t('validation_description') }}
+                    </p>
+                  </div>
+                </div>
 
                 <VRow>
                   <VCol cols="12" md="6">
@@ -1977,6 +1988,8 @@ watch(currentStep, async (newStep) => {
                       v-model="name"
                       type="text"
                       :placeholder="$t('name')"
+                      prepend-inner-icon="tabler-user"
+                      autocomplete="given-name"
                       :rules="[requiredValidator(name, $t('name_required'))]"
                     />
                   </VCol>
@@ -1989,13 +2002,30 @@ watch(currentStep, async (newStep) => {
                       v-model="last_name"
                       type="text"
                       :placeholder="$t('last_name')"
+                      prepend-inner-icon="tabler-id"
+                      autocomplete="family-name"
                       :rules="[
                         requiredValidator(last_name, $t('last_name_required')),
                       ]"
                     />
                   </VCol>
 
-                  <VCol cols="12" md="6">
+                  <VCol cols="12">
+                    <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
+                    <AppTextField
+                      v-model="email"
+                      type="email"
+                      :placeholder="$t('email')"
+                      prepend-inner-icon="tabler-mail"
+                      autocomplete="email"
+                      :rules="[
+                        requiredValidator(email, $t('email_required')),
+                        emailValidator,
+                      ]"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="4">
                     <VLabel class="text-body-2 mb-1"
                       >{{ $t('phone_ddi') }}:</VLabel
                     >
@@ -2008,7 +2038,7 @@ watch(currentStep, async (newStep) => {
                     />
                   </VCol>
 
-                  <VCol v-if="showDDDField" cols="12" md="6">
+                  <VCol v-if="showDDDField" cols="12" md="4">
                     <VLabel class="text-body-2 mb-1"
                       >{{ $t('phone_ddd') }}:</VLabel
                     >
@@ -2021,7 +2051,7 @@ watch(currentStep, async (newStep) => {
                     />
                   </VCol>
 
-                  <VCol cols="12" md="6">
+                  <VCol cols="12" :md="showDDDField ? 4 : 8">
                     <VLabel class="text-body-2 mb-1"
                       >{{ $t('phone_without_ddd') }}:</VLabel
                     >
@@ -2029,22 +2059,23 @@ watch(currentStep, async (newStep) => {
                       v-model="phoneFormatted"
                       type="tel"
                       :placeholder="$t('phone_without_ddd')"
+                      prepend-inner-icon="tabler-brand-whatsapp"
+                      autocomplete="tel"
                       :maxlength="showDDDField ? 10 : 15"
                       :rules="[requiredValidator(phone, $t('phone_required'))]"
                     />
                   </VCol>
 
-                  <VCol cols="12" md="6">
-                    <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
-                    <AppTextField
-                      v-model="email"
-                      type="email"
-                      :placeholder="$t('email')"
-                      :rules="[
-                        requiredValidator(email, $t('email_required')),
-                        emailValidator,
-                      ]"
-                    />
+                  <VCol cols="12">
+                    <div class="register-whatsapp-note">
+                      <span class="register-whatsapp-note__icon">
+                        <VIcon icon="tabler-shield-check" size="19" />
+                      </span>
+                      <div>
+                        <strong>{{ $t('register_whatsapp_note_title') }}</strong>
+                        <p>{{ $t('register_whatsapp_note_description') }}</p>
+                      </div>
+                    </div>
                   </VCol>
                 </VRow>
               </div>
@@ -2238,7 +2269,7 @@ watch(currentStep, async (newStep) => {
                         :label="docLabel + ':'"
                         :placeholder="docPlaceholder"
                         v-maska="docMask"
-                        inputmode="numeric"
+                        :inputmode="isCNPJ ? undefined : 'numeric'"
                         :rules="docRules"
                       />
                     </VCol>
@@ -3540,18 +3571,25 @@ watch(currentStep, async (newStep) => {
           </VForm>
         </VWindow>
 
-        <div class="d-flex justify-space-between mt-8 px-4">
+        <footer class="register-actions">
           <VBtn
-            color="secondary"
+            class="register-actions__previous"
             :disabled="currentStep === 0"
-            variant="tonal"
+            variant="text"
             @click="currentStep--"
           >
             <VIcon icon="tabler-arrow-left" start class="flip-in-rtl" />
             {{ $t('previous') }}
           </VBtn>
 
+          <span class="register-actions__position">
+            {{ currentStep + 1 }} / {{ items.length }}
+          </span>
+
           <VBtn
+            class="register-actions__next"
+            color="primary"
+            size="large"
             :disabled="
               (currentStep === 0 && !isValidationStepValid) ||
               (currentStep === 1 && activeValidationStatus !== 'validated') ||
@@ -3566,8 +3604,14 @@ watch(currentStep, async (newStep) => {
 
             <VIcon icon="tabler-arrow-right" end class="flip-in-rtl" />
           </VBtn>
-        </div>
-      </VCard>
+        </footer>
+        </VCard>
+
+        <p class="register-trust-note">
+          <VIcon icon="tabler-lock" size="15" />
+          {{ $t('register_secure_data_note') }}
+        </p>
+      </div>
 
       <VDialog v-model="pixModalOpen" max-width="500" persistent>
         <DialogCloseBtn v-if="shouldShowCloseButton" @click="closePixModal" />
@@ -3868,20 +3912,324 @@ watch(currentStep, async (newStep) => {
       >
         <span v-html="registerStore.snackbar.message"></span>
       </VSnackbar>
-    </VCol>
-  </VRow>
+    </main>
+  </div>
 </template>
 
 <style lang="scss">
 @use '@webcore/scss/template/pages/page-auth';
 
-.illustration-image {
-  block-size: 550px;
-  inline-size: 248px;
+.register-shell {
+  --register-accent: #0369d1;
+  --register-accent-rgb: 3, 105, 209;
+  --register-accent-strong: #0259b4;
+  --register-secondary: #00ecbc;
+  --register-ink: #232132;
+  --register-muted: #797986;
+  display: grid;
+  min-block-size: 100dvh;
+  background: #f6f8fc;
+  grid-template-columns: minmax(27rem, 42%) minmax(0, 58%);
 }
 
-.bg-image {
-  inset-block-end: 0;
+.register-shell__hero {
+  position: sticky;
+  top: 0;
+  block-size: 100dvh;
+}
+
+.register-workspace {
+  position: relative;
+  overflow: hidden;
+  min-inline-size: 0;
+  padding: clamp(1.1rem, 2vw, 2.4rem) clamp(2rem, 4vw, 4.75rem);
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(var(--register-accent-rgb), 0.09),
+      transparent 25rem
+    ),
+    linear-gradient(180deg, #fbfcff 0%, #f4f8fd 100%);
+}
+
+.register-workspace::before {
+  position: absolute;
+  top: -9rem;
+  right: -9rem;
+  border: 1px solid rgba(var(--register-accent-rgb), 0.1);
+  border-radius: 50%;
+  block-size: 20rem;
+  content: '';
+  inline-size: 20rem;
+  pointer-events: none;
+}
+
+.register-workspace__inner {
+  position: relative;
+  z-index: 1;
+  inline-size: min(100%, 72rem);
+  margin-inline: auto;
+}
+
+.register-header {
+  display: flex;
+  min-block-size: 2.5rem;
+  align-items: center;
+  justify-content: flex-end;
+  margin-block-end: clamp(0.85rem, 1.6vw, 1.65rem);
+}
+
+.register-header__mobile-brand {
+  display: none;
+  align-items: center;
+  gap: 0.7rem;
+  color: var(--register-ink);
+  font-size: 1rem;
+  font-weight: 740;
+  letter-spacing: -0.025em;
+}
+
+.register-header__mobile-logo {
+  display: grid;
+  block-size: 2.25rem;
+  inline-size: 2rem;
+  place-items: center;
+}
+
+.register-header__login {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--register-accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.register-header__login:hover {
+  color: var(--register-accent-strong);
+}
+
+.register-intro {
+  max-inline-size: 42rem;
+  margin-block-end: 0.95rem;
+}
+
+.register-intro__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.55rem;
+  color: var(--register-accent);
+  font-size: 0.7rem;
+  font-weight: 780;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.register-intro__title {
+  margin: 0;
+  color: var(--register-ink);
+  font-size: clamp(2.15rem, 3.2vw, 3.45rem);
+  font-weight: 760;
+  letter-spacing: -0.058em;
+  line-height: 0.98;
+}
+
+.register-intro__description {
+  max-inline-size: 38rem;
+  margin: 0.55rem 0 0;
+  color: var(--register-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.register-workspace__progress {
+  margin-block-end: 0.75rem;
+}
+
+.register-flow-card {
+  overflow: hidden;
+  border: 1px solid rgba(20, 60, 112, 0.1);
+  border-radius: 1.5rem !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: 0 2rem 5.5rem -3rem rgba(3, 45, 96, 0.26) !important;
+  inline-size: 100%;
+}
+
+.register-flow-window {
+  padding: clamp(1rem, 1.8vw, 1.6rem);
+}
+
+.register-flow-card .v-form.px-4 {
+  padding-inline: 0 !important;
+}
+
+.register-flow-card .v-label {
+  color: rgba(35, 33, 50, 0.73);
+  font-size: 0.77rem !important;
+  font-weight: 650;
+}
+
+.register-flow-card .v-field {
+  border-radius: 0.78rem;
+  background: #fbfcff;
+}
+
+.register-flow-card .v-field__outline {
+  --v-field-border-opacity: 0.12;
+}
+
+.register-flow-card .v-field--focused .v-field__outline {
+  --v-field-border-opacity: 1;
+  color: var(--register-accent);
+}
+
+.register-flow-card .v-input--disabled {
+  opacity: 0.58;
+}
+
+.register-step-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-block-end: 0.95rem;
+}
+
+.register-step-heading__icon {
+  display: grid;
+  flex: 0 0 auto;
+  border-radius: 0.85rem;
+  background: rgba(var(--register-accent-rgb), 0.1);
+  block-size: 2.85rem;
+  color: var(--register-accent);
+  inline-size: 2.85rem;
+  place-items: center;
+}
+
+.register-step-heading__count {
+  margin: 0 0 0.25rem;
+  color: var(--register-accent);
+  font-size: 0.66rem;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.register-step-heading__title {
+  margin: 0;
+  color: var(--register-ink);
+  font-size: clamp(1.55rem, 2.2vw, 2rem);
+  font-weight: 740;
+  letter-spacing: -0.038em;
+  line-height: 1.15;
+}
+
+.register-step-heading__description {
+  max-inline-size: 43rem;
+  margin: 0.3rem 0 0;
+  color: var(--register-muted);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.register-step-content > .text-h5 {
+  color: var(--register-ink);
+  font-size: 1.65rem !important;
+  font-weight: 730 !important;
+  letter-spacing: -0.035em !important;
+}
+
+.register-step-content > .text-sm {
+  max-inline-size: 45rem;
+  color: var(--register-muted);
+  line-height: 1.55;
+}
+
+.register-whatsapp-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border: 1px solid rgba(var(--register-accent-rgb), 0.12);
+  border-radius: 0.9rem;
+  padding: 0.9rem 1rem;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(var(--register-accent-rgb), 0.08),
+      transparent 75%
+    ),
+    #fbfcff;
+}
+
+.register-whatsapp-note__icon {
+  display: grid;
+  flex: 0 0 auto;
+  border-radius: 0.55rem;
+  background: rgba(var(--register-accent-rgb), 0.1);
+  block-size: 2rem;
+  color: var(--register-accent);
+  inline-size: 2rem;
+  place-items: center;
+}
+
+.register-whatsapp-note strong {
+  display: block;
+  color: var(--register-ink);
+  font-size: 0.78rem;
+}
+
+.register-whatsapp-note p {
+  margin: 0.2rem 0 0;
+  color: var(--register-muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.register-actions {
+  display: grid;
+  align-items: center;
+  border-block-start: 1px solid rgba(20, 60, 112, 0.09);
+  padding: 1.05rem clamp(1.4rem, 3vw, 2.5rem);
+  background: rgba(249, 251, 255, 0.94);
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.register-actions__previous {
+  justify-self: start;
+  color: var(--register-accent) !important;
+}
+
+.register-actions__next {
+  min-inline-size: 9.5rem;
+  justify-self: end;
+  border-radius: 0.72rem !important;
+  background: var(--register-accent) !important;
+  box-shadow:
+    0 0.8rem 2.4rem -1rem rgba(var(--register-accent-rgb), 0.6) !important;
+  letter-spacing: 0 !important;
+  text-transform: none;
+}
+
+.register-actions__next:hover {
+  background: var(--register-accent-strong) !important;
+}
+
+.register-actions__position {
+  color: rgba(35, 33, 50, 0.4);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.register-trust-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin: 1.05rem 0 0;
+  color: rgba(52, 59, 65, 0.48);
+  font-size: 0.69rem;
 }
 
 .register-step-content {
@@ -3967,6 +4315,9 @@ watch(currentStep, async (newStep) => {
 }
 
 .plan-card {
+  border-color: rgba(20, 60, 112, 0.11) !important;
+  border-radius: 1rem !important;
+  background: #fcfdff !important;
   height: 100%;
   transition:
     transform 0.2s ease-in-out,
@@ -3977,12 +4328,13 @@ watch(currentStep, async (newStep) => {
 
   &:hover {
     transform: translateY(-4px);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+    border-color: rgba(var(--register-accent-rgb), 0.22) !important;
+    box-shadow: 0 18px 40px -24px rgba(3, 74, 150, 0.38);
   }
 }
 
 .plan-card-popular {
-  border: 2px solid rgb(var(--v-theme-primary));
+  border: 2px solid var(--register-accent) !important;
   position: relative;
 }
 
@@ -4131,7 +4483,7 @@ watch(currentStep, async (newStep) => {
 }
 
 .payment-method-selected {
-  border: 2px solid rgb(var(--v-theme-primary));
+  border: 2px solid var(--register-accent);
 }
 
 .credit-card-form {
@@ -4146,6 +4498,105 @@ watch(currentStep, async (newStep) => {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 1279px) {
+  .register-shell {
+    grid-template-columns: minmax(23rem, 38%) minmax(0, 62%);
+  }
+
+  .register-workspace {
+    padding: 1.25rem 2.5rem 2.5rem;
+  }
+}
+
+@media (max-width: 959px) {
+  .register-shell {
+    display: block;
+  }
+
+  .register-shell__hero {
+    display: none;
+  }
+
+  .register-workspace {
+    min-block-size: 100dvh;
+    padding: 1.5rem;
+  }
+
+  .register-header {
+    justify-content: space-between;
+    margin-block-end: 2rem;
+  }
+
+  .register-header__mobile-brand {
+    display: flex;
+  }
+}
+
+@media (max-width: 599px) {
+  .register-workspace {
+    padding: 1.1rem;
+  }
+
+  .register-header {
+    margin-block-end: 1.75rem;
+  }
+
+  .register-header__login {
+    max-inline-size: 9rem;
+    justify-content: flex-end;
+    text-align: end;
+  }
+
+  .register-intro {
+    margin-block-end: 1.9rem;
+  }
+
+  .register-intro__title {
+    font-size: clamp(2.15rem, 11vw, 3rem);
+  }
+
+  .register-intro__description {
+    font-size: 0.9rem;
+  }
+
+  .register-flow-card {
+    border-radius: 1.1rem !important;
+  }
+
+  .register-flow-window {
+    padding: 1.1rem;
+  }
+
+  .register-step-heading {
+    gap: 0.75rem;
+  }
+
+  .register-step-heading__icon {
+    block-size: 2.45rem;
+    inline-size: 2.45rem;
+  }
+
+  .register-actions {
+    padding: 0.85rem 1rem;
+  }
+
+  .register-actions__next {
+    min-inline-size: auto;
+  }
+
+  .register-actions__position {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-card,
+  .credit-card-form {
+    animation: none;
+    transition: none;
   }
 }
 </style>

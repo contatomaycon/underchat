@@ -1,22 +1,31 @@
 <script setup lang="ts">
+import './chatbot-node-workbench.css';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position, useVueFlow } from '@vue-flow/core';
+import { isOfficialWaitForResponseNodeType } from '@core/common/functions/chatbotOfficialNodes';
 import {
   buildOfficialTemplateKey,
   buildOfficialTemplatePreview,
+  containsUnderchatVariableTag,
   createManualOfficialTemplateVariable,
   createOfficialTemplateOptions,
   createOfficialTemplateVariableValues,
   findOfficialTemplate,
   formatOfficialTemplateLanguage,
+  formatOfficialTemplateVariableLabel,
+  normalizeEditableOfficialTemplateVariables,
   refreshOfficialTemplateVariableKey,
 } from '@/utils/officialTemplate';
 import type {
   OfficialTemplate,
   OfficialTemplatePreview,
 } from '@/utils/officialTemplate';
+import { OFFICIAL_INTERACTIVE_LIMITS } from '@/utils/officialInteractiveLimits';
+import OfficialTemplateVariableField from '@/components/chat/official/OfficialTemplateVariableField.vue';
+import OfficialMetaLimitedField from '@/components/chatbot/OfficialMetaLimitedField.vue';
+import type { ApiRequestVariable } from '@/components/chatbot/api-request/types';
 
 interface OfficialOption {
   id: string;
@@ -46,6 +55,7 @@ interface OfficialTemplateVariable {
   key: string;
   component_type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTON';
   index: number;
+  parameter_name?: string | null;
   button_index?: number | null;
   value: string;
 }
@@ -61,6 +71,7 @@ interface OfficialContactItem {
 
 interface OfficialNodeData {
   title?: string;
+  continueType?: string | null;
   message?: string;
   text?: string;
   header?: string;
@@ -81,6 +92,7 @@ interface OfficialNodeData {
   addressCountry?: string;
   templateName?: string;
   templateLanguage?: string;
+  templateParameterFormat?: OfficialTemplate['parameter_format'];
   templateCategory?: string | null;
   templateComponents?: OfficialTemplate['components'];
   templatePreview?:
@@ -99,6 +111,7 @@ interface OfficialNodeData {
   availableOfficialTemplates?: OfficialTemplate[];
   isLoadingOfficialTemplates?: boolean;
   officialTemplatesError?: string | null;
+  availableVariables?: ApiRequestVariable[];
   officialType?: string;
   official?: Record<string, unknown>;
   onRemove?: () => void;
@@ -107,7 +120,7 @@ interface OfficialNodeData {
 
 const props = defineProps<NodeProps>();
 const { updateNodeInternals } = useVueFlow();
-const { locale } = useI18n();
+const { locale, t } = useI18n();
 
 const nodeType = computed(() => props.type || '');
 
@@ -207,8 +220,37 @@ const optionNode = computed(
     nodeType.value === 'officialList'
 );
 
+const headerNode = computed(() =>
+  [
+    'officialReplyButtons',
+    'officialList',
+    'officialCtaUrl',
+    'officialFlow',
+    'officialMultiProduct',
+    'officialCatalog',
+    'officialMediaCarousel',
+    'officialAddress',
+  ].includes(nodeType.value)
+);
+
+const footerNode = computed(
+  () => headerNode.value || nodeType.value === 'officialSingleProduct'
+);
+
+const bodyNode = computed(
+  () =>
+    ![
+      'officialTemplate',
+      'officialLocation',
+      'officialContacts',
+      'officialSticker',
+      'officialReaction',
+    ].includes(nodeType.value)
+);
+
 const continuationLabel = computed(() => {
   if (
+    isOfficialWaitForResponseNodeType(nodeType.value) ||
     nodeType.value === 'officialLocationRequest' ||
     nodeType.value === 'officialFlow' ||
     nodeType.value === 'officialAddress'
@@ -220,8 +262,45 @@ const continuationLabel = computed(() => {
 });
 
 const maxOptions = computed(() =>
-  nodeType.value === 'officialReplyButtons' ? 3 : 10
+  nodeType.value === 'officialReplyButtons'
+    ? OFFICIAL_INTERACTIVE_LIMITS.replyButtonCount
+    : 10
 );
+
+const optionTextLimit = computed(() =>
+  nodeType.value === 'officialReplyButtons'
+    ? OFFICIAL_INTERACTIVE_LIMITS.replyButtonTitle
+    : OFFICIAL_INTERACTIVE_LIMITS.listOptionTitle
+);
+
+const optionTextLabel = computed(() =>
+  nodeType.value === 'officialReplyButtons'
+    ? t('chatbot_official_reply_button_title')
+    : t('chatbot_official_list_option_title')
+);
+
+const buttonTextLimit = computed(() => {
+  if (nodeType.value === 'officialList') {
+    return OFFICIAL_INTERACTIVE_LIMITS.listButtonTitle;
+  }
+  if (nodeType.value === 'officialCtaUrl') {
+    return OFFICIAL_INTERACTIVE_LIMITS.ctaButtonTitle;
+  }
+  if (nodeType.value === 'officialFlow') {
+    return OFFICIAL_INTERACTIVE_LIMITS.flowCtaTitle;
+  }
+  return 0;
+});
+
+const buttonTextLabel = computed(() => {
+  if (nodeType.value === 'officialList') {
+    return t('chatbot_official_list_open_button');
+  }
+  if (nodeType.value === 'officialCtaUrl') {
+    return t('chatbot_official_cta_button_title');
+  }
+  return t('chatbot_official_flow_cta_title');
+});
 
 const optionTitle = computed(() =>
   nodeType.value === 'officialReplyButtons' ? 'Botões' : 'Linhas'
@@ -354,41 +433,8 @@ const createTemplateVariable = (index = 0): OfficialTemplateVariable => ({
 
 const normalizeTemplateVariables = (
   variables?: unknown[]
-): OfficialTemplateVariable[] => {
-  const rawVariables = Array.isArray(variables) ? variables : [];
-
-  return rawVariables.map((variable, index) => {
-    if (!variable || typeof variable !== 'object') {
-      return createTemplateVariable(index);
-    }
-
-    const variableRecord = variable as Record<string, unknown>;
-    const componentType =
-      variableRecord.component_type === 'HEADER' ||
-      variableRecord.component_type === 'FOOTER' ||
-      variableRecord.component_type === 'BUTTON'
-        ? variableRecord.component_type
-        : 'BODY';
-
-    return refreshOfficialTemplateVariableKey({
-      key:
-        typeof variableRecord.key === 'string'
-          ? variableRecord.key
-          : `${componentType}:${index + 1}`,
-      component_type: componentType,
-      index:
-        typeof variableRecord.index === 'number' && variableRecord.index > 0
-          ? variableRecord.index
-          : index + 1,
-      button_index:
-        typeof variableRecord.button_index === 'number'
-          ? variableRecord.button_index
-          : null,
-      value:
-        typeof variableRecord.value === 'string' ? variableRecord.value : '',
-    });
-  });
-};
+): OfficialTemplateVariable[] =>
+  normalizeEditableOfficialTemplateVariables(variables);
 
 const createContactItem = (): OfficialContactItem => ({
   contact_id: null,
@@ -432,9 +478,14 @@ const getInitialData = (): OfficialNodeData => {
   const data = props.data as OfficialNodeData | undefined;
   return {
     title: data?.title || currentMeta.value.label,
+    continueType:
+      nodeType.value === 'officialCtaUrl'
+        ? 'automatic'
+        : (data?.continueType ?? null),
     message: data?.message || data?.text || '',
     text: data?.text || '',
-    header: data?.header || '',
+    header:
+      nodeType.value === 'officialSingleProduct' ? '' : data?.header || '',
     footer: data?.footer || '',
     buttonText: data?.buttonText || defaultButtonText.value,
     url: data?.url || '',
@@ -452,6 +503,7 @@ const getInitialData = (): OfficialNodeData => {
     addressCountry: data?.addressCountry || 'BR',
     templateName: data?.templateName || '',
     templateLanguage: data?.templateLanguage || 'pt_BR',
+    templateParameterFormat: data?.templateParameterFormat,
     templateCategory: data?.templateCategory ?? null,
     templateComponents: Array.isArray(data?.templateComponents)
       ? data.templateComponents
@@ -562,6 +614,11 @@ const officialTemplatesError = computed(() => {
     : null;
 });
 
+const availableVariables = computed<ApiRequestVariable[]>(() => {
+  const data = props.data as OfficialNodeData | undefined;
+  return Array.isArray(data?.availableVariables) ? data.availableVariables : [];
+});
+
 const selectedOfficialTemplateKey = computed({
   get: () =>
     nodeData.value.templateName && nodeData.value.templateLanguage
@@ -581,6 +638,7 @@ const selectedOfficialTemplateKey = computed({
     if (!template) {
       nodeData.value.templateName = '';
       nodeData.value.templateLanguage = 'pt_BR';
+      nodeData.value.templateParameterFormat = undefined;
       nodeData.value.templateCategory = null;
       nodeData.value.templateComponents = [];
       nodeData.value.templatePreview = null;
@@ -617,6 +675,7 @@ const savedOfficialTemplate = computed<OfficialTemplate | null>(() => {
     key: variable.key,
     component_type: variable.component_type,
     index: variable.index,
+    parameter_name: variable.parameter_name ?? null,
     button_index: variable.button_index ?? null,
   }));
 
@@ -624,6 +683,7 @@ const savedOfficialTemplate = computed<OfficialTemplate | null>(() => {
     name: nodeData.value.templateName,
     language: nodeData.value.templateLanguage,
     status: 'APPROVED',
+    parameter_format: nodeData.value.templateParameterFormat,
     category: nodeData.value.templateCategory ?? null,
     components,
     variables,
@@ -671,15 +731,17 @@ const hasDetectedTemplateVariables = computed(
   () => (selectedTemplateFromList.value?.variables.length ?? 0) > 0
 );
 
-const formatTemplateVariableLabel = (
-  variable: Pick<OfficialTemplateVariable, 'component_type' | 'index'>
-) => `${variable.component_type} {{${variable.index}}}`;
-
 const officialTemplatePreview = computed(() =>
   buildOfficialTemplatePreview(
     selectedOfficialTemplate.value,
     templateVariables.value,
     templateVariables.value
+  )
+);
+
+const hasTemplateRuntimeVariables = computed(() =>
+  templateVariables.value.some((variable) =>
+    containsUnderchatVariableTag(variable.value)
   )
 );
 
@@ -730,7 +792,11 @@ const syncProductSections = () => {
 };
 
 const addProductSection = () => {
-  if (productSections.value.length >= 10) return;
+  if (
+    productSections.value.length >=
+    OFFICIAL_INTERACTIVE_LIMITS.productSectionCount
+  )
+    return;
 
   nodeData.value.sections = [
     ...productSections.value,
@@ -749,7 +815,8 @@ const removeProductSection = (sectionIndex: number) => {
 };
 
 const addProductItem = (sectionIndex: number) => {
-  if (totalProductItems.value >= 30) return;
+  if (totalProductItems.value >= OFFICIAL_INTERACTIVE_LIMITS.productItemCount)
+    return;
 
   const section = productSections.value[sectionIndex];
   if (!section) return;
@@ -797,6 +864,7 @@ const syncTemplateVariables = () => {
 const applyOfficialTemplate = (template: OfficialTemplate) => {
   nodeData.value.templateName = template.name;
   nodeData.value.templateLanguage = template.language;
+  nodeData.value.templateParameterFormat = template.parameter_format;
   nodeData.value.templateCategory = template.category ?? null;
   nodeData.value.templateComponents = template.components;
   nodeData.value.templatePreview = template.preview;
@@ -867,7 +935,11 @@ const updateNodeData = () => {
   data.title = nodeData.value.title || currentMeta.value.label;
   data.message = nodeData.value.message || '';
   data.text = nodeData.value.message || '';
-  data.header = nodeData.value.header || '';
+  if (nodeType.value === 'officialSingleProduct') {
+    delete data.header;
+  } else {
+    data.header = nodeData.value.header || '';
+  }
   data.footer = nodeData.value.footer || '';
   data.buttonText = nodeData.value.buttonText || defaultButtonText.value;
   data.url = nodeData.value.url || '';
@@ -959,6 +1031,11 @@ const updateNodeData = () => {
     ...(data.official as Record<string, unknown> | undefined),
     type: nodeType.value,
   } as never;
+  if (nodeType.value === 'officialCtaUrl') {
+    data.continueType = 'automatic';
+  } else if (isOfficialWaitForResponseNodeType(nodeType.value)) {
+    data.continueType = 'after_response';
+  }
 };
 
 const addOption = () => {
@@ -1021,7 +1098,7 @@ watch(
 </script>
 
 <template>
-  <div class="chatbot-official-node">
+  <div class="chatbot-official-node chatbot-workbench-node">
     <Handle
       id="target"
       type="target"
@@ -1036,28 +1113,44 @@ watch(
       class="handle-source"
     />
 
-    <VCard class="official-card" elevation="2">
-      <VCardTitle class="official-title node-drag-handle">
-        <div class="d-flex align-center ga-2 min-w-0">
+    <VCard class="official-card chatbot-workbench-card" elevation="2">
+      <VCardTitle
+        class="official-title node-drag-handle chatbot-workbench-header"
+      >
+        <div
+          class="d-flex align-center ga-2 min-w-0 chatbot-workbench-identity"
+        >
           <VIcon
             :icon="currentMeta.icon"
             :color="currentMeta.accent"
             size="20"
+            class="chatbot-workbench-icon"
           />
-          <span class="official-node-title">{{ currentMeta.label }}</span>
+          <span class="official-node-title chatbot-workbench-title">{{
+            currentMeta.label
+          }}</span>
         </div>
         <VIcon
           v-if="(props.data as OfficialNodeData)?.onRemove"
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
+      <VCardText class="pa-3 chatbot-workbench-body">
         <div class="whatsapp-preview mb-3">
+          <div
+            v-if="
+              nodeType === 'officialTemplate' && hasTemplateRuntimeVariables
+            "
+            class="preview-runtime-note"
+          >
+            <VIcon icon="tabler-braces" size="14" />
+            <span>{{ $t('official_template_preview_runtime_variables') }}</span>
+          </div>
           <div class="whatsapp-bubble">
             <div v-if="previewHeader" class="preview-header">
               {{ previewHeader }}
@@ -1135,27 +1228,52 @@ watch(
             hide-details
           />
 
-          <VTextarea
-            v-if="
-              ![
-                'officialTemplate',
-                'officialLocation',
-                'officialContacts',
-                'officialSticker',
-                'officialReaction',
-              ].includes(nodeType)
+          <OfficialMetaLimitedField
+            v-if="headerNode"
+            v-model="nodeData.header"
+            :label="t('chatbot_official_header')"
+            :placeholder="
+              nodeType === 'officialMultiProduct'
+                ? t('chatbot_official_header')
+                : t('chatbot_official_header_optional')
             "
+            :limit="OFFICIAL_INTERACTIVE_LIMITS.header"
+            :required="nodeType === 'officialMultiProduct'"
+          />
+
+          <OfficialMetaLimitedField
+            v-if="bodyNode"
             v-model="nodeData.message"
-            placeholder="Mensagem"
-            variant="outlined"
-            density="compact"
-            rows="2"
-            hide-details
+            :label="t('chatbot_official_body')"
+            :placeholder="t('chatbot_official_body')"
+            :limit="OFFICIAL_INTERACTIVE_LIMITS.body"
+            multiline
+            :rows="2"
+            :required="nodeType === 'officialMultiProduct'"
+          />
+
+          <OfficialMetaLimitedField
+            v-if="footerNode"
+            v-model="nodeData.footer"
+            :label="t('chatbot_official_footer')"
+            :placeholder="t('chatbot_official_footer_optional')"
+            :limit="OFFICIAL_INTERACTIVE_LIMITS.footer"
           />
 
           <div v-if="optionNode" class="option-block">
             <div class="option-block-header">
               <span>{{ optionTitle }}</span>
+              <VChip
+                size="x-small"
+                :color="
+                  (nodeData.options?.length ?? 0) > maxOptions
+                    ? 'error'
+                    : 'primary'
+                "
+                variant="tonal"
+              >
+                {{ nodeData.options?.length ?? 0 }}/{{ maxOptions }}
+              </VChip>
               <VBtn
                 size="small"
                 variant="outlined"
@@ -1168,25 +1286,48 @@ watch(
               </VBtn>
             </div>
 
+            <VAlert
+              v-if="(nodeData.options?.length ?? 0) > maxOptions"
+              type="error"
+              variant="tonal"
+              density="compact"
+            >
+              {{
+                t('chatbot_official_options_limit', {
+                  limit: maxOptions,
+                  item:
+                    nodeType === 'officialReplyButtons'
+                      ? t('chatbot_official_reply_buttons')
+                      : t('chatbot_official_list_options'),
+                })
+              }}
+            </VAlert>
+
+            <OfficialMetaLimitedField
+              v-if="nodeType === 'officialList'"
+              v-model="nodeData.sectionTitle"
+              :label="t('chatbot_official_section_title')"
+              :placeholder="t('chatbot_official_list_options')"
+              :limit="OFFICIAL_INTERACTIVE_LIMITS.sectionTitle"
+            />
+
             <div
               v-for="(option, index) in nodeData.options"
               :key="option.id"
               class="official-option"
             >
-              <VTextField
+              <OfficialMetaLimitedField
                 v-model="option.text"
-                placeholder="Texto"
-                variant="outlined"
-                density="compact"
-                hide-details
+                :label="optionTextLabel"
+                :placeholder="optionTextLabel"
+                :limit="optionTextLimit"
               />
-              <VTextField
+              <OfficialMetaLimitedField
                 v-if="nodeType === 'officialList'"
                 v-model="option.description"
-                placeholder="Descrição"
-                variant="outlined"
-                density="compact"
-                hide-details
+                :label="t('chatbot_official_list_option_description')"
+                :placeholder="t('chatbot_official_list_option_description')"
+                :limit="OFFICIAL_INTERACTIVE_LIMITS.listOptionDescription"
               />
               <VBtn
                 icon
@@ -1208,17 +1349,13 @@ watch(
             </div>
           </div>
 
-          <VTextField
-            v-if="
-              ['officialList', 'officialCtaUrl', 'officialFlow'].includes(
-                nodeType
-              )
-            "
+          <OfficialMetaLimitedField
+            v-if="buttonTextLimit"
             v-model="nodeData.buttonText"
-            placeholder="Texto do botão"
-            variant="outlined"
-            density="compact"
-            hide-details
+            :label="buttonTextLabel"
+            :placeholder="buttonTextLabel"
+            :limit="buttonTextLimit"
+            :forbid-emoji="nodeType === 'officialFlow'"
           />
 
           <VTextField
@@ -1279,11 +1416,27 @@ watch(
           >
             <div class="product-sections-header">
               <span>Seções e produtos</span>
+              <VChip
+                size="x-small"
+                :color="
+                  productSections.length >
+                  OFFICIAL_INTERACTIVE_LIMITS.productSectionCount
+                    ? 'error'
+                    : 'primary'
+                "
+                variant="tonal"
+              >
+                {{ productSections.length }} /
+                {{ OFFICIAL_INTERACTIVE_LIMITS.productSectionCount }}
+              </VChip>
               <VBtn
                 size="small"
                 variant="outlined"
                 color="primary"
-                :disabled="productSections.length >= 10"
+                :disabled="
+                  productSections.length >=
+                  OFFICIAL_INTERACTIVE_LIMITS.productSectionCount
+                "
                 @click="addProductSection"
               >
                 <VIcon icon="tabler-plus" size="16" class="me-1" />
@@ -1291,18 +1444,50 @@ watch(
               </VBtn>
             </div>
 
+            <VAlert
+              v-if="
+                productSections.length >
+                OFFICIAL_INTERACTIVE_LIMITS.productSectionCount
+              "
+              type="error"
+              variant="tonal"
+              density="compact"
+            >
+              {{
+                t('chatbot_official_options_limit', {
+                  limit: OFFICIAL_INTERACTIVE_LIMITS.productSectionCount,
+                  item: t('chatbot_official_product_sections'),
+                })
+              }}
+            </VAlert>
+
+            <VAlert
+              v-if="
+                totalProductItems > OFFICIAL_INTERACTIVE_LIMITS.productItemCount
+              "
+              type="error"
+              variant="tonal"
+              density="compact"
+            >
+              {{
+                t('chatbot_official_options_limit', {
+                  limit: OFFICIAL_INTERACTIVE_LIMITS.productItemCount,
+                  item: t('chatbot_official_products'),
+                })
+              }}
+            </VAlert>
+
             <div
               v-for="(section, sectionIndex) in productSections"
               :key="`product-section-${sectionIndex}`"
               class="product-section-card"
             >
               <div class="product-section-header">
-                <VTextField
+                <OfficialMetaLimitedField
                   v-model="section.title"
-                  placeholder="Título da seção"
-                  variant="outlined"
-                  density="compact"
-                  hide-details
+                  :label="t('chatbot_official_section_title')"
+                  :placeholder="t('chatbot_official_section_title')"
+                  :limit="OFFICIAL_INTERACTIVE_LIMITS.sectionTitle"
                   @update:model-value="syncProductSections"
                 />
                 <VBtn
@@ -1348,7 +1533,10 @@ watch(
                 variant="text"
                 color="primary"
                 class="product-add-btn"
-                :disabled="totalProductItems >= 30"
+                :disabled="
+                  totalProductItems >=
+                  OFFICIAL_INTERACTIVE_LIMITS.productItemCount
+                "
                 @click="addProductItem(sectionIndex)"
               >
                 <VIcon icon="tabler-plus" size="16" class="me-1" />
@@ -1551,23 +1739,21 @@ watch(
                 class="template-variable-field"
               >
                 <span class="template-variable-label">
-                  {{ formatTemplateVariableLabel(variable) }}
+                  {{ formatOfficialTemplateVariableLabel(variable) }}
                 </span>
-                <VTextField
+                <OfficialTemplateVariableField
                   v-model="variable.value"
+                  :variables="availableVariables"
                   placeholder="Valor"
-                  variant="outlined"
-                  density="compact"
                   hide-details
                   @update:model-value="syncTemplateVariables"
                 />
               </div>
-              <VTextField
+              <OfficialTemplateVariableField
                 v-else
                 v-model="variable.value"
+                :variables="availableVariables"
                 placeholder="Valor"
-                variant="outlined"
-                density="compact"
                 hide-details
                 @update:model-value="syncTemplateVariables"
               />
@@ -1771,6 +1957,20 @@ watch(
   border: 1px solid rgba(17, 24, 39, 0.08);
   border-radius: 8px;
   padding: 10px;
+}
+
+.preview-runtime-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-block-end: 7px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: rgba(var(--v-theme-info), 0.12);
+  color: rgb(var(--v-theme-info));
+  font-size: 0.67rem;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .whatsapp-bubble {

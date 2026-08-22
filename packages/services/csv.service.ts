@@ -4,7 +4,10 @@ import { injectable, inject } from 'tsyringe';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { validateCpf } from '@core/common/functions/validateCpf';
-import { validateCnpj } from '@core/common/functions/validateCnpj';
+import {
+  normalizeCnpj,
+  validateCnpj,
+} from '@core/common/functions/validateCnpj';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
 import { repairMojibakeIfSafe } from '@core/common/functions/repairMojibake';
 import { TextDecoder } from 'node:util';
@@ -294,8 +297,9 @@ export class CsvFileReaderService {
     }
 
     const digitsOnly = trimmed.replaceAll(/\D/g, '');
+    const cnpj = normalizeCnpj(trimmed);
 
-    if (!digitsOnly) {
+    if (!digitsOnly && !cnpj) {
       return { document: null, contact_document_type_id: null };
     }
 
@@ -308,7 +312,7 @@ export class CsvFileReaderService {
 
     if (validateCnpj(trimmed)) {
       return {
-        document: digitsOnly,
+        document: cnpj,
         contact_document_type_id: EContactDocumentType.cnpj,
       };
     }
@@ -323,7 +327,7 @@ export class CsvFileReaderService {
       }
     }
 
-    return { document: digitsOnly, contact_document_type_id: null };
+    return { document: digitsOnly || cnpj, contact_document_type_id: null };
   }
 
   private _parseCsv(content: string): ICreateContact[] {

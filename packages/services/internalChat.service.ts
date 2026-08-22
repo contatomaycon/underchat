@@ -83,10 +83,7 @@ type InternalChatSystemUser = {
 };
 
 type InternalChatMessageHistoryKind =
-  | 'current'
-  | 'deleted_snapshot'
-  | 'original'
-  | 'previous_version';
+  'current' | 'deleted_snapshot' | 'original' | 'previous_version';
 
 type InternalChatMessageHistoryItem = {
   type: EMessageType | string;
@@ -1018,15 +1015,26 @@ export class InternalChatService {
   async viewUnreadSummary(
     accountId: string,
     userId: string
-  ): Promise<{ unread_count: number }> {
-    const unreadCount =
-      await this.conversationRepository.sumUnreadOpenConversationsForUser(
+  ): Promise<{
+    unread_count: number;
+    unread_conversations: Array<{
+      conversation_id: string;
+      unread_count: number;
+    }>;
+  }> {
+    const unreadConversations =
+      await this.conversationRepository.listUnreadOpenConversationsForUser(
         accountId,
         userId
       );
+    const unreadCount = unreadConversations.reduce(
+      (total, conversation) => total + conversation.unread_count,
+      0
+    );
 
     return {
       unread_count: Math.max(0, Math.trunc(unreadCount)),
+      unread_conversations: unreadConversations,
     };
   }
 
@@ -1266,11 +1274,17 @@ export class InternalChatService {
     body: { last_read_message_id?: string | null }
   ): Promise<boolean> {
     await this.assertParticipant(accountId, conversationId, userId);
-    return this.conversationRepository.markConversationRead({
+    const marked = await this.conversationRepository.markConversationRead({
       conversationId,
       userId,
       lastReadMessageId: body.last_read_message_id ?? null,
     });
+
+    if (marked) {
+      await this.publishConversationSync(accountId, conversationId);
+    }
+
+    return marked;
   }
 
   async listMessages(
@@ -1921,12 +1935,25 @@ export class InternalChatService {
     reason: 'conversation' | 'message' = 'conversation',
     messageId?: string
   ): Promise<void> {
+    const participants =
+      await this.conversationRepository.listParticipantUnreadStates(
+        conversationId
+      );
+    const unreadByUser = Object.fromEntries(
+      participants.map((participant) => [
+        participant.user_id,
+        participant.closed_at === null
+          ? Math.max(0, Math.trunc(participant.unread_count))
+          : 0,
+      ])
+    );
     const payload = {
       type: 'internal_chat_conversation_sync',
       account_id: accountId,
       conversation_id: conversationId,
       reason,
       message_id: messageId,
+      unread_by_user: unreadByUser,
       date: new Date().toISOString(),
     };
 

@@ -23,7 +23,7 @@ describe('ContactGroupUpdaterUseCase', () => {
     const t = jest.fn((key: string) => key);
 
     await expect(
-      useCase.execute(t as never, 'cg-1', {} as never)
+      useCase.execute(t as never, 'cg-1', {} as never, 'account-1')
     ).rejects.toThrow('contact_group_not_found');
   });
 
@@ -42,9 +42,14 @@ describe('ContactGroupUpdaterUseCase', () => {
     const t = jest.fn((key: string) => key);
 
     await expect(
-      useCase.execute(t as never, 'cg-1', {
-        contacts: [{ contact_id: 'c-1' }],
-      } as never)
+      useCase.execute(
+        t as never,
+        'cg-1',
+        {
+          contacts: [{ contact_id: 'c-1' }],
+        } as never,
+        'account-1'
+      )
     ).rejects.toThrow('contact_not_found');
     expect(contactGroupService.updateContactGroupById).not.toHaveBeenCalled();
   });
@@ -62,9 +67,14 @@ describe('ContactGroupUpdaterUseCase', () => {
     const t = jest.fn((key: string) => key);
 
     await expect(
-      useCase.execute(t as never, 'cg-1', {
-        contacts: [{ contact_id: 'c-1' }],
-      } as never)
+      useCase.execute(
+        t as never,
+        'cg-1',
+        {
+          contacts: [{ contact_id: 'c-1' }],
+        } as never,
+        'account-1'
+      )
     ).rejects.toThrow('contact_group_update_error');
   });
 
@@ -81,11 +91,15 @@ describe('ContactGroupUpdaterUseCase', () => {
     );
     const t = jest.fn((key: string) => key);
 
-    await expect(useCase.execute(t as never, 'cg-1', body)).resolves.toBe(true);
+    await expect(
+      useCase.execute(t as never, 'cg-1', body, 'account-1', 'user-1')
+    ).resolves.toBe(true);
     expect(contactGroupService.updateContactGroupById).toHaveBeenCalledWith(
       t,
       'cg-1',
-      body
+      body,
+      'account-1',
+      'user-1'
     );
   });
 });

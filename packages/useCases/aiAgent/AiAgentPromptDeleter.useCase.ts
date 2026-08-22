@@ -5,6 +5,7 @@ import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
 import { StorageService } from '@core/services/storage.service';
 import { EmbeddingService } from '@core/services/embedding.service';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
+import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 
 @injectable()
 export class AiAgentPromptDeleterUseCase {
@@ -34,6 +35,28 @@ export class AiAgentPromptDeleterUseCase {
     aiAgentPromptId: string,
     accountId: string
   ): Promise<boolean> {
+    const prompt = await this.aiAgentService.viewAiAgentPrompt(
+      aiAgentPromptId,
+      accountId
+    );
+
+    if (!prompt) {
+      throw new Error(t('ai_agent_prompt_not_found'));
+    }
+
+    return this.embeddingService.withEmbeddingGenerationLock(
+      accountId,
+      prompt.ai_agent_id,
+      () =>
+        this.executeWithEmbeddingGenerationLock(t, aiAgentPromptId, accountId)
+    );
+  }
+
+  private async executeWithEmbeddingGenerationLock(
+    t: TFunction<'translation', undefined>,
+    aiAgentPromptId: string,
+    accountId: string
+  ): Promise<boolean> {
     const aiAgentPromptExists = await this.aiAgentService.viewAiAgentPrompt(
       aiAgentPromptId,
       accountId
@@ -43,14 +66,28 @@ export class AiAgentPromptDeleterUseCase {
       throw new Error(t('ai_agent_prompt_not_found'));
     }
 
-    await this.deleteFileFromS3(aiAgentPromptExists.value);
+    const gptProvider = aiAgentPromptExists.openai_file_id
+      ? await this.stageOpenAIFileCleanupIfNeeded(
+          aiAgentPromptExists.ai_agent_id,
+          accountId,
+          aiAgentPromptId,
+          aiAgentPromptExists.openai_file_id
+        )
+      : null;
 
-    if (aiAgentPromptExists.openai_file_id) {
-      await this.cleanupOpenAIFileIfNeeded(
-        aiAgentPromptExists.ai_agent_id,
-        accountId,
-        aiAgentPromptExists.openai_file_id
-      );
+    const promptDeactivated = await this.aiAgentService.updateAiAgentPromptById(
+      { status: EAiAgentStatus.inactive },
+      aiAgentPromptId,
+      accountId
+    );
+    if (!promptDeactivated) {
+      throw new Error(t('ai_agent_prompt_deleter_error'));
+    }
+
+    const embeddingsDeleted =
+      await this.embeddingService.deletePromptEmbeddings(aiAgentPromptId);
+    if (!embeddingsDeleted) {
+      throw new Error(t('ai_agent_prompt_deleter_error'));
     }
 
     const aiAgentPromptDeleted =
@@ -63,35 +100,67 @@ export class AiAgentPromptDeleterUseCase {
       throw new Error(t('ai_agent_prompt_deleter_error'));
     }
 
-    await this.embeddingService.deletePromptEmbeddings(aiAgentPromptId);
+    try {
+      await this.deleteFileFromS3(aiAgentPromptExists.value);
+    } catch (error) {
+      console.error(
+        '[AiAgentPromptDeleter] prompt deleted but source cleanup failed',
+        {
+          error,
+          ai_agent_prompt_id: aiAgentPromptId,
+          account_id: accountId,
+        }
+      );
+    }
+
+    if (gptProvider) {
+      try {
+        await this.openAIAssistantService.cleanupPendingOpenAIFiles(
+          gptProvider.apiKey,
+          gptProvider.baseUrl,
+          accountId,
+          aiAgentPromptExists.ai_agent_id
+        );
+      } catch (error) {
+        console.error(
+          '[AiAgentPromptDeleter] deferred OpenAI cleanup remains pending',
+          {
+            error,
+            ai_agent_prompt_id: aiAgentPromptId,
+            account_id: accountId,
+          }
+        );
+      }
+    }
 
     return true;
   }
 
-  private async cleanupOpenAIFileIfNeeded(
+  private async stageOpenAIFileCleanupIfNeeded(
     aiAgentId: string,
     accountId: string,
+    aiAgentPromptId: string,
     openaiFileId: string
-  ): Promise<void> {
-    try {
-      const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
-      if (
-        !agent ||
-        agent.ai_agent_type_id !== EAiAgentType.gpt ||
-        !agent.api_key ||
-        !agent.base_url
-      ) {
-        return;
-      }
-
-      await this.openAIAssistantService.cleanupOpenAIFile(
-        agent.api_key,
-        agent.base_url,
-        agent.openai_vector_store_id,
-        openaiFileId
-      );
-    } catch (error) {
-      console.error('Erro ao limpar arquivo OpenAI na exclusão:', error);
+  ): Promise<{ apiKey: string; baseUrl: string } | null> {
+    const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
+    if (!agent || agent.ai_agent_type_id !== EAiAgentType.gpt) {
+      return null;
     }
+
+    await this.openAIAssistantService.registerPendingOpenAIFileCleanup(
+      accountId,
+      aiAgentId,
+      aiAgentPromptId,
+      agent.openai_vector_store_id,
+      openaiFileId
+    );
+
+    if (!agent.api_key || !agent.base_url) {
+      return null;
+    }
+    return {
+      apiKey: agent.api_key,
+      baseUrl: agent.base_url,
+    };
   }
 }

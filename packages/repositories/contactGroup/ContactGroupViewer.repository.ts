@@ -17,7 +17,8 @@ export class ContactGroupViewerRepository {
   ) {}
 
   viewContactGroupById = async (
-    contactGroupId: string
+    contactGroupId: string,
+    accountId?: string
   ): Promise<ViewContactGroupResponse | null> => {
     const result = await this.dbRo
       .select({
@@ -50,6 +51,7 @@ export class ContactGroupViewerRepository {
       .where(
         and(
           eq(contactGroup.contact_group_id, contactGroupId),
+          accountId ? eq(contactGroup.account_id, accountId) : undefined,
           isNull(contactGroup.deleted_at)
         )
       )

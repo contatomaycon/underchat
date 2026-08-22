@@ -4,10 +4,12 @@ export interface IProcessFlowNodeOptions {
     quantity?: number;
     time?: number;
     action?: string;
-    redirect_type?: string;
+    redirect_type?: 'user' | 'sector' | 'chatbot';
     selected_user?: string;
     selected_sector?: string;
     selected_sector_user?: string;
+    selected_channel?: string;
+    selected_chatbot?: string;
   };
   redirectFailedAttempts?: {
     status?: string;

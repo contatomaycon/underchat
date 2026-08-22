@@ -3,16 +3,30 @@ import 'reflect-metadata';
 jest.mock('@wwebjs/whatsapp-web.js', () => ({
   __esModule: true,
   default: {
-    MessageMedia: {
-      fromUrl: jest.fn(async (url: string) => ({ mediaUrl: url })),
+    MessageMedia: class MessageMedia {
+      constructor(
+        readonly mimetype: string,
+        readonly data: string,
+        readonly filename?: string,
+        readonly filesize?: number
+      ) {}
     },
   },
 }));
 
 jest.mock('@core/common/functions/getMediaUrlFromInput', () => ({
   withMediaUrlFromInput: jest.fn(async (_input, callback) =>
-    callback('https://cdn/media')
+    callback('https://cdn/media', {})
   ),
+}));
+
+jest.mock('@core/common/functions/downloadMediaBuffer', () => ({
+  downloadMediaBuffer: jest.fn(async () => ({
+    buffer: Buffer.from('status-media'),
+    contentType: 'image/jpeg',
+    contentLength: 12,
+    filename: 'status.jpg',
+  })),
 }));
 
 jest.mock('@core/services/wwebjs/methods/helpers.service', () => ({
@@ -67,29 +81,56 @@ describe('WwebjsMessageStatusStoriesService', () => {
 
     await expect(service.deleteStatus('ext-1')).resolves.toBeUndefined();
 
-    expect(sendMessage).toHaveBeenNthCalledWith(1, 'status@broadcast', 'txt');
+    expect(sendMessage).toHaveBeenNthCalledWith(
+      1,
+      'status@broadcast',
+      'txt',
+      undefined,
+      undefined
+    );
     expect(sendMessage).toHaveBeenNthCalledWith(
       2,
       'status@broadcast',
-      { mediaUrl: 'https://cdn/media' },
-      { caption: 'img' }
+      expect.objectContaining({
+        mimetype: 'image/jpeg',
+        data: Buffer.from('status-media').toString('base64'),
+        filename: 'status.jpg',
+        filesize: 12,
+      }),
+      { caption: 'img' },
+      undefined
     );
     expect(sendMessage).toHaveBeenNthCalledWith(
       3,
       'status@broadcast',
-      { mediaUrl: 'https://cdn/media' },
-      { caption: 'vid' }
+      expect.objectContaining({
+        mimetype: 'image/jpeg',
+        data: Buffer.from('status-media').toString('base64'),
+        filename: 'status.jpg',
+        filesize: 12,
+      }),
+      { caption: 'vid' },
+      undefined
     );
     expect(sendMessage).toHaveBeenNthCalledWith(
       4,
       'status@broadcast',
-      { mediaUrl: 'https://cdn/media' },
-      { caption: 'aud', sendAudioAsVoice: true }
+      expect.objectContaining({
+        mimetype: 'image/jpeg',
+        data: Buffer.from('status-media').toString('base64'),
+        filename: 'status.jpg',
+        filesize: 12,
+      }),
+      { caption: 'aud', sendAudioAsVoice: true },
+      undefined
     );
-    expect(deleteMessage).toHaveBeenCalledWith({
-      remoteJid: 'status@broadcast',
-      fromMe: true,
-      id: 'ext-1',
-    });
+    expect(deleteMessage).toHaveBeenCalledWith(
+      {
+        remoteJid: 'status@broadcast',
+        fromMe: true,
+        id: 'ext-1',
+      },
+      undefined
+    );
   });
 });

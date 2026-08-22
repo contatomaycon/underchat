@@ -1,4 +1,10 @@
-import { pgTable, uuid, timestamp, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  timestamp,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { contact } from './contact.model';
 import { labelTemplate } from '../label';
@@ -24,6 +30,10 @@ export const contactLabelTemplate = pgTable(
       table.label_template_id
     ),
     index('contact_label_template_contact_id_label_template_id_idx').on(
+      table.contact_id,
+      table.label_template_id
+    ),
+    uniqueIndex('contact_label_template_contact_label_uidx').on(
       table.contact_id,
       table.label_template_id
     ),

@@ -28,11 +28,9 @@ export class WwebjsDeliveryConfirmationService {
 
     this.cleanupExpiredCache();
 
-    for (const messageIdAlias of messageIdAliases) {
-      const cached = this.cache.get(messageIdAlias);
-      if (cached) {
-        return cached.outcome;
-      }
+    const cachedOutcome = this.getCachedOutcome(messageIdAliases);
+    if (cachedOutcome) {
+      return cachedOutcome;
     }
 
     return new Promise<DeliveryWaitResult>((resolve) => {
@@ -88,18 +86,27 @@ export class WwebjsDeliveryConfirmationService {
     });
   }
 
-  markSent(messageId: string): void {
-    this.markOutcome(messageId, 'sent');
+  markSent(messageId: string): boolean {
+    return this.markOutcome(messageId, 'sent');
   }
 
-  markFailed(messageId: string): void {
-    this.markOutcome(messageId, 'failed');
+  markFailed(messageId: string): boolean {
+    return this.markOutcome(messageId, 'failed');
   }
 
-  private markOutcome(messageId: string, outcome: DeliveryOutcome): void {
+  private markOutcome(messageId: string, outcome: DeliveryOutcome): boolean {
     const messageIdAliases = this.getMessageIdAliases(messageId);
     if (!messageIdAliases.length) {
-      return;
+      return false;
+    }
+
+    this.cleanupExpiredCache();
+
+    if (
+      outcome === 'failed' &&
+      this.getCachedOutcome(messageIdAliases) === 'sent'
+    ) {
+      return false;
     }
 
     const expiresAt = Date.now() + this.outcomeTtlMs;
@@ -126,6 +133,26 @@ export class WwebjsDeliveryConfirmationService {
     for (const listener of listenersToNotify) {
       listener(outcome);
     }
+
+    return true;
+  }
+
+  private getCachedOutcome(
+    messageIdAliases: string[]
+  ): DeliveryOutcome | undefined {
+    let hasFailedOutcome = false;
+
+    for (const messageIdAlias of messageIdAliases) {
+      const cached = this.cache.get(messageIdAlias);
+      if (cached?.outcome === 'sent') {
+        return 'sent';
+      }
+      if (cached?.outcome === 'failed') {
+        hasFailedOutcome = true;
+      }
+    }
+
+    return hasFailedOutcome ? 'failed' : undefined;
   }
 
   private cleanupExpiredCache(): void {

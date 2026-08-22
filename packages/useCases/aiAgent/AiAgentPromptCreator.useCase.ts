@@ -1,12 +1,10 @@
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
-import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
 import { StorageService } from '@core/services/storage.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { CreateAiAgentPromptRequest } from '@core/schema/aiAgent/createAiAgentPrompt/request.schema';
-import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { ICreateAiAgentPromptInput } from '@core/common/interfaces/ICreateAiAgentPromptInput';
@@ -17,8 +15,6 @@ export class AiAgentPromptCreatorUseCase {
   constructor(
     @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
-    @inject(OpenAIAssistantService)
-    private readonly openAIAssistantService: OpenAIAssistantService,
     @inject(StorageService)
     private readonly storageService: StorageService,
     @inject(StreamProducerService)
@@ -141,40 +137,6 @@ export class AiAgentPromptCreatorUseCase {
     return result;
   }
 
-  private async ensureOpenAIIfNeeded(
-    accountId: string,
-    aiAgentId: string
-  ): Promise<void> {
-    const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
-    const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
-    if (!isGpt || !agent?.api_key || !agent?.base_url) {
-      return;
-    }
-
-    const vectorStoreId = await this.openAIAssistantService.ensureVectorStore(
-      aiAgentId,
-      accountId,
-      agent.api_key,
-      agent.base_url
-    );
-
-    if (agent.model) {
-      const instructions =
-        this.openAIAssistantService.getAssistantInstructionsFromSystemPrompt(
-          agent.system_prompt
-        );
-      await this.openAIAssistantService.ensureAssistant(
-        aiAgentId,
-        accountId,
-        agent.api_key,
-        agent.base_url,
-        agent.model,
-        instructions,
-        vectorStoreId
-      );
-    }
-  }
-
   private async sendToEmbeddingQueue(
     accountId: string,
     aiAgentId: string,
@@ -199,6 +161,23 @@ export class AiAgentPromptCreatorUseCase {
     await this.streamProducerService.send(topic, payload, aiAgentPromptId);
   }
 
+  private async cleanupUploadedSourceBestEffort(
+    fileUrl: string,
+    accountId: string
+  ): Promise<void> {
+    try {
+      const deleted = await this.storageService.deleteImage(fileUrl);
+      if (!deleted) {
+        throw new Error('Storage source cleanup returned false.');
+      }
+    } catch (error) {
+      console.error('[AiAgentPromptCreator] source rollback failed', {
+        error,
+        account_id: accountId,
+      });
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateAiAgentPromptRequest,
@@ -221,26 +200,43 @@ export class AiAgentPromptCreatorUseCase {
     };
     const finalStatus = processedInput.status;
 
-    const aiAgentPromptId = await this.createPrompt(
-      processedInput,
-      accountId,
-      t
-    );
+    let aiAgentPromptId: string | null = null;
+    try {
+      aiAgentPromptId = await this.createPrompt(processedInput, accountId, t);
 
-    if (finalStatus !== EAiAgentStatus.active) {
+      if (finalStatus === EAiAgentStatus.active) {
+        await this.sendToEmbeddingQueue(
+          accountId,
+          aiAgentId,
+          aiAgentPromptId,
+          finalValue,
+          'create'
+        );
+      }
+
       return aiAgentPromptId;
+    } catch (error) {
+      let safeToRemoveSource = aiAgentPromptId === null;
+      if (aiAgentPromptId) {
+        try {
+          safeToRemoveSource =
+            await this.aiAgentService.deleteAiAgentPromptById(
+              aiAgentPromptId,
+              accountId
+            );
+        } catch (rollbackError) {
+          console.error('[AiAgentPromptCreator] prompt rollback failed', {
+            rollback_error: rollbackError,
+            account_id: accountId,
+            ai_agent_prompt_id: aiAgentPromptId,
+          });
+        }
+      }
+
+      if (safeToRemoveSource) {
+        await this.cleanupUploadedSourceBestEffort(finalValue, accountId);
+      }
+      throw error;
     }
-
-    await this.ensureOpenAIIfNeeded(accountId, aiAgentId);
-
-    await this.sendToEmbeddingQueue(
-      accountId,
-      aiAgentId,
-      aiAgentPromptId,
-      finalValue,
-      'create'
-    );
-
-    return aiAgentPromptId;
   }
 }

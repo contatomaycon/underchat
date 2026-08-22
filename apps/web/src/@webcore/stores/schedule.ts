@@ -28,6 +28,12 @@ import { ListScheduleMessagesRequest } from '@core/schema/schedule/listScheduleM
 import { EScheduleAction } from '@core/common/enums/EScheduleAction';
 import { OfficialTemplatesResponse } from '@core/schema/chatbot/officialTemplates/response.schema';
 
+export type OfficialTemplatesLoadResult = {
+  templates: OfficialTemplatesResponse | null;
+  error: string | null;
+  status: number | null;
+};
+
 export const useScheduleStore = defineStore('schedule', {
   state: () => ({
     snackbar: {
@@ -508,7 +514,7 @@ export const useScheduleStore = defineStore('schedule', {
 
     async listScheduleOfficialTemplates(
       workerId: string
-    ): Promise<OfficialTemplatesResponse | null> {
+    ): Promise<OfficialTemplatesLoadResult> {
       try {
         this.loading = true;
 
@@ -529,23 +535,37 @@ export const useScheduleStore = defineStore('schedule', {
 
           this.showSnackbar(mensage, EColor.error);
 
-          return null;
+          return {
+            templates: null,
+            error: mensage,
+            status: response.status,
+          };
         }
 
-        return data.data;
+        return {
+          templates: data.data,
+          error: null,
+          status: response.status,
+        };
       } catch (error) {
         let errorMessage = this.i18n.global.t(
           'official_templates_loading_error'
         );
+        let status: number | null = null;
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
+          status = error.response?.status ?? null;
         }
 
         this.showSnackbar(errorMessage, EColor.error);
 
         this.loading = false;
 
-        return null;
+        return {
+          templates: null,
+          error: errorMessage,
+          status,
+        };
       }
     },
 

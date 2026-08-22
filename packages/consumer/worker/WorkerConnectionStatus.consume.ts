@@ -10,7 +10,6 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 interface PublishQrCodeAttemptFailedOptions {
   attempt: number;
@@ -64,8 +63,10 @@ export class WorkerConnectionStatusConsume {
       worker_type_id: EWorkerType.baileys,
       worker_status_id: EWorkerStatus.disponible,
       connection_attempt_id: request.connection_attempt_id,
+      authorized_connection_epoch: request.authorized_connection_epoch,
       debug_trace_id: request.debug_trace_id,
-      runtime_generation: request.runtime_generation,
+      runtime_generation:
+        request.runtime_generation ?? baileysEnvironment.runtimeGeneration,
       warm_pool_id: request.warm_pool_id,
       qr_pending: false,
       attempt: options.attempt,
@@ -79,13 +80,9 @@ export class WorkerConnectionStatusConsume {
       degraded_reason: options.degradedReason ?? options.reason,
     };
 
-    await Promise.allSettled([
-      this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload),
-      this.centrifugoService.publishSub(
-        workerCentrifugoQueue(payload.account_id),
-        payload
-      ),
-    ]);
+    await this.balanceWorkerStatusGrpcClientService
+      .notifyWorkerStatus(payload)
+      .catch(() => undefined);
 
     return payload;
   }
@@ -109,16 +106,30 @@ export class WorkerConnectionStatusConsume {
       return this.handleDisponible(data);
     }
 
-    return this.currentState(ECodeMessage.awaitConnection);
+    return this.currentState(ECodeMessage.awaitConnection, data);
   }
 
   private async handleOnline(
     data: StatusConnectionWorkerRequest
   ): Promise<IBaileysConnectionState> {
-    this.stopConnectionRetry();
+    const isExplicitQrRequest =
+      data.type === EBaileysConnectionType.qrcode && data.qr_pending === true;
 
     if (this.baileysService.isConnected()) {
+      this.stopConnectionRetry();
       return this.publishConnectedStatus(data);
+    }
+
+    if (this.activeConnectionRequest && !isExplicitQrRequest) {
+      const currentCode = this.baileysService.getCode();
+      if (this.baileysService.socket) {
+        this.baileysService.republishLastState();
+      }
+      return this.currentState(currentCode);
+    }
+
+    if (isExplicitQrRequest) {
+      this.stopConnectionRetry();
     }
 
     if (this.baileysService.hasSession()) {
@@ -137,14 +148,24 @@ export class WorkerConnectionStatusConsume {
       currentCode === ECodeMessage.awaitingPairingCode ||
       currentCode === ECodeMessage.pairingInProgress ||
       currentCode === ECodeMessage.newLoginAttempt;
+    const currentAttemptState =
+      isExplicitQrRequest && hasActiveSocket
+        ? this.baileysService.republishLastState(data.connection_attempt_id)
+        : undefined;
+
+    if (isExplicitQrRequest && currentAttemptState) {
+      return currentAttemptState;
+    }
 
     if (
       currentStatus === EBaileysConnectionStatus.connecting &&
       hasActiveSocket &&
       pairingInProgress
     ) {
-      this.baileysService.republishLastState();
-      return this.currentState(currentCode);
+      if (!isExplicitQrRequest) {
+        this.baileysService.republishLastState(data.connection_attempt_id);
+      }
+      return this.currentState(currentCode, data);
     }
 
     if (
@@ -152,54 +173,58 @@ export class WorkerConnectionStatusConsume {
       hasActiveSocket &&
       awaitingQrRead
     ) {
-      try {
-        return await this.baileysService.connect({
-          initial_connection: true,
-          force_new: true,
-          requested_by_user: true,
-          type: data.type as EBaileysConnectionType,
-          phone_connection: data.phone_connection,
-          connection_attempt_id: data.connection_attempt_id,
-          debug_trace_id: data.debug_trace_id,
-        });
-      } catch (error) {
-        throw error;
+      if (!isExplicitQrRequest) {
+        this.baileysService.republishLastState(data.connection_attempt_id);
+        return this.currentState(currentCode, data);
       }
+
+      return this.connectWithService(data, {
+        forceNew: true,
+        requestedByUser: true,
+      });
     }
 
     if (
       currentStatus === EBaileysConnectionStatus.connecting &&
       hasActiveSocket
     ) {
-      try {
-        return await this.baileysService.connect({
-          initial_connection: true,
-          force_new: true,
-          requested_by_user: true,
-          type: data.type as EBaileysConnectionType,
-          phone_connection: data.phone_connection,
-          connection_attempt_id: data.connection_attempt_id,
-          debug_trace_id: data.debug_trace_id,
-        });
-      } catch (error) {
-        throw error;
+      if (!isExplicitQrRequest) {
+        this.baileysService.republishLastState(data.connection_attempt_id);
+        return this.currentState(currentCode, data);
       }
+
+      return this.connectWithService(data, {
+        forceNew: true,
+        requestedByUser: true,
+      });
     }
 
     if (this.activeConnectionRequest) {
       return this.currentState(currentCode);
     }
 
-    const state = await this.baileysService.connect({
+    return this.connectWithService(data, {
+      forceNew: false,
+      requestedByUser: isExplicitQrRequest,
+    });
+  }
+
+  private connectWithService(
+    data: StatusConnectionWorkerRequest,
+    options: { forceNew: boolean; requestedByUser: boolean }
+  ): Promise<IBaileysConnectionState> {
+    return this.baileysService.connect({
       initial_connection: true,
-      force_new: false,
-      requested_by_user: true,
+      force_new: options.forceNew,
+      requested_by_user: options.requestedByUser,
       type: data.type as EBaileysConnectionType,
       phone_connection: data.phone_connection,
       connection_attempt_id: data.connection_attempt_id,
+      authorized_connection_epoch: data.authorized_connection_epoch,
       debug_trace_id: data.debug_trace_id,
+      runtime_generation:
+        data.runtime_generation ?? baileysEnvironment.runtimeGeneration,
     });
-    return state;
   }
 
   private handleRecreating(
@@ -207,9 +232,13 @@ export class WorkerConnectionStatusConsume {
   ): IBaileysConnectionState {
     this.baileysService.reconnect({
       initial_connection: true,
+      connection_attempt_id: data.connection_attempt_id,
+      authorized_connection_epoch: data.authorized_connection_epoch,
+      runtime_generation:
+        data.runtime_generation ?? baileysEnvironment.runtimeGeneration,
       debug_trace_id: data.debug_trace_id,
     });
-    return this.currentState(ECodeMessage.awaitConnection);
+    return this.currentState(ECodeMessage.awaitConnection, data);
   }
 
   private async handleDisponible(
@@ -222,6 +251,11 @@ export class WorkerConnectionStatusConsume {
       initial_connection: true,
       disconnected_user: true,
       preserve_session: !removeSession,
+      connection_attempt_id: data.connection_attempt_id,
+      authorized_connection_epoch: data.authorized_connection_epoch,
+      runtime_generation:
+        data.runtime_generation ?? baileysEnvironment.runtimeGeneration,
+      debug_trace_id: data.debug_trace_id,
     });
 
     const workerId = baileysEnvironment.baileysWorkerId;
@@ -234,16 +268,30 @@ export class WorkerConnectionStatusConsume {
       code: ECodeMessage.connectionClosed,
       disconnected_user: true,
       worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: data.connection_attempt_id,
+      authorized_connection_epoch: data.authorized_connection_epoch,
+      runtime_generation:
+        data.runtime_generation ?? baileysEnvironment.runtimeGeneration,
       debug_trace_id: data.debug_trace_id,
     };
 
-    await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
+    // The manager owns the durable terminal projection for explicit session
+    // removal. Publishing it again here races the disconnect tombstone and
+    // can reject an otherwise successful removal as a stale runtime event.
+    if (!removeSession) {
+      await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
+        payload
+      );
+    }
 
     if (!removeSession) {
       const defaultConnectionRequest: StatusConnectionWorkerRequest = {
         worker_id: workerId,
         status: EWorkerStatus.online,
         type: EBaileysConnectionType.qrcode,
+        connection_attempt_id: data.connection_attempt_id,
+        runtime_generation:
+          data.runtime_generation ?? baileysEnvironment.runtimeGeneration,
         debug_trace_id: data.debug_trace_id,
       };
 
@@ -286,9 +334,17 @@ export class WorkerConnectionStatusConsume {
   }
 
   private handoffToServiceReconnect(): void {
+    const request = this.activeConnectionRequest;
     this.stopConnectionRetry();
     this.baileysService.clearUserRequestedDisconnect();
-    this.baileysService.reconnect({ initial_connection: true });
+    this.baileysService.reconnect({
+      initial_connection: true,
+      connection_attempt_id: request?.connection_attempt_id,
+      authorized_connection_epoch: request?.authorized_connection_epoch,
+      runtime_generation:
+        request?.runtime_generation ?? baileysEnvironment.runtimeGeneration,
+      debug_trace_id: request?.debug_trace_id,
+    });
   }
 
   private publishConnectionAttempt(attempt: number): void {
@@ -301,12 +357,19 @@ export class WorkerConnectionStatusConsume {
       max_attempts: this.connectionRetryMinAttempts,
       connection_attempt_id:
         this.activeConnectionRequest?.connection_attempt_id,
+      authorized_connection_epoch:
+        this.activeConnectionRequest?.authorized_connection_epoch,
       debug_trace_id: this.activeConnectionRequest?.debug_trace_id,
+      runtime_generation:
+        this.activeConnectionRequest?.runtime_generation ??
+        baileysEnvironment.runtimeGeneration,
     };
 
-    void this.centrifugoService
-      .publishSub(workerCentrifugoQueue(payload.account_id), payload)
-      .catch(() => {});
+    void (
+      this.balanceWorkerStatusGrpcClientService.publishWorkerRuntimeEvent?.(
+        payload
+      ) ?? Promise.resolve()
+    ).catch(() => {});
   }
 
   private isAwaitingUserAction(code: ECodeMessage): boolean {
@@ -325,20 +388,39 @@ export class WorkerConnectionStatusConsume {
       connection_attempt_id:
         request?.connection_attempt_id ??
         this.activeConnectionRequest?.connection_attempt_id,
+      authorized_connection_epoch:
+        request?.authorized_connection_epoch ??
+        this.activeConnectionRequest?.authorized_connection_epoch,
       debug_trace_id:
         request?.debug_trace_id ?? this.activeConnectionRequest?.debug_trace_id,
+      runtime_generation:
+        request?.runtime_generation ??
+        this.activeConnectionRequest?.runtime_generation ??
+        baileysEnvironment.runtimeGeneration,
     });
   }
 
-  private currentState(code: ECodeMessage): IBaileysConnectionState {
+  private currentState(
+    code: ECodeMessage,
+    request?: StatusConnectionWorkerRequest
+  ): IBaileysConnectionState {
     return {
       status: this.baileysService.getStatus(),
       code,
       worker_id: baileysEnvironment.baileysWorkerId,
       account_id: baileysEnvironment.baileysAccountId,
       connection_attempt_id:
+        request?.connection_attempt_id ??
         this.activeConnectionRequest?.connection_attempt_id,
-      debug_trace_id: this.activeConnectionRequest?.debug_trace_id,
+      authorized_connection_epoch:
+        request?.authorized_connection_epoch ??
+        this.activeConnectionRequest?.authorized_connection_epoch,
+      debug_trace_id:
+        request?.debug_trace_id ?? this.activeConnectionRequest?.debug_trace_id,
+      runtime_generation:
+        request?.runtime_generation ??
+        this.activeConnectionRequest?.runtime_generation ??
+        baileysEnvironment.runtimeGeneration,
     };
   }
 
@@ -419,7 +501,10 @@ export class WorkerConnectionStatusConsume {
         type: request.type as EBaileysConnectionType,
         phone_connection: request.phone_connection,
         connection_attempt_id: request.connection_attempt_id,
+        authorized_connection_epoch: request.authorized_connection_epoch,
         debug_trace_id: request.debug_trace_id,
+        runtime_generation:
+          request.runtime_generation ?? baileysEnvironment.runtimeGeneration,
       })
       .then((state) => {
         if (

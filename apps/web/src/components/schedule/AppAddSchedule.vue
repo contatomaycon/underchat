@@ -414,10 +414,16 @@ const addSchedule = async () => {
     if (!isOfficialWorker.value && attachmentFile.value) {
       form.append('url', attachmentFile.value);
     }
-    if (selectedContactIds.value.length > 0) {
+    if (
+      sendTo.value === EScheduleSendTo.contacts &&
+      selectedContactIds.value.length > 0
+    ) {
       form.append('contact_ids', JSON.stringify(selectedContactIds.value));
     }
-    if (selectedContactGroupIds.value.length > 0) {
+    if (
+      sendTo.value === EScheduleSendTo.contact_groups &&
+      selectedContactGroupIds.value.length > 0
+    ) {
       form.append(
         'contact_group_ids',
         JSON.stringify(selectedContactGroupIds.value)
@@ -463,17 +469,21 @@ const resetForm = () => {
   refFormAddSchedule.value?.resetValidation();
 };
 
-const loadWorkers = async () => {
+const loadWorkers = async (): Promise<boolean> => {
   const result = await scheduleStore.listScheduleWorkers();
-  if (result) {
-    workers.value = result.map((w) => ({
-      worker_id: w.worker_id,
-      name: w.name,
-      number: w.number ?? '',
-      type_id: w.type_id ?? null,
-      is_official: w.is_official ?? false,
-    }));
+  if (!result) {
+    return false;
   }
+
+  workers.value = result.map((w) => ({
+    worker_id: w.worker_id,
+    name: w.name,
+    number: w.number ?? '',
+    type_id: w.type_id ?? null,
+    is_official: w.is_official ?? false,
+  }));
+
+  return true;
 };
 
 const resetOfficialState = () => {
@@ -488,11 +498,36 @@ const resetOfficialState = () => {
   isLoadingOfficialChatbots.value = false;
 };
 
+const refreshMissingSelectedWorker = async (
+  selectedWorkerId: string,
+  requestId: number
+): Promise<boolean> => {
+  const workersLoaded = await loadWorkers();
+  if (
+    !workersLoaded ||
+    requestId !== officialTemplatesRequestId ||
+    workerId.value !== selectedWorkerId
+  ) {
+    return false;
+  }
+
+  const isSelectedWorkerAvailable = workers.value.some(
+    (worker) => worker.worker_id === selectedWorkerId
+  );
+  if (isSelectedWorkerAvailable) {
+    return false;
+  }
+
+  workerId.value = null;
+  return true;
+};
+
 const loadOfficialTemplates = async () => {
   if (!isOfficialWorker.value || !workerId.value) {
     return;
   }
 
+  const selectedWorkerId = workerId.value;
   const requestId = ++officialTemplatesRequestId;
   officialTemplates.value = [];
   officialTemplatesError.value = null;
@@ -508,9 +543,18 @@ const loadOfficialTemplates = async () => {
       return;
     }
 
-    officialTemplates.value = result ?? [];
-    if (!result) {
-      officialTemplatesError.value = t('official_templates_loading_error');
+    officialTemplates.value = result.templates ?? [];
+    if (!result.templates) {
+      const workerWasRemoved =
+        result.status === 404
+          ? await refreshMissingSelectedWorker(selectedWorkerId, requestId)
+          : false;
+      if (requestId !== officialTemplatesRequestId || workerWasRemoved) {
+        return;
+      }
+
+      officialTemplatesError.value =
+        result.error ?? t('official_templates_loading_error');
     }
   } catch {
     if (requestId === officialTemplatesRequestId) {

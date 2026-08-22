@@ -40,6 +40,7 @@ import { ListMethodPaymentsResponse } from '@core/schema/plan/listMethodPayments
 import { EMethodPayment } from '@core/common/enums/EMethodPayment';
 import creditCardType from 'credit-card-type';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
+import ArchivedCardSelector from '@/components/plan/ArchivedCardSelector.vue';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import type { Subscription } from 'centrifuge';
@@ -95,6 +96,9 @@ const currentUser = ref<ViewUserInfoResponse | null>(null);
 const loadingUser = ref(false);
 const userCards = ref<ListUserCardResponse[]>([]);
 const loadingCards = ref(false);
+const archivedUserCards = ref<ListUserCardResponse[]>([]);
+const loadingArchivedCards = ref(false);
+const restoringCardId = ref<string | null>(null);
 const upgradeDiscount = ref<CalculateUpgradeDiscountResponse | null>(null);
 const loadingDiscount = ref(false);
 const selectedPaymentMethod = ref<'boleto' | 'credit_card' | 'pix' | null>(
@@ -104,13 +108,14 @@ const selectedCardId = ref<string | null>(null);
 const showAddCardModal = ref(false);
 const installments = ref<number>(1);
 const recurringPayment = ref<boolean>(true);
-const newCard = ref({
+const createNewCard = () => ({
   number: '',
   holderName: '',
   expiryMonth: '',
   expiryYear: '',
   cvv: '',
 });
+const newCard = ref(createNewCard());
 const detectedBrand = ref<string | null>(null);
 const showCvv = ref(false);
 const step1Loaded = ref(false);
@@ -271,8 +276,7 @@ const processCurrentPlanInvoice = (
   }
 
   currentPlanBillingPeriod.value = currentPlanInvoice.billing_period as
-    | 'monthly'
-    | 'annual';
+    'monthly' | 'annual';
 };
 
 const processPlanIdFromQuery = (
@@ -387,6 +391,7 @@ const loadStep4 = async () => {
 
   await Promise.all([
     loadUserCards(),
+    loadArchivedUserCards(),
     loadUpgradeDiscount(),
     loadCreditCardFee(),
     loadMethodPayments(),
@@ -490,9 +495,30 @@ const loadUserCards = async () => {
     const defaultCard = cards.find((c) => c.default);
     if (defaultCard) {
       selectedCardId.value = defaultCard.user_card_id;
+    } else if (
+      selectedCardId.value &&
+      !cards.some((card) => card.user_card_id === selectedCardId.value)
+    ) {
+      selectedCardId.value = null;
     }
   }
   loadingCards.value = false;
+};
+
+const loadArchivedUserCards = async (notifyOnFailure = true) => {
+  loadingArchivedCards.value = true;
+
+  try {
+    const cards = await accountSettingsStore.listArchivedUserCards();
+
+    if (cards !== null) {
+      archivedUserCards.value = cards;
+    } else if (notifyOnFailure) {
+      planStore.showSnackbar(t('archived_cards_list_error'), EColor.error);
+    }
+  } finally {
+    loadingArchivedCards.value = false;
+  }
 };
 
 const isCurrentPlan = (planId: string): boolean => {
@@ -1049,6 +1075,58 @@ const isNewCardValid = computed(() => {
   );
 });
 
+const hasValidCreditCardSource = computed(() => {
+  const hasSelectedSavedCard =
+    !showAddCardModal.value && Boolean(selectedCardId.value);
+
+  return hasSelectedSavedCard || isNewCardValid.value;
+});
+
+const resetNewCardForm = () => {
+  newCard.value = createNewCard();
+  detectedBrand.value = null;
+  expiryError.value = null;
+  showCvv.value = false;
+};
+
+const openAddCardForm = () => {
+  selectedCardId.value = null;
+  resetNewCardForm();
+  showAddCardModal.value = true;
+};
+
+const closeAddCardForm = () => {
+  showAddCardModal.value = false;
+  resetNewCardForm();
+};
+
+const reactivateArchivedCard = async (cardId: string) => {
+  if (restoringCardId.value) return;
+
+  restoringCardId.value = cardId;
+
+  try {
+    const restoredCard = await accountSettingsStore.reactivateUserCard(cardId);
+
+    if (!restoredCard) {
+      planStore.showSnackbar(t('archived_card_reactivate_error'), EColor.error);
+      return;
+    }
+
+    archivedUserCards.value = archivedUserCards.value.filter(
+      (card) => card.user_card_id !== cardId
+    );
+    closeAddCardForm();
+
+    await Promise.all([loadUserCards(), loadArchivedUserCards(false)]);
+
+    selectedCardId.value = restoredCard.user_card_id;
+    planStore.showSnackbar(t('archived_card_reactivated'), EColor.success);
+  } finally {
+    restoringCardId.value = null;
+  }
+};
+
 const goBack = () => {
   router.push({ name: 'plans' });
 };
@@ -1244,32 +1322,45 @@ const buildPaymentData = (): CreateOrderPaymentRequest => {
       : undefined;
 
   const isTest = isTestPlan(selectedPlanForCheckout.value);
-  const isCreditCard = selectedPaymentMethod.value === 'credit_card';
-
-  return {
+  const isCreditCard = !isTest && selectedPaymentMethod.value === 'credit_card';
+  const paymentData: CreateOrderPaymentRequest = {
     order_type: 'plan',
     plan_id: selectedPlanForCheckout.value!.plan_id,
     billing_period: billingPeriod.value,
     addons: addons,
     payment_method: isTest ? 'pix' : selectedPaymentMethod.value!,
-    credit_card_id:
-      isCreditCard && selectedCardId.value ? selectedCardId.value : undefined,
-    new_card:
-      isCreditCard && showAddCardModal.value && newCard.value.number
-        ? {
-            number: newCard.value.number.replaceAll(/\s/g, ''),
-            holder_name: newCard.value.holderName,
-            expiry_month: newCard.value.expiryMonth,
-            expiry_year: newCard.value.expiryYear,
-            cvv: newCard.value.cvv,
-          }
-        : undefined,
     recurring_payment: isCreditCard ? recurringPayment.value : undefined,
     installments:
       isCreditCard && billingPeriod.value === 'annual'
         ? installments.value
         : undefined,
   };
+
+  if (!isCreditCard) {
+    return paymentData;
+  }
+
+  if (!showAddCardModal.value && selectedCardId.value) {
+    return {
+      ...paymentData,
+      credit_card_id: selectedCardId.value,
+    };
+  }
+
+  if (showAddCardModal.value && isNewCardValid.value) {
+    return {
+      ...paymentData,
+      new_card: {
+        number: newCard.value.number.replaceAll(/\s/g, ''),
+        holder_name: newCard.value.holderName,
+        expiry_month: newCard.value.expiryMonth,
+        expiry_year: newCard.value.expiryYear,
+        cvv: newCard.value.cvv,
+      },
+    };
+  }
+
+  throw new Error(t('credit_card_source_required'));
 };
 
 const openPaymentModal = async () => {
@@ -1331,11 +1422,8 @@ const processCreditCardPayment = async (creditCardData: {
   pixPaymentId.value = creditCardData.payment_id;
   pixPaymentStatus.value =
     (creditCardData.status as
-      | 'PENDING'
-      | 'RECEIVED'
-      | 'CONFIRMED'
-      | 'OVERDUE'
-      | 'REFUNDED') || 'PENDING';
+      'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED') ||
+    'PENDING';
   pixPaymentInitiated.value = true;
 
   if (creditCardData.is_confirmed) {
@@ -1375,6 +1463,14 @@ const processPayment = async () => {
   }
 
   if (!selectedPaymentMethod.value) return;
+
+  if (
+    selectedPaymentMethod.value === 'credit_card' &&
+    !hasValidCreditCardSource.value
+  ) {
+    planStore.showSnackbar(t('credit_card_source_required'), EColor.error);
+    return;
+  }
 
   paymentInitiated.value = true;
 
@@ -1680,8 +1776,8 @@ watch(
 );
 
 watch(selectedPaymentMethod, (newMethod) => {
-  if (newMethod !== 'credit_card' && showAddCardModal.value) {
-    showAddCardModal.value = false;
+  if (newMethod !== 'credit_card') {
+    closeAddCardForm();
   }
   if (newMethod === 'credit_card' && billingPeriod.value === 'annual') {
     loadCreditCardFee();
@@ -3105,6 +3201,13 @@ onMounted(async () => {
                         </VCardText>
                       </VCard>
 
+                      <ArchivedCardSelector
+                        :cards="archivedUserCards"
+                        :loading="loadingArchivedCards"
+                        :restoring-card-id="restoringCardId"
+                        @reactivate="reactivateArchivedCard"
+                      />
+
                       <!-- Opções de Parcelamento e Recorrência -->
                       <VCard variant="outlined" class="mb-4">
                         <VCardText>
@@ -3146,7 +3249,7 @@ onMounted(async () => {
                         color="primary"
                         variant="outlined"
                         prepend-icon="tabler-plus"
-                        @click="showAddCardModal = !showAddCardModal"
+                        @click="openAddCardForm"
                         class="mb-4"
                       >
                         {{ $t('add_new_card') }}
@@ -3486,7 +3589,7 @@ onMounted(async () => {
                               <VBtn
                                 variant="outlined"
                                 color="secondary"
-                                @click="showAddCardModal = false"
+                                @click="closeAddCardForm"
                               >
                                 {{ $t('cancel') }}
                               </VBtn>
@@ -3782,9 +3885,8 @@ onMounted(async () => {
                       (currentStep === 4 && !selectedPaymentMethod) ||
                       (currentStep === 4 &&
                         selectedPaymentMethod === 'credit_card' &&
-                        !selectedCardId &&
-                        userCards.length > 0 &&
-                        !isNewCardValid) ||
+                        !hasValidCreditCardSource) ||
+                      !!restoringCardId ||
                       isDiscountGreaterThanTotal ||
                       isUpgradeBlocked ||
                       isTotalZero ||
@@ -3804,9 +3906,8 @@ onMounted(async () => {
                         ? testPlanAlreadyUsed
                         : !selectedPaymentMethod ||
                           (selectedPaymentMethod === 'credit_card' &&
-                            !selectedCardId &&
-                            userCards.length > 0 &&
-                            !isNewCardValid)) ||
+                            !hasValidCreditCardSource)) ||
+                      !!restoringCardId ||
                       isDiscountGreaterThanTotal ||
                       isUpgradeBlocked ||
                       isTotalZero ||
@@ -3870,7 +3971,7 @@ onMounted(async () => {
       location="top end"
       :color="planStore.snackbar.color"
     >
-      <span v-html="planStore.snackbar.message"></span>
+      <span>{{ planStore.snackbar.message }}</span>
     </VSnackbar>
   </div>
 

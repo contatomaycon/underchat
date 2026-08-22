@@ -5,10 +5,15 @@ import {
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq, ExtractTablesWithRelations } from 'drizzle-orm';
+import { and, eq, ExtractTablesWithRelations, isNull } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { currentTime } from '@core/common/functions/currentTime';
 import { ContactLabelTemplateDeleterRepository } from './ContactLabelTemplateDeleter.repository';
+import {
+  type ContactOutboundWebhookMarker,
+  lockContactOutboundWebhookSnapshotInTransaction,
+  markContactOutboundWebhookAppliedInTransaction,
+} from './contactOutboundWebhookOutbox';
 
 @injectable()
 export class ContactDeleterRepository {
@@ -24,7 +29,8 @@ export class ContactDeleterRepository {
       typeof schema,
       ExtractTablesWithRelations<typeof schema>
     >,
-    contactId: string
+    contactId: string,
+    accountId?: string
   ): Promise<boolean> => {
     const date = currentTime();
 
@@ -33,20 +39,48 @@ export class ContactDeleterRepository {
       .set({
         deleted_at: date,
       })
-      .where(eq(contact.contact_id, contactId))
+      .where(
+        and(
+          eq(contact.contact_id, contactId),
+          isNull(contact.deleted_at),
+          accountId ? eq(contact.account_id, accountId) : undefined
+        )
+      )
       .execute();
 
     return result.rowCount === 1;
   };
 
-  deleteContactById = async (contactId: string): Promise<boolean> => {
+  deleteContactById = async (
+    contactId: string,
+    accountId?: string,
+    webhookMarker?: ContactOutboundWebhookMarker | null
+  ): Promise<boolean> => {
     return this.dbRw.transaction(async (tx) => {
+      const previousContact =
+        await lockContactOutboundWebhookSnapshotInTransaction(
+          tx,
+          contactId,
+          webhookMarker
+        );
+      const deleted = await this.deleteContactInTransaction(
+        tx,
+        contactId,
+        accountId
+      );
+      if (!deleted) return false;
+
       await this.contactLabelTemplateDeleterRepository.deleteContactLabelTemplatesByContactId(
         tx,
         contactId
       );
-
-      return this.deleteContactInTransaction(tx, contactId);
+      await markContactOutboundWebhookAppliedInTransaction(
+        tx,
+        contactId,
+        webhookMarker,
+        previousContact
+      );
+      return deleted;
     });
   };
 }

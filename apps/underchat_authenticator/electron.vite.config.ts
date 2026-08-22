@@ -14,7 +14,9 @@ export default defineConfig(({ mode }) => {
     main: {
       define,
       build: {
-        externalizeDeps: true,
+        externalizeDeps: {
+          exclude: ['@underchat/whatsapp-web-session-browser'],
+        },
         outDir: 'dist/main',
         rollupOptions: {
           external: ['electron'],

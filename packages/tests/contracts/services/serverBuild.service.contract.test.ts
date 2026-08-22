@@ -37,6 +37,11 @@ describe('ServerBuildService', () => {
         version: 'v20260101000000000',
         status: 'completed',
       })),
+      getBuildVersionById: jest.fn(async () => ({
+        server_build_version_id: 'ver-1',
+      })),
+      hasActiveBuildJobForVersion: jest.fn(async () => false),
+      hardDeleteBuildVersionById: jest.fn(async () => true),
       isBuildVersionDefault: jest.fn(async () => true),
       hardDeleteBuildByVersion: jest.fn(async () => ({ deleted: true })),
       pairBuildVersionFromHarbor: jest.fn(async () => ({
@@ -164,6 +169,15 @@ describe('ServerBuildService', () => {
       version: 'v20260101000000000',
       status: 'completed',
     });
+    await expect(service.getBuildVersionById('ver-1')).resolves.toEqual({
+      server_build_version_id: 'ver-1',
+    });
+    await expect(service.hasActiveBuildJobForVersion('v1')).resolves.toBe(
+      false
+    );
+    await expect(service.hardDeleteBuildVersionById('ver-1')).resolves.toBe(
+      true
+    );
     await expect(service.isBuildVersionDefault('v1')).resolves.toBe(true);
     await expect(service.hardDeleteBuildByVersion('v1')).resolves.toEqual({
       deleted: true,

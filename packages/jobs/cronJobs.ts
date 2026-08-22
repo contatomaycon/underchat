@@ -6,6 +6,7 @@ import { ProfileStatusRenewalActivity } from '@core/jobs/activities/profileStatu
 import { BalanceMonitorActivity } from '@core/jobs/activities/balanceMonitor.activities';
 import { ChatbotInactivityActivity } from '@core/jobs/activities/chatbotInactivity.activities';
 import { AttendanceInactivityActivity } from '@core/jobs/activities/attendanceInactivity.activities';
+import { OperatorReplyPendingRedistributionActivity } from '@core/jobs/activities/operatorReplyPendingRedistribution.activities';
 import { WorkerCreationActivity } from '@core/jobs/activities/workerCreation.activities';
 import { PlanRenewalActivity } from '@core/jobs/activities/planRenewal.activities';
 import { PlanExpirationReminderActivity } from '@core/jobs/activities/planExpirationReminder.activities';
@@ -14,11 +15,20 @@ import { ScheduleSendActivity } from '@core/jobs/activities/scheduleSend.activit
 import { AccountBucketCleanupActivity } from '@core/jobs/activities/accountBucketCleanup.activities';
 import { S3BackupMigrationActivity } from '@core/jobs/activities/s3BackupMigration.activities';
 import { WorkerWarmPoolActivity } from '@core/jobs/activities/workerWarmPool.activities';
+import { PlanLimitEnforcementActivity } from '@core/jobs/activities/planLimitEnforcement.activities';
+import { WhatsappSessionGarbageCollectionActivity } from '@core/jobs/activities/whatsappSessionGarbageCollection.activities';
+import { WhatsappProviderHandoffRecoveryActivity } from '@core/jobs/activities/whatsappProviderHandoffRecovery.activities';
+import { SessionStorageMigrationActivity } from '@core/jobs/activities/sessionStorageMigration.activities';
 import {
+  ILockLeaseContext,
   LockAcquisitionTimeoutError,
+  UNFENCED_LOCK_LEASE_CONTEXT,
   withLock,
 } from '@core/common/functions/withLock';
 import { APP_TIMEZONE } from '@core/common/constants/timezone';
+import { WORKER_CONTAINER_LIVENESS_CRON_EXPRESSION } from '@core/common/functions/workerContainerLivenessPolicy';
+import { BalanceImageRolloutService } from '@core/services/balanceImageRollout.service';
+import { buildEnvironment } from '@core/config/environments';
 
 const JOB_TIMEZONE = APP_TIMEZONE;
 const WORKER_CREATION_CONCURRENCY = 10;
@@ -47,7 +57,7 @@ const createCronJob = (
   input: {
     jobId: string;
     cronExpression: string;
-    handler: () => Promise<void>;
+    handler: (context: ILockLeaseContext) => Promise<void>;
     preventOverrun?: boolean;
     useDistributedLock?: boolean;
   }
@@ -59,21 +69,16 @@ const createCronJob = (
     },
     createAsyncTask(server, input.jobId, async () => {
       if (input.useDistributedLock === false) {
-        await input.handler();
+        await input.handler(UNFENCED_LOCK_LEASE_CONTEXT);
         return;
       }
 
       try {
-        await withLock(
-          redis,
-          `job:cron:${input.jobId}`,
-          async () => input.handler(),
-          {
-            ttlMs: JOB_LOCK_TTL_MS,
-            retryMs: 100,
-            maxWaitMs: JOB_LOCK_MAX_WAIT_MS,
-          }
-        );
+        await withLock(redis, `job:cron:${input.jobId}`, input.handler, {
+          ttlMs: JOB_LOCK_TTL_MS,
+          retryMs: 100,
+          maxWaitMs: JOB_LOCK_MAX_WAIT_MS,
+        });
       } catch (error) {
         if (error instanceof LockAcquisitionTimeoutError) {
           return;
@@ -89,9 +94,15 @@ const createCronJob = (
   );
 };
 
+export interface ICronJobsOptions {
+  enableBalanceImageRollout?: boolean;
+  enableWarmPoolJobs?: boolean;
+  enableWorkerMonitor?: boolean;
+}
+
 export function cronJobs(
   server: FastifyInstance,
-  options?: { enableWarmPoolJobs?: boolean }
+  options?: ICronJobsOptions
 ): CronJob[] {
   const profileStatusRenewalActivity = container.resolve(
     ProfileStatusRenewalActivity
@@ -103,12 +114,14 @@ export function cronJobs(
   const attendanceInactivityActivity = container.resolve(
     AttendanceInactivityActivity
   );
+  const operatorReplyPendingRedistributionActivity = container.resolve(
+    OperatorReplyPendingRedistributionActivity
+  );
   const workerCreationActivity = container.resolve(WorkerCreationActivity);
   const planRenewalActivity = container.resolve(PlanRenewalActivity);
   const planExpirationReminderActivity = container.resolve(
     PlanExpirationReminderActivity
   );
-  const workerMonitorActivity = container.resolve(WorkerMonitorActivity);
   const scheduleSendActivity = container.resolve(ScheduleSendActivity);
   const accountBucketCleanupActivity = container.resolve(
     AccountBucketCleanupActivity
@@ -117,6 +130,18 @@ export function cronJobs(
     S3BackupMigrationActivity
   );
   const workerWarmPoolActivity = container.resolve(WorkerWarmPoolActivity);
+  const planLimitEnforcementActivity = container.resolve(
+    PlanLimitEnforcementActivity
+  );
+  const whatsappSessionGarbageCollectionActivity = container.resolve(
+    WhatsappSessionGarbageCollectionActivity
+  );
+  const whatsappProviderHandoffRecoveryActivity = container.resolve(
+    WhatsappProviderHandoffRecoveryActivity
+  );
+  const sessionStorageMigrationActivity = container.resolve(
+    SessionStorageMigrationActivity
+  );
   const redis = container.resolve<Redis>('Redis');
 
   const jobs = [
@@ -139,6 +164,12 @@ export function cronJobs(
       jobId: 'attendance-inactivity-schedule',
       cronExpression: '*/30 * * * * *',
       handler: attendanceInactivityActivity.processScheduledInactivityChecks,
+    }),
+    createCronJob(server, redis, {
+      jobId: 'operator-reply-pending-redistribution-schedule',
+      cronExpression: '*/30 * * * * *',
+      handler:
+        operatorReplyPendingRedistributionActivity.processScheduledRedistributions,
     }),
     createCronJob(server, redis, {
       jobId: 'worker-creation-schedule',
@@ -180,11 +211,6 @@ export function cronJobs(
       handler: planExpirationReminderActivity.processPlanExpirationReminders,
     }),
     createCronJob(server, redis, {
-      jobId: 'worker-monitor-schedule',
-      cronExpression: '0 */10 * * * *',
-      handler: workerMonitorActivity.monitor,
-    }),
-    createCronJob(server, redis, {
       jobId: 'schedule-send-schedule',
       cronExpression: '0 * * * * *',
       handler: scheduleSendActivity.processScheduleSends,
@@ -201,14 +227,66 @@ export function cronJobs(
       cronExpression: '0 0 3 * * *',
       handler: s3BackupMigrationActivity.processPendingS3BackupUploads,
     }),
+    createCronJob(server, redis, {
+      jobId: 'plan-limit-enforcement-schedule',
+      cronExpression: '0 15 * * * *',
+      handler: planLimitEnforcementActivity.processPlanLimitEnforcement,
+    }),
+    createCronJob(server, redis, {
+      jobId: 'whatsapp-provider-handoff-recovery-schedule',
+      cronExpression: '*/15 * * * * *',
+      handler: whatsappProviderHandoffRecoveryActivity.recoverPendingHandoffs,
+    }),
+    createCronJob(server, redis, {
+      jobId: 'session-storage-migration-redrive-schedule',
+      cronExpression: '*/5 * * * * *',
+      handler: sessionStorageMigrationActivity.processPending,
+    }),
+    createCronJob(server, redis, {
+      jobId: 'whatsapp-session-garbage-collection-schedule',
+      cronExpression: '0 25 * * * *',
+      handler: whatsappSessionGarbageCollectionActivity.collectExpiredRevisions,
+    }),
   ];
+
+  if (options?.enableWorkerMonitor === true) {
+    const workerMonitorActivity = container.resolve(WorkerMonitorActivity);
+    jobs.push(
+      createCronJob(server, redis, {
+        jobId: 'worker-liveness-monitor-schedule',
+        cronExpression: WORKER_CONTAINER_LIVENESS_CRON_EXPRESSION,
+        handler: workerMonitorActivity.monitorLiveness,
+      }),
+      createCronJob(server, redis, {
+        jobId: 'worker-monitor-schedule',
+        cronExpression: '0 */10 * * * *',
+        handler: workerMonitorActivity.monitor,
+      })
+    );
+  }
 
   if (options?.enableWarmPoolJobs === true) {
     jobs.push(
       createCronJob(server, redis, {
         jobId: 'worker-warm-pool-schedule',
         cronExpression: '*/5 * * * * *',
-        handler: () => workerWarmPoolActivity.scan(),
+        handler: (leaseContext) => workerWarmPoolActivity.scan(leaseContext),
+      })
+    );
+  }
+
+  if (
+    options?.enableBalanceImageRollout === true &&
+    buildEnvironment.balanceImageRolloutEnabled
+  ) {
+    const balanceImageRolloutService = container.resolve(
+      BalanceImageRolloutService
+    );
+    jobs.push(
+      createCronJob(server, redis, {
+        jobId: 'balance-image-rollout-schedule',
+        cronExpression: '*/30 * * * * *',
+        handler: () => balanceImageRolloutService.reconcile().then(() => {}),
       })
     );
   }

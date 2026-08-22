@@ -25,7 +25,7 @@ peerDependencyRules:
     audio-decode: 3.11.0
     link-preview-js: 4.0.4
     typescript: 6.0.3
-    react-native-worklets: 0.10.0
+    react-native-worklets: 0.8.3
     eslint: 10.6.0
     '@typescript-eslint/eslint-plugin': 8.62.0
     video.js: 8.23.9
@@ -37,13 +37,31 @@ peerDependencyRules:
 patchedDependencies:
   expo-file-system@56.0.8: patches/expo-file-system@56.0.8.patch
   expo-image-picker@56.0.18: patches/expo-image-picker@56.0.18.patch
+  kafkajs@2.2.4: patches/kafkajs@2.2.4.patch
 
 allowBuilds:
   '@parcel/watcher': true
   '@swc/core': true
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/239': true
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/240': true
-  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/238': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.27/baileys-1.0.27.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.28/baileys-1.0.28.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.29/baileys-1.0.29.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.30/baileys-1.0.30.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.31/baileys-1.0.31.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.32/baileys-1.0.32.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.33/baileys-1.0.33.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.34/baileys-1.0.34.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.35/baileys-1.0.35.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.36/baileys-1.0.36.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.37/baileys-1.0.37.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.39/baileys-1.0.39.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.41/baileys-1.0.41.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.42/baileys-1.0.42.tgz': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/1.0.43/baileys-1.0.43.tgz': true
+  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/api/packages/underchat/npm/%40wwebjs%2Fwhatsapp-web.js/-/1.34.132/whatsapp-web.js-1.34.132.tgz': true
+  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/api/packages/underchat/npm/%40wwebjs%2Fwhatsapp-web.js/-/1.34.133/whatsapp-web.js-1.34.133.tgz': true
+  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/api/packages/underchat/npm/%40wwebjs%2Fwhatsapp-web.js/-/1.34.134/whatsapp-web.js-1.34.134.tgz': true
+  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/api/packages/underchat/npm/%40wwebjs%2Fwhatsapp-web.js/-/1.34.135/whatsapp-web.js-1.34.135.tgz': true
+  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/api/packages/underchat/npm/%40wwebjs%2Fwhatsapp-web.js/-/1.34.61/whatsapp-web.js-1.34.61.tgz': true
   core-js: true
   cpu-features: true
   dtrace-provider: true

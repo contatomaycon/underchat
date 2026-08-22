@@ -12,6 +12,8 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import Redis from 'ioredis';
 import { IRegisterJwtData } from '../interfaces/IRegisterJwtData';
 import type { Pool } from 'pg';
+import { IPublicApiTokenData } from '../interfaces/IPublicApiTokenData';
+import type { PublicApiPermissionRequirements } from './PublicApiPermissionRequirements';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -39,6 +41,15 @@ declare module 'fastify' {
       request: FastifyRequest,
       reply: FastifyReply
     ) => Promise<void>;
+    authenticatePublicApiToken: (
+      request: FastifyRequest,
+      reply: FastifyReply,
+      permissions?: PublicApiPermissionRequirements | null
+    ) => Promise<void>;
+    authenticatePublicApiAccountToken: (
+      request: FastifyRequest,
+      reply: FastifyReply
+    ) => Promise<void>;
     authenticateRegisterJwt: (
       request: FastifyRequest,
       reply: FastifyReply
@@ -54,7 +65,11 @@ declare module 'fastify' {
     tokenJwtData: ITokenJwtData;
     tokenKeyData: ITokenKeyData;
     registerJwtData: IRegisterJwtData;
-    permissionsRoute: EPermissionsRoles[] | null;
+    publicApiTokenData: IPublicApiTokenData;
+    publicApiAuthenticationCompleted?: boolean;
+    integrationEntitlementRevision?: string;
+    integrationEntitlementSource?: 'plan' | 'addon' | null;
+    permissionsRoute: PublicApiPermissionRequirements | null;
     module: ERouteModule;
     languageData: {
       code: ELanguage;

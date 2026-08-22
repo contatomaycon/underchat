@@ -3,6 +3,7 @@ import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ListScheduleFinalResponse } from '@core/schema/schedule/listSchedule/response.schema';
 import { ScheduleService } from '@core/services/schedule.service';
 import { ListScheduleRequest } from '@core/schema/schedule/listSchedule/request.schema';
+import { UserChannelScope } from '@core/common/functions/assertUserChannelAccess';
 
 @injectable()
 export class ScheduleListerUseCase {
@@ -13,7 +14,8 @@ export class ScheduleListerUseCase {
 
   async execute(
     query: ListScheduleRequest,
-    accountId: string
+    accountId: string,
+    userChannels: UserChannelScope = []
   ): Promise<ListScheduleFinalResponse> {
     const perPage = query.per_page ?? 10;
     const currentPage = query.current_page ?? 1;
@@ -22,7 +24,10 @@ export class ScheduleListerUseCase {
       perPage,
       currentPage,
       query,
-      accountId
+      accountId,
+      userChannels.length > 0
+        ? userChannels.map((channel) => channel.id)
+        : undefined
     );
 
     const pagings = setPaginationData(

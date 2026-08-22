@@ -1,5 +1,12 @@
-import { pgTable, timestamp, uuid, varchar, index } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import {
+  pgTable,
+  timestamp,
+  uuid,
+  varchar,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import {
   worker,
   chatbot,
@@ -46,6 +53,11 @@ export const workerConfig = pgTable(
       table.worker_id,
       table.worker_config_type_id
     ),
+    uniqueIndex('worker_config_worker_id_worker_config_type_id_uidx')
+      .on(table.worker_id, table.worker_config_type_id)
+      .where(
+        sql`${table.worker_config_type_id} <> '019f41a5-2f8b-7700-9c7b-1f4f7a67f002'::uuid`
+      ),
     index('worker_config_worker_id_chatbot_id_idx').on(
       table.worker_id,
       table.chatbot_id

@@ -34,6 +34,12 @@ export interface ISecureConnectionSession {
   deep_link: string;
   status: SecureConnectionStatus;
   connection_attempt_id: string;
+  /**
+   * One-shot manager authorization for replacing the connection epoch after
+   * an explicit session removal. It is kept server-side and consumed by the
+   * worker before any imported session record is written.
+   */
+  authorized_connection_epoch?: string;
   runtime_generation?: number;
   helper_version?: string;
   helper_platform?: string;
@@ -76,6 +82,7 @@ export interface ISecureConnectionImportRequest {
   account_id: string;
   worker_type_id?: EWorkerType;
   connection_attempt_id: string;
+  authorized_connection_epoch?: string;
   runtime_generation?: number;
   format_version: string;
   source: 'whatsapp_web';

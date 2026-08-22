@@ -78,6 +78,18 @@ type ScheduleWorkerOption = {
   is_official?: boolean | null;
 };
 
+type ScheduleContactOption = {
+  contact_id: string;
+  name: string;
+  last_name: string | null;
+  phone_partial: string | null;
+};
+
+type ScheduleContactGroupOption = {
+  contact_group_id: string;
+  name: string;
+};
+
 const messageTypeOptions = computed(() => [
   {
     value: EScheduleType.text,
@@ -176,17 +188,8 @@ const contactGroupSearch = ref('');
 const debouncedContactSearch = refDebounced(contactSearch, 500);
 const debouncedContactGroupSearch = refDebounced(contactGroupSearch, 500);
 const workers = ref<ScheduleWorkerOption[]>([]);
-const contacts = ref<
-  Array<{
-    contact_id: string;
-    name: string;
-    last_name: string | null;
-    phone_partial: string | null;
-  }>
->([]);
-const contactGroups = ref<Array<{ contact_group_id: string; name: string }>>(
-  []
-);
+const contacts = ref<ScheduleContactOption[]>([]);
+const contactGroups = ref<ScheduleContactGroupOption[]>([]);
 const chatbotId = ref<string | null>(null);
 const chatbots = ref<
   Array<{ chatbot_id: string; name: string; type?: string | null }>
@@ -198,9 +201,11 @@ const officialTemplate = ref<IOfficialWhatsappTemplateMessage | null>(null);
 const isOfficialTemplateValid = ref(false);
 const officialCompatibleChatbotIds = ref<Set<string>>(new Set());
 const isLoadingOfficialChatbots = ref(false);
-const skipNextWorkerWatch = ref(false);
 let officialTemplatesRequestId = 0;
 let officialChatbotsRequestId = 0;
+let scheduleHydrationRequestId = 0;
+// Dependent-field watchers must only react to user changes, never to API hydration.
+let isHydratingSchedule = false;
 
 const selectedWorker = computed(
   () =>
@@ -217,13 +222,31 @@ const effectiveSelectedType = computed(() =>
   isOfficialWorker.value ? selectedOfficialType.value : selectedType.value
 );
 
-const availableChatbots = computed(() =>
-  isOfficialWorker.value
-    ? chatbots.value.filter((chatbot) =>
-        officialCompatibleChatbotIds.value.has(chatbot.chatbot_id)
+const availableChatbots = computed(() => {
+  const selectedId = chatbotId.value;
+  const items = isOfficialWorker.value
+    ? chatbots.value.filter(
+        (chatbot) =>
+          officialCompatibleChatbotIds.value.has(chatbot.chatbot_id) ||
+          chatbot.chatbot_id === selectedId
       )
-    : chatbots.value
-);
+    : chatbots.value;
+
+  if (
+    selectedId &&
+    !items.some((chatbot) => chatbot.chatbot_id === selectedId)
+  ) {
+    return [
+      ...items,
+      {
+        chatbot_id: selectedId,
+        name: selectedId,
+      },
+    ];
+  }
+
+  return items;
+});
 
 const showTextInput = computed(() => {
   return !isOfficialWorker.value && selectedType.value === EScheduleType.text;
@@ -424,10 +447,16 @@ const buildFormData = (): FormData => {
   if (!isOfficialWorker.value && attachmentFile.value && hasNewFile.value) {
     form.append('url', attachmentFile.value);
   }
-  if (selectedContactIds.value.length > 0) {
+  if (
+    sendTo.value === EScheduleSendTo.contacts &&
+    selectedContactIds.value.length > 0
+  ) {
     form.append('contact_ids', JSON.stringify(selectedContactIds.value));
   }
-  if (selectedContactGroupIds.value.length > 0) {
+  if (
+    sendTo.value === EScheduleSendTo.contact_groups &&
+    selectedContactGroupIds.value.length > 0
+  ) {
     form.append(
       'contact_group_ids',
       JSON.stringify(selectedContactGroupIds.value)
@@ -560,9 +589,10 @@ const loadOfficialTemplates = async (options?: {
       return;
     }
 
-    officialTemplates.value = result ?? [];
-    if (!result) {
-      officialTemplatesError.value = t('official_templates_loading_error');
+    officialTemplates.value = result.templates ?? [];
+    if (!result.templates) {
+      officialTemplatesError.value =
+        result.error ?? t('official_templates_loading_error');
     }
   } catch {
     if (requestId === officialTemplatesRequestId) {
@@ -600,9 +630,6 @@ const loadOfficialCompatibleChatbots = async () => {
     }
 
     officialCompatibleChatbotIds.value = compatibleIds;
-    if (chatbotId.value && !compatibleIds.has(chatbotId.value)) {
-      chatbotId.value = null;
-    }
   } finally {
     if (requestId === officialChatbotsRequestId) {
       isLoadingOfficialChatbots.value = false;
@@ -610,26 +637,52 @@ const loadOfficialCompatibleChatbots = async () => {
   }
 };
 
-const loadContacts = async () => {
+const loadContacts = async (
+  contactsToPreserve: ScheduleContactOption[] = []
+) => {
   const result = await scheduleStore.listScheduleContacts(
     1,
     100,
     debouncedContactSearch.value || undefined
   );
   if (result) {
-    contacts.value = result.results.map((c) => ({
+    const selectedContacts = contacts.value.filter((contact) =>
+      selectedContactIds.value.includes(contact.contact_id)
+    );
+    const fetchedContacts = result.results.map((c) => ({
       contact_id: c.contact_id,
       name: c.name,
       last_name: c.last_name ?? null,
       phone_partial: c.phone_partial ?? null,
     }));
+    const mergedContacts = new Map<string, ScheduleContactOption>();
+
+    for (const contact of [...contactsToPreserve, ...selectedContacts]) {
+      mergedContacts.set(contact.contact_id, contact);
+    }
+    for (const contact of fetchedContacts) {
+      mergedContacts.set(contact.contact_id, contact);
+    }
+
+    contacts.value = [...mergedContacts.values()];
   }
 };
 
-const loadContactGroups = async () => {
+const loadContactGroups = async (
+  groupsToPreserve: ScheduleContactGroupOption[] = []
+) => {
   const result = await scheduleStore.listScheduleContactGroups();
   if (result) {
-    contactGroups.value = result;
+    const selectedGroups = contactGroups.value.filter((group) =>
+      selectedContactGroupIds.value.includes(group.contact_group_id)
+    );
+    const mergedGroups = new Map<string, ScheduleContactGroupOption>();
+
+    for (const group of [...groupsToPreserve, ...selectedGroups, ...result]) {
+      mergedGroups.set(group.contact_group_id, group);
+    }
+
+    contactGroups.value = [...mergedGroups.values()];
   }
 };
 
@@ -764,6 +817,10 @@ const availableTags = computed(() => [
 ]);
 
 watch(selectedType, () => {
+  if (isHydratingSchedule) {
+    return;
+  }
+
   if (hasNewFile.value) {
     attachmentFile.value = null;
     fileSizeError.value = null;
@@ -783,6 +840,10 @@ watch(selectedType, () => {
 });
 
 watch(selectedOfficialType, () => {
+  if (isHydratingSchedule) {
+    return;
+  }
+
   chatbotId.value = null;
   if (selectedOfficialType.value !== EScheduleType.official_template) {
     officialTemplate.value = null;
@@ -791,8 +852,7 @@ watch(selectedOfficialType, () => {
 });
 
 watch(workerId, () => {
-  if (skipNextWorkerWatch.value) {
-    skipNextWorkerWatch.value = false;
+  if (isHydratingSchedule) {
     return;
   }
 
@@ -820,20 +880,36 @@ watch(workerId, () => {
 });
 
 watch(debouncedContactSearch, () => {
+  if (isHydratingSchedule) {
+    return;
+  }
+
   loadContacts();
 });
 
 watch(debouncedContactGroupSearch, () => {
+  if (isHydratingSchedule) {
+    return;
+  }
+
   loadContactGroups();
 });
 
 watch(selectedContactIds, (newValue, oldValue) => {
+  if (isHydratingSchedule) {
+    return;
+  }
+
   if (newValue.length > (oldValue?.length ?? 0)) {
     contactSearch.value = '';
   }
 });
 
 watch(sendTo, (newValue) => {
+  if (isHydratingSchedule) {
+    return;
+  }
+
   if (newValue === EScheduleSendTo.contacts) {
     loadContacts();
   } else if (newValue === EScheduleSendTo.contact_groups) {
@@ -847,68 +923,105 @@ watch(sendTo, (newValue) => {
   }
 });
 
+const hydrateSchedule = async (id: string) => {
+  const requestId = ++scheduleHydrationRequestId;
+  isHydratingSchedule = true;
+  resetForm();
+
+  try {
+    const [, , schedule] = await Promise.all([
+      loadWorkers(),
+      loadChatbots(),
+      scheduleStore.getScheduleById(id),
+    ]);
+
+    if (requestId !== scheduleHydrationRequestId || !schedule) {
+      return;
+    }
+
+    const scheduleSendTo = schedule.send_to as EScheduleSendTo;
+    const scheduleType = (schedule.type as EScheduleType) || EScheduleType.text;
+
+    message.value = schedule.message ?? null;
+    workerId.value = schedule.worker.worker_id;
+    sendTo.value = scheduleSendTo;
+    sendSpeed.value =
+      (schedule.send_speed as EScheduleSendSpeed) || EScheduleSendSpeed.low;
+    sendDate.value = formatDateToDateTimePicker(schedule.send_date ?? null);
+    existingAttachmentUrl.value = schedule.url ?? null;
+    selectedType.value = scheduleType;
+
+    if (isOfficialWorker.value) {
+      selectedOfficialType.value =
+        scheduleType === EScheduleType.chatbot
+          ? EScheduleType.chatbot
+          : EScheduleType.official_template;
+      officialTemplate.value = schedule.official_template ?? null;
+      isOfficialTemplateValid.value = !!schedule.official_template;
+    }
+
+    chatbotId.value =
+      scheduleType === EScheduleType.chatbot
+        ? (schedule.chatbot_id ?? null)
+        : null;
+
+    const scheduledContacts: ScheduleContactOption[] =
+      schedule.contacts?.map((contact) => ({
+        contact_id: contact.contact_id,
+        name: contact.name,
+        last_name: null,
+        phone_partial: contact.phone_partial ?? null,
+      })) ?? [];
+    const scheduledContactGroups: ScheduleContactGroupOption[] =
+      schedule.contact_groups?.map((group) => ({
+        contact_group_id: group.contact_group_id,
+        name: group.name,
+      })) ?? [];
+
+    selectedContactIds.value =
+      scheduleSendTo === EScheduleSendTo.contacts
+        ? scheduledContacts.map((contact) => contact.contact_id)
+        : [];
+    selectedContactGroupIds.value =
+      scheduleSendTo === EScheduleSendTo.contact_groups
+        ? scheduledContactGroups.map((group) => group.contact_group_id)
+        : [];
+
+    const relatedLoads: Promise<void>[] = [];
+
+    if (isOfficialWorker.value) {
+      relatedLoads.push(
+        loadOfficialTemplates({ preserveTemplate: true }),
+        loadOfficialCompatibleChatbots()
+      );
+    }
+    if (scheduleSendTo === EScheduleSendTo.contacts) {
+      relatedLoads.push(loadContacts(scheduledContacts));
+    }
+    if (scheduleSendTo === EScheduleSendTo.contact_groups) {
+      relatedLoads.push(loadContactGroups(scheduledContactGroups));
+    }
+
+    await Promise.all(relatedLoads);
+  } finally {
+    if (requestId === scheduleHydrationRequestId) {
+      await nextTick();
+      isHydratingSchedule = false;
+    }
+  }
+};
+
 watch(
   [isVisible, scheduleId],
   async ([visible, id]) => {
     if (visible && id) {
-      resetForm();
-      await loadWorkers();
-      await loadChatbots();
-      const schedule = await scheduleStore.getScheduleById(id);
-      if (schedule) {
-        message.value = schedule.message ?? null;
-        skipNextWorkerWatch.value = true;
-        workerId.value = schedule.worker.worker_id;
-        sendTo.value = schedule.send_to as EScheduleSendTo;
-        sendSpeed.value =
-          (schedule.send_speed as EScheduleSendSpeed) || EScheduleSendSpeed.low;
-        sendDate.value = formatDateToDateTimePicker(schedule.send_date ?? null);
-        existingAttachmentUrl.value = schedule?.url ?? null;
-        selectedType.value =
-          (schedule.type as EScheduleType) || EScheduleType.text;
-        chatbotId.value = schedule.chatbot_id ?? null;
-        if (
-          selectedWorker.value?.is_official === true ||
-          selectedWorker.value?.type_id === EWorkerType.whatsapp
-        ) {
-          selectedOfficialType.value =
-            schedule.type === EScheduleType.chatbot
-              ? EScheduleType.chatbot
-              : EScheduleType.official_template;
-          officialTemplate.value = schedule.official_template ?? null;
-          isOfficialTemplateValid.value = !!schedule.official_template;
-          await Promise.all([
-            loadOfficialTemplates({ preserveTemplate: true }),
-            loadOfficialCompatibleChatbots(),
-          ]);
-        }
-        if (schedule.contacts && schedule.contacts.length > 0) {
-          selectedContactIds.value = schedule.contacts.map((c) => c.contact_id);
-          await loadContacts();
-          const selectedContactsFromSchedule = schedule.contacts.map((c) => ({
-            contact_id: c.contact_id,
-            name: c.name,
-            last_name: null,
-            phone_partial: c.phone_partial ?? null,
-          }));
-          const existingContactIds = new Set(
-            contacts.value.map((c) => c.contact_id)
-          );
-          for (const contact of selectedContactsFromSchedule) {
-            if (!existingContactIds.has(contact.contact_id)) {
-              contacts.value.push(contact);
-            }
-          }
-        }
-        if (schedule.contact_groups && schedule.contact_groups.length > 0) {
-          selectedContactGroupIds.value = schedule.contact_groups.map(
-            (cg) => cg.contact_group_id
-          );
-          await loadContactGroups();
-        }
-      }
+      await hydrateSchedule(id);
     } else if (!visible) {
+      scheduleHydrationRequestId += 1;
+      isHydratingSchedule = true;
       resetForm();
+      await nextTick();
+      isHydratingSchedule = false;
     }
   },
   { immediate: true }

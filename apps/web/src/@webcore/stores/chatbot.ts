@@ -26,6 +26,9 @@ import { SaveChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/save
 import { ListChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/listChatbotFlowConfigurations/response.schema';
 import { OfficialCapabilitiesResponse } from '@core/schema/chatbot/officialCapabilities/response.schema';
 import { OfficialTemplatesResponse } from '@core/schema/chatbot/officialTemplates/response.schema';
+import { ChannelChatbotResponse } from '@core/schema/chatbot/listChannelChatbots/response.schema';
+import { TestApiRequestRequest } from '@core/schema/chatbot/testApiRequest/request.schema';
+import { TestApiRequestResponse } from '@core/schema/chatbot/testApiRequest/response.schema';
 
 export const useChatbotStore = defineStore('chatbot', {
   state: () => ({
@@ -358,6 +361,15 @@ export const useChatbotStore = defineStore('chatbot', {
       );
     },
 
+    async listChannelChatbots(
+      workerId: string
+    ): Promise<ChannelChatbotResponse[]> {
+      return this._handleGetRequestArray<ChannelChatbotResponse>(
+        `/chatbot/channels/${workerId}/chatbots`,
+        'error_loading_chatbots'
+      );
+    },
+
     async listChatbotSectors(): Promise<ChatbotSectorResponse[]> {
       return this._handleGetRequestArray<ChatbotSectorResponse>(
         '/chatbot/sectors',
@@ -456,6 +468,38 @@ export const useChatbotStore = defineStore('chatbot', {
       );
     },
 
+    async testChatbotApiRequest(
+      input: TestApiRequestRequest
+    ): Promise<TestApiRequestResponse> {
+      try {
+        const response = await axios.post<IApiResponse<TestApiRequestResponse>>(
+          '/chatbot/flow/api-request/test',
+          input
+        );
+        const payload = response?.data;
+
+        if (!payload?.status || !payload.data) {
+          throw new Error(
+            payload?.message ?? 'Não foi possível testar a requisição.'
+          );
+        }
+
+        return payload.data;
+      } catch (error) {
+        if (error instanceof AxiosError) {
+          const backendMessage = error?.response?.data?.message;
+          throw new Error(
+            backendMessage
+              ? this._translateErrorMessage(backendMessage)
+              : 'Não foi possível testar a requisição.'
+          );
+        }
+
+        if (error instanceof Error) throw error;
+        throw new Error('Não foi possível testar a requisição.');
+      }
+    },
+
     async listOfficialCapabilities(
       chatbotId: string
     ): Promise<OfficialCapabilitiesResponse | null> {
@@ -539,6 +583,71 @@ export const useChatbotStore = defineStore('chatbot', {
 
         return false;
       }
+    },
+
+    async setChatbotPlanBlockStatus(
+      chatbotId: string,
+      action: 'block' | 'unblock'
+    ): Promise<boolean> {
+      const isBlock = action === 'block';
+
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/chatbot/${chatbotId}/${action}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ??
+            this.i18n.global.t(
+              isBlock ? 'chatbot_block_error' : 'chatbot_unblock_error'
+            );
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t(
+              isBlock ? 'chatbot_block_success' : 'chatbot_unblock_success'
+            ),
+          EColor.success
+        );
+
+        await this.listChatbots();
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          isBlock ? 'chatbot_block_error' : 'chatbot_unblock_error'
+        );
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async blockChatbot(chatbotId: string): Promise<boolean> {
+      return this.setChatbotPlanBlockStatus(chatbotId, 'block');
+    },
+
+    async unblockChatbot(chatbotId: string): Promise<boolean> {
+      return this.setChatbotPlanBlockStatus(chatbotId, 'unblock');
     },
   },
 });

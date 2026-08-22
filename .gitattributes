@@ -1,3 +1,0 @@
-apps/manager_api/downloads/underchat-authenticator/**/*.AppImage filter=lfs diff=lfs merge=lfs -text
-apps/manager_api/downloads/underchat-authenticator/**/*.deb filter=lfs diff=lfs merge=lfs -text
-apps/manager_api/downloads/underchat-authenticator/**/*.exe filter=lfs diff=lfs merge=lfs -text

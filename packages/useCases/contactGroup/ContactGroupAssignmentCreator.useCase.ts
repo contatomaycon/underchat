@@ -14,6 +14,17 @@ import { LabelTemplateViewerByNameRepository } from '@core/repositories/labelTem
 import { LabelTemplateCreatorRepository } from '@core/repositories/labelTemplate/LabelTemplateCreator.repository';
 import { ELabelStatus } from '@core/common/enums/ELabelStatus';
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
+import { buildOutboundWebhookIdempotencyKey } from '@core/services/outboundWebhookEvent.service';
+import { ContactPhoneValidationPolicyService } from '@core/services/contactPhoneValidationPolicy.service';
+import {
+  CONTACT_VALIDATION_ORIGINS,
+  type ContactValidationOrigin,
+} from '@core/common/types/ContactValidationOrigin';
+
+interface ContactImportWebhookContext {
+  operationId: string;
+  actorUserId?: string;
+}
 
 @injectable()
 export class ContactGroupAssignmentCreatorUseCase {
@@ -33,7 +44,18 @@ export class ContactGroupAssignmentCreatorUseCase {
     @inject(LabelTemplateViewerByNameRepository)
     private readonly labelTemplateViewerByNameRepository: LabelTemplateViewerByNameRepository,
     @inject(LabelTemplateCreatorRepository)
-    private readonly labelTemplateCreatorRepository: LabelTemplateCreatorRepository
+    private readonly labelTemplateCreatorRepository: LabelTemplateCreatorRepository,
+    @inject(ContactPhoneValidationPolicyService)
+    private readonly contactPhoneValidationPolicyService: Pick<
+      ContactPhoneValidationPolicyService,
+      'resolve'
+    > = {
+      resolve: async () => ({
+        channelIds: [],
+        isOfficialOnly: false,
+        areAllChannelsResolved: true,
+      }),
+    }
   ) {}
 
   private buildCompletePhone(
@@ -139,9 +161,24 @@ export class ContactGroupAssignmentCreatorUseCase {
   private async validateAndNormalizeImportPhone(
     accountId: string,
     phone: string,
-    phoneDdi: string
-  ): Promise<{ phone: string; phoneDdi: string; isValidated: boolean }> {
+    phoneDdi: string,
+    isOfficialOnly: boolean
+  ): Promise<{
+    phone: string;
+    phoneDdi: string;
+    isValidated: boolean;
+    validationOrigin: ContactValidationOrigin | null;
+  }> {
     const fallback = this.normalizePhoneFromValidation(phone, phoneDdi);
+
+    if (isOfficialOnly) {
+      return {
+        phone: fallback.phone,
+        phoneDdi: fallback.phoneDdi,
+        isValidated: true,
+        validationOrigin: CONTACT_VALIDATION_ORIGINS.officialAssumed,
+      };
+    }
 
     try {
       const validationResult = await this.phoneValidationService.validatePhone(
@@ -157,6 +194,7 @@ export class ContactGroupAssignmentCreatorUseCase {
           phone: fallback.phone,
           phoneDdi: fallback.phoneDdi,
           isValidated: false,
+          validationOrigin: null,
         };
       }
 
@@ -165,6 +203,7 @@ export class ContactGroupAssignmentCreatorUseCase {
           phone: fallback.phone,
           phoneDdi: fallback.phoneDdi,
           isValidated: true,
+          validationOrigin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
         };
       }
 
@@ -174,6 +213,7 @@ export class ContactGroupAssignmentCreatorUseCase {
           phone: fallback.phone,
           phoneDdi: fallback.phoneDdi,
           isValidated: true,
+          validationOrigin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
         };
       }
 
@@ -181,6 +221,7 @@ export class ContactGroupAssignmentCreatorUseCase {
         phone: normalized.phone,
         phoneDdi: normalized.phone_ddi,
         isValidated: true,
+        validationOrigin: CONTACT_VALIDATION_ORIGINS.whatsappLookup,
       };
     } catch (error) {
       if (
@@ -191,6 +232,7 @@ export class ContactGroupAssignmentCreatorUseCase {
           phone: fallback.phone,
           phoneDdi: fallback.phoneDdi,
           isValidated: false,
+          validationOrigin: null,
         };
       }
 
@@ -198,6 +240,7 @@ export class ContactGroupAssignmentCreatorUseCase {
         phone: fallback.phone,
         phoneDdi: fallback.phoneDdi,
         isValidated: false,
+        validationOrigin: null,
       };
     }
   }
@@ -281,13 +324,16 @@ export class ContactGroupAssignmentCreatorUseCase {
     t: TFunction<'translation', undefined>,
     contact: ICreateContact,
     accountId: string,
-    contactGroupId: string | null
+    contactGroupId: string | null,
+    webhookContext: ContactImportWebhookContext,
+    isOfficialOnly: boolean
   ): Promise<IContactImportStatus> {
     try {
       const validatedPhone = await this.validateAndNormalizeImportPhone(
         accountId,
         contact.phone ?? '',
-        contact.phone_ddi ?? '55'
+        contact.phone_ddi ?? '55',
+        isOfficialOnly
       );
       const phoneToSave = validatedPhone.phone;
       const phoneDdiToSave = validatedPhone.phoneDdi;
@@ -318,7 +364,15 @@ export class ContactGroupAssignmentCreatorUseCase {
         const updated = await this.contactService.updateContactFromImport(
           existingContact.contact_id,
           accountId,
-          contactToPersist
+          contactToPersist,
+          {
+            source: 'contact_import',
+            idempotencyKey: `contact-import-updated:${webhookContext.operationId}:${existingContact.contact_id}`,
+            actor: webhookContext.actorUserId
+              ? { type: 'user', id: webhookContext.actorUserId }
+              : { type: 'system' },
+            changes: { origin: 'csv_import' },
+          }
         );
 
         if (!updated) {
@@ -339,13 +393,18 @@ export class ContactGroupAssignmentCreatorUseCase {
         const shouldSyncValidation =
           existingPhoneDecrypted !== phoneToSave ||
           existingPhoneDdi !== phoneDdiToSave ||
-          existingIsValidated !== validatedPhone.isValidated;
+          existingIsValidated !== validatedPhone.isValidated ||
+          validatedPhone.validationOrigin ===
+            CONTACT_VALIDATION_ORIGINS.whatsappLookup;
 
         if (shouldSyncValidation) {
           const synced = await this.contactService.updateContactValidation(
             existingContact.contact_id,
             `${phoneDdiToSave}${phoneToSave}`,
-            validatedPhone.isValidated
+            validatedPhone.isValidated,
+            accountId,
+            undefined,
+            validatedPhone.validationOrigin
           );
 
           if (!synced) {
@@ -360,7 +419,16 @@ export class ContactGroupAssignmentCreatorUseCase {
         if (contactGroupId) {
           await this.contactService.addContactToGroupIfNotExists(
             existingContact.contact_id,
-            contactGroupId
+            contactGroupId,
+            accountId,
+            {
+              source: 'contact_import',
+              idempotencyKey: `contact-import-group-added:${webhookContext.operationId}:${existingContact.contact_id}:${contactGroupId}`,
+              actor: webhookContext.actorUserId
+                ? { type: 'user', id: webhookContext.actorUserId }
+                : { type: 'system' },
+              changes: { added_contact_group_id: contactGroupId },
+            }
           );
         }
 
@@ -368,7 +436,16 @@ export class ContactGroupAssignmentCreatorUseCase {
           for (const labelTemplateId of labelTemplateIds) {
             await this.contactService.addContactLabelTemplateIfNotExists(
               existingContact.contact_id,
-              labelTemplateId
+              labelTemplateId,
+              accountId,
+              {
+                source: 'contact_import',
+                idempotencyKey: `contact-import-label-added:${webhookContext.operationId}:${existingContact.contact_id}:${labelTemplateId}`,
+                actor: webhookContext.actorUserId
+                  ? { type: 'user', id: webhookContext.actorUserId }
+                  : { type: 'system' },
+                changes: { added_label_template_id: labelTemplateId },
+              }
             );
           }
         }
@@ -398,7 +475,16 @@ export class ContactGroupAssignmentCreatorUseCase {
         },
         contactGroupId,
         accountId,
-        validatedPhone.isValidated
+        validatedPhone.isValidated,
+        {
+          source: 'contact_import',
+          idempotencyKey: `contact-import-created:${webhookContext.operationId}`,
+          actor: webhookContext.actorUserId
+            ? { type: 'user', id: webhookContext.actorUserId }
+            : { type: 'system' },
+          changes: { origin: 'csv_import' },
+        },
+        validatedPhone.validationOrigin
       );
 
       if (!contactCreated) {
@@ -449,6 +535,8 @@ export class ContactGroupAssignmentCreatorUseCase {
     }
 
     const contactGroupId = input?.contact_group_id?.value || null;
+    const validationPolicy =
+      await this.contactPhoneValidationPolicyService.resolve({ accountId });
     const results: IContactImportStatus[] = [];
     const total = contacts.length;
 
@@ -503,11 +591,20 @@ export class ContactGroupAssignmentCreatorUseCase {
       }
 
       try {
+        const operationId = importSessionId
+          ? `${importSessionId}:${index}`
+          : buildOutboundWebhookIdempotencyKey(
+              accountId,
+              index,
+              JSON.stringify(contact)
+            );
         const result = await this.processContact(
           t,
           contact,
           accountId,
-          contactGroupId
+          contactGroupId,
+          { operationId, actorUserId: userId },
+          validationPolicy.isOfficialOnly
         );
 
         results.push(result);

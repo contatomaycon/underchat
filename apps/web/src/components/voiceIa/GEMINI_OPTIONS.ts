@@ -33,6 +33,10 @@ export const GEMINI_VOICES = [
 
 export const GEMINI_TTS_MODELS = [
   {
+    value: 'gemini-3.1-flash-tts-preview',
+    title: 'Gemini 3.1 Flash TTS Preview',
+  },
+  {
     value: 'gemini-2.5-flash-preview-tts',
     title: 'Gemini 2.5 Flash Preview TTS',
   },

@@ -1,5 +1,6 @@
 variable "DB_ATLAS" {
-  type = string
+  type    = string
+  default = getenv("DB_ATLAS")
 }
 
 data "external_schema" "drizzle" {
@@ -12,6 +13,7 @@ data "external_schema" "drizzle" {
 
 env "dev" {
   dev = var.DB_ATLAS
+  url = getenv("ATLAS_TARGET_DATABASE_URL")
 
   schema {
     src = data.external_schema.drizzle.url
@@ -24,6 +26,7 @@ env "dev" {
 
 env "zipcode" {
   dev = var.DB_ATLAS
+  url = getenv("ATLAS_TARGET_DATABASE_URL")
 
   schema {
     src = data.external_schema.drizzle.url
@@ -36,6 +39,7 @@ env "zipcode" {
 
 env "prod" {
   dev = var.DB_ATLAS
+  url = getenv("ATLAS_TARGET_DATABASE_URL")
 
   schema {
     src = data.external_schema.drizzle.url

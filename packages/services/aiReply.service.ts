@@ -9,9 +9,12 @@ import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerCo
 import { AiAgentUsageCreatorRepository } from '@core/repositories/aiAgent/AiAgentUsageCreator.repository';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
+import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { GenerateAiReplyResponse } from '@core/schema/chat/generateAiReply/response.schema';
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
+import { aiProviderClient } from './aiProviderClient.service';
 
 @injectable()
 export class AiReplyService {
@@ -56,8 +59,11 @@ export class AiReplyService {
     const aiAgentConfig =
       await this.workerConfigViewerRepository.fetchAiAgentValue(workerId);
 
-    if (!aiAgentConfig.aiAgentId) {
-      throw new Error('Nenhum agente de IA configurado neste canal.');
+    if (
+      !aiAgentConfig.aiAgentId ||
+      aiAgentConfig.statusId !== EWorkerConfigStatus.active
+    ) {
+      throw new Error('O Agente de IA não está habilitado neste canal.');
     }
 
     const aiAgent = await this.aiAgentService.viewAiAgent(
@@ -65,7 +71,7 @@ export class AiReplyService {
       accountId
     );
 
-    if (!aiAgent) {
+    if (!aiAgent || aiAgent.status !== EAiAgentStatus.active) {
       throw new Error('Agente de IA não encontrado.');
     }
 
@@ -87,7 +93,8 @@ export class AiReplyService {
     const contextMessages = await this.fetchContextMessages(
       accountId,
       chatId,
-      this.MAX_CONTEXT_MESSAGES
+      this.MAX_CONTEXT_MESSAGES,
+      messageId
     );
 
     const history = this.buildHistory(contextMessages);
@@ -99,7 +106,12 @@ export class AiReplyService {
       prompt,
       userQuery,
       history,
-      { accountId, chatId, aiAgentId: aiAgent.ai_agent_id }
+      {
+        accountId,
+        chatId,
+        aiAgentId: aiAgent.ai_agent_id,
+        requestId: messageId,
+      }
     );
 
     if (responseType === 'audio') {
@@ -142,7 +154,8 @@ export class AiReplyService {
   private async fetchContextMessages(
     accountId: string,
     chatId: string,
-    limit: number
+    limit: number,
+    excludeMessageId?: string
   ): Promise<IChatMessage[]> {
     const queryElastic = {
       size: limit,
@@ -170,7 +183,10 @@ export class AiReplyService {
     const messages = (
       result?.hits?.hits
         ?.map((hit) => hit._source)
-        .filter((source): source is IChatMessage => !!source) ?? []
+        .filter(
+          (source): source is IChatMessage =>
+            !!source && source.message_id !== excludeMessageId
+        ) ?? []
     ).reverse();
 
     return messages;
@@ -233,7 +249,12 @@ export class AiReplyService {
     prompt: string,
     userQuery: string,
     history: Array<{ role: 'user' | 'assistant'; content: string }>,
-    usageContext: { accountId: string; chatId: string; aiAgentId: string }
+    usageContext: {
+      accountId: string;
+      chatId: string;
+      aiAgentId: string;
+      requestId: string;
+    }
   ): Promise<string> {
     const { ai_agent_type_id } = aiAgent;
     const baseUrl = aiAgent.base_url as string;
@@ -244,216 +265,106 @@ export class AiReplyService {
       ai_agent_type_id === EAiAgentType.gpt &&
       aiAgent.openai_vector_store_id
     ) {
-      const result =
-        await this.openAIAssistantService.createResponseWithFileSearch(
-          apiKey,
-          baseUrl,
+      try {
+        const result =
+          await this.openAIAssistantService.createResponseWithFileSearch(
+            apiKey,
+            baseUrl,
+            modelName,
+            prompt,
+            userQuery,
+            aiAgent.openai_vector_store_id,
+            history,
+            usageContext.requestId,
+            {
+              accountId: usageContext.accountId,
+              aiAgentId: usageContext.aiAgentId,
+            }
+          );
+
+        await this.saveUsage(
+          usageContext,
+          result,
           modelName,
-          prompt,
-          userQuery,
-          aiAgent.openai_vector_store_id,
-          history
+          'responses_file_search'
         );
-
-      await this.saveUsage(
-        usageContext,
-        result,
-        modelName,
-        'responses_file_search'
-      );
-      return result.text;
-    }
-
-    if (ai_agent_type_id === EAiAgentType.gemini) {
-      const result = await this.callGeminiChatApi(
-        baseUrl,
-        apiKey,
-        modelName,
-        prompt,
-        userQuery,
-        history
-      );
-
-      await this.saveUsage(usageContext, result, modelName, 'chat');
-      return result.text;
-    }
-
-    const result = await this.callOpenAiChatApi(
-      baseUrl,
-      apiKey,
-      modelName,
-      prompt,
-      userQuery,
-      history
-    );
-
-    await this.saveUsage(usageContext, result, modelName, 'chat');
-    return result.text;
-  }
-
-  private async callOpenAiChatApi(
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-    prompt: string,
-    userQuery: string,
-    history?: Array<{ role: 'user' | 'assistant'; content: string }>
-  ): Promise<{
-    text: string;
-    usage?: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      total_tokens?: number;
-    };
-    latency_ms?: number;
-  }> {
-    const startMs = Date.now();
-
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: prompt },
-          ...(history || []).map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-          })),
-          { role: 'user', content: userQuery },
-        ],
-      }),
-    });
-
-    const latency_ms = Date.now() - startMs;
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`AI Agent API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-      usage?: {
-        prompt_tokens?: number;
-        completion_tokens?: number;
-        total_tokens?: number;
-      };
-    };
-
-    const text =
-      data.choices?.[0]?.message?.content ||
-      'Desculpe, não consegui processar sua solicitação.';
-
-    return { text, usage: data.usage, latency_ms };
-  }
-
-  private async callGeminiChatApi(
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-    prompt: string,
-    userQuery: string,
-    history?: Array<{ role: 'user' | 'assistant'; content: string }>
-  ): Promise<{
-    text: string;
-    usage?: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      total_tokens?: number;
-    };
-    latency_ms?: number;
-  }> {
-    const startMs = Date.now();
-    const url = `${baseUrl.replace('/v1', '/v1beta')}/models/${encodeURIComponent(
-      model
-    )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-    const contents: Array<{
-      role: 'user' | 'model';
-      parts: Array<{ text: string }>;
-    }> = [];
-
-    if (history && history.length > 0) {
-      for (const msg of history) {
-        contents.push({
-          role: msg.role === 'user' ? 'user' : 'model',
-          parts: [{ text: msg.content }],
-        });
+        return result.text;
+      } catch (error) {
+        await this.saveUsage(
+          usageContext,
+          undefined,
+          modelName,
+          'responses_file_search',
+          false
+        );
+        throw error;
       }
     }
 
-    contents.push({ role: 'user', parts: [{ text: userQuery }] });
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        systemInstruction: { parts: [{ text: prompt }] },
-      }),
-    });
-
-    const latency_ms = Date.now() - startMs;
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`AI Agent API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = (await response.json()) as {
-      candidates?: Array<{
-        content?: { parts?: Array<{ text?: string }> };
-      }>;
-      usageMetadata?: {
-        promptTokenCount?: number;
-        candidatesTokenCount?: number;
-        totalTokenCount?: number;
+    const startedAt = Date.now();
+    try {
+      const result = await aiProviderClient.generateChat({
+        configuration: {
+          provider: ai_agent_type_id,
+          baseUrl,
+          apiKey,
+          model: modelName,
+          embeddingModel: aiAgent.embedding_model,
+        },
+        systemPrompt: prompt,
+        question: userQuery,
+        history,
+      });
+      const usageResult = {
+        usage: {
+          prompt_tokens: result.usage.inputTokens ?? undefined,
+          completion_tokens: result.usage.outputTokens ?? undefined,
+          total_tokens: result.usage.totalTokens ?? undefined,
+        },
+        latency_ms: Date.now() - startedAt,
       };
-    };
 
-    const text =
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      'Desculpe, não consegui processar sua solicitação.';
-
-    const usage = data.usageMetadata
-      ? {
-          prompt_tokens: data.usageMetadata.promptTokenCount,
-          completion_tokens: data.usageMetadata.candidatesTokenCount,
-          total_tokens: data.usageMetadata.totalTokenCount,
-        }
-      : undefined;
-
-    return { text, usage, latency_ms };
+      await this.saveUsage(usageContext, usageResult, modelName, 'chat');
+      return result.content;
+    } catch (error) {
+      await this.saveUsage(
+        usageContext,
+        { latency_ms: Date.now() - startedAt },
+        modelName,
+        'chat',
+        false
+      );
+      throw error;
+    }
   }
 
   private async saveUsage(
     ctx: { accountId: string; chatId: string; aiAgentId: string },
-    result: {
-      usage?: {
-        prompt_tokens?: number;
-        completion_tokens?: number;
-        total_tokens?: number;
-      };
-      latency_ms?: number;
-    },
+    result:
+      | {
+          usage?: {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            total_tokens?: number;
+          };
+          latency_ms?: number;
+        }
+      | undefined,
     model: string,
-    requestType: string
+    requestType: string,
+    success = true
   ): Promise<void> {
     try {
       await this.aiAgentUsageCreatorRepository.create({
         ai_agent_id: ctx.aiAgentId,
         account_id: ctx.accountId,
         chat_id: ctx.chatId,
-        prompt_tokens: result.usage?.prompt_tokens ?? null,
-        completion_tokens: result.usage?.completion_tokens ?? null,
-        total_tokens: result.usage?.total_tokens ?? null,
+        prompt_tokens: result?.usage?.prompt_tokens ?? null,
+        completion_tokens: result?.usage?.completion_tokens ?? null,
+        total_tokens: result?.usage?.total_tokens ?? null,
         model: model ?? null,
-        latency_ms: result.latency_ms ?? null,
-        success: true,
+        latency_ms: result?.latency_ms ?? null,
+        success,
         request_type: requestType,
       });
     } catch {

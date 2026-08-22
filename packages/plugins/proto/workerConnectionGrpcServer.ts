@@ -21,6 +21,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
+import { resolveWorkerRuntimeKafkaHealthState } from '@core/common/functions/workerRuntimeKafkaHealth';
 import { BaileysService } from '@core/services/baileys';
 import { BaileysHealthCheckService } from '@core/services/baileys/methods/healthCheck.service';
 import { WwebjsService } from '@core/services/wwebjs';
@@ -39,6 +40,19 @@ import {
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
+import { resolveWorkerRuntimeHealthWarmPoolIdentity } from '@core/common/functions/workerRuntimeHealthIdentity';
+import { isWorkerKafkaDispatchAuthorized } from '@core/common/functions/workerKafkaDispatchAuthorization';
+import { isWhatsappConnectionOnline } from '@core/common/functions/whatsappConnectionStatus';
+import { activateWorkerRuntimeFence } from '@core/plugins/workerDatabase';
+import {
+  IPrepareProviderHandoffRequestProto,
+  IPrepareProviderHandoffResponseProto,
+  WhatsappSessionProvider,
+} from '@core/common/interfaces/IProviderHandoffPrepareProto';
+import type {
+  IPrepareSessionStorageMigrationRequestProto,
+  IPrepareSessionStorageMigrationResponseProto,
+} from '@core/common/interfaces/ISessionStorageMigrationPrepareProto';
 
 const protoPath = resolveProtoPath('worker_connection.proto');
 
@@ -76,9 +90,11 @@ interface IStatusConnectionRequestProto {
   phone_connection?: string;
   remove_session?: boolean;
   connection_attempt_id?: string;
+  authorized_connection_epoch?: string;
   debug_trace_id?: string;
   runtime_generation?: number | string;
   warm_pool_id?: string;
+  qr_pending?: boolean;
 }
 
 interface IPasskeyResponseRequestProto {
@@ -109,6 +125,31 @@ interface ISecureSessionImportRequestProto {
   payload_json?: string;
   checksum?: string;
   debug_trace_id?: string;
+  authorized_connection_epoch?: string;
+}
+
+interface IRawPrepareProviderHandoffRequestProto {
+  worker_id?: string;
+  account_id?: string;
+  handoff_id?: string;
+  lifecycle_operation_id?: string;
+  source_provider?: string;
+  target_provider?: string;
+  source_revision_id?: number | string;
+  runtime_generation?: number | string;
+  debug_trace_id?: string;
+}
+
+interface IRawPrepareSessionStorageMigrationRequestProto {
+  worker_id?: string;
+  account_id?: string;
+  migration_id?: string;
+  provider?: string;
+  source_volume_name?: string;
+  runtime_generation?: number | string;
+  expected_phone?: string;
+  debug_trace_id?: string;
+  runtime_capability?: string;
 }
 
 interface WorkerConnectionGrpcOptions {
@@ -184,6 +225,11 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       ? wwebjsEnvironment.workerTypeId
       : baileysEnvironment.workerTypeId) ?? fallbackWorkerTypeId;
 
+  const getWarmPoolId = () =>
+    module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.warmPoolId
+      : baileysEnvironment.warmPoolId;
+
   const rememberRuntimeGeneration = (runtimeGeneration: unknown) => {
     const parsed = optionalRuntimeGeneration(runtimeGeneration);
     if (parsed !== undefined) {
@@ -223,17 +269,33 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     }
   };
 
+  const buildActivationInput = (
+    request: IWorkerRuntimeActivationRequestProto
+  ) => ({
+    worker_id: request.worker_id ?? '',
+    account_id: request.account_id ?? '',
+    worker_type_id: request.worker_type_id,
+    runtime_generation: optionalRuntimeGeneration(request.runtime_generation),
+    warm_pool_id: request.warm_pool_id,
+    session_volume_name: request.session_volume_name,
+    session_storage: request.session_storage,
+    runtime_capability: request.runtime_capability,
+    writer_epoch: request.writer_epoch,
+  });
+
+  const validateEnvironmentActivation = (
+    request: IWorkerRuntimeActivationRequestProto
+  ) => {
+    const input = buildActivationInput(request);
+    return module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.validateRuntimeActivation(input)
+      : baileysEnvironment.validateRuntimeActivation(input);
+  };
+
   const activateEnvironment = (
     request: IWorkerRuntimeActivationRequestProto
   ) => {
-    const input = {
-      worker_id: request.worker_id ?? '',
-      account_id: request.account_id ?? '',
-      worker_type_id: request.worker_type_id,
-      runtime_generation: optionalRuntimeGeneration(request.runtime_generation),
-      warm_pool_id: request.warm_pool_id,
-      session_volume_name: request.session_volume_name,
-    };
+    const input = buildActivationInput(request);
     rememberRuntimeGeneration(input.runtime_generation);
 
     return module === ERouteModule.worker_wwebjs
@@ -264,6 +326,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     if (req.connection_attempt_id) {
       payload.connection_attempt_id = req.connection_attempt_id;
     }
+    if (req.authorized_connection_epoch) {
+      payload.authorized_connection_epoch = req.authorized_connection_epoch;
+    }
     if (req.debug_trace_id) {
       payload.debug_trace_id = req.debug_trace_id;
     }
@@ -275,6 +340,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     }
     if (req.warm_pool_id) {
       payload.warm_pool_id = req.warm_pool_id;
+    }
+    if (req.qr_pending === true) {
+      payload.qr_pending = true;
     }
     const accountId = getAccountId();
 
@@ -302,6 +370,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       status: payload.status,
       type: payload.type,
       remove_session: payload.remove_session === true,
+      qr_pending: payload.qr_pending === true,
       grpc_module: module,
     });
 
@@ -316,6 +385,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         status: payload.status,
         connection_type: payload.type,
         remove_session: payload.remove_session === true,
+        qr_pending: payload.qr_pending === true,
         connection_attempt_id: payload.connection_attempt_id,
         runtime_generation: payload.runtime_generation,
         warm_pool_id: payload.warm_pool_id,
@@ -334,6 +404,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
           warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
           connection_attempt_id:
             response.connection_attempt_id ?? payload.connection_attempt_id,
+          authorized_connection_epoch:
+            response.authorized_connection_epoch ??
+            payload.authorized_connection_epoch,
           debug_trace_id: response.debug_trace_id ?? payload.debug_trace_id,
         };
         const responseWithAttempt: IWorkerConnectionStateProto =
@@ -392,6 +465,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             status: payload.status,
             connection_type: payload.type,
             remove_session: payload.remove_session === true,
+            request_qr_pending: payload.qr_pending === true,
             has_qr: Boolean(response.qrcode),
             connection_attempt_id:
               response.connection_attempt_id ?? payload.connection_attempt_id,
@@ -446,6 +520,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             status: payload.status,
             connection_type: payload.type,
             remove_session: payload.remove_session === true,
+            qr_pending: payload.qr_pending === true,
             connection_attempt_id: payload.connection_attempt_id,
             runtime_generation: payload.runtime_generation,
             warm_pool_id: payload.warm_pool_id,
@@ -453,6 +528,208 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
           'WorkerConnection gRPC handler error'
         );
         callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
+  const handlePrepareProviderHandoff = (
+    call: ServerUnaryCall<
+      IRawPrepareProviderHandoffRequestProto,
+      IPrepareProviderHandoffResponseProto
+    >,
+    callback: sendUnaryData<IPrepareProviderHandoffResponseProto>
+  ) => {
+    const raw = call.request;
+    const expectedProvider: WhatsappSessionProvider =
+      module === ERouteModule.worker_wwebjs ? 'wwebjs' : 'baileys';
+    const sourceRevisionId = String(raw.source_revision_id ?? '').trim();
+    const runtimeGeneration = optionalRuntimeGeneration(raw.runtime_generation);
+    const payload: IPrepareProviderHandoffRequestProto = {
+      worker_id: raw.worker_id?.trim() ?? '',
+      account_id: raw.account_id?.trim() ?? '',
+      handoff_id: raw.handoff_id?.trim() ?? '',
+      lifecycle_operation_id: raw.lifecycle_operation_id?.trim() ?? '',
+      source_provider: raw.source_provider
+        ?.trim()
+        .toLowerCase() as WhatsappSessionProvider,
+      target_provider: raw.target_provider
+        ?.trim()
+        .toLowerCase() as WhatsappSessionProvider,
+      source_revision_id: sourceRevisionId,
+      runtime_generation: runtimeGeneration ?? 0,
+      debug_trace_id: raw.debug_trace_id?.trim() || undefined,
+    };
+    const supportedProviders = new Set<WhatsappSessionProvider>([
+      'baileys',
+      'wwebjs',
+      'whatsmeow',
+    ]);
+    const invalidReason =
+      !payload.worker_id ||
+      !payload.account_id ||
+      !payload.handoff_id ||
+      !payload.lifecycle_operation_id ||
+      !/^[1-9][0-9]*$/.test(payload.source_revision_id) ||
+      payload.runtime_generation <= 0
+        ? 'prepare_provider_handoff_required_fields_invalid'
+        : !supportedProviders.has(payload.source_provider) ||
+            !supportedProviders.has(payload.target_provider) ||
+            payload.source_provider !== expectedProvider ||
+            payload.source_provider === payload.target_provider
+          ? 'prepare_provider_handoff_provider_invalid'
+          : payload.worker_id !== getWorkerId() ||
+              payload.account_id !== getAccountId() ||
+              payload.runtime_generation !== getRuntimeGeneration()
+            ? 'prepare_provider_handoff_runtime_identity_mismatch'
+            : process.env.WORKER_SESSION_STORAGE?.trim().toLowerCase() !==
+                'postgres'
+              ? 'prepare_provider_handoff_requires_postgres_session'
+              : undefined;
+
+    if (invalidReason) {
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message: invalidReason,
+          details: invalidReason,
+        },
+        null
+      );
+      return;
+    }
+
+    const startedAt = Date.now();
+    logWorkerConnectionGrpcFlow(
+      'worker.connection_grpc.provider_handoff.received',
+      {
+        trace_id: payload.debug_trace_id,
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        handoff_id: payload.handoff_id,
+        lifecycle_operation_id: payload.lifecycle_operation_id,
+        source_provider: payload.source_provider,
+        target_provider: payload.target_provider,
+        source_revision_id: payload.source_revision_id,
+        runtime_generation: payload.runtime_generation,
+        grpc_module: module,
+        grpc_method: 'PrepareProviderHandoff',
+      }
+    );
+
+    phoneValidationService
+      .prepareProviderHandoff(payload)
+      .then((response) => {
+        logWorkerConnectionGrpcFlow(
+          'worker.connection_grpc.provider_handoff.completed',
+          {
+            trace_id: payload.debug_trace_id,
+            worker_id: response.worker_id,
+            handoff_id: response.handoff_id,
+            lifecycle_operation_id: response.lifecycle_operation_id,
+            source_provider: response.provider,
+            source_revision_id: response.source_revision_id,
+            runtime_generation: response.runtime_generation,
+            prepared: response.prepared,
+            consumers_drained: response.consumers_drained,
+            writes_paused: response.writes_paused,
+            checkpoint_persisted: response.checkpoint_persisted,
+            provider_disconnected: response.provider_disconnected,
+            lease_released: response.lease_released,
+            duration_ms: Date.now() - startedAt,
+            grpc_module: module,
+            grpc_method: 'PrepareProviderHandoff',
+          }
+        );
+        callback(null, response);
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        logWorkerConnectionGrpcFlow(
+          'worker.connection_grpc.provider_handoff.failed',
+          {
+            trace_id: payload.debug_trace_id,
+            worker_id: payload.worker_id,
+            handoff_id: payload.handoff_id,
+            lifecycle_operation_id: payload.lifecycle_operation_id,
+            source_provider: payload.source_provider,
+            target_provider: payload.target_provider,
+            source_revision_id: payload.source_revision_id,
+            runtime_generation: payload.runtime_generation,
+            reason: message,
+            duration_ms: Date.now() - startedAt,
+            grpc_module: module,
+            grpc_method: 'PrepareProviderHandoff',
+          }
+        );
+        callback(
+          { code: status.FAILED_PRECONDITION, message, details: message },
+          null
+        );
+      });
+  };
+
+  const handlePrepareSessionStorageMigration = (
+    call: ServerUnaryCall<
+      IRawPrepareSessionStorageMigrationRequestProto,
+      IPrepareSessionStorageMigrationResponseProto
+    >,
+    callback: sendUnaryData<IPrepareSessionStorageMigrationResponseProto>
+  ) => {
+    const raw = call.request;
+    const expectedProvider =
+      module === ERouteModule.worker_wwebjs ? 'wwebjs' : 'baileys';
+    const payload: IPrepareSessionStorageMigrationRequestProto = {
+      worker_id: raw.worker_id?.trim() ?? '',
+      account_id: raw.account_id?.trim() ?? '',
+      migration_id: raw.migration_id?.trim() ?? '',
+      provider: raw.provider?.trim().toLowerCase() as 'baileys' | 'wwebjs',
+      source_volume_name: raw.source_volume_name?.trim() ?? '',
+      runtime_generation:
+        optionalRuntimeGeneration(raw.runtime_generation) ?? 0,
+      expected_phone: raw.expected_phone?.trim() || undefined,
+      debug_trace_id: raw.debug_trace_id?.trim() || undefined,
+      runtime_capability: raw.runtime_capability?.trim() ?? '',
+    };
+    const invalidReason =
+      !payload.worker_id ||
+      !payload.account_id ||
+      !payload.migration_id ||
+      !payload.source_volume_name ||
+      !payload.runtime_capability ||
+      payload.runtime_generation <= 0
+        ? 'prepare_session_storage_migration_required_fields_invalid'
+        : payload.provider !== expectedProvider
+          ? 'prepare_session_storage_migration_provider_invalid'
+          : payload.worker_id !== getWorkerId() ||
+              payload.account_id !== getAccountId() ||
+              payload.runtime_generation !== getRuntimeGeneration() ||
+              payload.runtime_capability !==
+                process.env.WORKER_RUNTIME_CAPABILITY ||
+              process.env.WORKER_SESSION_STORAGE !== 'legacy_volume' ||
+              process.env.SESSION_VOLUME_NAME !== payload.source_volume_name
+            ? 'prepare_session_storage_migration_runtime_identity_mismatch'
+            : undefined;
+
+    if (invalidReason) {
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message: invalidReason,
+          details: invalidReason,
+        },
+        null
+      );
+      return;
+    }
+
+    phoneValidationService
+      .prepareSessionStorageMigration(payload)
+      .then((response) => callback(null, response))
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        callback(
+          { code: status.FAILED_PRECONDITION, message, details: message },
+          null
+        );
       });
   };
 
@@ -525,6 +802,15 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
 
     Promise.resolve()
       .then(async () => {
+        validateEnvironmentActivation(req);
+        await activateWorkerRuntimeFence({
+          workerId: req.worker_id ?? '',
+          accountId: req.account_id ?? '',
+          workerTypeId: req.worker_type_id ?? fallbackWorkerTypeId,
+          generation: Number(req.runtime_generation),
+          writerEpoch: req.writer_epoch ?? '',
+          capability: req.runtime_capability ?? '',
+        });
         const activation = activateEnvironment(req);
         const callbackResult = await options?.activateRuntime?.(fastify, req);
         return {
@@ -581,44 +867,105 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     callback: sendUnaryData<IWorkerRuntimeHealthResponseProto>
   ) => {
     void (async () => {
+      const runtimeWarmPoolId = getWarmPoolId()?.trim() ?? '';
       try {
+        resolveWorkerRuntimeHealthWarmPoolIdentity(
+          call.request.warm_pool_id,
+          runtimeWarmPoolId
+        );
         const qrStreamReady = fastify.qrStreamReady === true;
         const runtimeActivated = isRuntimeActivated();
         const warmStandby = isWarmStandby();
         const readiness = await getSessionReadiness();
-        const kafkaUnhealthy = getKafkaUnhealthy();
+        const nativeEvidence =
+          phoneValidationService.getConnectionStatusHealthEvidence();
+        const nativeConnectionOnline = isWhatsappConnectionOnline(
+          nativeEvidence.connectionStatus
+        );
+        const nativeProofReady =
+          nativeConnectionOnline &&
+          nativeEvidence.sourceCurrent &&
+          Boolean(nativeEvidence.connectionStatusSourceId) &&
+          nativeEvidence.leaseProofValid;
+        const hasDurableSession = phoneValidationService.hasSession();
+        const kafkaHealth = resolveWorkerRuntimeKafkaHealthState({
+          standby: warmStandby,
+          activated: runtimeActivated,
+          kafkaUnhealthy: getKafkaUnhealthy(),
+        });
+        const kafkaConsumersAuthorized =
+          runtimeActivated &&
+          !warmStandby &&
+          kafkaHealth.kafkaConsumersReady &&
+          isWorkerKafkaDispatchAuthorized();
+        const providerSessionReady =
+          readiness.session_ready === true && nativeProofReady;
+        const degradedReason =
+          readiness.session_ready === true && !nativeConnectionOnline
+            ? 'native_connection_not_online'
+            : readiness.session_ready === true &&
+                (!nativeEvidence.sourceCurrent ||
+                  !nativeEvidence.connectionStatusSourceId)
+              ? 'native_connection_status_source_invalid'
+              : readiness.session_ready === true &&
+                  nativeEvidence.leaseRequired &&
+                  !nativeEvidence.leaseProofValid
+                ? 'session_lease_proof_unavailable'
+                : providerSessionReady &&
+                    kafkaHealth.kafkaConsumersReady &&
+                    !kafkaConsumersAuthorized
+                  ? 'awaiting_dispatch_authorization'
+                  : (readiness.degraded_reason ?? '');
         callback(null, {
           worker_id: runtimeActivated ? getWorkerId() : '',
           account_id: runtimeActivated ? getAccountId() : '',
-          warm_pool_id:
-            call.request.warm_pool_id ?? process.env.WARM_POOL_ID ?? '',
+          warm_pool_id: runtimeWarmPoolId,
           standby: warmStandby,
           activated: runtimeActivated,
           ready: warmStandby || qrStreamReady,
-          has_session: readiness.authenticated === true,
+          // A persisted provider session may be restorable before the current
+          // process finishes authenticating. Keep that durable fact separate
+          // from the live `authenticated` readiness signal so an orchestrator
+          // does not mistake a session restore in progress for an empty
+          // profile that needs a new QR code.
+          has_session: hasDurableSession,
           has_qr: false,
           worker_type_id: getWorkerTypeId(),
           runtime_generation: getRuntimeGeneration(),
           runtime_state: getRuntimeState(),
           qr_stream_ready: qrStreamReady,
-          session_ready: readiness.session_ready === true,
-          can_send: readiness.can_send === true,
-          can_receive_runtime: readiness.can_receive_runtime === true,
+          // Keep raw provider readiness visible for the one online-notification
+          // bootstrap that grants dispatch authorization. Every operational
+          // liveness consumer must also require kafka_consumers_authorized.
+          session_ready: providerSessionReady,
+          can_send: readiness.can_send === true && nativeProofReady,
+          can_receive_runtime:
+            readiness.can_receive_runtime === true && nativeProofReady,
           authenticated: readiness.authenticated === true,
           provider_state: readiness.provider_state ?? '',
-          degraded_reason: readiness.degraded_reason ?? '',
+          degraded_reason: degradedReason,
           last_probe_at: readiness.last_probe_at ?? '',
           probe_latency_ms: readiness.probe_latency_ms ?? 0,
           phone: readiness.phone ?? '',
-          kafka_unhealthy: kafkaUnhealthy,
+          kafka_unhealthy: kafkaHealth.kafkaUnhealthy,
+          kafka_consumers_ready: kafkaHealth.kafkaConsumersReady,
+          kafka_consumers_authorized: kafkaConsumersAuthorized,
+          command_ingress_ready: kafkaHealth.kafkaConsumersReady,
+          command_ingress_authorized: kafkaConsumersAuthorized,
+          runtime_health_schema_version: 4,
+          connection_status: nativeEvidence.connectionStatus,
+          connection_status_source_id: nativeEvidence.connectionStatusSourceId,
+          session_storage: nativeEvidence.sessionStorage,
+          session_revision_id: nativeEvidence.sessionRevisionId ?? '0',
+          session_storage_migration_id:
+            nativeEvidence.sessionStorageMigrationId ?? '',
           error: '',
         });
       } catch (err) {
         callback(null, {
           worker_id: '',
           account_id: '',
-          warm_pool_id:
-            call.request.warm_pool_id ?? process.env.WARM_POOL_ID ?? '',
+          warm_pool_id: runtimeWarmPoolId,
           standby: false,
           activated: false,
           ready: false,
@@ -637,6 +984,16 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
           last_probe_at: new Date().toISOString(),
           probe_latency_ms: 0,
           kafka_unhealthy: true,
+          kafka_consumers_ready: false,
+          kafka_consumers_authorized: false,
+          command_ingress_ready: false,
+          command_ingress_authorized: false,
+          runtime_health_schema_version: 4,
+          session_storage:
+            process.env.WORKER_SESSION_STORAGE?.trim() || 'legacy_volume',
+          session_revision_id: '0',
+          session_storage_migration_id:
+            process.env.SESSION_STORAGE_MIGRATION_ID?.trim() ?? '',
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -903,6 +1260,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       payload_json: req.payload_json,
       checksum: req.checksum,
       debug_trace_id: req.debug_trace_id,
+      authorized_connection_epoch: req.authorized_connection_epoch,
     };
     const startedAt = Date.now();
     rememberRuntimeGeneration(requestRuntimeGeneration);
@@ -916,6 +1274,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         worker_type_id: getWorkerTypeId(),
         connection_attempt_id: payload.connection_attempt_id,
         runtime_generation: payload.runtime_generation,
+        authorized_connection_epoch_set: Boolean(
+          payload.authorized_connection_epoch
+        ),
         format_version: payload.format_version,
         target_provider: payload.target_provider,
         has_payload_ref: Boolean(payload.payload_ref),
@@ -1033,6 +1394,8 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     SendPasskeyResponse: handleSendPasskeyResponse,
     ConfirmPasskey: handleConfirmPasskey,
     ImportSecureSession: handleImportSecureSession,
+    PrepareProviderHandoff: handlePrepareProviderHandoff,
+    PrepareSessionStorageMigration: handlePrepareSessionStorageMigration,
   });
 
   const bind = `0.0.0.0:${grpcPort}`;

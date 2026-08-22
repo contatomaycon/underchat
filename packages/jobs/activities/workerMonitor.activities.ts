@@ -1,8 +1,10 @@
 import { WorkerMonitorService } from '@core/services/workerMonitor.service';
+import { ILockLeaseContext } from '@core/common/functions/withLock';
 import { injectable, inject } from 'tsyringe';
 
 export interface IWorkerMonitorActivity {
-  monitor(): Promise<void>;
+  monitor(context: ILockLeaseContext): Promise<void>;
+  monitorLiveness(context: ILockLeaseContext): Promise<void>;
 }
 
 @injectable()
@@ -12,7 +14,13 @@ export class WorkerMonitorActivity implements IWorkerMonitorActivity {
     private readonly workerMonitorService: WorkerMonitorService
   ) {}
 
-  monitor = async (): Promise<void> => {
-    await this.workerMonitorService.run();
+  monitor = async (context: ILockLeaseContext): Promise<void> => {
+    context.assertActive();
+    await this.workerMonitorService.run(context);
+  };
+
+  monitorLiveness = async (context: ILockLeaseContext): Promise<void> => {
+    context.assertActive();
+    await this.workerMonitorService.runLiveness(context);
   };
 }

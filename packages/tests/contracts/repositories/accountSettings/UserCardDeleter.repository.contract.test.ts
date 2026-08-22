@@ -23,6 +23,7 @@ describe('UserCardDeleterRepository', () => {
     );
     expect(set).toHaveBeenCalledWith({
       deleted_at: '2026-04-21T18:20:00.000Z',
+      default: false,
       updated_at: '2026-04-21T18:20:00.000Z',
     });
   });

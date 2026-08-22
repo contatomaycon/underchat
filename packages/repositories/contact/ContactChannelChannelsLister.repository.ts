@@ -1,8 +1,8 @@
 import * as schema from '@core/models';
-import { contactChannel, worker, account } from '@core/models';
+import { contactChannel, worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 @injectable()
 export class ContactChannelChannelsListerRepository {
@@ -19,12 +19,19 @@ export class ContactChannelChannelsListerRepository {
         channel_id: contactChannel.channel_id,
       })
       .from(contactChannel)
-      .innerJoin(worker, eq(contactChannel.channel_id, worker.worker_id))
-      .innerJoin(account, eq(contactChannel.account_id, account.account_id))
+      .innerJoin(
+        worker,
+        and(
+          eq(contactChannel.channel_id, worker.worker_id),
+          eq(contactChannel.account_id, worker.account_id)
+        )
+      )
       .where(
         and(
           eq(contactChannel.contact_id, contactId),
-          eq(contactChannel.account_id, accountId)
+          eq(contactChannel.account_id, accountId),
+          eq(worker.account_id, accountId),
+          isNull(worker.deleted_at)
         )
       )
       .execute();

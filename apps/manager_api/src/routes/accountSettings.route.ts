@@ -33,6 +33,8 @@ import {
 import { viewAccountCustomizationSchema } from '@core/schema/accountSettings/viewAccountCustomization';
 import { upsertAccountCustomizationSchema } from '@core/schema/accountSettings/upsertAccountCustomization';
 import { listAccountSettingsMethodPaymentsSchema } from '@core/schema/accountSettings/listMethodPayments';
+import { listArchivedUserCardsSchema } from '@core/schema/accountSettings/listArchivedUserCards';
+import { reactivateUserCardSchema } from '@core/schema/accountSettings/reactivateUserCard';
 import { planStatus } from '@/plugins/planStatus';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
@@ -189,6 +191,16 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.get('/account-settings/cards/archived', {
+    schema: listArchivedUserCardsSchema,
+    handler: accountSettingsController.listArchivedUserCards,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
+    ],
+  });
+
   server.post('/account-settings/cards', {
     schema: createUserCardSchema,
     handler: accountSettingsController.createUserCard,
@@ -202,6 +214,16 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.delete('/account-settings/cards/:user_card_id', {
     schema: deleteUserCardSchema,
     handler: accountSettingsController.deleteUserCard,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
+    ],
+  });
+
+  server.post('/account-settings/cards/:user_card_id/reactivate', {
+    schema: reactivateUserCardSchema,
+    handler: accountSettingsController.reactivateUserCard,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

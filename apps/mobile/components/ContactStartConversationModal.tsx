@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -16,19 +17,36 @@ import { formatChannelPhoneLabel } from '../utils/phoneFormat';
 import { SelectField, SelectSheet, type SelectOption } from './select';
 import {
   listTransferOptions,
-  startChatWithContact,
+  startChatWithContactDetailed,
+  viewOfficialOpeningContext,
   viewWorkerConfigForChat,
 } from '../api/chatApi';
 import { getUser } from '../storage/authStorage';
-import type { ListChatsResult } from '../types/chat';
+import type {
+  ListChatsResult,
+  OfficialOpeningContextResponse,
+  OfficialTemplateVariableValue,
+} from '../types/chat';
 import type {
   ChatContactListItem,
   TransferSector,
   TransferWorker,
   WorkerConfigForChat,
 } from '../types/contact';
+import { OfficialTemplateFields } from './OfficialTemplateFields';
+import { OfficialOpeningWindowCard } from './OfficialOpeningWindowCard';
+import { isOfficialChatWorker } from '../utils/officialChat';
+import {
+  areOfficialTemplateVariablesValid,
+  buildOfficialTemplateRequest,
+  createManualOfficialTemplateVariable,
+  createOfficialTemplateOptions,
+  createOfficialTemplateVariableValues,
+  findOfficialTemplate,
+  refreshOfficialTemplateVariableKey,
+} from '../utils/officialTemplate';
 
-type PickerKind = 'worker' | 'sector' | null;
+type PickerKind = 'worker' | 'sector' | 'officialTemplate' | null;
 
 type ContactStartConversationModalProps = {
   visible: boolean;
@@ -64,6 +82,30 @@ export function ContactStartConversationModal({
   );
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [userStatus, setUserStatus] = useState<string | null>(null);
+  const [officialOpeningContext, setOfficialOpeningContext] =
+    useState<OfficialOpeningContextResponse | null>(null);
+  const [loadingOfficialOpeningContext, setLoadingOfficialOpeningContext] =
+    useState(false);
+  const [officialOpeningError, setOfficialOpeningError] = useState<
+    string | null
+  >(null);
+  const [selectedOfficialTemplateKey, setSelectedOfficialTemplateKey] =
+    useState<string | null>(null);
+  const [officialTemplateVariableValues, setOfficialTemplateVariableValues] =
+    useState<OfficialTemplateVariableValue[]>([]);
+  const [officialOpeningReloadKey, setOfficialOpeningReloadKey] = useState(0);
+  const openingAttemptRef = useRef(0);
+  const startingConversationRef = useRef(false);
+
+  useLayoutEffect(() => {
+    openingAttemptRef.current += 1;
+    startingConversationRef.current = false;
+    setStartingConversation(false);
+
+    return () => {
+      openingAttemptRef.current += 1;
+    };
+  }, [contact?.contact_id, selectedSectorId, selectedWorkerId, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -74,6 +116,11 @@ export function ContactStartConversationModal({
     setSectors([]);
     setWorkerConfig(null);
     setUserStatus(null);
+    setOfficialOpeningContext(null);
+    setOfficialOpeningError(null);
+    setSelectedOfficialTemplateKey(null);
+    setOfficialTemplateVariableValues([]);
+    setOfficialOpeningReloadKey(0);
 
     getUser()
       .then((user) => {
@@ -95,15 +142,26 @@ export function ContactStartConversationModal({
   useEffect(() => {
     if (!visible || !selectedWorkerId) {
       setWorkerConfig(null);
+      setLoadingConfig(false);
       return;
     }
 
+    let cancelled = false;
+    setWorkerConfig(null);
     setLoadingConfig(true);
     viewWorkerConfigForChat(selectedWorkerId)
       .then((result) => {
+        if (cancelled) return;
         setWorkerConfig(result);
       })
-      .finally(() => setLoadingConfig(false));
+      .finally(() => {
+        if (cancelled) return;
+        setLoadingConfig(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedWorkerId, visible]);
 
   useEffect(() => {
@@ -121,6 +179,131 @@ export function ContactStartConversationModal({
     () => sectors.find((item) => item.sector_id === selectedSectorId) ?? null,
     [selectedSectorId, sectors]
   );
+
+  const selectedWorkerIsOfficial = useMemo(
+    () => isOfficialChatWorker(selectedWorker),
+    [selectedWorker]
+  );
+
+  useEffect(() => {
+    setOfficialOpeningContext(null);
+    setOfficialOpeningError(null);
+    setSelectedOfficialTemplateKey(null);
+    setOfficialTemplateVariableValues([]);
+
+    if (
+      !visible ||
+      !selectedWorkerId ||
+      !selectedWorkerIsOfficial ||
+      !contact?.contact_id
+    ) {
+      setLoadingOfficialOpeningContext(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingOfficialOpeningContext(true);
+
+    viewOfficialOpeningContext(selectedWorkerId, contact.contact_id)
+      .then((context) => {
+        if (cancelled) return;
+        if (!context) {
+          setOfficialOpeningError(pt.official_templates_loading_error);
+          return;
+        }
+        setOfficialOpeningContext(context);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setOfficialOpeningError(pt.official_templates_loading_error);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoadingOfficialOpeningContext(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    contact?.contact_id,
+    selectedWorkerId,
+    selectedWorkerIsOfficial,
+    visible,
+    officialOpeningReloadKey,
+  ]);
+
+  useEffect(() => {
+    const officialWindow = officialOpeningContext?.official_window;
+    if (!visible || !officialWindow) return;
+
+    const expirationValue =
+      officialWindow.state === 'open'
+        ? officialWindow.service_window_expires_at
+        : officialWindow.state === 'awaiting_contact_reply' ||
+            officialWindow.state === 'send_uncertain'
+          ? officialWindow.awaiting_contact_reply_expires_at
+          : null;
+    const expiresAt = expirationValue
+      ? new Date(expirationValue).getTime()
+      : Number.NaN;
+    if (!Number.isFinite(expiresAt)) return;
+
+    const timeout = setTimeout(
+      () => setOfficialOpeningReloadKey((current) => current + 1),
+      Math.max(250, expiresAt - Date.now() + 250)
+    );
+    return () => clearTimeout(timeout);
+  }, [officialOpeningContext?.official_window, visible]);
+
+  const selectedOfficialTemplate = useMemo(
+    () =>
+      findOfficialTemplate(
+        officialOpeningContext?.templates,
+        selectedOfficialTemplateKey
+      ),
+    [officialOpeningContext?.templates, selectedOfficialTemplateKey]
+  );
+
+  useEffect(() => {
+    if (!selectedOfficialTemplate) {
+      setOfficialTemplateVariableValues([]);
+      return;
+    }
+
+    setOfficialTemplateVariableValues((current) =>
+      createOfficialTemplateVariableValues(
+        selectedOfficialTemplate.variables,
+        current
+      )
+    );
+  }, [selectedOfficialTemplate]);
+
+  const requiresOfficialTemplate =
+    selectedWorkerIsOfficial &&
+    officialOpeningContext?.requires_template === true;
+  const isAwaitingOfficialContactReply =
+    selectedWorkerIsOfficial &&
+    officialOpeningContext?.official_window.state === 'awaiting_contact_reply';
+  const isOfficialSendUncertain =
+    selectedWorkerIsOfficial &&
+    officialOpeningContext?.official_window.state === 'send_uncertain';
+  const isOfficialOpeningBlocked =
+    isAwaitingOfficialContactReply || isOfficialSendUncertain;
+
+  const isOfficialOpeningReady =
+    !loadingConfig &&
+    (!selectedWorkerIsOfficial ||
+      (!!officialOpeningContext &&
+        !loadingOfficialOpeningContext &&
+        !officialOpeningError &&
+        !isOfficialOpeningBlocked &&
+        (!requiresOfficialTemplate ||
+          (!!selectedOfficialTemplate &&
+            areOfficialTemplateVariablesValid(
+              selectedOfficialTemplate,
+              officialTemplateVariableValues
+            )))));
 
   const cannotOpenConversation =
     !!workerConfig?.allow_attendance_only_online && userStatus !== 'online';
@@ -140,10 +323,21 @@ export function ContactStartConversationModal({
         label: item.name,
       }));
     }
+    if (pickerKind === 'officialTemplate') {
+      return createOfficialTemplateOptions(
+        officialOpeningContext?.templates,
+        'pt'
+      ).map((item) => ({
+        value: item.value,
+        label: item.label,
+      }));
+    }
     return [];
-  }, [pickerKind, sectors, workers]);
+  }, [officialOpeningContext?.templates, pickerKind, sectors, workers]);
 
   const handleStartConversation = async () => {
+    if (startingConversation || startingConversationRef.current) return;
+
     if (!contact?.contact_id) {
       Alert.alert(pt.error_title, pt.contact_not_found);
       return;
@@ -152,28 +346,83 @@ export function ContactStartConversationModal({
       Alert.alert(pt.warning_title, pt.select_channel_required);
       return;
     }
+    if (loadingConfig) return;
 
     if (cannotOpenConversation) {
       Alert.alert(pt.warning_title, pt.attendance_only_online_required);
       return;
     }
 
+    if (isOfficialOpeningBlocked) {
+      Alert.alert(
+        pt.warning_title,
+        isOfficialSendUncertain
+          ? pt.official_window_uncertain_description
+          : pt.official_window_awaiting_description
+      );
+      return;
+    }
+
+    if (!isOfficialOpeningReady) {
+      Alert.alert(pt.warning_title, pt.official_template_required_for_opening);
+      return;
+    }
+
+    const officialTemplatePayload =
+      requiresOfficialTemplate && selectedOfficialTemplate
+        ? buildOfficialTemplateRequest(
+            selectedOfficialTemplate,
+            officialTemplateVariableValues
+          )
+        : null;
+
+    const openingAttempt = ++openingAttemptRef.current;
+    startingConversationRef.current = true;
     setStartingConversation(true);
     try {
-      const chat = await startChatWithContact(
+      const result = await startChatWithContactDetailed(
         contact.contact_id,
         selectedWorkerId,
-        selectedSectorId
+        selectedSectorId,
+        officialTemplatePayload
       );
-      if (!chat) {
-        Alert.alert(pt.error_title, pt.chat_creation_error);
+      if (openingAttempt !== openingAttemptRef.current) return;
+
+      if (
+        result.reason === 'official_window_requires_template_refresh' ||
+        result.httpStatus === 409
+      ) {
+        setOfficialOpeningReloadKey((current) => current + 1);
+        Alert.alert(pt.warning_title, pt.official_window_refresh_required);
+        return;
+      }
+
+      if (!result.chat) {
+        const safeMessage =
+          result.httpStatus !== null && result.httpStatus < 500
+            ? result.message
+            : null;
+        const requestSuffix = result.requestId
+          ? `\n\nID: ${result.requestId}`
+          : '';
+        Alert.alert(
+          pt.error_title,
+          `${safeMessage ?? pt.chat_creation_error}${requestSuffix}`
+        );
         return;
       }
 
       onClose();
-      onConversationStarted(chat);
+      onConversationStarted(result.chat);
+    } catch {
+      if (openingAttempt === openingAttemptRef.current) {
+        Alert.alert(pt.error_title, pt.chat_creation_error);
+      }
     } finally {
-      setStartingConversation(false);
+      if (openingAttempt === openingAttemptRef.current) {
+        startingConversationRef.current = false;
+        setStartingConversation(false);
+      }
     }
   };
 
@@ -182,7 +431,9 @@ export function ContactStartConversationModal({
       ? pt.channel
       : pickerKind === 'sector'
         ? pt.sector
-        : '';
+        : pickerKind === 'officialTemplate'
+          ? pt.official_template_model
+          : '';
 
   const openPicker = (kind: Exclude<PickerKind, null>) => {
     setPickerKind(kind);
@@ -192,7 +443,62 @@ export function ContactStartConversationModal({
     setPickerKind(null);
   };
 
+  const handleChangeOfficialTemplateVariable = (key: string, value: string) => {
+    setOfficialTemplateVariableValues((current) =>
+      current.map((variable) =>
+        variable.key === key ? { ...variable, value } : variable
+      )
+    );
+  };
+
+  const handleAddManualOfficialTemplateVariable = () => {
+    setOfficialTemplateVariableValues((current) => {
+      const nextBodyIndex =
+        current.reduce(
+          (max, variable) =>
+            variable.component_type === 'BODY'
+              ? Math.max(max, variable.index)
+              : max,
+          0
+        ) + 1;
+      return [
+        ...current,
+        createManualOfficialTemplateVariable(nextBodyIndex - 1),
+      ];
+    });
+  };
+
+  const handleChangeManualOfficialTemplateVariable = (
+    key: string,
+    patch: Partial<
+      Pick<
+        OfficialTemplateVariableValue,
+        'component_type' | 'index' | 'button_index'
+      >
+    >
+  ) => {
+    setOfficialTemplateVariableValues((current) =>
+      current.map((variable) => {
+        if (variable.key !== key) return variable;
+
+        return refreshOfficialTemplateVariableKey({
+          ...variable,
+          ...patch,
+          value: variable.value,
+        });
+      })
+    );
+  };
+
+  const handleRemoveManualOfficialTemplateVariable = (key: string) => {
+    setOfficialTemplateVariableValues((current) =>
+      current.filter((variable) => variable.key !== key)
+    );
+  };
+
   const handleRequestClose = () => {
+    if (startingConversation || startingConversationRef.current) return;
+
     if (pickerKind !== null) {
       closePicker();
       return;
@@ -210,16 +516,35 @@ export function ContactStartConversationModal({
       onRequestClose={handleRequestClose}
     >
       <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
-        <Pressable style={styles.modalBackdrop} onPress={handleRequestClose} />
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={handleRequestClose}
+          disabled={startingConversation}
+        />
         <View style={styles.modal}>
           <View style={styles.header}>
             <Text style={styles.title}>{pt.select_channel_sector}</Text>
-            <Pressable style={styles.closeBtn} onPress={onClose}>
+            <Pressable
+              style={[
+                styles.closeBtn,
+                startingConversation && styles.closeControlDisabled,
+              ]}
+              onPress={handleRequestClose}
+              disabled={startingConversation}
+              accessibilityRole="button"
+              accessibilityLabel={pt.close}
+            >
               <Ionicons name="close" size={24} color={colors.onSurface} />
             </Pressable>
           </View>
 
-          <View style={styles.content}>
+          <ScrollView
+            style={styles.contentScroll}
+            contentContainerStyle={styles.content}
+            contentInsetAdjustmentBehavior="automatic"
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             {loadingOptions ? (
               <View style={styles.loadingWrap}>
                 <ActivityIndicator size="small" color={colors.primary} />
@@ -238,14 +563,58 @@ export function ContactStartConversationModal({
                   }
                   placeholder={pt.select_channel}
                   onPress={() => openPicker('worker')}
+                  disabled={startingConversation}
                   containerStyle={styles.field}
                 />
+
+                {selectedWorkerIsOfficial ? (
+                  <View style={styles.officialOpeningSection}>
+                    <OfficialOpeningWindowCard
+                      window={officialOpeningContext?.official_window ?? null}
+                      loading={
+                        loadingOfficialOpeningContext ||
+                        (!officialOpeningContext && !officialOpeningError)
+                      }
+                      error={officialOpeningError}
+                      onRetry={() =>
+                        setOfficialOpeningReloadKey((current) => current + 1)
+                      }
+                    />
+
+                    {requiresOfficialTemplate &&
+                    officialOpeningContext &&
+                    !officialOpeningError ? (
+                      <OfficialTemplateFields
+                        templates={officialOpeningContext.templates}
+                        selectedTemplateKey={selectedOfficialTemplateKey}
+                        variableValues={officialTemplateVariableValues}
+                        submitting={startingConversation}
+                        onOpenTemplatePicker={() =>
+                          openPicker('officialTemplate')
+                        }
+                        onChangeVariableValue={
+                          handleChangeOfficialTemplateVariable
+                        }
+                        onChangeManualVariable={
+                          handleChangeManualOfficialTemplateVariable
+                        }
+                        onAddManualVariable={
+                          handleAddManualOfficialTemplateVariable
+                        }
+                        onRemoveManualVariable={
+                          handleRemoveManualOfficialTemplateVariable
+                        }
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
 
                 <SelectField
                   label={pt.sector}
                   valueLabel={selectedSector?.name ?? null}
                   placeholder={pt.select_sector}
                   onPress={() => openPicker('sector')}
+                  disabled={startingConversation || isOfficialOpeningBlocked}
                   containerStyle={styles.field}
                 />
 
@@ -262,10 +631,18 @@ export function ContactStartConversationModal({
                 ) : null}
               </>
             )}
-          </View>
+          </ScrollView>
 
           <View style={styles.footer}>
-            <Pressable style={styles.cancelBtn} onPress={onClose}>
+            <Pressable
+              style={[
+                styles.cancelBtn,
+                startingConversation && styles.closeControlDisabled,
+              ]}
+              onPress={handleRequestClose}
+              disabled={startingConversation}
+              accessibilityRole="button"
+            >
               <Text style={styles.cancelBtnText}>{pt.cancel}</Text>
             </Pressable>
             <Pressable
@@ -273,13 +650,17 @@ export function ContactStartConversationModal({
                 styles.confirmBtn,
                 (!selectedWorkerId ||
                   startingConversation ||
-                  cannotOpenConversation) &&
+                  loadingConfig ||
+                  cannotOpenConversation ||
+                  !isOfficialOpeningReady) &&
                   styles.disabledBtn,
               ]}
               disabled={
                 !selectedWorkerId ||
                 startingConversation ||
-                cannotOpenConversation
+                loadingConfig ||
+                cannotOpenConversation ||
+                !isOfficialOpeningReady
               }
               onPress={handleStartConversation}
             >
@@ -287,7 +668,13 @@ export function ContactStartConversationModal({
                 <ActivityIndicator size="small" color={colors.onPrimary} />
               ) : (
                 <Text style={styles.confirmBtnText}>
-                  {pt.open_conversation}
+                  {isOfficialOpeningBlocked
+                    ? isOfficialSendUncertain
+                      ? pt.official_opening_uncertain_action
+                      : pt.official_opening_waiting_action
+                    : requiresOfficialTemplate
+                      ? pt.official_template_send_and_open
+                      : pt.open_conversation}
                 </Text>
               )}
             </Pressable>
@@ -299,14 +686,20 @@ export function ContactStartConversationModal({
           title={currentPickerTitle}
           options={pickerItems}
           selectedValue={
-            pickerKind === 'worker' ? selectedWorkerId : selectedSectorId
+            pickerKind === 'worker'
+              ? selectedWorkerId
+              : pickerKind === 'sector'
+                ? selectedSectorId
+                : selectedOfficialTemplateKey
           }
           emptyText={pt.no_results_found}
           searchPlaceholder={pt.select_search_placeholder}
           showClear={pickerKind === 'sector'}
           clearLabel={pt.clear_filter}
           onClear={() => {
-            setSelectedSectorId(null);
+            if (pickerKind === 'sector') {
+              setSelectedSectorId(null);
+            }
           }}
           onRequestClose={closePicker}
           onSelectValue={(value) => {
@@ -314,6 +707,8 @@ export function ContactStartConversationModal({
               setSelectedWorkerId(value);
             } else if (pickerKind === 'sector') {
               setSelectedSectorId(value);
+            } else if (pickerKind === 'officialTemplate') {
+              setSelectedOfficialTemplateKey(value);
             }
             closePicker();
           }}
@@ -336,6 +731,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
+    maxHeight: '90%',
   },
   header: {
     flexDirection: 'row',
@@ -354,6 +750,12 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 4,
   },
+  closeControlDisabled: {
+    opacity: 0.5,
+  },
+  contentScroll: {
+    maxHeight: 560,
+  },
   content: {
     padding: 16,
     gap: 12,
@@ -369,6 +771,9 @@ const styles = StyleSheet.create({
   },
   field: {
     marginBottom: 2,
+  },
+  officialOpeningSection: {
+    gap: 12,
   },
   warningText: {
     fontSize: 13,

@@ -1,6 +1,7 @@
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactPhotoDeleterUseCase } from '@core/useCases/contact/ContactPhotoDeleter.useCase';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 
 @injectable()
 export class ChatContactPhotoDeleterUseCase {
@@ -12,8 +13,16 @@ export class ChatContactPhotoDeleterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     contactId: string,
-    accountId: string
+    accountId: string,
+    actorUserId?: string,
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<boolean> {
-    return this.contactPhotoDeleterUseCase.execute(t, contactId, accountId);
+    return this.contactPhotoDeleterUseCase.execute(
+      t,
+      contactId,
+      accountId,
+      actorUserId,
+      webhookSource
+    );
   }
 }

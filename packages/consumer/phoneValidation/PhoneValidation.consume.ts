@@ -1,117 +1,127 @@
 import { singleton, inject } from 'tsyringe';
-import type { KafkaConsumer } from 'node-rdkafka';
-import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { baileysEnvironment } from '@core/config/environments';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { BaileysService } from '@core/services/baileys';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
-import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import { BaileysIncomingMessageService } from '@core/services/baileys/methods/incoming.service';
+import type { IWhatsappRuntimeFence } from '@core/services/whatsappRuntimeFence.service';
+
+class PhoneValidationRuntimeStaleError extends Error {
+  constructor() {
+    super('Phone validation runtime is stale');
+    this.name = 'PhoneValidationRuntimeStaleError';
+  }
+}
 
 @singleton()
 export class PhoneValidationConsume {
-  private consumer: KafkaConsumer | null = null;
-  private runner: KafkaConsumerRunner<IPhoneValidationRequest> | null = null;
-  private isRunning = false;
-
   constructor(
-    @inject('Kafka') private readonly kafka: KafkaClient,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     @inject(BaileysService)
     private readonly baileysService: BaileysService,
+    @inject(BaileysIncomingMessageService)
+    private readonly baileysIncomingMessageService: BaileysIncomingMessageService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
-  private parseMessage(value: Buffer | null): IPhoneValidationRequest | null {
-    if (!value) return null;
-
-    try {
-      return JSON.parse(value.toString()) as IPhoneValidationRequest;
-    } catch {
-      return null;
-    }
-  }
-
   private async processValidation(
-    data: IPhoneValidationRequest
+    data: IPhoneValidationRequest,
+    assertActive: () => void = () => undefined
   ): Promise<void> {
-    try {
-      if (!data.phone_ddi) {
-        throw new Error('DDI is required for phone validation');
-      }
+    const responseTopic =
+      this.kafkaServiceQueueService.phoneValidationResponse();
+    const connectionScope =
+      await this.captureActiveConnectionScope(assertActive);
 
-      const result = await this.baileysService.validatePhone(
-        data.phone_ddi,
-        data.phone
-      );
-
-      const response: IPhoneValidationResponse = {
-        request_id: data.request_id,
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-        valid: result.valid,
-        jid: result.jid ?? null,
-        phone: result.phone ?? null,
-      };
-
-      const responseTopic =
-        this.kafkaServiceQueueService.phoneValidationResponse();
-      await this.streamProducerService.send(responseTopic, response);
-    } catch (error) {
-      const errorResponse: IPhoneValidationResponse = {
+    if (!data.phone_ddi) {
+      const invalidResponse: IPhoneValidationResponse = {
         request_id: data.request_id,
         account_id: data.account_id,
         worker_id: data.worker_id,
         valid: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: 'DDI is required for phone validation',
+        source_provider: connectionScope.source_provider,
+        runtime_generation: connectionScope.runtime_generation,
+        connection_epoch: connectionScope.connection_epoch,
       };
 
-      const responseTopic =
-        this.kafkaServiceQueueService.phoneValidationResponse();
-      await this.streamProducerService.send(responseTopic, errorResponse);
+      await this.assertConnectionScopeActive(connectionScope, assertActive);
+      await this.streamProducerService.send(
+        responseTopic,
+        invalidResponse,
+        data.request_id,
+        undefined,
+        () => this.assertConnectionScopeActive(connectionScope, assertActive)
+      );
+      await this.assertConnectionScopeActive(connectionScope, assertActive);
+      return;
     }
-  }
 
-  public async execute(): Promise<void> {
-    if (this.consumer && this.isRunning) return;
-
-    const topic = this.kafkaBaileysQueueService.workerValidatePhone(
-      baileysEnvironment.baileysWorkerId
+    const result = await this.baileysService.validatePhone(
+      data.phone_ddi,
+      data.phone
     );
-    this.runner = new KafkaConsumerRunner<IPhoneValidationRequest>({
-      kafka: this.kafka,
-      topic,
-      groupId: `group-underchat-baileys-validate-phone-${baileysEnvironment.baileysWorkerId}`,
-      parse: (message) => this.parseMessage(message.value),
-      resolveEntityKey: (data) => data.request_id,
-      handle: async (data) => {
-        try {
-          await this.processValidation(data);
-        } catch (error) {
-          console.error('Error processing phone validation:', error);
-        }
-      },
-      logger: console,
-    });
+    await this.assertConnectionScopeActive(connectionScope, assertActive);
 
-    await this.runner.start(() => {
-      this.isRunning = true;
-    });
-    this.consumer = this.runner.consumer;
+    const response: IPhoneValidationResponse = {
+      request_id: data.request_id,
+      account_id: data.account_id,
+      worker_id: data.worker_id,
+      valid: result.valid,
+      jid: result.jid ?? null,
+      phone: result.phone ?? null,
+      source_provider: connectionScope.source_provider,
+      runtime_generation: connectionScope.runtime_generation,
+      connection_epoch: connectionScope.connection_epoch,
+    };
+
+    await this.streamProducerService.send(
+      responseTopic,
+      response,
+      data.request_id,
+      undefined,
+      () => this.assertConnectionScopeActive(connectionScope, assertActive)
+    );
+    await this.assertConnectionScopeActive(connectionScope, assertActive);
   }
 
-  public async close(): Promise<void> {
-    this.isRunning = false;
-    if (this.runner) {
-      await this.runner.close();
-      this.runner = null;
+  private async captureActiveConnectionScope(
+    assertActive: () => void
+  ): Promise<IWhatsappRuntimeFence> {
+    assertActive();
+    const scope =
+      await this.baileysIncomingMessageService.captureActiveConnectionScope();
+    assertActive();
+    if (
+      !scope ||
+      scope.worker_id !== baileysEnvironment.baileysWorkerId ||
+      scope.source_provider !== 'baileys'
+    ) {
+      throw new PhoneValidationRuntimeStaleError();
     }
-    this.consumer = null;
+    return scope;
+  }
+
+  private async assertConnectionScopeActive(
+    expected: IWhatsappRuntimeFence,
+    assertActive: () => void
+  ): Promise<void> {
+    assertActive();
+    const current =
+      await this.baileysIncomingMessageService.captureActiveConnectionScope();
+    assertActive();
+    if (
+      !current ||
+      current.worker_id !== expected.worker_id ||
+      current.source_provider !== expected.source_provider ||
+      current.runtime_generation !== expected.runtime_generation ||
+      current.connection_epoch !== expected.connection_epoch
+    ) {
+      throw new PhoneValidationRuntimeStaleError();
+    }
   }
 }

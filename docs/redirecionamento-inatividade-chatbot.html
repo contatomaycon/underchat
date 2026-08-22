@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecionamento por inatividade – Documentação Underchat</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          'Segoe UI',
+          system-ui,
+          -apple-system,
+          sans-serif;
+        line-height: 1.6;
+        color: #1a1a2e;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+        background: #fafafa;
+      }
+      h1 {
+        font-size: 1.75rem;
+        color: #16213e;
+        border-bottom: 3px solid #0f3460;
+        padding-bottom: 0.5rem;
+        margin-top: 0;
+        margin-bottom: 1.25rem;
+      }
+      h2 {
+        font-size: 1.35rem;
+        color: #0f3460;
+        margin-top: 2.5rem;
+        margin-bottom: 1rem;
+      }
+      h3 {
+        font-size: 1.1rem;
+        color: #16213e;
+        margin-top: 1.75rem;
+        margin-bottom: 0.75rem;
+      }
+      p {
+        margin: 0.75rem 0;
+      }
+      ul,
+      ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+      li {
+        margin: 0.35rem 0;
+      }
+      .highlight {
+        background: #e8f4f8;
+        border-left: 4px solid #0f3460;
+        padding: 1rem 1.25rem;
+        margin: 1.25rem 0;
+      }
+      .step {
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin: 1rem 0;
+      }
+      .step:first-of-type {
+        margin-top: 0.5rem;
+      }
+      .img-placeholder {
+        display: block;
+        width: 100%;
+        max-width: 600px;
+        margin: 1.5rem 0;
+      }
+      .img-placeholder img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 8px;
+      }
+      .icon-desc {
+        font-style: italic;
+        color: #555;
+      }
+      .badge {
+        display: inline-block;
+        background: #0f3460;
+        color: #fff;
+        padding: 0.25rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+      }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1rem;
+        border-top: 1px solid #ddd;
+        font-size: 0.9rem;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Redirecionamento por inatividade para outro chatbot</h1>
+    <p>
+      O alerta de inatividade pode transferir automaticamente uma conversa para
+      outro fluxo de chatbot quando o cliente não responde dentro do tempo
+      configurado. O destino pode estar no mesmo canal ou em outro canal da
+      conta.
+    </p>
+
+    <div class="highlight">
+      <strong>Importante:</strong> o fluxo escolhido sempre começa no primeiro
+      nó. A transferência não envia a mensagem usada em redirecionamentos para
+      atendentes ou setores.
+    </div>
+
+    <h2>1. Antes de configurar</h2>
+    <ul>
+      <li>O chatbot de destino deve estar ativo.</li>
+      <li>
+        Ele deve estar vinculado ao canal escolhido como chatbot de
+        <span class="badge">Entrada</span> ou <span class="badge">Saída</span>.
+      </li>
+      <li>
+        Seu usuário precisa ter acesso ao canal ou a permissão para visualizar
+        todos os canais em transferências e encaminhamentos.
+      </li>
+    </ul>
+
+    <h2>2. Como configurar</h2>
+    <div class="step">
+      <h3>2.1. Abra as configurações do fluxo</h3>
+      <p>
+        Acesse <strong>ChatBot</strong>, edite o fluxo desejado e abra
+        <strong>Configurações</strong>. Na aba <strong>Recursos</strong>,
+        localize o card <strong>Alerta de inatividade</strong>.
+      </p>
+    </div>
+    <div class="img-placeholder">
+      <img
+        src="[LINK_IMAGEM_1]"
+        alt="Card Alerta de inatividade nas configurações do chatbot"
+      />
+    </div>
+
+    <div class="step">
+      <h3>2.2. Defina o limite</h3>
+      <ol>
+        <li>Marque o alerta como <strong>Ativo</strong>.</li>
+        <li>
+          Informe a quantidade de alertas e o intervalo em minutos. Os dois
+          campos são obrigatórios enquanto o alerta estiver ativo.
+        </li>
+        <li>
+          Em <strong>Ação</strong>, escolha <strong>Redirecionar</strong>.
+        </li>
+        <li>
+          Em <strong>Redirecionar para</strong>, escolha
+          <strong>ChatBot</strong>.
+        </li>
+      </ol>
+    </div>
+
+    <div class="step">
+      <h3>2.3. Escolha canal e chatbot</h3>
+      <p>
+        Selecione primeiro o <strong>Canal</strong>. O campo
+        <strong>ChatBot</strong> será habilitado e mostrará somente os chatbots
+        ativos vinculados àquele canal, identificados como Entrada ou Saída.
+      </p>
+      <p>
+        Ao trocar o canal, a seleção anterior de chatbot é limpa para evitar um
+        destino incompatível.
+      </p>
+    </div>
+    <div class="img-placeholder">
+      <img
+        src="[LINK_IMAGEM_2]"
+        alt="Seleção do canal e do chatbot para redirecionamento por inatividade"
+      />
+    </div>
+
+    <div class="step">
+      <h3>2.4. Salve</h3>
+      <p>
+        O botão <strong>Salvar</strong> só fica disponível quando canal e
+        chatbot estão preenchidos. Se o vínculo for removido ou o chatbot for
+        desativado antes do salvamento, a configuração será rejeitada.
+      </p>
+    </div>
+
+    <h2>3. O que acontece na execução</h2>
+    <ul>
+      <li>O sistema confirma novamente que o canal e o chatbot são válidos.</li>
+      <li>
+        A conversa muda para o canal selecionado e deixa de ter usuário, setor e
+        usuários secundários associados.
+      </li>
+      <li>
+        Chatbot de Entrada assume o estado de entrada; Chatbot de Saída assume o
+        estado de saída.
+      </li>
+      <li>O estado do fluxo anterior é limpo e o primeiro nó é iniciado.</li>
+      <li>
+        Se houver uma conversa aberta do mesmo contato no canal de destino, a
+        transferência não é realizada e será tentada novamente.
+      </li>
+    </ul>
+
+    <h2>4. Comportamento em canais oficiais</h2>
+    <div class="highlight">
+      <strong>Enquanto o contato não responder:</strong> depois do envio de um
+      template oficial, o alerta de inatividade fica suspenso. Nesse período,
+      o Underchat não envia lembretes, não finaliza o atendimento e não realiza
+      redirecionamentos por inatividade.
+    </div>
+    <p>
+      A entrega ou a leitura do template não libera o alerta. A contagem só é
+      iniciada novamente quando o contato envia uma mensagem. Essa nova
+      contagem começa do zero e utiliza todo o tempo configurado.
+    </p>
+
+    <h2>5. Segurança e recuperação</h2>
+    <p>
+      A operação é registrada antes da transferência. Em caso de falha
+      temporária, o Underchat retoma a etapa pendente sem repetir ações já
+      concluídas. Uma nova atividade do cliente ou outra transferência impedem
+      que uma ação antiga substitua o estado mais recente da conversa.
+    </p>
+
+    <h2>6. Permissões e solução de problemas</h2>
+    <ul>
+      <li>
+        <strong>Canal não aparece:</strong> confirme o acesso do usuário ao
+        canal e as permissões de transferência.
+      </li>
+      <li>
+        <strong>Chatbot não aparece:</strong> confirme se está ativo e vinculado
+        ao canal como Entrada ou Saída.
+      </li>
+      <li>
+        <strong>Canal de destino excluído:</strong> o alerta de inatividade é
+        alterado automaticamente para Inativo. Os demais dados da configuração
+        são preservados.
+      </li>
+      <li>
+        <strong>Não foi possível salvar:</strong> atualize as opções e selecione
+        novamente o destino; ele pode ter sido alterado por outro administrador.
+      </li>
+    </ul>
+
+    <footer>
+      Documentação Underchat — Redirecionamento por inatividade para chatbot
+    </footer>
+  </body>
+</html>

@@ -1,11 +1,20 @@
 import type { KafkaConsumer } from 'node-rdkafka';
+import type { KafkaConsumerStartPosition } from '@core/plugins/kafkaStreams';
 import { createConsumer } from './createConsumer';
 import { connectConsumer } from './connectConsumer';
 import { commitOffset } from './commitOffset';
-import { ensureKafkaTopic } from './ensureKafkaTopic';
 import { handleConsumerError } from './handleConsumerError';
-import { resolveKafkaTopicConfig } from './kafkaTopicConfig';
+import { resolveKafkaConsumerStartPosition } from './kafkaConsumerStartPositionPolicy';
+import { getWorkerKafkaDispatchAuthorizationState } from './workerKafkaDispatchAuthorization';
+import { kafkaConsumerDisconnectBudget } from './kafkaConsumerDisconnectBudget';
+import { KafkaConsumerDispatchRevokedError } from '@core/common/exceptions/KafkaConsumerDispatchRevokedError';
+import { runWithKafkaDispatchGuard } from './kafkaDispatchFenceContext';
+import {
+  acquireKafkaConsumerEntityFence,
+  type IKafkaConsumerEntityFenceCancellation,
+} from './kafkaConsumerEntityFence';
 import type {
+  KafkaConsumerEffectLease,
   KafkaConsumerRunnerContext,
   KafkaConsumerRunnerDiscardReason,
   KafkaConsumerRunnerErrorDecision,
@@ -14,6 +23,9 @@ import type {
 } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
 
 interface IPartitionCommitState {
+  assignmentEpoch?: number;
+  dispatchGeneration?: number;
+  runnerGeneration: number;
   nextOffset: number | null;
   pendingOffsets: Set<number>;
   completedOffsets: Set<number>;
@@ -22,9 +34,92 @@ interface IPartitionCommitState {
 
 interface IResolvedCommitConsumer extends KafkaConsumer {
   commitResolvedSync?: (
-    offsets: Array<{ topic: string; partition: number; offset: number }>
+    offsets: Array<{
+      topic: string;
+      partition: number;
+      offset: number;
+      consumerAssignmentEpoch?: number;
+    }>
   ) => unknown;
 }
+
+interface IAssignmentEpochConsumer extends KafkaConsumer {
+  __health?: () => {
+    pod_replacement_required?: boolean;
+    last_error?: string;
+  };
+  __isAssignmentEpochActive?: (
+    topic: string,
+    partition: number,
+    epoch: number
+  ) => boolean;
+  __reportProcessingProgress?: (
+    topic: string,
+    partition: number,
+    offset: number,
+    epoch: number
+  ) => boolean;
+  __markProcessingStarted?: (
+    topic: string,
+    partition: number,
+    offset: number,
+    epoch: number
+  ) => boolean;
+  __markProcessingSettled?: (
+    topic: string,
+    partition: number,
+    offset: number,
+    epoch: number
+  ) => boolean;
+  __isLatestAssignmentCutoverCommitted?: () => boolean;
+  __restartGenerationWithoutCommit?: (reason: string) => void;
+  __subscribeAssignmentInvalidation?: (
+    listener: (partitions?: number[]) => void
+  ) => () => void;
+  __setRunnerPartitionBackpressure?: (
+    topic: string,
+    partition: number,
+    assignmentEpoch: number,
+    paused: boolean
+  ) => boolean;
+}
+
+interface IAssignmentBackpressureToken {
+  assignmentEpoch: number;
+  runnerGeneration: number;
+}
+
+interface IActiveCoalesceEntry {
+  assignmentEpoch?: number;
+  dispatchGeneration?: number;
+  offset: number;
+  runnerGeneration: number;
+}
+
+interface IEntityChainEntry {
+  assignmentEpoch: number;
+  partition: number;
+  promise: Promise<void>;
+  runnerGeneration: number;
+}
+
+interface IGenerationRestartWithoutCommitRequest {
+  message: KafkaRunnerMessage;
+  entityKey: string;
+  reason: string;
+  cause?: unknown;
+  restartLogMessage: string;
+  unavailableLogMessage: string;
+  failedLogMessage: string;
+}
+
+type CoalesceAdmission =
+  | { kind: 'disabled' | 'bypass' | 'duplicate' | 'same_offset' }
+  | {
+      kind: 'primary';
+      key: string;
+      entry: IActiveCoalesceEntry;
+    };
 
 function readFirstPositiveIntegerEnv(
   names: string[],
@@ -153,21 +248,60 @@ function withTimeout<T>(
   });
 }
 
+function withProcessingWatchdog<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void
+): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return promise;
+  }
+
+  const timeout = setTimeout(onTimeout, timeoutMs) as ReturnType<
+    typeof setTimeout
+  > & {
+    unref?: () => void;
+  };
+  timeout.unref?.();
+
+  return promise.finally(() => clearTimeout(timeout));
+}
+
 export class KafkaConsumerRunner<TPayload> {
   public consumer: KafkaConsumer | null = null;
 
   private running = false;
   private closing = false;
+  private acceptingRecords = false;
+  private startPromise: Promise<void> | null = null;
+  private closePromise: Promise<void> | null = null;
   private totalInFlight = 0;
   private readonly inFlightByPartition = new Map<number, number>();
-  private readonly pausedPartitions = new Set<number>();
-  private readonly knownPartitions = new Set<number>();
+  private readonly inFlightAssignmentTokens = new Map<
+    number,
+    IAssignmentBackpressureToken
+  >();
+  private readonly pausedPartitions = new Map<
+    number,
+    IAssignmentBackpressureToken
+  >();
+  private readonly knownPartitions = new Map<
+    number,
+    IAssignmentBackpressureToken
+  >();
   private readonly partitionCommitStates = new Map<
     number,
     IPartitionCommitState
   >();
-  private readonly entityChains = new Map<string, Promise<void>>();
+  private readonly entityChains = new Map<string, IEntityChainEntry>();
+  private readonly activeCoalesceKeys = new Map<
+    number,
+    Map<string, IActiveCoalesceEntry>
+  >();
   private readonly tasks = new Set<Promise<void>>();
+  private readonly entityFenceCancellationListeners = new Set<() => void>();
+  private assignmentInvalidationUnsubscribe: (() => void) | null = null;
+  private runnerGeneration = 0;
 
   private readonly maxInFlightTotal: number;
   private readonly maxInFlightPerPartition: number;
@@ -175,8 +309,22 @@ export class KafkaConsumerRunner<TPayload> {
   private readonly retryDelaysMs: number[];
   private readonly processingTimeoutMs: number;
   private readonly shutdownDrainTimeoutMs: number;
+  private readonly disconnectTimeoutMs: number;
+  private readonly startPosition: KafkaConsumerStartPosition | undefined;
+  private readonly startRetryBaseMs = readFirstPositiveIntegerEnv(
+    ['KAFKA_CONSUMER_START_RETRY_BASE_MS'],
+    1_000
+  );
+  private readonly startRetryMaxMs = readFirstPositiveIntegerEnv(
+    ['KAFKA_CONSUMER_START_RETRY_MAX_MS'],
+    5_000
+  );
 
   constructor(private readonly options: KafkaConsumerRunnerOptions<TPayload>) {
+    this.startPosition = resolveKafkaConsumerStartPosition(
+      options.topic,
+      options.startPosition
+    );
     this.maxInFlightTotal = resolveMaxInFlightTotal(
       options.topic,
       options.maxInFlightTotal
@@ -192,52 +340,189 @@ export class KafkaConsumerRunner<TPayload> {
       options.shutdownDrainTimeoutMs ??
       readFirstPositiveIntegerEnv(
         ['KAFKA_CONSUMER_SHUTDOWN_DRAIN_TIMEOUT_MS'],
-        30_000
+        10_000
       );
+    this.disconnectTimeoutMs = kafkaConsumerDisconnectBudget.wrapperTimeoutMs;
   }
 
   async start(onConnected?: () => void): Promise<void> {
-    if (this.consumer && this.running) {
+    const closeInFlight = this.closePromise;
+    if (closeInFlight) {
+      await closeInFlight;
+    }
+    if (this.startPromise) {
+      await this.startPromise;
+      return;
+    }
+
+    if (this.consumer) {
       return;
     }
 
     this.closing = false;
-    const topicConfig = resolveKafkaTopicConfig(this.options.topic);
-    await ensureKafkaTopic(
-      this.options.kafka,
-      this.options.topic,
-      topicConfig.numPartitions,
-      topicConfig.replicationFactor
-    );
+    this.acceptingRecords = false;
+    this.runnerGeneration += 1;
+    const startPromise = this.startWithRetry(onConnected);
+    this.startPromise = startPromise;
+    try {
+      await startPromise;
+    } finally {
+      if (this.startPromise === startPromise) {
+        this.startPromise = null;
+      }
+    }
+  }
 
-    const consumer = createConsumer(this.options.kafka, this.options.groupId);
+  private async startWithRetry(onConnected?: () => void): Promise<void> {
+    let attempt = 0;
+    while (!this.closing) {
+      try {
+        await this.startInternal(onConnected);
+        return;
+      } catch (error) {
+        if (this.closing) {
+          throw error;
+        }
+
+        attempt += 1;
+        const retryInMs = Math.min(
+          this.startRetryMaxMs,
+          this.startRetryBaseMs * 2 ** Math.min(attempt - 1, 5)
+        );
+        this.options.logger?.warn?.(
+          {
+            err: error,
+            topic: this.options.topic,
+            groupId: this.options.groupId,
+            attempt,
+            retryInMs,
+          },
+          'Kafka consumer start failed; retrying'
+        );
+        await delay(retryInMs);
+      }
+    }
+
+    throw new Error('Kafka consumer start cancelled');
+  }
+
+  private async startInternal(onConnected?: () => void): Promise<void> {
+    if (this.closing) {
+      throw new Error('Kafka consumer start cancelled before client creation');
+    }
+
+    const consumer = createConsumer(this.options.kafka, this.options.groupId, {
+      startPosition: this.startPosition,
+      requireDispatchAuthorization: this.options.requireDispatchAuthorization,
+    });
     this.consumer = consumer;
+    this.subscribeAssignmentInvalidation(consumer);
 
+    const runnerGeneration = this.runnerGeneration;
     consumer.on('data', (message) => {
-      this.handleData(message as KafkaRunnerMessage);
+      this.handleData(message as KafkaRunnerMessage, runnerGeneration);
     });
 
     consumer.on('event.error', (error) => {
       handleConsumerError(error, this.options.topic);
     });
 
-    await connectConsumer(consumer, this.options.topic, () => {
-      this.running = true;
-      onConnected?.();
-    });
+    try {
+      await connectConsumer(consumer, this.options.topic, () => {
+        if (this.closing || this.consumer !== consumer) {
+          return;
+        }
+        if (!this.isLatestAssignmentCutoverCommitted(consumer)) {
+          throw new Error(
+            `Kafka latest-on-assignment cutover is not committed for topic ${this.options.topic}`
+          );
+        }
+        this.running = true;
+        this.acceptingRecords = true;
+        onConnected?.();
+      });
+
+      if (
+        this.closing ||
+        this.consumer !== consumer ||
+        (this.startPosition === 'latest-on-assignment' &&
+          (!this.running || !this.isLatestAssignmentCutoverCommitted(consumer)))
+      ) {
+        throw new Error('Kafka consumer start cancelled before readiness');
+      }
+    } catch (error) {
+      this.acceptingRecords = false;
+      this.running = false;
+      if (this.consumer === consumer) {
+        this.consumer = null;
+      }
+      this.unsubscribeAssignmentInvalidation();
+      await this.disconnectConsumer(consumer);
+      this.clearState();
+      throw error;
+    }
   }
 
   async close(): Promise<void> {
+    if (this.closePromise) {
+      return this.closePromise;
+    }
+
+    const operation = this.closeInternal();
+    this.closePromise = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.closePromise === operation) {
+        this.closePromise = null;
+      }
+    }
+  }
+
+  private async closeInternal(): Promise<void> {
+    const startInFlight = this.startPromise;
+    const wasRunning = this.running;
+    /*
+     * Stop admission first, but keep the current generation valid while
+     * already-admitted work drains and commits. Invalidating the generation
+     * before this drain creates a real loss window: a handler may finish just
+     * before shutdown while its broker commit is silently skipped.
+     */
+    this.acceptingRecords = false;
+
+    if (startInFlight && !wasRunning) {
+      this.closing = true;
+      this.running = false;
+      this.runnerGeneration += 1;
+      this.cancelEntityFenceWaiters();
+      this.clearActiveCoalesceKeys();
+      this.unsubscribeAssignmentInvalidation();
+      const startingConsumer = this.consumer;
+      if (startingConsumer) {
+        await this.disconnectConsumer(startingConsumer);
+      }
+    }
+    if (startInFlight) {
+      await startInFlight.catch(() => undefined);
+    }
+
+    if (wasRunning) {
+      this.pauseAllKnownPartitions();
+      await this.waitForDrain(Array.from(this.tasks), 'tasks');
+      await this.waitForDrain(
+        Array.from(this.partitionCommitStates.values()).map(
+          (state) => state.commitChain
+        ),
+        'commit_chains'
+      );
+    }
+
     this.closing = true;
     this.running = false;
-
-    await this.waitForDrain(Array.from(this.tasks), 'tasks');
-    await this.waitForDrain(
-      Array.from(this.partitionCommitStates.values()).map(
-        (state) => state.commitChain
-      ),
-      'commit_chains'
-    );
+    this.runnerGeneration += 1;
+    this.cancelEntityFenceWaiters();
+    this.clearActiveCoalesceKeys();
+    this.unsubscribeAssignmentInvalidation();
 
     const consumer = this.consumer;
     if (!consumer) {
@@ -245,7 +530,16 @@ export class KafkaConsumerRunner<TPayload> {
       return;
     }
 
-    await new Promise<void>((resolve) => {
+    await this.disconnectConsumer(consumer);
+
+    if (this.consumer === consumer) {
+      this.consumer = null;
+    }
+    this.clearState();
+  }
+
+  private async disconnectConsumer(consumer: KafkaConsumer): Promise<void> {
+    const disconnect = new Promise<void>((resolve) => {
       try {
         consumer.unsubscribe();
       } catch {}
@@ -256,8 +550,32 @@ export class KafkaConsumerRunner<TPayload> {
       }
     });
 
-    this.consumer = null;
-    this.clearState();
+    try {
+      await withTimeout(
+        disconnect,
+        this.disconnectTimeoutMs,
+        `Kafka consumer disconnect timed out after ${this.disconnectTimeoutMs}ms`
+      );
+    } catch (error) {
+      this.options.logger?.warn?.(
+        {
+          topic: this.options.topic,
+          groupId: this.options.groupId,
+          timeoutMs: this.disconnectTimeoutMs,
+          error,
+        },
+        'Kafka consumer disconnect timed out during close'
+      );
+      throw error;
+    }
+
+    const health = (consumer as IAssignmentEpochConsumer).__health?.();
+    if (health?.pod_replacement_required) {
+      throw new Error(
+        health.last_error ||
+          'Kafka consumer requires process replacement after native disconnect failure'
+      );
+    }
   }
 
   private async waitForDrain(
@@ -306,22 +624,56 @@ export class KafkaConsumerRunner<TPayload> {
     await this.start(onConnected);
   }
 
-  private handleData(message: KafkaRunnerMessage): void {
-    if (this.closing) {
+  private handleData(
+    message: KafkaRunnerMessage,
+    runnerGeneration: number
+  ): void {
+    if (
+      !this.acceptingRecords ||
+      !this.isRunnerGenerationActive(runnerGeneration)
+    ) {
       return;
     }
+
+    const dispatchState = getWorkerKafkaDispatchAuthorizationState();
+    if (
+      this.options.requireDispatchAuthorization &&
+      !dispatchState.authorized
+    ) {
+      return;
+    }
+    const dispatchGeneration = this.options.requireDispatchAuthorization
+      ? dispatchState.generation
+      : undefined;
 
     const normalizedMessage: KafkaRunnerMessage = {
       ...message,
       topic: message.topic || this.options.topic,
     };
+    if (!this.isMessageAssignmentActive(normalizedMessage, runnerGeneration)) {
+      return;
+    }
 
-    this.knownPartitions.add(normalizedMessage.partition);
-    this.registerOffset(normalizedMessage.partition, normalizedMessage.offset);
-    this.incrementInFlight(normalizedMessage.partition);
-    this.applyBackpressure(normalizedMessage.partition);
+    const backpressureToken = this.createBackpressureToken(
+      normalizedMessage,
+      runnerGeneration
+    );
+    this.registerKnownPartition(normalizedMessage.partition, backpressureToken);
+    this.registerOffset(
+      normalizedMessage.partition,
+      normalizedMessage.offset,
+      normalizedMessage.consumerAssignmentEpoch,
+      dispatchGeneration,
+      runnerGeneration
+    );
+    this.incrementInFlight(normalizedMessage.partition, backpressureToken);
+    this.applyBackpressure(normalizedMessage.partition, backpressureToken);
 
-    const task = this.processMessage(normalizedMessage)
+    const task = this.processMessage(
+      normalizedMessage,
+      dispatchGeneration,
+      runnerGeneration
+    )
       .catch((error) => {
         this.options.logger?.error?.(
           {
@@ -336,14 +688,35 @@ export class KafkaConsumerRunner<TPayload> {
       })
       .finally(() => {
         this.tasks.delete(task);
-        this.decrementInFlight(normalizedMessage.partition);
-        this.releaseBackpressure();
+        if (this.runnerGeneration === runnerGeneration) {
+          const releasedCurrentAssignment = this.decrementInFlight(
+            normalizedMessage.partition,
+            backpressureToken
+          );
+          if (releasedCurrentAssignment) {
+            this.releaseBackpressure();
+          }
+        }
       });
 
     this.tasks.add(task);
   }
 
-  private async processMessage(message: KafkaRunnerMessage): Promise<void> {
+  private async processMessage(
+    message: KafkaRunnerMessage,
+    dispatchGeneration: number | undefined,
+    runnerGeneration: number
+  ): Promise<void> {
+    if (
+      !this.isMessageExecutionActive(
+        message,
+        dispatchGeneration,
+        runnerGeneration
+      )
+    ) {
+      return;
+    }
+
     let payload: TPayload | null;
     try {
       payload = this.options.parse(message);
@@ -358,49 +731,263 @@ export class KafkaConsumerRunner<TPayload> {
         },
         'Kafka consumer runner parser failed'
       );
+      if (
+        !this.isMessageExecutionActive(
+          message,
+          dispatchGeneration,
+          runnerGeneration
+        )
+      ) {
+        return;
+      }
+      if (!this.markProcessingStarted(message)) {
+        return;
+      }
       await this.runInvalidMessageHook(message);
+      if (
+        !this.isMessageExecutionActive(
+          message,
+          dispatchGeneration,
+          runnerGeneration
+        )
+      ) {
+        return;
+      }
       this.logInvalidPayloadDiscarded(message, error);
-      await this.completeOffset(message.partition, message.offset);
+      await this.completeOffset(
+        message.partition,
+        message.offset,
+        message.consumerAssignmentEpoch,
+        dispatchGeneration,
+        runnerGeneration
+      );
       return;
     }
 
     if (!payload) {
+      if (
+        !this.isMessageExecutionActive(
+          message,
+          dispatchGeneration,
+          runnerGeneration
+        )
+      ) {
+        return;
+      }
+      if (!this.markProcessingStarted(message)) {
+        return;
+      }
       await this.runInvalidMessageHook(message);
+      if (
+        !this.isMessageExecutionActive(
+          message,
+          dispatchGeneration,
+          runnerGeneration
+        )
+      ) {
+        return;
+      }
       this.logInvalidPayloadDiscarded(message, null);
-      await this.completeOffset(message.partition, message.offset);
+      await this.completeOffset(
+        message.partition,
+        message.offset,
+        message.consumerAssignmentEpoch,
+        dispatchGeneration,
+        runnerGeneration
+      );
       return;
     }
 
+    const coalesceAdmission = this.resolveCoalesceAdmission(
+      payload,
+      message,
+      dispatchGeneration,
+      runnerGeneration
+    );
+    if (coalesceAdmission.kind === 'duplicate') {
+      void this.completeOffset(
+        message.partition,
+        message.offset,
+        message.consumerAssignmentEpoch,
+        dispatchGeneration,
+        runnerGeneration
+      );
+      return;
+    }
+    if (coalesceAdmission.kind === 'same_offset') {
+      return;
+    }
+
+    try {
+      await this.processParsedPayload(
+        payload,
+        message,
+        dispatchGeneration,
+        runnerGeneration
+      );
+    } finally {
+      if (coalesceAdmission.kind === 'primary') {
+        this.releaseActiveCoalesceKey(
+          message.partition,
+          coalesceAdmission.key,
+          coalesceAdmission.entry
+        );
+      }
+    }
+  }
+
+  private async processParsedPayload(
+    payload: TPayload,
+    message: KafkaRunnerMessage,
+    dispatchGeneration: number | undefined,
+    runnerGeneration: number
+  ): Promise<void> {
     const entityKey = this.resolveEntityKey(payload, message);
     if (!this.options.preserveEntityOrder) {
-      await this.processPayload(payload, message, entityKey);
+      await this.processPayloadWithEntityFence(
+        payload,
+        message,
+        entityKey,
+        dispatchGeneration,
+        runnerGeneration
+      );
       return;
     }
 
-    const previous = this.entityChains.get(entityKey) ?? Promise.resolve();
+    const existing = this.entityChains.get(entityKey);
+    const previous =
+      existing &&
+      existing.partition === message.partition &&
+      existing.assignmentEpoch === message.consumerAssignmentEpoch &&
+      existing.runnerGeneration === runnerGeneration
+        ? existing.promise
+        : Promise.resolve();
     const current = previous
       .catch(() => undefined)
-      .then(() => this.processPayload(payload, message, entityKey))
+      .then(() =>
+        this.processPayloadWithEntityFence(
+          payload,
+          message,
+          entityKey,
+          dispatchGeneration,
+          runnerGeneration
+        )
+      )
       .finally(() => {
-        if (this.entityChains.get(entityKey) === current) {
+        if (this.entityChains.get(entityKey)?.promise === current) {
           this.entityChains.delete(entityKey);
         }
       });
 
-    this.entityChains.set(entityKey, current);
+    this.entityChains.set(entityKey, {
+      assignmentEpoch: message.consumerAssignmentEpoch as number,
+      partition: message.partition,
+      promise: current,
+      runnerGeneration,
+    });
     await current;
+  }
+
+  private async processPayloadWithEntityFence(
+    payload: TPayload,
+    message: KafkaRunnerMessage,
+    entityKey: string,
+    dispatchGeneration: number | undefined,
+    runnerGeneration: number
+  ): Promise<void> {
+    if (
+      !this.options.preserveEntityOrder &&
+      !this.options.requireDispatchAuthorization
+    ) {
+      await this.processPayload(
+        payload,
+        message,
+        entityKey,
+        dispatchGeneration,
+        runnerGeneration
+      );
+      return;
+    }
+
+    const lease = await acquireKafkaConsumerEntityFence({
+      brokers: this.options.kafka.getBroker(),
+      groupId: this.options.groupId,
+      topic: this.options.topic,
+      entityKey,
+      cancellation: this.entityFenceCancellation(runnerGeneration),
+    });
+    if (!lease) {
+      return;
+    }
+
+    try {
+      await this.processPayload(
+        payload,
+        message,
+        entityKey,
+        dispatchGeneration,
+        runnerGeneration
+      );
+    } finally {
+      lease.release();
+    }
   }
 
   private async processPayload(
     payload: TPayload,
     message: KafkaRunnerMessage,
-    entityKey: string
+    entityKey: string,
+    dispatchGeneration: number | undefined,
+    runnerGeneration: number
   ): Promise<void> {
+    if (
+      !this.isMessageExecutionActive(
+        message,
+        dispatchGeneration,
+        runnerGeneration
+      )
+    ) {
+      return;
+    }
+    if (!this.markProcessingStarted(message)) {
+      return;
+    }
+
     const kafkaKey = keyToString(message.key);
 
-    let lastError: unknown;
-    let lastContext: KafkaConsumerRunnerContext<TPayload> | null = null;
-    for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
+    for (let attempt = 1; ; attempt += 1) {
+      if (
+        attempt > this.maxRetries &&
+        !this.isExtendedRetryActive(
+          message,
+          dispatchGeneration,
+          runnerGeneration
+        )
+      ) {
+        return;
+      }
+      if (
+        !this.isMessageExecutionActive(
+          message,
+          dispatchGeneration,
+          runnerGeneration
+        )
+      ) {
+        return;
+      }
+
+      let effectLease: KafkaConsumerEffectLease | null = null;
+      const isEffectLeaseOwned = (): boolean => {
+        if (!effectLease) {
+          return true;
+        }
+        try {
+          effectLease.assertOwned();
+          return true;
+        } catch {
+          return false;
+        }
+      };
       const context: KafkaConsumerRunnerContext<TPayload> = {
         topic: this.options.topic,
         groupId: this.options.groupId,
@@ -411,54 +998,174 @@ export class KafkaConsumerRunner<TPayload> {
         entityKey,
         attempt,
         payload,
+        isActive: () =>
+          this.isMessageExecutionActive(
+            message,
+            dispatchGeneration,
+            runnerGeneration
+          ) && isEffectLeaseOwned(),
+        assertActive: () => {
+          if (
+            !this.isMessageExecutionActive(
+              message,
+              dispatchGeneration,
+              runnerGeneration
+            ) ||
+            !isEffectLeaseOwned()
+          ) {
+            throw new KafkaConsumerDispatchRevokedError();
+          }
+        },
+        reportProgress: () => {
+          context.assertActive();
+          const epoch = message.consumerAssignmentEpoch;
+          const consumer = this.consumer as IAssignmentEpochConsumer | null;
+          if (
+            typeof epoch !== 'number' ||
+            consumer?.__reportProcessingProgress?.(
+              this.options.topic,
+              message.partition,
+              message.offset,
+              epoch
+            ) !== true
+          ) {
+            throw new KafkaConsumerDispatchRevokedError();
+          }
+        },
       };
-      lastContext = context;
+      let retryDelayAfterRelease = 0;
 
       try {
-        await withTimeout(
-          this.options.handle(payload, context),
-          this.processingTimeoutMs,
-          `Kafka message processing timeout after ${this.processingTimeoutMs}ms`
-        );
-        await this.runProcessedHook(payload, context);
-        await this.completeOffset(message.partition, message.offset);
-        return;
-      } catch (error) {
-        lastError = error;
-        await this.runFailedHook(payload, context, error);
-
-        if (this.resolveErrorDecision(payload, context, error) === 'terminal') {
-          this.logTerminalErrorDiscarded(payload, message, entityKey, error);
-          await this.runDiscardedHook(
+        if (this.options.acquireEffectLease) {
+          effectLease = await this.acquireEffectLeaseOrResolveRejection(
             payload,
             context,
-            error,
-            'terminal_error'
+            message,
+            entityKey,
+            dispatchGeneration,
+            runnerGeneration
           );
-          await this.completeOffset(message.partition, message.offset);
+          if (!effectLease) {
+            return;
+          }
+          context.assertActive();
+        }
+        await runWithKafkaDispatchGuard(context.assertActive, () =>
+          withProcessingWatchdog(
+            this.options.handle(payload, context),
+            this.processingTimeoutMs,
+            () => {
+              this.options.logger?.warn?.(
+                {
+                  topic: this.options.topic,
+                  groupId: this.options.groupId,
+                  partition: message.partition,
+                  offset: message.offset,
+                  timeoutMs: this.processingTimeoutMs,
+                },
+                'Kafka consumer handler exceeded its processing watchdog; waiting for the original attempt to settle'
+              );
+            }
+          )
+        );
+        context.assertActive();
+        await runWithKafkaDispatchGuard(context.assertActive, () =>
+          this.runProcessedHook(payload, context)
+        );
+        context.assertActive();
+        await this.completeOffset(
+          message.partition,
+          message.offset,
+          message.consumerAssignmentEpoch,
+          dispatchGeneration,
+          runnerGeneration
+        );
+        return;
+      } catch (error) {
+        if (!context.isActive()) {
+          return;
+        }
+        await runWithKafkaDispatchGuard(context.assertActive, () =>
+          this.runFailedHook(payload, context, error)
+        );
+
+        if (!context.isActive()) {
           return;
         }
 
-        if (attempt < this.maxRetries) {
-          const delayMs =
-            this.retryDelaysMs[attempt - 1] ??
-            this.retryDelaysMs[this.retryDelaysMs.length - 1] ??
-            1000;
-          await delay(delayMs);
+        if (this.resolveErrorDecision(payload, context, error) === 'terminal') {
+          this.logTerminalErrorDiscarded(payload, message, entityKey, error);
+          context.assertActive();
+          await runWithKafkaDispatchGuard(context.assertActive, () =>
+            this.runDiscardedHook(payload, context, error, 'terminal_error')
+          );
+          context.assertActive();
+          await this.completeOffset(
+            message.partition,
+            message.offset,
+            message.consumerAssignmentEpoch,
+            dispatchGeneration,
+            runnerGeneration
+          );
+          return;
+        }
+
+        const retriesExhausted = attempt >= this.maxRetries;
+        if (retriesExhausted) {
+          const continueWithoutCommit = this.shouldContinueRetryWithoutCommit(
+            payload,
+            context,
+            error
+          );
+          if (!continueWithoutCommit) {
+            this.logRetriesExhausted(payload, message, entityKey, error);
+            context.assertActive();
+            await runWithKafkaDispatchGuard(context.assertActive, () =>
+              this.runDiscardedHook(payload, context, error, 'retry_exhausted')
+            );
+            context.assertActive();
+            await this.completeOffset(
+              message.partition,
+              message.offset,
+              message.consumerAssignmentEpoch,
+              dispatchGeneration,
+              runnerGeneration
+            );
+            return;
+          }
+          if (
+            !this.isExtendedRetryActive(
+              message,
+              dispatchGeneration,
+              runnerGeneration
+            )
+          ) {
+            return;
+          }
+        }
+
+        retryDelayAfterRelease = this.retryDelayMs(attempt);
+      } finally {
+        if (effectLease) {
+          await effectLease.release().catch((error) => {
+            this.options.logger?.error?.(
+              {
+                err: error,
+                topic: this.options.topic,
+                groupId: this.options.groupId,
+                partition: message.partition,
+                offset: message.offset,
+                entityKey,
+              },
+              'Kafka consumer failed to release its runtime effect lease; TTL cleanup will fence cutover'
+            );
+          });
         }
       }
+      if (retryDelayAfterRelease > 0) {
+        await delay(retryDelayAfterRelease);
+      }
     }
-
-    this.logRetriesExhausted(payload, message, entityKey, lastError);
-    if (lastContext) {
-      await this.runDiscardedHook(
-        payload,
-        lastContext,
-        lastError,
-        'retry_exhausted'
-      );
-    }
-    await this.completeOffset(message.partition, message.offset);
   }
 
   private async runInvalidMessageHook(
@@ -550,6 +1257,39 @@ export class KafkaConsumerRunner<TPayload> {
     }
   }
 
+  private shouldContinueRetryWithoutCommit(
+    payload: TPayload,
+    context: KafkaConsumerRunnerContext<TPayload>,
+    error: unknown
+  ): boolean {
+    try {
+      return Boolean(
+        this.options.shouldContinueRetryWithoutCommit?.(payload, context, error)
+      );
+    } catch (hookError) {
+      this.options.logger?.error?.(
+        {
+          err: hookError,
+          handlerErr: error,
+          topic: this.options.topic,
+          groupId: this.options.groupId,
+          partition: context.partition,
+          offset: context.offset,
+        },
+        'Kafka consumer runner shouldContinueRetryWithoutCommit hook failed'
+      );
+      return false;
+    }
+  }
+
+  private retryDelayMs(attempt: number): number {
+    return (
+      this.retryDelaysMs[attempt - 1] ??
+      this.retryDelaysMs[this.retryDelaysMs.length - 1] ??
+      1000
+    );
+  }
+
   private async runDiscardedHook(
     payload: TPayload,
     context: KafkaConsumerRunnerContext<TPayload>,
@@ -572,6 +1312,7 @@ export class KafkaConsumerRunner<TPayload> {
         'Kafka consumer runner onDiscarded hook failed'
       );
       if (this.options.failOnDiscardedHookError) {
+        this.restartAfterDiscardHookFailure(context, error);
         throw error;
       }
     }
@@ -638,33 +1379,488 @@ export class KafkaConsumerRunner<TPayload> {
     );
   }
 
+  private resolveCoalesceAdmission(
+    payload: TPayload,
+    message: KafkaRunnerMessage,
+    dispatchGeneration: number | undefined,
+    runnerGeneration: number
+  ): CoalesceAdmission {
+    const key = this.resolveCoalesceKey(payload, message);
+    if (!key) {
+      return { kind: 'disabled' };
+    }
+
+    const current = this.activeCoalesceKeys.get(message.partition)?.get(key);
+    if (
+      current &&
+      !this.isActiveCoalesceEntry(
+        current,
+        message,
+        dispatchGeneration,
+        runnerGeneration
+      )
+    ) {
+      this.releaseActiveCoalesceKey(message.partition, key, current);
+    } else if (current) {
+      if (message.offset > current.offset) {
+        return { kind: 'duplicate' };
+      }
+      if (message.offset === current.offset) {
+        return { kind: 'same_offset' };
+      }
+      return { kind: 'bypass' };
+    }
+
+    const entry: IActiveCoalesceEntry = {
+      assignmentEpoch: message.consumerAssignmentEpoch,
+      dispatchGeneration,
+      offset: message.offset,
+      runnerGeneration,
+    };
+    const partitionEntries =
+      this.activeCoalesceKeys.get(message.partition) ?? new Map();
+    partitionEntries.set(key, entry);
+    this.activeCoalesceKeys.set(message.partition, partitionEntries);
+    return { kind: 'primary', key, entry };
+  }
+
+  private resolveCoalesceKey(
+    payload: TPayload,
+    message: KafkaRunnerMessage
+  ): string | null {
+    if (!this.options.resolveCoalesceKey) {
+      return null;
+    }
+
+    try {
+      return this.options.resolveCoalesceKey(payload, message)?.trim() || null;
+    } catch (error) {
+      this.options.logger?.error?.(
+        {
+          err: error,
+          topic: this.options.topic,
+          groupId: this.options.groupId,
+          partition: message.partition,
+          offset: message.offset,
+        },
+        'Kafka consumer runner coalesce key resolver failed; processing record normally'
+      );
+      return null;
+    }
+  }
+
+  private isActiveCoalesceEntry(
+    entry: IActiveCoalesceEntry,
+    message: KafkaRunnerMessage,
+    dispatchGeneration: number | undefined,
+    runnerGeneration: number
+  ): boolean {
+    return (
+      entry.assignmentEpoch === message.consumerAssignmentEpoch &&
+      entry.dispatchGeneration === dispatchGeneration &&
+      entry.runnerGeneration === runnerGeneration &&
+      this.isRunnerGenerationActive(entry.runnerGeneration) &&
+      this.isAssignmentEpochActive(message.partition, entry.assignmentEpoch) &&
+      this.isDispatchGenerationActive(entry.dispatchGeneration)
+    );
+  }
+
+  private releaseActiveCoalesceKey(
+    partition: number,
+    key: string,
+    entry: IActiveCoalesceEntry
+  ): void {
+    const partitionEntries = this.activeCoalesceKeys.get(partition);
+    if (!partitionEntries || partitionEntries.get(key) !== entry) {
+      return;
+    }
+
+    partitionEntries.delete(key);
+    if (partitionEntries.size === 0) {
+      this.activeCoalesceKeys.delete(partition);
+    }
+  }
+
   private resolveEntityKey(
     payload: TPayload,
     message: KafkaRunnerMessage
   ): string {
-    const resolved =
-      this.options.resolveEntityKey?.(payload, message)?.trim() ||
-      keyToString(message.key);
-    if (resolved) {
-      return resolved;
+    try {
+      const resolved = this.options.resolveEntityKey
+        ? this.options.resolveEntityKey(payload, message)?.trim()
+        : null;
+      if (resolved) {
+        return resolved;
+      }
+    } catch (error) {
+      this.options.logger?.error?.(
+        {
+          err: error,
+          topic: this.options.topic,
+          groupId: this.options.groupId,
+          partition: message.partition,
+          offset: message.offset,
+        },
+        'Kafka consumer runner entity key resolver failed; using record identity fallback'
+      );
+    }
+
+    const kafkaKey = keyToString(message.key);
+    if (kafkaKey) {
+      return kafkaKey;
     }
 
     return `${this.options.topic}:${message.partition}:${message.offset}`;
   }
 
-  private registerOffset(partition: number, offset: number): void {
-    const state = this.getPartitionCommitState(partition);
+  private markProcessingStarted(message: KafkaRunnerMessage): boolean {
+    const consumer = this.consumer as IAssignmentEpochConsumer | null;
+    const markStarted = consumer?.__markProcessingStarted;
+    if (typeof markStarted !== 'function') {
+      return true;
+    }
+
+    const epoch = message.consumerAssignmentEpoch;
+    return (
+      typeof epoch === 'number' &&
+      markStarted.call(
+        consumer,
+        this.options.topic,
+        message.partition,
+        message.offset,
+        epoch
+      ) === true
+    );
+  }
+
+  private markProcessingSettled(
+    partition: number,
+    offset: number,
+    assignmentEpoch?: number
+  ): boolean {
+    const consumer = this.consumer as IAssignmentEpochConsumer | null;
+    const markSettled = consumer?.__markProcessingSettled;
+    if (typeof markSettled !== 'function') {
+      return true;
+    }
+
+    return (
+      typeof assignmentEpoch === 'number' &&
+      markSettled.call(
+        consumer,
+        this.options.topic,
+        partition,
+        offset,
+        assignmentEpoch
+      ) === true
+    );
+  }
+
+  private registerOffset(
+    partition: number,
+    offset: number,
+    assignmentEpoch?: number,
+    dispatchGeneration?: number,
+    runnerGeneration = this.runnerGeneration
+  ): void {
+    const state = this.getPartitionCommitState(
+      partition,
+      assignmentEpoch,
+      dispatchGeneration,
+      runnerGeneration
+    );
     state.pendingOffsets.add(offset);
     if (state.nextOffset === null || offset < state.nextOffset) {
       state.nextOffset = offset;
     }
   }
 
+  private async acquireEffectLeaseOrResolveRejection(
+    payload: TPayload,
+    context: KafkaConsumerRunnerContext<TPayload>,
+    message: KafkaRunnerMessage,
+    entityKey: string,
+    dispatchGeneration: number | undefined,
+    runnerGeneration: number
+  ): Promise<KafkaConsumerEffectLease | null> {
+    const acquireEffectLease = this.options.acquireEffectLease;
+    if (!acquireEffectLease) {
+      this.restartGenerationWithoutCommit(
+        message,
+        entityKey,
+        new Error('Runtime effect lease acquisition is not configured')
+      );
+      return null;
+    }
+
+    let effectLease: KafkaConsumerEffectLease | null;
+    try {
+      effectLease = await acquireEffectLease(payload, context);
+    } catch (error) {
+      if (
+        !this.isMessageExecutionActive(
+          message,
+          dispatchGeneration,
+          runnerGeneration
+        )
+      ) {
+        return null;
+      }
+      if (this.resolveErrorDecision(payload, context, error) === 'terminal') {
+        // Let the outer processing boundary execute the normal terminal
+        // hooks and commit path. Infrastructure uncertainty remains below as
+        // restart-without-commit.
+        throw error;
+      }
+
+      try {
+        context.assertActive();
+        const recovery =
+          (await this.options.recoverEffectLeaseAcquisitionFailure?.(
+            payload,
+            context,
+            error
+          )) ?? 'retry';
+        if (
+          !this.isMessageExecutionActive(
+            message,
+            dispatchGeneration,
+            runnerGeneration
+          )
+        ) {
+          return null;
+        }
+        if (recovery === 'durable_handoff') {
+          context.assertActive();
+          await this.completeOffset(
+            message.partition,
+            message.offset,
+            message.consumerAssignmentEpoch,
+            dispatchGeneration,
+            runnerGeneration
+          );
+          return null;
+        }
+      } catch (recoveryError) {
+        if (
+          !this.isMessageExecutionActive(
+            message,
+            dispatchGeneration,
+            runnerGeneration
+          )
+        ) {
+          return null;
+        }
+        if (
+          this.shouldContinueRetryWithoutCommit(payload, context, recoveryError)
+        ) {
+          throw recoveryError;
+        }
+        this.restartGenerationWithoutCommit(message, entityKey, recoveryError);
+        return null;
+      }
+
+      if (this.shouldContinueRetryWithoutCommit(payload, context, error)) {
+        throw error;
+      }
+      this.restartGenerationWithoutCommit(message, entityKey, error);
+      return null;
+    }
+
+    if (effectLease) {
+      return effectLease;
+    }
+
+    let decision: 'retry' | 'terminal' = 'retry';
+    try {
+      decision =
+        (await this.options.classifyEffectLeaseRejection?.(payload, context)) ??
+        'retry';
+    } catch (error) {
+      if (
+        !this.isMessageExecutionActive(
+          message,
+          dispatchGeneration,
+          runnerGeneration
+        )
+      ) {
+        return null;
+      }
+      // A failed current-runtime check is infrastructure uncertainty, never
+      // proof that the event is stale. Redrive it without committing.
+      if (this.shouldContinueRetryWithoutCommit(payload, context, error)) {
+        throw error;
+      }
+      this.restartGenerationWithoutCommit(message, entityKey, error);
+      return null;
+    }
+
+    if (
+      !this.isMessageExecutionActive(
+        message,
+        dispatchGeneration,
+        runnerGeneration
+      )
+    ) {
+      return null;
+    }
+
+    if (decision !== 'terminal') {
+      this.restartGenerationWithoutCommit(message, entityKey);
+      return null;
+    }
+
+    this.options.logger?.warn?.(
+      {
+        topic: this.options.topic,
+        groupId: this.options.groupId,
+        partition: message.partition,
+        offset: message.offset,
+        entityKey,
+      },
+      'Kafka consumer discarded a runtime-fenced event proven stale and committed its offset'
+    );
+    context.assertActive();
+    await this.completeOffset(
+      message.partition,
+      message.offset,
+      message.consumerAssignmentEpoch,
+      dispatchGeneration,
+      runnerGeneration
+    );
+    return null;
+  }
+
+  private restartGenerationWithoutCommit(
+    message: KafkaRunnerMessage,
+    entityKey: string,
+    cause?: unknown
+  ): void {
+    const reason = cause
+      ? `runtime effect lease admission check failed for ${this.options.topic}` +
+        `[${message.partition}] at offset ${message.offset}`
+      : `runtime effect lease admission rejected for ${this.options.topic}` +
+        `[${message.partition}] at offset ${message.offset}`;
+
+    this.requestGenerationRestartWithoutCommit({
+      message,
+      entityKey,
+      reason,
+      cause,
+      restartLogMessage: cause
+        ? 'Kafka consumer runtime effect lease admission check failed; restarting the generation without committing for redelivery'
+        : 'Kafka consumer runtime effect lease admission closed; restarting the generation without committing for redelivery',
+      unavailableLogMessage:
+        'Kafka consumer cannot restart its generation; record was left uncommitted and the partition was paused',
+      failedLogMessage:
+        'Kafka consumer generation restart failed; record was left uncommitted and the partition was paused',
+    });
+  }
+
+  private restartAfterDiscardHookFailure(
+    context: KafkaConsumerRunnerContext<TPayload>,
+    error: unknown
+  ): void {
+    this.requestGenerationRestartWithoutCommit({
+      message: context.message,
+      entityKey: context.entityKey,
+      reason:
+        `discard hook failed for ${this.options.topic}` +
+        `[${context.partition}] at offset ${context.offset}`,
+      cause: error,
+      restartLogMessage:
+        'Kafka consumer fail-closed discard hook failed; restarting the generation without committing for redelivery',
+      unavailableLogMessage:
+        'Kafka consumer cannot restart after a fail-closed discard hook failure; record was left uncommitted and the partition was paused',
+      failedLogMessage:
+        'Kafka consumer generation restart after a fail-closed discard hook failure failed; record was left uncommitted and the partition was paused',
+    });
+  }
+
+  private requestGenerationRestartWithoutCommit(
+    input: IGenerationRestartWithoutCommitRequest
+  ): void {
+    const consumer = this.consumerOrThrow as IAssignmentEpochConsumer;
+    this.options.logger?.warn?.(
+      {
+        err: input.cause,
+        topic: this.options.topic,
+        groupId: this.options.groupId,
+        partition: input.message.partition,
+        offset: input.message.offset,
+        entityKey: input.entityKey,
+      },
+      input.restartLogMessage
+    );
+
+    let restartError: unknown;
+    if (typeof consumer.__restartGenerationWithoutCommit === 'function') {
+      try {
+        consumer.__restartGenerationWithoutCommit(input.reason);
+        return;
+      } catch (error) {
+        restartError = error;
+      }
+    }
+
+    // createConsumer always supplies the managed restart hook. Keep this
+    // fallback fail-closed for test doubles or an unexpected unmanaged
+    // consumer: stop this partition and never commit it. A broken hook must
+    // not fall through to retry exhaustion, which may commit a discard.
+    const pauseError = this.pausePartitionWithoutCommit(
+      consumer,
+      input.message
+    );
+    this.options.logger?.error?.(
+      {
+        err: restartError ?? pauseError,
+        topic: this.options.topic,
+        groupId: this.options.groupId,
+        partition: input.message.partition,
+        offset: input.message.offset,
+      },
+      restartError ? input.failedLogMessage : input.unavailableLogMessage
+    );
+  }
+
+  private pausePartitionWithoutCommit(
+    consumer: IAssignmentEpochConsumer,
+    message: KafkaRunnerMessage
+  ): unknown {
+    try {
+      consumer.pause([
+        {
+          topic: this.options.topic,
+          partition: message.partition,
+        },
+      ]);
+      return undefined;
+    } catch (error) {
+      return error;
+    }
+  }
+
   private async completeOffset(
     partition: number,
-    offset: number
+    offset: number,
+    assignmentEpoch?: number,
+    dispatchGeneration?: number,
+    runnerGeneration = this.runnerGeneration
   ): Promise<void> {
-    const state = this.getPartitionCommitState(partition);
+    const state = this.partitionCommitStates.get(partition);
+    if (
+      !state ||
+      state.assignmentEpoch !== assignmentEpoch ||
+      state.dispatchGeneration !== dispatchGeneration ||
+      state.runnerGeneration !== runnerGeneration ||
+      !this.isRunnerGenerationActive(runnerGeneration) ||
+      !this.isDispatchGenerationActive(dispatchGeneration)
+    ) {
+      return;
+    }
+    if (!this.markProcessingSettled(partition, offset, assignmentEpoch)) {
+      return;
+    }
     state.completedOffsets.add(offset);
     state.commitChain = state.commitChain
       .catch((error) => {
@@ -679,47 +1875,117 @@ export class KafkaConsumerRunner<TPayload> {
         );
       })
       .then(() => this.flushContiguousOffsets(partition, state));
-    await state.commitChain;
+    try {
+      await state.commitChain;
+    } catch (error) {
+      // The handler has already completed. Retrying it because only the Kafka
+      // commit failed can duplicate irreversible effects. Keep the completed
+      // offset in the partition state so the next contiguous flush retries
+      // the commit without invoking the handler again.
+      this.options.logger?.error?.(
+        {
+          err: error,
+          topic: this.options.topic,
+          groupId: this.options.groupId,
+          partition,
+          offset,
+        },
+        'Kafka consumer offset commit failed after processing; handler will not be replayed'
+      );
+    }
   }
 
   private async flushContiguousOffsets(
     partition: number,
     state: IPartitionCommitState
   ): Promise<void> {
-    if (state.nextOffset === null) {
+    if (state.pendingOffsets.size === 0) {
       return;
     }
 
-    let commitUpTo = state.nextOffset - 1;
-    while (state.completedOffsets.has(commitUpTo + 1)) {
-      commitUpTo += 1;
-    }
-
-    if (commitUpTo < state.nextOffset) {
+    if (
+      this.partitionCommitStates.get(partition) !== state ||
+      !this.isRunnerGenerationActive(state.runnerGeneration) ||
+      !this.isAssignmentEpochActive(partition, state.assignmentEpoch) ||
+      !this.isDispatchGenerationActive(state.dispatchGeneration)
+    ) {
       return;
     }
 
-    await this.commitResolvedOffset(partition, commitUpTo);
-
-    for (let offset = state.nextOffset; offset <= commitUpTo; offset += 1) {
-      state.completedOffsets.delete(offset);
-      state.pendingOffsets.delete(offset);
+    /*
+     * Kafka offsets are monotonically increasing, but they are not guaranteed
+     * to be numerically contiguous: log compaction can make a fetch jump from
+     * offset 10 straight to 12. Coordinate the commit against the ordered set
+     * of records actually delivered to this runner. Requiring `offset + 1`
+     * would leave every later completed record permanently uncommitted after
+     * the first compacted gap.
+     */
+    const completedPrefix: number[] = [];
+    const deliveredOffsets = [...state.pendingOffsets].sort(
+      (left, right) => left - right
+    );
+    for (const deliveredOffset of deliveredOffsets) {
+      if (!state.completedOffsets.has(deliveredOffset)) {
+        break;
+      }
+      completedPrefix.push(deliveredOffset);
     }
 
-    state.nextOffset = commitUpTo + 1;
+    const commitUpTo = completedPrefix[completedPrefix.length - 1];
+    if (commitUpTo === undefined) {
+      return;
+    }
+
+    await this.commitResolvedOffset(
+      partition,
+      commitUpTo,
+      state.assignmentEpoch,
+      state.dispatchGeneration,
+      state.runnerGeneration
+    );
+
+    if (
+      this.partitionCommitStates.get(partition) !== state ||
+      !this.isRunnerGenerationActive(state.runnerGeneration) ||
+      !this.isAssignmentEpochActive(partition, state.assignmentEpoch) ||
+      !this.isDispatchGenerationActive(state.dispatchGeneration)
+    ) {
+      return;
+    }
+
+    for (const completedOffset of completedPrefix) {
+      state.completedOffsets.delete(completedOffset);
+      state.pendingOffsets.delete(completedOffset);
+    }
+
+    state.nextOffset =
+      state.pendingOffsets.size > 0 ? Math.min(...state.pendingOffsets) : null;
 
     if (state.pendingOffsets.size === 0 && state.completedOffsets.size === 0) {
       this.partitionCommitStates.delete(partition);
     }
   }
 
-  private getPartitionCommitState(partition: number): IPartitionCommitState {
+  private getPartitionCommitState(
+    partition: number,
+    assignmentEpoch?: number,
+    dispatchGeneration?: number,
+    runnerGeneration = this.runnerGeneration
+  ): IPartitionCommitState {
     const existing = this.partitionCommitStates.get(partition);
-    if (existing) {
+    if (
+      existing &&
+      existing.assignmentEpoch === assignmentEpoch &&
+      existing.dispatchGeneration === dispatchGeneration &&
+      existing.runnerGeneration === runnerGeneration
+    ) {
       return existing;
     }
 
     const created: IPartitionCommitState = {
+      assignmentEpoch,
+      dispatchGeneration,
+      runnerGeneration,
       nextOffset: null,
       pendingOffsets: new Set(),
       completedOffsets: new Set(),
@@ -731,8 +1997,19 @@ export class KafkaConsumerRunner<TPayload> {
 
   private async commitResolvedOffset(
     partition: number,
-    offset: number
+    offset: number,
+    assignmentEpoch?: number,
+    dispatchGeneration?: number,
+    runnerGeneration = this.runnerGeneration
   ): Promise<void> {
+    if (
+      !this.isRunnerGenerationActive(runnerGeneration) ||
+      !this.isAssignmentEpochActive(partition, assignmentEpoch) ||
+      !this.isDispatchGenerationActive(dispatchGeneration)
+    ) {
+      return;
+    }
+
     const consumer = this.consumerOrThrow as IResolvedCommitConsumer;
     if (typeof consumer.commitResolvedSync !== 'function') {
       await commitOffset(consumer, this.options.topic, partition, offset);
@@ -742,11 +2019,20 @@ export class KafkaConsumerRunner<TPayload> {
     await new Promise<void>((resolve, reject) => {
       setImmediate(() => {
         try {
+          if (
+            !this.isRunnerGenerationActive(runnerGeneration) ||
+            !this.isAssignmentEpochActive(partition, assignmentEpoch) ||
+            !this.isDispatchGenerationActive(dispatchGeneration)
+          ) {
+            resolve();
+            return;
+          }
           consumer.commitResolvedSync?.([
             {
               topic: this.options.topic,
               partition,
               offset: offset + 1,
+              consumerAssignmentEpoch: assignmentEpoch,
             },
           ]);
           resolve();
@@ -757,7 +2043,43 @@ export class KafkaConsumerRunner<TPayload> {
     });
   }
 
-  private incrementInFlight(partition: number): void {
+  private createBackpressureToken(
+    message: KafkaRunnerMessage,
+    runnerGeneration: number
+  ): IAssignmentBackpressureToken {
+    if (typeof message.consumerAssignmentEpoch !== 'number') {
+      throw new Error(
+        `Kafka record for ${this.options.topic}[${message.partition}] is missing its assignment epoch`
+      );
+    }
+
+    return {
+      assignmentEpoch: message.consumerAssignmentEpoch,
+      runnerGeneration,
+    };
+  }
+
+  private registerKnownPartition(
+    partition: number,
+    token: IAssignmentBackpressureToken
+  ): void {
+    const current = this.knownPartitions.get(partition);
+    if (current && !this.isSameBackpressureToken(current, token)) {
+      this.invalidatePartitionState(partition);
+    }
+    this.knownPartitions.set(partition, token);
+  }
+
+  private incrementInFlight(
+    partition: number,
+    token: IAssignmentBackpressureToken
+  ): void {
+    const current = this.inFlightAssignmentTokens.get(partition);
+    if (current && !this.isSameBackpressureToken(current, token)) {
+      this.clearPartitionInFlight(partition);
+    }
+
+    this.inFlightAssignmentTokens.set(partition, token);
     this.totalInFlight += 1;
     this.inFlightByPartition.set(
       partition,
@@ -765,20 +2087,33 @@ export class KafkaConsumerRunner<TPayload> {
     );
   }
 
-  private decrementInFlight(partition: number): void {
+  private decrementInFlight(
+    partition: number,
+    token: IAssignmentBackpressureToken
+  ): boolean {
     this.totalInFlight = Math.max(0, this.totalInFlight - 1);
+    const current = this.inFlightAssignmentTokens.get(partition);
+    if (!current || !this.isSameBackpressureToken(current, token)) {
+      return false;
+    }
+
     const next = Math.max(
       0,
       (this.inFlightByPartition.get(partition) ?? 0) - 1
     );
     if (next === 0) {
       this.inFlightByPartition.delete(partition);
-      return;
+      this.inFlightAssignmentTokens.delete(partition);
+      return true;
     }
     this.inFlightByPartition.set(partition, next);
+    return true;
   }
 
-  private applyBackpressure(partition: number): void {
+  private applyBackpressure(
+    partition: number,
+    token: IAssignmentBackpressureToken
+  ): void {
     if (this.totalInFlight >= this.maxInFlightTotal) {
       this.pauseAllKnownPartitions();
       return;
@@ -791,50 +2126,324 @@ export class KafkaConsumerRunner<TPayload> {
       return;
     }
 
-    this.pausePartition(partition);
+    this.pausePartition(partition, token);
   }
 
   private releaseBackpressure(): void {
-    if (this.totalInFlight >= this.maxInFlightTotal) {
+    if (!this.acceptingRecords || this.totalInFlight >= this.maxInFlightTotal) {
       return;
     }
 
-    for (const pausedPartition of Array.from(this.pausedPartitions)) {
+    for (const [pausedPartition, token] of Array.from(
+      this.pausedPartitions.entries()
+    )) {
+      if (!this.isBackpressureTokenActive(pausedPartition, token)) {
+        this.pausedPartitions.delete(pausedPartition);
+        continue;
+      }
       if (
         (this.inFlightByPartition.get(pausedPartition) ?? 0) <
         this.maxInFlightPerPartition
       ) {
-        this.resumePartition(pausedPartition);
+        this.resumePartition(pausedPartition, token);
       }
     }
   }
 
   private pauseAllKnownPartitions(): void {
-    for (const partition of this.knownPartitions) {
-      this.pausePartition(partition);
+    for (const [partition, token] of this.knownPartitions) {
+      this.pausePartition(partition, token);
     }
   }
 
-  private pausePartition(partition: number): void {
-    if (this.pausedPartitions.has(partition)) {
+  private pausePartition(
+    partition: number,
+    token: IAssignmentBackpressureToken
+  ): void {
+    if (!this.isBackpressureTokenActive(partition, token)) {
       return;
     }
 
+    const current = this.pausedPartitions.get(partition);
+    if (current && this.isSameBackpressureToken(current, token)) {
+      return;
+    }
+    if (current) {
+      this.pausedPartitions.delete(partition);
+    }
+
     try {
-      this.consumerOrThrow.pause([{ topic: this.options.topic, partition }]);
-      this.pausedPartitions.add(partition);
+      const consumer = this.consumerOrThrow as IAssignmentEpochConsumer;
+      if (typeof consumer.__setRunnerPartitionBackpressure === 'function') {
+        const accepted = consumer.__setRunnerPartitionBackpressure(
+          this.options.topic,
+          partition,
+          token.assignmentEpoch,
+          true
+        );
+        if (!accepted) {
+          return;
+        }
+      } else {
+        consumer.pause([{ topic: this.options.topic, partition }]);
+      }
+      this.pausedPartitions.set(partition, token);
     } catch {}
   }
 
-  private resumePartition(partition: number): void {
-    if (!this.pausedPartitions.has(partition)) {
+  private resumePartition(
+    partition: number,
+    token: IAssignmentBackpressureToken
+  ): void {
+    const current = this.pausedPartitions.get(partition);
+    if (!current || !this.isSameBackpressureToken(current, token)) {
+      return;
+    }
+    if (!this.isBackpressureTokenActive(partition, token)) {
+      this.pausedPartitions.delete(partition);
       return;
     }
 
     try {
-      this.consumerOrThrow.resume([{ topic: this.options.topic, partition }]);
+      const consumer = this.consumerOrThrow as IAssignmentEpochConsumer;
+      if (typeof consumer.__setRunnerPartitionBackpressure === 'function') {
+        consumer.__setRunnerPartitionBackpressure(
+          this.options.topic,
+          partition,
+          token.assignmentEpoch,
+          false
+        );
+      } else {
+        consumer.resume([{ topic: this.options.topic, partition }]);
+      }
       this.pausedPartitions.delete(partition);
     } catch {}
+  }
+
+  private isSameBackpressureToken(
+    left: IAssignmentBackpressureToken,
+    right: IAssignmentBackpressureToken
+  ): boolean {
+    return (
+      left.assignmentEpoch === right.assignmentEpoch &&
+      left.runnerGeneration === right.runnerGeneration
+    );
+  }
+
+  private isBackpressureTokenActive(
+    partition: number,
+    token: IAssignmentBackpressureToken
+  ): boolean {
+    const known = this.knownPartitions.get(partition);
+    if (!known) {
+      return false;
+    }
+
+    return (
+      token.runnerGeneration === this.runnerGeneration &&
+      this.isRunnerGenerationActive(token.runnerGeneration) &&
+      this.isAssignmentEpochActive(partition, token.assignmentEpoch) &&
+      this.isSameBackpressureToken(known, token)
+    );
+  }
+
+  private clearPartitionInFlight(partition: number): void {
+    this.inFlightByPartition.delete(partition);
+    this.inFlightAssignmentTokens.delete(partition);
+  }
+
+  private invalidatePartitionState(partition: number): void {
+    this.clearPartitionInFlight(partition);
+    this.pausedPartitions.delete(partition);
+    this.knownPartitions.delete(partition);
+    this.partitionCommitStates.delete(partition);
+    this.activeCoalesceKeys.delete(partition);
+    for (const [entityKey, entry] of this.entityChains) {
+      if (entry.partition === partition) {
+        this.entityChains.delete(entityKey);
+      }
+    }
+  }
+
+  private isMessageAssignmentActive(
+    message: KafkaRunnerMessage,
+    runnerGeneration: number
+  ): boolean {
+    return (
+      this.isRunnerGenerationActive(runnerGeneration) &&
+      this.isAssignmentEpochActive(
+        message.partition,
+        message.consumerAssignmentEpoch
+      )
+    );
+  }
+
+  private isMessageExecutionActive(
+    message: KafkaRunnerMessage,
+    dispatchGeneration: number | undefined,
+    runnerGeneration: number
+  ): boolean {
+    return (
+      this.isMessageAssignmentActive(message, runnerGeneration) &&
+      this.isDispatchGenerationActive(dispatchGeneration)
+    );
+  }
+
+  private isRunnerGenerationActive(runnerGeneration: number): boolean {
+    return (
+      !this.closing &&
+      this.running &&
+      this.consumer !== null &&
+      this.runnerGeneration === runnerGeneration
+    );
+  }
+
+  private isDispatchGenerationActive(dispatchGeneration?: number): boolean {
+    if (!this.options.requireDispatchAuthorization) {
+      return true;
+    }
+
+    const state = getWorkerKafkaDispatchAuthorizationState();
+    return (
+      !this.closing &&
+      this.running &&
+      state.authorized &&
+      typeof dispatchGeneration === 'number' &&
+      state.generation === dispatchGeneration
+    );
+  }
+
+  private isExtendedRetryActive(
+    message: KafkaRunnerMessage,
+    dispatchGeneration: number | undefined,
+    runnerGeneration: number
+  ): boolean {
+    return (
+      this.isRunnerGenerationActive(runnerGeneration) &&
+      this.isMessageExecutionActive(
+        message,
+        dispatchGeneration,
+        runnerGeneration
+      )
+    );
+  }
+
+  private entityFenceCancellation(
+    runnerGeneration: number
+  ): IKafkaConsumerEntityFenceCancellation {
+    return {
+      isCancelled: () => !this.isRunnerGenerationActive(runnerGeneration),
+      onCancel: (listener) => {
+        if (!this.isRunnerGenerationActive(runnerGeneration)) {
+          listener();
+          return () => undefined;
+        }
+
+        this.entityFenceCancellationListeners.add(listener);
+        return () => {
+          this.entityFenceCancellationListeners.delete(listener);
+        };
+      },
+    };
+  }
+
+  private cancelEntityFenceWaiters(): void {
+    const listeners = Array.from(this.entityFenceCancellationListeners);
+    this.entityFenceCancellationListeners.clear();
+    for (const listener of listeners) {
+      listener();
+    }
+  }
+
+  private subscribeAssignmentInvalidation(consumer: KafkaConsumer): void {
+    this.unsubscribeAssignmentInvalidation();
+    const assignmentConsumer = consumer as IAssignmentEpochConsumer;
+    if (!assignmentConsumer.__subscribeAssignmentInvalidation) {
+      return;
+    }
+
+    try {
+      this.assignmentInvalidationUnsubscribe =
+        assignmentConsumer.__subscribeAssignmentInvalidation((partitions) => {
+          this.invalidateAssignmentState(partitions);
+        });
+    } catch (error) {
+      this.options.logger?.error?.(
+        {
+          err: error,
+          topic: this.options.topic,
+          groupId: this.options.groupId,
+        },
+        'Kafka consumer runner could not subscribe to assignment invalidation'
+      );
+    }
+  }
+
+  private unsubscribeAssignmentInvalidation(): void {
+    const unsubscribe = this.assignmentInvalidationUnsubscribe;
+    this.assignmentInvalidationUnsubscribe = null;
+    try {
+      unsubscribe?.();
+    } catch {}
+  }
+
+  private clearActiveCoalesceKeys(partitions?: number[]): void {
+    if (!partitions) {
+      this.activeCoalesceKeys.clear();
+      return;
+    }
+
+    for (const partition of new Set(partitions)) {
+      this.activeCoalesceKeys.delete(partition);
+    }
+  }
+
+  private invalidateAssignmentState(partitions?: number[]): void {
+    if (!partitions) {
+      this.inFlightByPartition.clear();
+      this.inFlightAssignmentTokens.clear();
+      this.pausedPartitions.clear();
+      this.knownPartitions.clear();
+      this.partitionCommitStates.clear();
+      this.entityChains.clear();
+      this.clearActiveCoalesceKeys();
+      return;
+    }
+
+    for (const partition of new Set(partitions)) {
+      this.invalidatePartitionState(partition);
+    }
+    this.releaseBackpressure();
+  }
+
+  private isAssignmentEpochActive(
+    partition: number,
+    assignmentEpoch?: number
+  ): boolean {
+    if (typeof assignmentEpoch !== 'number') {
+      return false;
+    }
+
+    const consumer = this.consumer as IAssignmentEpochConsumer | null;
+    return Boolean(
+      consumer?.__isAssignmentEpochActive?.(
+        this.options.topic,
+        partition,
+        assignmentEpoch
+      )
+    );
+  }
+
+  private isLatestAssignmentCutoverCommitted(consumer: KafkaConsumer): boolean {
+    if (this.startPosition !== 'latest-on-assignment') {
+      return true;
+    }
+
+    const managed = consumer as IAssignmentEpochConsumer;
+    return (
+      typeof managed.__isLatestAssignmentCutoverCommitted === 'function' &&
+      managed.__isLatestAssignmentCutoverCommitted() === true
+    );
   }
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -845,12 +2454,16 @@ export class KafkaConsumerRunner<TPayload> {
   }
 
   private clearState(): void {
+    this.acceptingRecords = false;
     this.totalInFlight = 0;
     this.inFlightByPartition.clear();
+    this.inFlightAssignmentTokens.clear();
     this.pausedPartitions.clear();
     this.knownPartitions.clear();
     this.partitionCommitStates.clear();
     this.entityChains.clear();
+    this.clearActiveCoalesceKeys();
+    this.unsubscribeAssignmentInvalidation();
     this.tasks.clear();
   }
 }

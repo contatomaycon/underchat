@@ -247,7 +247,8 @@ export class CrossSellListerRepository {
         renewable_instances: 0,
         is_single_use:
           item.plan_product_id === EPlanProduct.personalization ||
-          item.plan_product_id === EPlanProduct.internal_chat,
+          item.plan_product_id === EPlanProduct.internal_chat ||
+          item.plan_product_id === EPlanProduct.integration,
         can_purchase: true,
         created_at: item.created_at,
         plan_product: item.plan_product?.plan_product_id
@@ -409,7 +410,8 @@ export class CrossSellListerRepository {
       );
       const isSingleUse =
         item.plan_product_id === EPlanProduct.personalization ||
-        item.plan_product_id === EPlanProduct.internal_chat;
+        item.plan_product_id === EPlanProduct.internal_chat ||
+        item.plan_product_id === EPlanProduct.integration;
       const activeAddonQty =
         activeProductQuantityMap.get(item.plan_product_id) || 0;
       const activePlanQty =

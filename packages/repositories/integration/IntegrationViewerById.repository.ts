@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { apiKey, worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 
 @injectable()
 export class IntegrationViewerByIdRepository {
@@ -36,6 +36,7 @@ export class IntegrationViewerByIdRepository {
         and(
           eq(apiKey.api_key_id, apiKeyId),
           eq(apiKey.account_id, accountId),
+          isNotNull(apiKey.worker_id),
           isNull(apiKey.deleted_at)
         )
       )

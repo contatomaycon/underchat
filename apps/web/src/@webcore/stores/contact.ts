@@ -28,6 +28,12 @@ import { ExportContactResponse } from '@core/schema/contact/exportContact/respon
 import { ListContactUsersResponse } from '@core/schema/contact/listUsers/response.schema';
 import { ListContactChannelsResponse } from '@core/schema/contact/listContactChannels/response.schema';
 import { ListContactLabelTemplatesResponse } from '@core/schema/contact/listLabelTemplates/response.schema';
+import type {
+  BulkUpdateContactLabelsRequest,
+} from '@core/schema/contact/bulkUpdateContactLabels/request.schema';
+import type { BulkUpdateContactLabelsResponse } from '@core/schema/contact/bulkUpdateContactLabels/response.schema';
+import type { BulkUpdateContactDetailsRequest } from '@core/schema/contact/bulkUpdateContactDetails/request.schema';
+import type { BulkUpdateContactDetailsResponse } from '@core/schema/contact/bulkUpdateContactDetails/response.schema';
 
 export const useContactStore = defineStore('contact', {
   state: () => ({
@@ -722,6 +728,77 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
+    async bulkUpdateContactLabels(
+      body: BulkUpdateContactLabelsRequest
+    ): Promise<BulkUpdateContactLabelsResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<
+          IApiResponse<BulkUpdateContactLabelsResponse>
+        >('/contact/bulk/labels', body);
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('contacts_bulk_labels_error');
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('contacts_bulk_labels_success'),
+          data.data.failed_count > 0 ? EColor.warning : EColor.success
+        );
+        return data.data;
+      } catch (error) {
+        const errorMessage =
+          error instanceof AxiosError
+            ? (error.response?.data?.message ??
+              this.i18n.global.t('contacts_bulk_labels_error'))
+            : this.i18n.global.t('contacts_bulk_labels_error');
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async bulkUpdateContactDetails(
+      body: BulkUpdateContactDetailsRequest
+    ): Promise<BulkUpdateContactDetailsResponse | null> {
+      try {
+        this.loading = true;
+        const response = await axios.patch<
+          IApiResponse<BulkUpdateContactDetailsResponse>
+        >('/contact/bulk/details', body);
+        const data = response?.data;
+
+        if (!data?.status || !data.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('contacts_bulk_details_error');
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('contacts_bulk_details_success'),
+          data.data.failed_count > 0 ? EColor.warning : EColor.success
+        );
+        return data.data;
+      } catch (error) {
+        const errorMessage =
+          error instanceof AxiosError
+            ? (error.response?.data?.message ??
+              this.i18n.global.t('contacts_bulk_details_error'))
+            : this.i18n.global.t('contacts_bulk_details_error');
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      } finally {
+        this.loading = false;
+      }
+    },
+
     async getContactPhoneDecrypted(contactId: string): Promise<string | null> {
       try {
         const response = await axios.get<
@@ -788,9 +865,9 @@ export const useContactStore = defineStore('contact', {
       try {
         this.loading = true;
 
-        const params: { contact_ids?: string[] } = {};
+        const params: { contact_ids?: string } = {};
         if (contactIds && contactIds.length > 0) {
-          params.contact_ids = contactIds;
+          params.contact_ids = contactIds.join(',');
         }
 
         const response = await axios.get<IApiResponse<ExportContactResponse[]>>(

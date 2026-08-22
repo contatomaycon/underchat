@@ -110,6 +110,16 @@ function buildUseCase(result: unknown): {
 describe('ChatUnreadSummaryViewerUseCase', () => {
   it('sums unread_count with account, active menu statuses and channel filters', async () => {
     const { useCase, select } = buildUseCase({
+      hits: {
+        hits: [
+          {
+            _source: {
+              chat_id: 'chat-1',
+              summary: { unread_count: 12, revision: 7 },
+            },
+          },
+        ],
+      },
       aggregations: {
         summary: {
           unread_total: {
@@ -127,12 +137,15 @@ describe('ChatUnreadSummaryViewerUseCase', () => {
         [],
         [{ id: 'worker-1', name: 'Worker' }]
       )
-    ).resolves.toEqual({ unread_count: 12 });
+    ).resolves.toEqual({
+      unread_count: 12,
+      unread_chats: [{ chat_id: 'chat-1', unread_count: 12, revision: 7 }],
+    });
 
     expect(select).toHaveBeenCalledWith(
       EElasticIndex.chat,
       expect.objectContaining({
-        size: 0,
+        size: 10_000,
         aggs: {
           summary: {
             nested: {
@@ -198,6 +211,6 @@ describe('ChatUnreadSummaryViewerUseCase', () => {
         [],
         []
       )
-    ).resolves.toEqual({ unread_count: 0 });
+    ).resolves.toEqual({ unread_count: 0, unread_chats: [] });
   });
 });

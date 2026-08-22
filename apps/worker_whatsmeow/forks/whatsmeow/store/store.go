@@ -123,6 +123,66 @@ type DeviceContainer interface {
 	DeleteDevice(ctx context.Context, store *Device) error
 }
 
+const (
+	// WhatsAppTransportNamespace and WhatsAppTransportRoutingInfoKey identify
+	// the provider-neutral edge-routing record shared by all native providers.
+	// The payload is intentionally opaque: decoding and re-encoding it could
+	// discard fields introduced by a newer WhatsApp transport.
+	WhatsAppTransportNamespace          = "whatsapp/transport"
+	WhatsAppTransportRoutingInfoKey     = "routing_info"
+	WhatsAppTransportCodecVersion       = 1
+	MaxWhatsAppTransportRoutingInfoSize = 65535
+)
+
+var ErrInvalidWhatsAppTransportRoutingInfo = errors.New("whatsapp transport routing info is invalid")
+
+// ValidateWhatsAppTransportRoutingInfo enforces the portable transport
+// contract without inspecting or exposing the opaque payload.
+func ValidateWhatsAppTransportRoutingInfo(routingInfo []byte) error {
+	if len(routingInfo) == 0 || len(routingInfo) > MaxWhatsAppTransportRoutingInfoSize {
+		return ErrInvalidWhatsAppTransportRoutingInfo
+	}
+	return nil
+}
+
+// TransportStore persists provider-neutral transport state for one exact
+// session revision. It is optional for custom stores, while SQLStore implements
+// it natively with the same lease/RLS guards as protocol state.
+type TransportStore interface {
+	PutTransportRoutingInfo(ctx context.Context, routingInfo []byte) error
+	GetTransportRoutingInfo(ctx context.Context) ([]byte, error)
+	DeleteTransportRoutingInfo(ctx context.Context) error
+}
+
+// CompanionIdentityReserver is implemented by persistent stores that can
+// atomically reserve a paired companion identity before the client opens a
+// network socket. It is deliberately optional so custom in-memory stores keep
+// implementing DeviceContainer without a source-incompatible API change.
+type CompanionIdentityReserver interface {
+	ReserveCompanionIdentity(ctx context.Context, device *Device) error
+}
+
+// ConnectionStatusFence is the non-secret identity of the PostgreSQL lease
+// generation that owns a live transport. Required is false for stores that do
+// not use shared-database fencing (for example a standalone SQLite store).
+// Capability is intentionally absent because connection status must never
+// expose or retain the runtime secret.
+type ConnectionStatusFence struct {
+	Required     bool
+	OwnerID      string
+	FencingToken int64
+	Generation   int64
+	Epoch        string
+}
+
+// ConnectionStatusFenceProvider exposes the current in-memory fencing
+// snapshot for an exact session revision. Implementations must not perform a
+// database or network call. Clients use it to ensure a cached online state can
+// never survive lease loss or a transport-generation takeover.
+type ConnectionStatusFenceProvider interface {
+	CurrentConnectionStatusFence(sessionID string, revisionID int64) (ConnectionStatusFence, error)
+}
+
 type MessageSecretInsert struct {
 	Chat   types.JID
 	Sender types.JID
@@ -214,14 +274,28 @@ type AllStores interface {
 	AllGlobalStores
 }
 
+type CacheInvalidator interface {
+	InvalidateCaches()
+}
+
 type Device struct {
 	Log waLog.Logger
+	// SessionID is the stable channel identifier that owns this device in a
+	// shared SQL store. It must not be derived from the WhatsApp JID.
+	SessionID string
+	// RevisionID identifies the immutable provider projection used by this
+	// device. Together with SessionID it is the ownership boundary for every
+	// row and cache in shared SQL stores.
+	RevisionID int64
 
 	NoiseKey       *keys.KeyPair
 	IdentityKey    *keys.KeyPair
 	SignedPreKey   *keys.PreKey
 	RegistrationID uint32
 	AdvSecretKey   []byte
+	// AdvSecretAvailable distinguishes a real 32-byte ADV secret from a
+	// provider projection that only owns the signed public identity.
+	AdvSecretAvailable bool
 
 	ID  *types.JID
 	LID types.JID
@@ -234,6 +308,14 @@ type Device struct {
 	LIDMigrationTimestamp int64
 
 	FacebookUUID uuid.UUID
+	// DeviceFingerprint is the canonical SHA-256 identity of the paired
+	// companion. It is safe for equality checks but must not be used as a
+	// session ownership key.
+	DeviceFingerprint  [32]byte
+	FingerprintVersion string
+	// NextPreKeyID mirrors the persisted allocator for diagnostics. Allocation
+	// itself is always an atomic database operation and never trusts this value.
+	NextPreKeyID uint32
 
 	Initialized   bool
 	Deleted       bool
@@ -249,6 +331,7 @@ type Device struct {
 	PrivacyTokens PrivacyTokenStore
 	NCTSalt       NCTSaltStore
 	EventBuffer   EventBuffer
+	Transport     TransportStore
 	LIDs          LIDStore
 	Container     DeviceContainer
 }
@@ -288,11 +371,25 @@ func (device *Device) Delete(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	device.InvalidateCaches()
 	device.ID = nil
 	device.LID = types.EmptyJID
 	device.Deleted = true
 	device.SetAllStores(&NoopStore{ErrDeviceDeleted})
 	return nil
+}
+
+// InvalidateCaches clears all provider-store caches for this session revision.
+// Lease-loss and handoff paths must call it before disconnecting or reusing a
+// Device. Implementations must not retain JID/LID/contact data afterward.
+func (device *Device) InvalidateCaches() {
+	if invalidator, ok := device.Identities.(CacheInvalidator); ok {
+		invalidator.InvalidateCaches()
+		return
+	}
+	if invalidator, ok := device.LIDs.(CacheInvalidator); ok {
+		invalidator.InvalidateCaches()
+	}
 }
 
 func (device *Device) SetAllStores(store AllSessionSpecificStores) {
@@ -308,6 +405,11 @@ func (device *Device) SetAllStores(store AllSessionSpecificStores) {
 	device.PrivacyTokens = store
 	device.NCTSalt = store
 	device.EventBuffer = store
+	if transport, ok := store.(TransportStore); ok {
+		device.Transport = transport
+	} else {
+		device.Transport = nil
+	}
 }
 
 func (device *Device) GetAltJID(ctx context.Context, jid types.JID) (types.JID, error) {

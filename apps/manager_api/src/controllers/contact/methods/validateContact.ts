@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ValidateContactRequest } from '@core/schema/contact/validateContact/request.schema';
 import { ContactValidatorUseCase } from '@core/useCases/contact/ContactValidator.useCase';
+import { resolveOutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 
 export const validateContact = async (
   request: FastifyRequest<{
@@ -19,7 +20,9 @@ export const validateContact = async (
     const response = await contactValidatorUseCase.execute(
       t,
       request.params.contact_id,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.user_id,
+      resolveOutboundWebhookRequestSource(request.module)
     );
 
     if (response) {

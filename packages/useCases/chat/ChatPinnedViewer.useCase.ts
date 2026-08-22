@@ -19,6 +19,7 @@ export class ChatPinnedViewerUseCase {
   private mapChatToListResult(chat: IChat): ListChatsResult {
     return {
       chat_id: chat.chat_id,
+      meta: chat.meta ?? null,
       remote_jid: chat.message_key?.remote_jid ?? null,
       remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
       message_key: chat.message_key ?? null,

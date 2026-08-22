@@ -111,12 +111,14 @@ watch(
       return;
     }
 
-    void chatStore.viewUnreadSummary();
+    chatStore.ensureUnreadSummaryAccountScope(accountId);
     void presenceOnline().catch(() => {});
 
     if (!chatSocket.isInitialized()) {
-      await chatSocket.initializeSocket();
+      await chatSocket.initializeSocket().catch(() => {});
     }
+
+    void chatStore.viewUnreadSummary();
   },
   { immediate: true }
 );
@@ -140,11 +142,12 @@ watch(
       return;
     }
 
-    void internalChatStore.viewUnreadSummary();
-
+    internalChatStore.ensureUnreadSummaryAccountScope(accountId);
     if (!internalChatSocket.isInitialized()) {
-      await internalChatSocket.initializeSocket();
+      await internalChatSocket.initializeSocket().catch(() => {});
     }
+
+    void internalChatStore.viewUnreadSummary();
   },
   { immediate: true }
 );

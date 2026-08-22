@@ -16,6 +16,10 @@ service WorkerCommand {
   rpc ValidatePhone(PhoneValidationRequest) returns (PhoneValidationResponse);
   rpc ImportSecureSession(SecureSessionImportRequest) returns (SecureSessionImportResponse);
   rpc RuntimeHealth(WorkerRuntimeHealthRequest) returns (WorkerRuntimeHealthResponse);
+  rpc PrepareSessionStorageMigration(SessionStorageMigrationPrepareRequest) returns (SessionStorageMigrationPrepareResponse);
+  rpc DeleteLegacySessionVolume(LegacySessionVolumeDeleteRequest) returns (LegacySessionVolumeDeleteResponse);
+  rpc ActivateWhatsappRuntimeFence(WhatsappRuntimeFenceActivationRequest) returns (WhatsappRuntimeFenceActivationResponse);
+  rpc AuthorizeChromiumLockCleanup(ChromiumLockCleanupAuthorizationRequest) returns (ChromiumLockCleanupAuthorizationResponse);
   rpc CreateWarmWorker(CreateWarmWorkerRequest) returns (WarmWorkerCommandResponse);
   rpc DeleteWarmWorker(DeleteWarmWorkerRequest) returns (WorkerCommandResponse);
   rpc ActivateWarmWorker(ActivateWarmWorkerRequest) returns (WarmWorkerCommandResponse);
@@ -30,11 +34,32 @@ message WorkerPayload {
   string worker_type_id = 6;
   string name = 7;
   string previous_worker_status_id = 8;
-  bool remove_session = 9;
-  bool remove_volume = 10;
+  // Presence matters for lifecycle commands: `false` means preserve the
+  // PostgreSQL-backed session, while an omitted legacy field keeps backwards
+  // compatible defaults. Proto3 scalar defaults cannot express that without
+  // `optional` presence.
+  optional bool remove_session = 9;
+  optional bool remove_volume = 10;
   string lifecycle_operation_id = 11;
   string previous_worker_type_id = 12;
   string debug_trace_id = 13;
+  bool recovery_without_journal = 14;
+  string expected_container_id = 15;
+  string expected_container_started_at = 16;
+  int32 expected_container_restart_count = 17;
+  string expected_container_health_status = 18;
+  bool expected_container_paused = 19;
+  int32 expected_runtime_generation = 20;
+  string lifecycle_semantic_fingerprint = 21;
+  string session_storage = 22;
+  // Source storage for an explicit legacy-volume to PostgreSQL reset. The
+  // replacement runtime always uses `session_storage`.
+  string previous_session_storage = 23;
+  // Source server for a provider handoff whose target runs elsewhere.
+  string previous_server_id = 24;
+  string session_storage_migration_id = 25;
+  string legacy_session_volume_name = 26;
+  string legacy_session_checksum = 27;
 }
 
 message ChangeConnectionStatusRequest {
@@ -55,6 +80,7 @@ message ChangeConnectionStatusRequest {
   int32 runtime_generation = 15;
   string warm_pool_id = 16;
   string debug_trace_id = 17;
+  optional string authorized_connection_epoch = 18;
 }
 
 message NotifyWorkerStatusRequest {
@@ -101,6 +127,8 @@ message NotifyWorkerStatusRequest {
   bool passkey_pending = 40;
   string passkey_confirmation_code = 41;
   bool passkey_skip_handoff_ux = 42;
+  WhatsappConnectionStatus connection_status = 43;
+  string connection_status_source_id = 44;
 }
 
 message WorkerSelfHealingRequest {
@@ -115,6 +143,11 @@ message WorkerSelfHealingRequest {
   int32 runtime_generation = 9;
   string debug_trace_id = 10;
   int32 recovery_window_seconds = 11;
+  bool session_ready = 12;
+  bool can_send = 13;
+  bool can_receive_runtime = 14;
+  bool authenticated = 15;
+  string phone = 16;
 }
 
 message ResolveIncomingCallActionRequest {
@@ -185,6 +218,7 @@ message SecureSessionImportRequest {
   string payload_json = 10;
   string checksum = 11;
   string debug_trace_id = 12;
+  optional string authorized_connection_epoch = 13;
 }
 
 message SecureSessionImportResponse {
@@ -213,6 +247,8 @@ message SecureSessionImportResponse {
 message WorkerRuntimeHealthRequest {
   string worker_id = 1;
   string warm_pool_id = 2;
+  string worker_type_id = 3;
+  string server_id = 4;
 }
 
 message WorkerRuntimeHealthResponse {
@@ -239,6 +275,112 @@ message WorkerRuntimeHealthResponse {
   int32 probe_latency_ms = 21;
   string phone = 22;
   bool kafka_unhealthy = 23;
+  bool kafka_consumers_ready = 24;
+  bool kafka_consumers_authorized = 25;
+  uint32 runtime_health_schema_version = 26;
+  WhatsappConnectionStatus connection_status = 27;
+  string connection_status_source_id = 28;
+  bool command_ingress_ready = 29;
+  bool command_ingress_authorized = 30;
+  string session_storage = 31;
+  string session_revision_id = 32;
+  string session_storage_migration_id = 33;
+}
+
+message SessionStorageMigrationPrepareRequest {
+  string migration_id = 1;
+  string worker_id = 2;
+  string account_id = 3;
+  string provider = 4;
+  int32 runtime_generation = 5;
+  string runtime_capability = 6;
+  string legacy_volume_name = 7;
+  string expected_phone = 8;
+}
+
+message SessionStorageMigrationPrepareResponse {
+  string migration_id = 1;
+  string worker_id = 2;
+  string provider = 3;
+  int32 runtime_generation = 4;
+  bool prepared = 5;
+  bool consumers_drained = 6;
+  bool writes_paused = 7;
+  bool checkpoint_persisted = 8;
+  bool provider_disconnected = 9;
+  bool volume_preserved = 10;
+  string checkpoint_checksum_sha256 = 11;
+  int64 checkpoint_size_bytes = 12;
+  int64 checkpoint_record_count = 13;
+  string phone = 14;
+  string identity_hash_sha256 = 15;
+  string prepared_at = 16;
+  string error = 17;
+}
+
+message LegacySessionVolumeDeleteRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string migration_id = 3;
+  string volume_name = 4;
+}
+
+message LegacySessionVolumeDeleteResponse {
+  string worker_id = 1;
+  string migration_id = 2;
+  bool volume_absent = 3;
+  int32 mounted_container_count = 4;
+}
+
+message WhatsappConnectionStatus {
+  string provider = 1;
+  string status = 2;
+  bool connected = 3;
+  bool authenticated = 4;
+  optional bool sessionValid = 5;
+  bool recoverable = 6;
+  bool qrAvailable = 7;
+  uint64 sequence = 8;
+  string changedAt = 9;
+  string reason = 10;
+  string errorCode = 11;
+}
+
+message WhatsappRuntimeFenceActivationRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string source_provider = 3;
+  int32 runtime_generation = 4;
+  string connection_epoch = 5;
+  optional string connection_attempt_id = 6;
+}
+
+message WhatsappRuntimeFenceActivationResponse {
+  bool activated = 1;
+  bool already_active = 2;
+  int64 connection_sequence = 3;
+}
+
+message ChromiumLockCleanupAuthorizationRequest {
+  string request_id = 1;
+  string worker_id = 2;
+  string account_id = 3;
+  string worker_type_id = 4;
+  int32 runtime_generation = 5;
+  string requester_container_id = 6;
+  string session_volume_name = 7;
+  string singleton_lock_target = 8;
+}
+
+message ChromiumLockCleanupAuthorizationResponse {
+  bool authorized = 1;
+  string reason = 2;
+  string request_id = 3;
+  string requester_container_id = 4;
+  string owner_container_id = 5;
+  string session_volume_name = 6;
+  string singleton_lock_target = 7;
+  int64 expires_at_unix_ms = 8;
 }
 
 message CreateWarmWorkerRequest {
@@ -274,6 +416,8 @@ message ActivateWarmWorkerRequest {
   string previous_worker_type_id = 9;
   string previous_worker_status_id = 10;
   string debug_trace_id = 11;
+  string lifecycle_semantic_fingerprint = 12;
+  string session_storage = 13;
 }
 
 message WarmWorkerCommandResponse {

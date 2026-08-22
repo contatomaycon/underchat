@@ -1,6 +1,7 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
+import { EWorkerSessionStorage } from '@core/common/enums/EWorkerSessionStorage';
 import { createWorkerRequestSchema } from './request.schema';
 
 export const createWorkerSchema = {
@@ -36,6 +37,7 @@ export const createWorkerSchema = {
           account_id: Type.String(),
           server_id: Type.String(),
           worker_type_id: Type.String(),
+          session_storage: Type.Enum(EWorkerSessionStorage),
           worker_status_id: Type.String(),
           operation_id: Type.String(),
           reason: Type.String(),

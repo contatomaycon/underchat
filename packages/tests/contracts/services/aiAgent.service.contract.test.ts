@@ -322,6 +322,25 @@ describe('AiAgentService', () => {
     ).resolves.toBe(false);
   });
 
+  it('clears a stale cache on an idempotent delete retry', async () => {
+    const { service, aiAgentDeleterRepository, redis } = makeService();
+    aiAgentDeleterRepository.deleteAiAgentById
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    redis.del.mockRejectedValueOnce(new Error('Redis unavailable'));
+
+    await expect(service.deleteAiAgentById('agent-1', 'acc-1')).rejects.toThrow(
+      'Redis unavailable'
+    );
+    await expect(service.deleteAiAgentById('agent-1', 'acc-1')).resolves.toBe(
+      false
+    );
+
+    expect(aiAgentDeleterRepository.deleteAiAgentById).toHaveBeenCalledTimes(2);
+    expect(redis.del).toHaveBeenCalledTimes(2);
+    expect(redis.del).toHaveBeenLastCalledWith('ai-agent:view:agent-1:acc-1');
+  });
+
   it('delegates prompt, type and counter/list methods', async () => {
     const {
       service,

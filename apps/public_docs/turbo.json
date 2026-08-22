@@ -1,0 +1,19 @@
+{
+  "$schema": "https://turborepo.org/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "env": ["VITE_API_PUBLIC_URL"],
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "env": ["VITE_API_PUBLIC_URL"],
+      "cache": false,
+      "persistent": true
+    },
+    "typecheck": {
+      "env": ["VITE_API_PUBLIC_URL"],
+      "outputs": []
+    }
+  }
+}

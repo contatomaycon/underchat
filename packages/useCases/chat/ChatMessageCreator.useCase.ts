@@ -4,7 +4,6 @@ import {
   CreateMessageChatsParams,
 } from '@core/schema/chat/createMessageChats/request.schema';
 import { IChatMessage, IReaction } from '@core/common/interfaces/IChatMessage';
-import { v7 as uuidv7 } from 'uuid';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
@@ -15,7 +14,6 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { StreamProducerService } from '@core/services/streamProducer.service';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { IUploadFileInput } from '@core/common/interfaces/IUploadFileInput';
@@ -32,13 +30,21 @@ import { isChatParticipant } from '@core/common/functions/chatParticipants';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { isUuidLike } from '@core/common/functions/isUuidLike';
 import {
+  buildDeterministicMessageHash,
   buildMessageSendQueueKey,
   ensureMessageSendHash,
+  resolveWorkerCommandChatEntityKey,
 } from '@core/common/functions/messageIdentity';
 import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
 import { WorkerService } from '@core/services/worker.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { OfficialWhatsappConversationWindowService } from '@core/services/officialWhatsappConversationWindow.service';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
+import { WorkerCommandAdmissionService } from '@core/services/workerCommandAdmission.service';
+import { workerCommandMessagePayload } from '@core/common/functions/workerCommandMessagePayload';
+import { currentWorkerCommandRetryOf } from '@core/common/functions/workerCommandAcceptanceContext';
+import { v7 as uuidv7 } from 'uuid';
 
 interface IActionMessageResult {
   sent: boolean;
@@ -53,8 +59,8 @@ export class ChatMessageCreatorUseCase {
     private readonly chatService: ChatService,
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(WorkerCommandAdmissionService)
+    private readonly workerCommandAdmissionService: WorkerCommandAdmissionService,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(StreamProducerService)
@@ -70,7 +76,11 @@ export class ChatMessageCreatorUseCase {
     @inject(AttendanceInactivityService)
     private readonly attendanceInactivityService: AttendanceInactivityService,
     @inject(WorkerService)
-    private readonly workerService: WorkerService
+    private readonly workerService: WorkerService,
+    @inject(OfficialWhatsappConversationWindowService)
+    private readonly officialWindowService: OfficialWhatsappConversationWindowService = {
+      assertCanSendFreeform: async () => undefined,
+    } as unknown as OfficialWhatsappConversationWindowService
   ) {}
 
   private normalizeChatUser(
@@ -483,47 +493,15 @@ export class ChatMessageCreatorUseCase {
     accountId: string,
     messageId: string
   ): Promise<IChatMessage | null> {
-    const query = {
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: {
-                    'account.id': accountId,
-                  },
-                },
-              },
-            },
-            {
-              term: {
-                message_id: messageId,
-              },
-            },
-          ],
-        },
-      },
-    };
-
-    const result = await this.elasticDatabaseService.select(
-      EElasticIndex.message,
-      query
-    );
-
-    if (!result || result.hits.hits.length === 0) {
-      return null;
-    }
-
-    return result.hits.hits[0]._source as IChatMessage;
+    return this.chatService.findMessageByMessageId(accountId, messageId);
   }
 
   private async updateMessageReaction(
     message: IChatMessage,
     emoji: string,
     userId: string,
-    userName: string
+    userName: string,
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<IChatMessage> {
     const existingReactions = message.content?.reactions || [];
 
@@ -579,8 +557,28 @@ export class ChatMessageCreatorUseCase {
       content: updatedContent,
       has_quoted: message.has_quoted,
     };
+    const reactionRevision =
+      message.outbound_webhook_event_ids?.at(-1) ??
+      message.hash ??
+      message.date;
 
-    await this.chatService.saveMessageChat(updatedMessage);
+    const persisted = await this.chatService.saveMessageChat(updatedMessage, {
+      eventTypes: ['message.reaction.updated'],
+      idempotencyKey: `message-reaction:${updatedMessage.message_id}:${userId}:${JSON.stringify(
+        existingReactions
+      )}:${emoji ?? ''}:${reactionRevision}`,
+      source: webhookSource,
+      previousMessage: message,
+      actor: { type: 'user', id: userId },
+      changes: {
+        emoji: emoji || null,
+        actor_id: userId,
+        origin: webhookSource,
+      },
+    });
+    if (!persisted) {
+      throw new Error('message_reaction_update_failed');
+    }
 
     return updatedMessage;
   }
@@ -608,7 +606,8 @@ export class ChatMessageCreatorUseCase {
     if (
       type === EMessageType.react &&
       body.reaction_message_id &&
-      body.reaction_emoji
+      body.reaction_emoji !== null &&
+      body.reaction_emoji !== undefined
     ) {
       return this.processReaction(
         { chat, chatId, accountId },
@@ -672,6 +671,13 @@ export class ChatMessageCreatorUseCase {
   }
 
   private async isOfficialWorker(chat: IChat): Promise<boolean> {
+    if (
+      chat.worker?.is_official === true ||
+      chat.worker?.type_id === EWorkerType.whatsapp
+    ) {
+      return true;
+    }
+
     if (!chat.account?.id || !chat.worker?.id) {
       return false;
     }
@@ -684,23 +690,37 @@ export class ChatMessageCreatorUseCase {
     return workerType?.worker_type_id === EWorkerType.whatsapp;
   }
 
-  private async resolveProviderSendTopic(chat: IChat): Promise<string> {
-    const isOfficialWorker = await this.isOfficialWorker(chat);
-
-    return isOfficialWorker
-      ? this.kafkaServiceQueueService.officialWhatsappSendMessage()
-      : this.kafkaBaileysQueueService.workerSendMessage(chat.worker.id);
-  }
-
   private async publishProviderActionMessage(
     chat: IChat,
     message: IChatMessage
   ): Promise<void> {
-    await this.streamProducerService.send(
-      await this.resolveProviderSendTopic(chat),
-      message,
-      buildMessageSendQueueKey(message.account.id, message.chat_id)
-    );
+    if (await this.isOfficialWorker(chat)) {
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.officialWhatsappSendMessage(),
+        message,
+        buildMessageSendQueueKey(message.account.id, message.chat_id)
+      );
+      return;
+    }
+
+    const workerId = message.worker.id?.trim();
+    if (!workerId) {
+      throw new Error('Worker ID is required to send provider action');
+    }
+    await this.workerCommandAdmissionService.admit({
+      accountId: message.account.id,
+      workerId,
+      commandType: 'direct_send',
+      entityKey: resolveWorkerCommandChatEntityKey(
+        message.account.id,
+        workerId,
+        message
+      ),
+      operationId: message.message_id,
+      retryOf: currentWorkerCommandRetryOf(),
+      payload: workerCommandMessagePayload(message),
+      source: 'chat_message_action',
+    });
   }
 
   private async assertOfficialMessageTypeSupported(
@@ -785,12 +805,14 @@ export class ChatMessageCreatorUseCase {
       accountId,
       type: EMessageType.contact_card,
       message: contactData.message,
+      messageId: messageContext.messageId,
       messageQuotedId: contactData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
       securityKeyScopes: messageContext.securityKeyScopes,
+      outboundWebhookSource: messageContext.webhookSource,
       contactIds: contactData.contacts,
     });
   }
@@ -819,12 +841,14 @@ export class ChatMessageCreatorUseCase {
       accountId,
       type: EMessageType.location,
       message: messageData.message,
+      messageId: messageContext.messageId,
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
       securityKeyScopes: messageContext.securityKeyScopes,
+      outboundWebhookSource: messageContext.webhookSource,
       latitude: locationData.latitude,
       longitude: locationData.longitude,
       name: locationData.name,
@@ -855,12 +879,14 @@ export class ChatMessageCreatorUseCase {
       accountId,
       type: EMessageType.document,
       message: messageData.message,
+      messageId: messageContext.messageId,
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
       securityKeyScopes: messageContext.securityKeyScopes,
+      outboundWebhookSource: messageContext.webhookSource,
       documents:
         documentData.documents.length > 0 ? documentData.documents : undefined,
       documentUrl: documentData.isQuickMessage
@@ -899,12 +925,14 @@ export class ChatMessageCreatorUseCase {
       accountId,
       type: EMessageType.video,
       message: messageData.message,
+      messageId: messageContext.messageId,
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
       securityKeyScopes: messageContext.securityKeyScopes,
+      outboundWebhookSource: messageContext.webhookSource,
       videos: videoData.videos.length > 0 ? videoData.videos : undefined,
       videoUrl: videoData.isQuickMessage
         ? videoData.quickMessageUrl
@@ -957,6 +985,7 @@ export class ChatMessageCreatorUseCase {
       accountId,
       type: EMessageType.audio,
       message: shouldDropCaptionAndQuote ? null : messageData.message,
+      messageId: messageContext.messageId,
       messageQuotedId: shouldDropCaptionAndQuote
         ? null
         : messageData.messageQuotedId,
@@ -965,6 +994,7 @@ export class ChatMessageCreatorUseCase {
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
       securityKeyScopes: messageContext.securityKeyScopes,
+      outboundWebhookSource: messageContext.webhookSource,
       audios: audioData.audios.length > 0 ? audioData.audios : undefined,
       audioUrl: audioData.isQuickMessage
         ? audioData.quickMessageUrl
@@ -1005,12 +1035,14 @@ export class ChatMessageCreatorUseCase {
       accountId,
       type: EMessageType.image,
       message: messageData.message,
+      messageId: messageContext.messageId,
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
       securityKeyScopes: messageContext.securityKeyScopes,
+      outboundWebhookSource: messageContext.webhookSource,
       images: imageData.images.length > 0 ? imageData.images : undefined,
       imageUrl: imageData.isQuickMessage
         ? imageData.quickMessageUrl
@@ -1043,12 +1075,14 @@ export class ChatMessageCreatorUseCase {
       accountId,
       type: type as EMessageType.text | EMessageType.system,
       message: messageData.message,
+      messageId: messageContext.messageId,
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
       securityKeyScopes: messageContext.securityKeyScopes,
+      outboundWebhookSource: messageContext.webhookSource,
       linkPreview,
     });
   }
@@ -1062,7 +1096,8 @@ export class ChatMessageCreatorUseCase {
     userId: string,
     actions: IJwtGroupHierarchy[],
     userSectors: string[],
-    userChannels: { id: string; name: string }[] = []
+    userChannels: { id: string; name: string }[] = [],
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<boolean> {
     this.validate(t, body);
 
@@ -1105,15 +1140,98 @@ export class ChatMessageCreatorUseCase {
     }
 
     const normalizedFields = this.normalizeMessageFields(body, templateMessage);
+    const requestedOperationId = this.extractFieldValue(body.operation_id);
+    const retryOf = this.extractFieldValue(body.retry_of);
+    if (
+      requestedOperationId !== null &&
+      !/^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/u.test(requestedOperationId)
+    ) {
+      throw new Error('worker_command_operation_id_invalid');
+    }
+    const operationId =
+      requestedOperationId ??
+      (normalizedFields.hash
+        ? buildDeterministicMessageHash(
+            accountId,
+            params.chat_id,
+            `client:${normalizedFields.hash}`
+          )
+        : uuidv7());
+    if (
+      retryOf &&
+      (!/^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/u.test(retryOf) ||
+        retryOf === operationId)
+    ) {
+      throw new Error('worker_command_retry_of_invalid');
+    }
     const messageContext: IMessageContext = {
       t,
       hash: normalizedFields.hash,
+      messageId: operationId,
       typeUser,
       senderName,
       senderUser,
       senderUserId: userId,
       securityKeyScopes: isQuickMessage ? ['quick_message'] : undefined,
+      webhookSource,
     };
+
+    if (messageContext.messageId) {
+      const existingMessage = await this.chatService.findMessageByMessageId(
+        accountId,
+        messageContext.messageId
+      );
+      if (
+        existingMessage?.chat_id === params.chat_id &&
+        (!messageContext.hash || existingMessage.hash === messageContext.hash)
+      ) {
+        const retryResult =
+          existingMessage.summary?.is_sent === true ||
+          Boolean(existingMessage.message_key?.id)
+            ? true
+            : await this.chatMessageService.publishPreparedMessage(
+                existingMessage,
+                webhookSource,
+                undefined,
+                true
+              );
+
+        await this.resetOperatorInactivityIfNeeded(
+          chat,
+          typeUser,
+          existingMessage.content?.type ?? this.normalizeType(body.type),
+          retryResult,
+          null
+        );
+        return retryResult;
+      }
+    }
+
+    const isOfficialChat = await this.isOfficialWorker(chat);
+    const chatForOfficialWindow: IChat = isOfficialChat
+      ? {
+          ...chat,
+          worker: {
+            ...chat.worker,
+            type_id: EWorkerType.whatsapp,
+            is_official: true,
+          },
+        }
+      : chat;
+
+    await this.assertOfficialMessageTypeSupported(
+      t,
+      chatForOfficialWindow,
+      type,
+      {
+        audioViewOnce: normalizedFields.audioViewOnce,
+      }
+    );
+    await this.officialWindowService.assertCanSendFreeform(
+      t,
+      chatForOfficialWindow,
+      type
+    );
 
     const actionResult = await this.processActionMessages(
       type,
@@ -1124,19 +1242,24 @@ export class ChatMessageCreatorUseCase {
       messageContext
     );
     if (actionResult !== null) {
-      await this.resetOperatorInactivityIfNeeded(
-        chat,
-        typeUser,
-        type,
-        actionResult.sent,
-        actionResult.reactionTargetTypeUser
-      );
+      try {
+        await this.resetOperatorInactivityIfNeeded(
+          chat,
+          typeUser,
+          type,
+          actionResult.sent,
+          actionResult.reactionTargetTypeUser
+        );
+      } catch (error) {
+        // The provider PubAck is the acceptance boundary. Attendance is a
+        // projection and cannot turn an accepted action into an opaque retry.
+        console.error(
+          '[WorkerCommand] Failed to reset inactivity after accepted action:',
+          error instanceof Error ? error.message : error
+        );
+      }
       return actionResult.sent;
     }
-
-    await this.assertOfficialMessageTypeSupported(t, chat, type, {
-      audioViewOnce: normalizedFields.audioViewOnce,
-    });
 
     let result = false;
 
@@ -1271,10 +1394,6 @@ export class ChatMessageCreatorUseCase {
       );
     }
 
-    if (result && chat.status === EChatStatus.in_chat) {
-      await this.chatService.clearChatSummary(params.chat_id, accountId);
-    }
-
     await this.resetOperatorInactivityIfNeeded(
       chat,
       typeUser,
@@ -1372,31 +1491,46 @@ export class ChatMessageCreatorUseCase {
       throw new Error(messageContext.t('message_not_found'));
     }
 
+    if (targetMessage.chat_id !== chatContext.chatId) {
+      throw new Error(messageContext.t('message_not_found'));
+    }
+
     const userId =
-      chatContext.chat.worker?.id ??
       messageContext.senderUser?.id ??
       messageContext.senderUserId ??
       chatContext.chat.user?.id ??
+      chatContext.chat.worker?.id ??
       '';
     const userName =
-      chatContext.chat.worker?.name ??
       messageContext.senderUser?.name ??
       messageContext.senderName ??
       chatContext.chat.user?.name ??
+      chatContext.chat.worker?.name ??
       '';
 
-    const updatedMessage = await this.updateMessageReaction(
-      targetMessage,
-      emoji,
-      userId,
-      userName
+    const existingActorReaction = targetMessage.content?.reactions?.find(
+      (reaction) => reaction.user_id === userId
     );
+    const reactionIsUnchanged = emoji
+      ? existingActorReaction?.emoji === emoji
+      : existingActorReaction === undefined;
+    const updatedMessage = reactionIsUnchanged
+      ? targetMessage
+      : await this.updateMessageReaction(
+          targetMessage,
+          emoji,
+          userId,
+          userName,
+          messageContext.webhookSource
+        );
 
     if (
       !targetMessage.message_key?.id ||
       !targetMessage.message_key?.remote_jid
     ) {
-      await this.centrifugoChatPublish(updatedMessage);
+      if (!reactionIsUnchanged) {
+        await this.centrifugoChatPublish(updatedMessage);
+      }
       return {
         sent: true,
         reactionTargetTypeUser: targetMessage.type_user,
@@ -1404,20 +1538,32 @@ export class ChatMessageCreatorUseCase {
     }
 
     const reactionMessage = this.createReactionMessage(
-      chatContext.chat,
-      chatContext.chatId,
       updatedMessage,
       emoji,
-      messageContext.hash,
-      messageContext.typeUser,
-      messageContext.senderUser
+      this.requireActionOperationId(messageContext),
+      messageContext.typeUser
     );
     ensureMessageSendHash(reactionMessage);
 
-    await Promise.all([
-      this.publishProviderActionMessage(chatContext.chat, reactionMessage),
-      this.centrifugoChatPublish(updatedMessage),
-    ]);
+    if (reactionIsUnchanged) {
+      await this.publishProviderActionMessage(
+        chatContext.chat,
+        reactionMessage
+      );
+    } else {
+      await this.publishProviderActionMessage(
+        chatContext.chat,
+        reactionMessage
+      );
+      try {
+        await this.centrifugoChatPublish(updatedMessage);
+      } catch (error) {
+        console.error(
+          '[WorkerCommand] Failed to publish reaction projection after PubAck:',
+          error instanceof Error ? error.message : error
+        );
+      }
+    }
 
     return {
       sent: true,
@@ -1426,46 +1572,45 @@ export class ChatMessageCreatorUseCase {
   }
 
   private createReactionMessage(
-    chat: IChat,
-    chatId: string,
     targetMessage: IChatMessage,
     emoji: string,
-    hash: string | null,
-    typeUser: ETypeUserChat,
-    senderUser?: IChat['user'] | null
+    operationId: string,
+    typeUser: ETypeUserChat
   ): IChatMessage {
     return {
-      message_id: uuidv7(),
-      chat_id: chatId,
+      message_id: operationId,
+      chat_id: targetMessage.chat_id,
       message_key: {
         remote_jid: targetMessage.message_key?.remote_jid ?? null,
         remote_jid_alt: targetMessage.message_key?.remote_jid_alt ?? null,
         from_me: targetMessage.message_key?.from_me ?? false,
         id: targetMessage.message_key?.id ?? null,
         participant: targetMessage.message_key?.participant ?? null,
+        participant_alt: targetMessage.message_key?.participant_alt ?? null,
+        addressing_mode: targetMessage.message_key?.addressing_mode ?? null,
         is_view_once: false,
       },
       type_user: typeUser,
       sent_from_platform: true,
-      account: chat.account,
-      worker: chat.worker,
-      user: senderUser ?? chat.user ?? null,
-      phone: chat.phone,
+      account: targetMessage.account,
+      worker: targetMessage.worker,
+      user: null,
+      phone: targetMessage.phone,
       summary: {
         is_sent: false,
         is_delivered: false,
         is_seen: false,
         is_sent_to_internal: true,
       },
-      deleted: targetMessage.deleted ?? false,
-      has_quoted: targetMessage.has_quoted ?? false,
+      deleted: false,
+      has_quoted: false,
       content: {
         type: EMessageType.react,
         message: emoji,
-        reactions: targetMessage.content?.reactions ?? null,
+        reactions: [{ emoji }],
       },
-      date: new Date().toISOString(),
-      hash: hash,
+      date: targetMessage.date,
+      hash: null,
     };
   }
 
@@ -1482,6 +1627,10 @@ export class ChatMessageCreatorUseCase {
       throw new Error(context.t('message_not_found'));
     }
 
+    if (targetMessage.chat_id !== chatId) {
+      throw new Error(context.t('message_not_found'));
+    }
+
     if (
       !targetMessage.message_key?.id ||
       !targetMessage.message_key?.remote_jid
@@ -1495,28 +1644,43 @@ export class ChatMessageCreatorUseCase {
       );
     }
 
-    const updatedMessage = await this.markMessageAsDeleted(targetMessage);
+    const alreadyDeleted = targetMessage.deleted === true;
+    const updatedMessage = alreadyDeleted
+      ? targetMessage
+      : await this.markMessageAsDeleted(
+          targetMessage,
+          context.senderUser?.id,
+          context.webhookSource
+        );
 
     const deleteMessage = this.createDeleteMessage(
-      chat,
-      chatId,
       updatedMessage,
-      context.hash,
-      context.typeUser,
-      context.senderUser
+      this.requireActionOperationId(context),
+      context.typeUser
     );
     ensureMessageSendHash(deleteMessage);
 
-    await Promise.all([
-      this.publishProviderActionMessage(chat, deleteMessage),
-      this.centrifugoChatPublish(updatedMessage),
-    ]);
+    if (alreadyDeleted) {
+      await this.publishProviderActionMessage(chat, deleteMessage);
+    } else {
+      await this.publishProviderActionMessage(chat, deleteMessage);
+      try {
+        await this.centrifugoChatPublish(updatedMessage);
+      } catch (error) {
+        console.error(
+          '[WorkerCommand] Failed to publish delete projection after PubAck:',
+          error instanceof Error ? error.message : error
+        );
+      }
+    }
 
     return true;
   }
 
   private async markMessageAsDeleted(
-    message: IChatMessage
+    message: IChatMessage,
+    actorUserId?: string,
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<IChatMessage> {
     if (message.deleted) {
       return message;
@@ -1550,37 +1714,55 @@ export class ChatMessageCreatorUseCase {
       has_quoted: message.has_quoted,
       content: content,
     };
+    const deletionRevision =
+      message.outbound_webhook_event_ids?.at(-1) ??
+      message.hash ??
+      message.date;
 
-    await this.chatService.saveMessageChat(updatedMessage);
+    const persisted = await this.chatService.saveMessageChat(updatedMessage, {
+      eventTypes: ['message.deleted'],
+      idempotencyKey: `message-delete:${updatedMessage.message_id}:${deletionRevision}`,
+      source: webhookSource,
+      previousMessage: message,
+      actor: actorUserId
+        ? { type: 'user', id: actorUserId }
+        : { type: 'system' },
+      changes: {
+        deleted: true,
+        origin: webhookSource,
+      },
+    });
+    if (!persisted) {
+      throw new Error('message_delete_failed');
+    }
 
     return updatedMessage;
   }
 
   private createDeleteMessage(
-    chat: IChat,
-    chatId: string,
     targetMessage: IChatMessage,
-    hash: string | null,
-    typeUser: ETypeUserChat,
-    senderUser?: IChat['user'] | null
+    operationId: string,
+    typeUser: ETypeUserChat
   ): IChatMessage {
     return {
-      message_id: uuidv7(),
-      chat_id: chatId,
+      message_id: operationId,
+      chat_id: targetMessage.chat_id,
       message_key: {
         remote_jid: targetMessage.message_key?.remote_jid ?? null,
         remote_jid_alt: targetMessage.message_key?.remote_jid_alt ?? null,
         from_me: targetMessage.message_key?.from_me ?? false,
         id: targetMessage.message_key?.id ?? null,
         participant: targetMessage.message_key?.participant ?? null,
+        participant_alt: targetMessage.message_key?.participant_alt ?? null,
+        addressing_mode: targetMessage.message_key?.addressing_mode ?? null,
         is_view_once: false,
       },
       type_user: typeUser,
       sent_from_platform: true,
-      account: chat.account,
-      worker: chat.worker,
-      user: senderUser ?? chat.user ?? null,
-      phone: chat.phone,
+      account: targetMessage.account,
+      worker: targetMessage.worker,
+      user: null,
+      phone: targetMessage.phone,
       summary: {
         is_sent: false,
         is_delivered: false,
@@ -1588,12 +1770,20 @@ export class ChatMessageCreatorUseCase {
         is_sent_to_internal: true,
       },
       deleted: true,
-      has_quoted: targetMessage.has_quoted ?? false,
+      has_quoted: false,
       content: {
         type: EMessageType.delete_message,
       },
-      date: new Date().toISOString(),
-      hash: hash,
+      date: targetMessage.date,
+      hash: null,
     };
+  }
+
+  private requireActionOperationId(context: IMessageContext): string {
+    const operationId = context.messageId?.trim();
+    if (!operationId) {
+      throw new Error('worker_command_operation_id_required');
+    }
+    return operationId;
   }
 }

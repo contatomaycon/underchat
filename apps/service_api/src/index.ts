@@ -20,6 +20,10 @@ import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
 import startJobs from '@core/jobs';
+import planEntitlementTelemetryPlugin from '@core/plugins/planEntitlementTelemetry';
+import { installServiceApiGracefulShutdown } from '@core/common/functions/serviceApiGracefulShutdown';
+import workerRuntimeEventOutboxPlugin from '@/plugins/workerRuntimeEventOutbox.plugin';
+import { buildEnvironment } from '@core/config/environments';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -32,6 +36,8 @@ const server = fastify({
   logger: true,
 });
 
+installServiceApiGracefulShutdown(server);
+
 server.decorateRequest('module', ERouteModule.service);
 
 server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
@@ -39,6 +45,9 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
 });
 server.register(safePlugin(dbConnector, 'database'));
 server.register(safePlugin(redisPlugin, 'redis'));
+server.register(
+  safePlugin(planEntitlementTelemetryPlugin, 'planEntitlementTelemetry')
+);
 server.register(safePlugin(s3Plugin, 's3'));
 server.register(safePlugin(pushDeliveryPlugin, 'pushDelivery'));
 server.register(safePlugin(authenticateKeyApi, 'authenticateKeyApi'));
@@ -61,6 +70,9 @@ server.register(safePlugin(schedulePlugin, 'schedule'));
 server.register(
   safePlugin(serviceApiConsumersOnListenHook, 'serviceApiConsumersOnListen')
 );
+server.register(
+  safePlugin(workerRuntimeEventOutboxPlugin, 'workerRuntimeEventOutbox')
+);
 
 const start = async () => {
   try {
@@ -68,7 +80,10 @@ const start = async () => {
 
     console.log('Server running');
 
-    startJobs(server);
+    startJobs(server, {
+      enabled: buildEnvironment.serviceApiEnableNonBuildConsumers,
+      enableWorkerMonitor: false,
+    });
   } catch (err) {
     console.log(err);
 

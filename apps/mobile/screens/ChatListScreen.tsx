@@ -23,8 +23,10 @@ import {
   Platform,
   Switch,
   useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Octicons } from '@expo/vector-icons';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import ReanimatedSwipeable, {
   SwipeDirection,
@@ -172,6 +174,19 @@ import {
 } from '../utils/chatListBulkActions';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
+type IoniconName = keyof typeof Ionicons.glyphMap;
+type OcticonName = keyof typeof Octicons.glyphMap;
+type SwipeActionConfig = {
+  key: string;
+  visible: boolean;
+  style: StyleProp<ViewStyle>;
+  icon: IoniconName;
+  octicon?: OcticonName;
+  label: string;
+  loading: boolean;
+  disabled: boolean;
+  onPress: () => void;
+};
 
 const CHAT_STATUS = {
   all: 'my_chats' as const,
@@ -4583,211 +4598,13 @@ export function ChatListScreen({ route, navigation }: Props) {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal
+      <BottomSheetModal
         visible={transferModalVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="fade"
-        onRequestClose={closeTransferModal}
-      >
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoiding}
-          behavior={modalKeyboardAvoidingBehavior}
-          keyboardVerticalOffset={getModalKeyboardVerticalOffset(
-            insets.bottom + 8,
-            ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET
-          )}
-        >
-          <View
-            style={[
-              styles.transferOverlay,
-              { paddingBottom: 16 + insets.bottom },
-            ]}
-          >
-            <Pressable
-              style={styles.transferBackdrop}
-              onPress={dismissKeyboardAnd(closeTransferModal)}
-            />
-            <View style={styles.transferCard}>
-              <View style={styles.transferHeaderRow}>
-                <Text style={styles.transferTitle}>{pt.transfer_to}</Text>
-                <Pressable
-                  onPress={dismissKeyboardAnd(closeTransferModal)}
-                  hitSlop={12}
-                >
-                  <Ionicons name="close" size={22} color={colors.onSurface} />
-                </Pressable>
-              </View>
-
-              {isLoadingTransferOptions ? (
-                <View style={styles.transferLoadingWrap}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                </View>
-              ) : (
-                <>
-                  <SelectField
-                    label={pt.channel}
-                    valueLabel={selectedTransferChannelLabel}
-                    placeholder={pt.transfer_select_channel}
-                    onPress={dismissKeyboardAnd(() =>
-                      setTransferPickerKind('channel')
-                    )}
-                    containerStyle={styles.transferSelectContainer}
-                  />
-
-                  <SelectField
-                    label={pt.transfer_to}
-                    valueLabel={selectedTransferTypeLabel}
-                    placeholder={pt.transfer_to_placeholder}
-                    onPress={dismissKeyboardAnd(() =>
-                      setTransferPickerKind('type')
-                    )}
-                    containerStyle={styles.transferSelectContainer}
-                  />
-
-                  {transferType === 'user' ? (
-                    <SelectField
-                      label={pt.attendant}
-                      valueLabel={selectedTransferUserLabel}
-                      placeholder={pt.transfer_select_user}
-                      onPress={dismissKeyboardAnd(() =>
-                        setTransferPickerKind('user')
-                      )}
-                      containerStyle={styles.transferSelectContainer}
-                    />
-                  ) : null}
-
-                  {transferType === 'sector' ? (
-                    <>
-                      <SelectField
-                        label={pt.sector}
-                        valueLabel={selectedTransferSectorLabel}
-                        placeholder={pt.transfer_select_sector}
-                        onPress={dismissKeyboardAnd(() =>
-                          setTransferPickerKind('sector')
-                        )}
-                        containerStyle={styles.transferSelectContainer}
-                      />
-
-                      <SelectField
-                        label={pt.transfer_sector_user_optional}
-                        valueLabel={selectedTransferSectorUserLabel}
-                        placeholder={pt.transfer_select_sector_user}
-                        onPress={dismissKeyboardAnd(() =>
-                          setTransferPickerKind('sector_user')
-                        )}
-                        disabled={!selectedTransferSectorId}
-                        loading={isLoadingTransferSectorUsers}
-                        containerStyle={styles.transferSelectContainer}
-                      />
-                    </>
-                  ) : null}
-
-                  {transferType === 'chatbot' ? (
-                    <SelectField
-                      label={pt.chatbot}
-                      valueLabel={selectedTransferChatbotLabel}
-                      placeholder={pt.transfer_select_chatbot}
-                      onPress={dismissKeyboardAnd(() =>
-                        setTransferPickerKind('chatbot')
-                      )}
-                      disabled={!selectedTransferChannelId}
-                      containerStyle={styles.transferSelectContainer}
-                    />
-                  ) : null}
-
-                  <Text style={styles.transferFieldLabel}>
-                    {pt.transfer_annotation}
-                  </Text>
-                  <TextInput
-                    style={styles.transferAnnotationInput}
-                    value={transferAnnotation}
-                    onChangeText={setTransferAnnotation}
-                    placeholder={pt.transfer_annotation_placeholder}
-                    placeholderTextColor={colors.grey500}
-                    multiline
-                    maxLength={300}
-                  />
-
-                  {transferType !== 'chatbot' ? (
-                    <View style={styles.transferKeepInChatRow}>
-                      <View style={styles.transferKeepInChatTextWrap}>
-                        <Text style={styles.transferKeepInChatLabel}>
-                          {pt.keep_in_chat}
-                        </Text>
-                        <Text style={styles.transferKeepInChatDescription}>
-                          {pt.keep_in_chat_description}
-                        </Text>
-                      </View>
-                      <Switch
-                        value={transferKeepInChat}
-                        onValueChange={setTransferKeepInChat}
-                        trackColor={{
-                          false: colors.grey300,
-                          true: colors.primary,
-                        }}
-                        thumbColor={colors.onPrimary}
-                      />
-                    </View>
-                  ) : null}
-
-                  {shouldShowTransferSendMessageToggle ? (
-                    <View style={styles.transferKeepInChatRow}>
-                      <View style={styles.transferKeepInChatTextWrap}>
-                        <Text style={styles.transferKeepInChatLabel}>
-                          {pt.send_message_on_transfer}
-                        </Text>
-                        <Text style={styles.transferKeepInChatDescription}>
-                          {pt.send_message_on_transfer_description}
-                        </Text>
-                      </View>
-                      <Switch
-                        value={transferSendMessageOnTransfer}
-                        onValueChange={setTransferSendMessageOnTransfer}
-                        trackColor={{
-                          false: colors.grey300,
-                          true: colors.primary,
-                        }}
-                        thumbColor={colors.onPrimary}
-                      />
-                    </View>
-                  ) : null}
-
-                  <View style={styles.transferActionsRow}>
-                    <Pressable
-                      style={styles.transferCancelBtn}
-                      onPress={dismissKeyboardAnd(closeTransferModal)}
-                      disabled={isTransferring}
-                    >
-                      <Text style={styles.transferCancelText}>{pt.cancel}</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.transferSubmitBtn,
-                        isTransferring && styles.actionBtnDisabled,
-                      ]}
-                      onPress={dismissKeyboardAnd(() => {
-                        void submitTransfer();
-                      })}
-                      disabled={isTransferring}
-                    >
-                      {isTransferring ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.onPrimary}
-                        />
-                      ) : (
-                        <Text style={styles.transferSubmitText}>
-                          {pt.transfer}
-                        </Text>
-                      )}
-                    </Pressable>
-                  </View>
-                </>
-              )}
-            </View>
-          </View>
+        onClose={closeTransferModal}
+        title={pt.transfer}
+        cardStyle={styles.transferSheetCard}
+        noScroll
+        extraContent={
           <SelectSheet
             visible={transferPickerKind !== null}
             title={transferPickerTitle}
@@ -4798,10 +4615,186 @@ export function ChatListScreen({ route, navigation }: Props) {
             onRequestClose={dismissKeyboardAnd(() =>
               setTransferPickerKind(null)
             )}
-            onSelectValue={handleSelectTransferPickerValue}
+            onSelectValue={dismissKeyboardAnd(handleSelectTransferPickerValue)}
           />
-        </KeyboardAvoidingView>
-      </Modal>
+        }
+        footer={
+          <>
+            <Pressable
+              style={styles.transferSheetCancelBtn}
+              onPress={dismissKeyboardAnd(closeTransferModal)}
+              disabled={isTransferring}
+            >
+              <Text style={styles.transferSheetCancelText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.transferSheetSubmitBtn,
+                (isTransferring || isLoadingTransferOptions) &&
+                  styles.actionBtnDisabled,
+              ]}
+              onPress={dismissKeyboardAnd(() => {
+                void submitTransfer();
+              })}
+              disabled={isTransferring || isLoadingTransferOptions}
+            >
+              {isTransferring ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.transferSheetSubmitText}>
+                  {pt.transfer}
+                </Text>
+              )}
+            </Pressable>
+          </>
+        }
+      >
+        {isLoadingTransferOptions ? (
+          <View style={styles.transferLoadingWrap}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : (
+          <ScrollView
+            style={styles.transferFormScroll}
+            contentContainerStyle={styles.transferFormContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={
+              Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+            }
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.transferFormField}>
+              <SelectField
+                label={pt.channel}
+                valueLabel={selectedTransferChannelLabel}
+                placeholder={pt.transfer_select_channel}
+                onPress={dismissKeyboardAnd(() =>
+                  setTransferPickerKind('channel')
+                )}
+              />
+            </View>
+
+            <View style={styles.transferFormField}>
+              <SelectField
+                label={pt.transfer_to}
+                valueLabel={selectedTransferTypeLabel}
+                placeholder={pt.transfer_to_placeholder}
+                onPress={dismissKeyboardAnd(() =>
+                  setTransferPickerKind('type')
+                )}
+              />
+            </View>
+
+            {transferType === 'user' ? (
+              <View style={styles.transferFormField}>
+                <SelectField
+                  label={pt.attendant}
+                  valueLabel={selectedTransferUserLabel}
+                  placeholder={pt.transfer_select_user}
+                  onPress={dismissKeyboardAnd(() =>
+                    setTransferPickerKind('user')
+                  )}
+                />
+              </View>
+            ) : null}
+
+            {transferType === 'sector' ? (
+              <>
+                <View style={styles.transferFormField}>
+                  <SelectField
+                    label={pt.sector}
+                    valueLabel={selectedTransferSectorLabel}
+                    placeholder={pt.transfer_select_sector}
+                    onPress={dismissKeyboardAnd(() =>
+                      setTransferPickerKind('sector')
+                    )}
+                  />
+                </View>
+
+                <View style={styles.transferFormField}>
+                  <SelectField
+                    label={pt.transfer_sector_user_optional}
+                    valueLabel={selectedTransferSectorUserLabel}
+                    placeholder={pt.transfer_select_sector_user}
+                    onPress={dismissKeyboardAnd(() =>
+                      setTransferPickerKind('sector_user')
+                    )}
+                    disabled={!selectedTransferSectorId}
+                    loading={isLoadingTransferSectorUsers}
+                  />
+                </View>
+              </>
+            ) : null}
+
+            {transferType === 'chatbot' ? (
+              <View style={styles.transferFormField}>
+                <SelectField
+                  label={pt.chatbot}
+                  valueLabel={selectedTransferChatbotLabel}
+                  placeholder={pt.transfer_select_chatbot}
+                  onPress={dismissKeyboardAnd(() =>
+                    setTransferPickerKind('chatbot')
+                  )}
+                  disabled={!selectedTransferChannelId}
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.transferFormField}>
+              <Text style={styles.transferFormFieldLabel}>
+                {pt.transfer_annotation}
+              </Text>
+              <TextInput
+                style={styles.transferSheetAnnotationInput}
+                value={transferAnnotation}
+                onChangeText={setTransferAnnotation}
+                placeholder={pt.transfer_annotation_placeholder}
+                placeholderTextColor={colors.grey500}
+                multiline
+                maxLength={300}
+              />
+            </View>
+
+            {transferType !== 'chatbot' ? (
+              <View style={styles.transferSheetToggleRow}>
+                <View style={styles.transferSheetToggleTextWrap}>
+                  <Text style={styles.transferSheetToggleLabel}>
+                    {pt.keep_in_chat}
+                  </Text>
+                  <Text style={styles.transferSheetToggleDescription}>
+                    {pt.keep_in_chat_description}
+                  </Text>
+                </View>
+                <Switch
+                  value={transferKeepInChat}
+                  onValueChange={setTransferKeepInChat}
+                  trackColor={{ false: colors.grey300, true: colors.primary }}
+                  thumbColor={colors.onPrimary}
+                />
+              </View>
+            ) : null}
+
+            {shouldShowTransferSendMessageToggle ? (
+              <View style={styles.transferSheetToggleRow}>
+                <View style={styles.transferSheetToggleTextWrap}>
+                  <Text style={styles.transferSheetToggleLabel}>
+                    {pt.send_message_on_transfer}
+                  </Text>
+                  <Text style={styles.transferSheetToggleDescription}>
+                    {pt.send_message_on_transfer_description}
+                  </Text>
+                </View>
+                <Switch
+                  value={transferSendMessageOnTransfer}
+                  onValueChange={setTransferSendMessageOnTransfer}
+                  trackColor={{ false: colors.grey300, true: colors.primary }}
+                  thumbColor={colors.onPrimary}
+                />
+              </View>
+            ) : null}
+          </ScrollView>
+        )}
+      </BottomSheetModal>
       <Modal
         visible={bulkTransferModalVisible}
         transparent
@@ -5353,11 +5346,13 @@ export function ChatListScreen({ route, navigation }: Props) {
             const closeSwipeLabel =
               pt.close_service.split(' ')[0] || pt.close_service;
 
-            const queueActions = [
+            const queueActionOptions: SwipeActionConfig[] = [
               {
                 key: 'pin',
                 visible: canPinItem,
                 style: styles.swipePinBtn,
+                icon: isPinned ? 'pin' : 'pin-outline',
+                octicon: isPinned ? 'pin-slash' : 'pin',
                 label: isPinned ? pt.unpin : pt.pin,
                 loading: pinLoading,
                 disabled: pinLoading,
@@ -5370,6 +5365,7 @@ export function ChatListScreen({ route, navigation }: Props) {
                 key: 'attend',
                 visible: canShowLifecycleSwipeActions && isQueueItem,
                 style: styles.swipeAttendBtn,
+                icon: 'chatbubble-ellipses-outline',
                 label: pt.attend_service,
                 loading: attendingChatId === item.chat_id,
                 disabled:
@@ -5389,6 +5385,7 @@ export function ChatListScreen({ route, navigation }: Props) {
                 key: 'transfer',
                 visible: canShowLifecycleSwipeActions && canTransferItem,
                 style: styles.swipeTransferBtn,
+                icon: 'swap-horizontal-outline',
                 label: pt.transfer,
                 loading: false,
                 disabled: attendingChatId !== null,
@@ -5401,6 +5398,7 @@ export function ChatListScreen({ route, navigation }: Props) {
                 key: 'close',
                 visible: canShowLifecycleSwipeActions && canCloseItem,
                 style: styles.swipeCloseBtn,
+                icon: 'close-circle-outline',
                 label: closeSwipeLabel,
                 loading: false,
                 disabled: attendingChatId !== null,
@@ -5408,18 +5406,18 @@ export function ChatListScreen({ route, navigation }: Props) {
                   handleCloseChat(item);
                 },
               },
-            ].filter((action) => action.visible);
+            ];
+            const queueActions = queueActionOptions.filter(
+              (action) => action.visible
+            );
 
             if (!canSwipe || queueActions.length === 0) {
               return row;
             }
 
-            const maxActionsWidth = Math.max(
-              140,
-              Math.floor(screenWidth * 0.65)
-            );
-            const actionWidth = Math.floor(
-              maxActionsWidth / Math.max(queueActions.length, 1)
+            const actionWidth = Math.min(
+              82,
+              Math.max(68, Math.floor(screenWidth * 0.19))
             );
             const rowSwipeableRef = createRef<SwipeableMethods | null>();
 
@@ -5468,9 +5466,12 @@ export function ChatListScreen({ route, navigation }: Props) {
                         {queueActions.map((action) => (
                           <Pressable
                             key={`${item.chat_id}-${action.key}`}
-                            style={[
+                            accessibilityRole="button"
+                            accessibilityLabel={action.label}
+                            style={({ pressed }) => [
                               styles.swipeActionBtn,
                               action.style,
+                              pressed && styles.swipeActionBtnPressed,
                               action.disabled && styles.actionBtnDisabled,
                               { width: actionWidth },
                             ]}
@@ -5484,12 +5485,32 @@ export function ChatListScreen({ route, navigation }: Props) {
                                   color={colors.onPrimary}
                                 />
                               ) : (
-                                <Text
-                                  style={styles.swipeActionText}
-                                  numberOfLines={1}
-                                >
-                                  {action.label}
-                                </Text>
+                                <>
+                                  <View style={styles.swipeActionIconBadge}>
+                                    {action.octicon ? (
+                                      <Octicons
+                                        name={action.octicon}
+                                        size={14}
+                                        color={colors.onPrimary}
+                                      />
+                                    ) : (
+                                      <Ionicons
+                                        name={action.icon}
+                                        size={16}
+                                        color={colors.onPrimary}
+                                      />
+                                    )}
+                                  </View>
+                                  <Text
+                                    style={styles.swipeActionText}
+                                    numberOfLines={1}
+                                    adjustsFontSizeToFit
+                                    minimumFontScale={0.78}
+                                    maxFontSizeMultiplier={1.1}
+                                  >
+                                    {action.label}
+                                  </Text>
+                                </>
                               )}
                             </View>
                           </Pressable>
@@ -6120,16 +6141,32 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   swipeActionBtn: {
-    minWidth: 68,
+    minWidth: 64,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+  },
+  swipeActionBtnPressed: {
+    opacity: 0.86,
   },
   swipeActionTextWrap: {
-    transform: [{ rotate: '-90deg' }],
     alignItems: 'center',
     justifyContent: 'center',
-    width: 92,
+    gap: 4,
+    width: '100%',
+    minHeight: 48,
+  },
+  swipeActionIconBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
   },
   swipeAttendBtn: {
     backgroundColor: colors.success,
@@ -6145,9 +6182,11 @@ const styles = StyleSheet.create({
   },
   swipeActionText: {
     color: colors.onPrimary,
-    fontSize: 13,
+    fontSize: 10,
+    lineHeight: 12,
     fontWeight: '700',
     textAlign: 'center',
+    width: '100%',
   },
   keyboardAvoiding: {
     flex: 1,
@@ -6166,6 +6205,91 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     maxHeight: '88%',
+  },
+  transferSheetCard: {
+    maxHeight: '88%',
+  },
+  transferFormScroll: {
+    flexShrink: 1,
+    minHeight: 0,
+  },
+  transferFormContent: {
+    gap: 12,
+    paddingBottom: 16,
+  },
+  transferFormField: {
+    gap: 6,
+  },
+  transferFormFieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.grey700,
+  },
+  transferSheetAnnotationInput: {
+    minHeight: 86,
+    maxHeight: 130,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: colors.onSurface,
+    textAlignVertical: 'top',
+  },
+  transferSheetToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 8,
+  },
+  transferSheetToggleTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  transferSheetToggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  transferSheetToggleDescription: {
+    marginTop: 2,
+    fontSize: 12,
+    color: colors.grey700,
+    lineHeight: 16,
+  },
+  transferSheetCancelBtn: {
+    minHeight: 40,
+    borderRadius: 10,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  transferSheetCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  transferSheetSubmitBtn: {
+    minHeight: 40,
+    borderRadius: 10,
+    borderCurve: 'continuous',
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  transferSheetSubmitText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onPrimary,
   },
   closeServiceCard: {
     backgroundColor: colors.surface,

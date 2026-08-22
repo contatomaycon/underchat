@@ -19,9 +19,17 @@ export class BaileysMessageLocationContactService {
   sendLocation(
     jid: string,
     location: WALocationMessage & { contextInfo?: proto.IContextInfo },
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
-    return this.baileysHelpersService.send(jid, { location }, options);
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          { location },
+          options,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, { location }, options);
   }
 
   /**
@@ -32,13 +40,21 @@ export class BaileysMessageLocationContactService {
     vcard: string,
     displayName?: string,
     contextInfo?: proto.IContextInfo,
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
-    return this.baileysHelpersService.send(
-      jid,
-      { contacts: { displayName, contacts: [{ vcard }] }, contextInfo },
-      options
-    );
+    const content = {
+      contacts: { displayName, contacts: [{ vcard }] },
+      contextInfo,
+    };
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          content,
+          options,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, content, options);
   }
 
   /**
@@ -49,15 +65,20 @@ export class BaileysMessageLocationContactService {
     vcards: string[],
     displayName?: string,
     contextInfo?: proto.IContextInfo,
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
-    return this.baileysHelpersService.send(
-      jid,
-      {
-        contacts: { displayName, contacts: vcards.map((vcard) => ({ vcard })) },
-        contextInfo,
-      },
-      options
-    );
+    const content = {
+      contacts: { displayName, contacts: vcards.map((vcard) => ({ vcard })) },
+      contextInfo,
+    };
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          content,
+          options,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, content, options);
   }
 }

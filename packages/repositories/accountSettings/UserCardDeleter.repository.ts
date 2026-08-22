@@ -21,6 +21,7 @@ export class UserCardDeleterRepository {
       .update(userCard)
       .set({
         deleted_at: date,
+        default: false,
         updated_at: date,
       })
       .where(

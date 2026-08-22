@@ -12,10 +12,12 @@ import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import redisPlugin from '@core/plugins/redis';
 import workerGrpcServerPlugin from '@core/plugins/proto/workerGrpcServer';
+import workerImageReconcilerPlugin from '@core/plugins/workerImageReconciler';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
+import { installBalanceApiGracefulShutdown } from '@core/common/functions/balanceApiGracefulShutdown';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -27,6 +29,8 @@ const server = fastify({
   genReqId: () => v7(),
   logger: true,
 });
+
+const balanceApiShutdown = installBalanceApiGracefulShutdown(server);
 
 server.decorateRequest('module', ERouteModule.balancer);
 
@@ -53,6 +57,9 @@ server.register(safePlugin(routes, 'routes', true), {
 });
 server.register(safePlugin(fastifyQs, 'fastifyQs'));
 server.register(safePlugin(workerGrpcServerPlugin, 'workerGrpcServer'));
+server.register(
+  safePlugin(workerImageReconcilerPlugin, 'workerImageReconciler')
+);
 
 const start = async () => {
   try {
@@ -60,6 +67,10 @@ const start = async () => {
 
     console.log('Server running');
   } catch (err) {
+    if (balanceApiShutdown.isShuttingDown()) {
+      return;
+    }
+
     console.log(err);
 
     console.error(err);

@@ -1,7 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
-import { ChatService } from '@core/services/chat.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import { DisconnectWhatsappOfficialResponse } from '@core/schema/worker/disconnectWhatsappOfficial/response.schema';
@@ -17,8 +16,6 @@ export class WhatsappOfficialDisconnecterUseCase {
   constructor(
     @inject(WorkerService)
     private readonly workerService: WorkerService,
-    @inject(ChatService)
-    private readonly chatService: ChatService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(WorkerWhatsappOfficialConnectionRepository)
@@ -41,19 +38,6 @@ export class WhatsappOfficialDisconnecterUseCase {
 
     if (worker.type?.id !== EWorkerType.whatsapp) {
       throw new Error(input.t('whatsapp_official_disconnect_only_official'));
-    }
-
-    const openChatsCount = await this.chatService.countOpenChatsByWorkerId(
-      input.accountId,
-      input.workerId
-    );
-
-    if (openChatsCount > 0) {
-      throw new Error(
-        input.t('channel_delete_has_open_conversations', {
-          count: openChatsCount,
-        })
-      );
     }
 
     return { worker };

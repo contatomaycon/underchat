@@ -126,6 +126,87 @@ export const pt = {
   attendance_only_online_required:
     'Este canal exige atendente online para abrir conversa.',
   chat_creation_error: 'Não foi possível abrir a conversa com este contato.',
+  approved: 'Aprovado',
+  add: 'Adicionar',
+  remove: 'Remover',
+  official_whatsapp_interactive: 'Resposta interativa',
+  official_whatsapp_button: 'Botão',
+  official_whatsapp_order: 'Pedido',
+  official_whatsapp_unsupported: 'Mensagem não suportada',
+  official_whatsapp_unsupported_hint:
+    'Abra a conversa no WhatsApp para visualizar este conteúdo.',
+  official_whatsapp_echo: 'Enviado pelo WhatsApp Business',
+  official_whatsapp_referral: 'Origem da conversa',
+  official_templates_loading: 'Carregando modelos aprovados da Meta...',
+  official_templates_loading_error:
+    'Não foi possível carregar os modelos aprovados da Meta.',
+  official_templates_empty:
+    'Este canal oficial não possui modelos aprovados disponíveis na Meta.',
+  official_template_model: 'Modelo de template',
+  select_official_template: 'Selecione o modelo aprovado',
+  official_template_available_variables: 'Variáveis disponíveis',
+  chatbot_message_variables_legend: 'Variáveis',
+  template_variable_index: 'Índice',
+  template_variable_button_index: 'Índice do botão',
+  template_variable_value: 'Valor da variável',
+  official_template_required_for_opening:
+    'Selecione um modelo aprovado e preencha as variáveis para abrir a conversa oficial.',
+  official_window_status: 'Janela oficial do WhatsApp',
+  official_window_open_title: 'Janela de atendimento aberta',
+  official_window_open_description:
+    'A conversa pode ser aberta agora sem enviar um novo template.',
+  official_window_awaiting_title: 'Aguardando resposta do contato',
+  official_window_awaiting_description:
+    'Já existe uma conversa oficial iniciada. Aguarde o contato responder ou o prazo de 24 horas terminar.',
+  official_window_opening_awaiting_description:
+    'Já existe uma conversa iniciada. Uma nova abertura será liberada quando o contato responder ou após 24 horas; depois do prazo, escolha um novo template.',
+  official_window_uncertain_title: 'Aguardando confirmação do WhatsApp',
+  official_window_uncertain_description:
+    'O template foi encaminhado e aguarda confirmação do WhatsApp. Para evitar mensagem duplicada, um novo envio ficará bloqueado até a confirmação ou o fim do prazo de segurança.',
+  official_window_opening_uncertain_description:
+    'O template foi encaminhado e aguarda confirmação do WhatsApp. O envio permanece bloqueado temporariamente para evitar duplicidade.',
+  official_window_closed_title: 'Janela oficial encerrada',
+  official_window_no_history_title: 'Sem janela de atendimento ativa',
+  official_window_closed_description:
+    'A janela de 24h do WhatsApp oficial está fechada. Envie um template aprovado para reengajar o contato.',
+  official_window_opening_closed_description:
+    'Selecione um template aprovado para iniciar o contato com segurança.',
+  official_window_no_history_description:
+    'Este contato ainda não iniciou uma janela de 24h neste canal. Um template aprovado é necessário.',
+  official_window_started_at: 'Iniciada ou renovada em',
+  official_window_closes_at: 'Encerra em',
+  official_window_template_sent_at: 'Template enviado em',
+  official_window_reply_wait_expires_at: 'Nova abertura disponível em',
+  official_window_template_requested_at: 'Template encaminhado em',
+  official_window_uncertain_expires_at: 'Novo envio disponível em',
+  official_opening_waiting_action: 'Aguardando resposta',
+  official_opening_uncertain_action: 'Aguardando confirmação',
+  official_window_remaining: 'Tempo restante',
+  official_window_error_title: 'Não foi possível consultar a janela',
+  official_window_refresh_required:
+    'A janela encerrou enquanto você preenchia o formulário. Selecione um template para continuar.',
+  try_again: 'Tentar novamente',
+  official_template_insert_variable: 'Inserir variável',
+  official_template_variables_resolved_hint:
+    'As variáveis serão resolvidas com os dados atuais no momento do envio.',
+  official_window_send_template: 'Enviar template',
+  official_template_conversation_modal_title: 'Enviar template oficial',
+  official_template_conversation_send: 'Enviar template',
+  official_template_send_and_open: 'Enviar template e abrir',
+  official_template_conversation_success:
+    'Template oficial enviado com sucesso.',
+  official_template_conversation_queued:
+    'Template encaminhado para processamento. A confirmação do WhatsApp aparecerá na mensagem.',
+  official_template_conversation_error:
+    'Não foi possível enviar o template oficial.',
+  official_message_send_failed: 'Não foi possível enviar esta mensagem.',
+  official_message_send_failed_provider:
+    'O provedor rejeitou a mensagem (código {code}).',
+  official_message_send_failed_template_parameters:
+    'A Meta rejeitou o template: a quantidade de parâmetros não corresponde ao modelo aprovado (132000).',
+  official_message_send_confirmation_pending:
+    'A confirmação do provedor não retornou. O WhatsApp pode ter recebido a mensagem; aguarde antes de tentar novamente.',
+  processing_title: 'Processando',
   contact_photo_delete_error:
     'Erro ao remover a foto do contato. Tente novamente.',
   contact_label_template_remove_error: 'Erro ao remover etiqueta do contato.',
@@ -197,7 +278,8 @@ export const pt = {
   biometric_unlock: 'Desbloquear',
   biometric_use_password: 'Entrar com email e senha',
   channel_status: 'Status dos Canais',
-  channel_online: 'Online',
+  channel_online: 'Conectado',
+  channel_awaiting_qr: 'Aguardando leitura do QR code',
   channel_offline: 'Offline',
   channel_error: 'Erro',
   channel_stopped: 'Parado',

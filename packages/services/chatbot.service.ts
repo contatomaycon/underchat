@@ -33,6 +33,8 @@ import { ListChatbotChannelsResponse } from '@core/schema/chatbot/listChannels/r
 import { OfficialCapabilitiesResponse } from '@core/schema/chatbot/officialCapabilities/response.schema';
 import { ChatbotOfficialCompatibilityRepository } from '@core/repositories/chatbot/ChatbotOfficialCompatibility.repository';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EChatbotStatus } from '@core/common/enums/EChatbotStatus';
+import { isOfficialWaitForResponseNodeType } from '@core/common/functions/chatbotOfficialNodes';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -99,6 +101,16 @@ export class ChatbotService {
 
   listChatbots = async (accountId: string): Promise<ListChatbotResponse[]> => {
     return this.chatbotListerRepository.listChatbots(accountId);
+  };
+
+  isChatbotActive = async (
+    accountId: string,
+    chatbotId: string
+  ): Promise<boolean> => {
+    const chatbots = await this.listChatbots(accountId);
+    const item = chatbots.find((chatbot) => chatbot.chatbot_id === chatbotId);
+
+    return item?.status === EChatbotStatus.active;
   };
 
   listChatbotTags = async (
@@ -267,11 +279,29 @@ export class ChatbotService {
     return null;
   }
 
+  private getCanonicalOfficialContinueType(
+    nodeType: string
+  ): 'automatic' | 'after_response' | null {
+    if (nodeType === 'officialCtaUrl') {
+      return 'automatic';
+    }
+
+    return isOfficialWaitForResponseNodeType(nodeType)
+      ? 'after_response'
+      : null;
+  }
+
   private normalizeFlowNodesForStorage(
     nodes: SaveChatbotFlowRequestData['nodes']
   ): SaveChatbotFlowRequestData['nodes'] {
     return nodes.map((node) => {
       const data = node.data as Record<string, unknown>;
+      const canonicalContinueType = this.getCanonicalOfficialContinueType(
+        node.type
+      );
+      const shouldNormalizeContinueType =
+        canonicalContinueType !== null &&
+        data.continueType !== canonicalContinueType;
       const hasLatitude = Object.prototype.hasOwnProperty.call(
         data,
         'latitude'
@@ -281,8 +311,21 @@ export class ChatbotService {
         'longitude'
       );
 
-      if (!hasLatitude && !hasLongitude) {
+      if (!hasLatitude && !hasLongitude && !shouldNormalizeContinueType) {
         return node;
+      }
+
+      const nextData: Record<string, unknown> = { ...data };
+
+      if (shouldNormalizeContinueType) {
+        nextData.continueType = canonicalContinueType;
+      }
+
+      if (!hasLatitude && !hasLongitude) {
+        return {
+          ...node,
+          data: nextData,
+        } as ChatbotFlowNode;
       }
 
       const latitudeText = this.normalizeCoordinateValueForStorage(
@@ -292,7 +335,6 @@ export class ChatbotService {
         data.longitude
       );
 
-      const nextData: Record<string, unknown> = { ...data };
       delete nextData.latitude;
       delete nextData.longitude;
 
@@ -320,6 +362,12 @@ export class ChatbotService {
   ): ListChatbotFlowResponse['nodes'] {
     return nodes.map((node): ListChatbotFlowResponse['nodes'][number] => {
       const data = node.data as Record<string, unknown>;
+      const canonicalContinueType = this.getCanonicalOfficialContinueType(
+        node.type
+      );
+      const shouldNormalizeContinueType =
+        canonicalContinueType !== null &&
+        data.continueType !== canonicalContinueType;
       const latitude =
         typeof data.latitude === 'number' || typeof data.latitude === 'string'
           ? data.latitude
@@ -329,7 +377,11 @@ export class ChatbotService {
           ? data.longitude
           : this.normalizeCoordinateValueForStorage(data.longitudeText);
 
-      if (latitude === data.latitude && longitude === data.longitude) {
+      if (
+        latitude === data.latitude &&
+        longitude === data.longitude &&
+        !shouldNormalizeContinueType
+      ) {
         return node;
       }
 
@@ -343,6 +395,10 @@ export class ChatbotService {
 
       if (longitude !== null && longitude !== undefined) {
         nextData.longitude = longitude;
+      }
+
+      if (shouldNormalizeContinueType) {
+        nextData.continueType = canonicalContinueType;
       }
 
       return {
@@ -411,8 +467,16 @@ export class ChatbotService {
 
   findChatbotFlowByChatbotId = async (
     accountId: string,
-    chatbotId: string
+    chatbotId: string,
+    options: { includeInactive?: boolean } = {}
   ): Promise<ListChatbotFlowResponse | null> => {
+    if (
+      !options.includeInactive &&
+      !(await this.isChatbotActive(accountId, chatbotId))
+    ) {
+      return null;
+    }
+
     const queryElastic = {
       size: 1,
       _source: true,
@@ -447,6 +511,43 @@ export class ChatbotService {
         queryElastic
       );
 
+    const hit = result?.hits?.hits?.[0] as
+      ElasticHit<ListChatbotFlowResponse> | undefined;
+
+    if (!hit?._source) {
+      return null;
+    }
+
+    return {
+      ...hit._source,
+      nodes: this.hydrateFlowNodesFromStorage(hit._source.nodes),
+    };
+  };
+
+  findChatbotFlowById = async (
+    accountId: string,
+    chatbotId: string,
+    chatbotFlowId: string
+  ): Promise<ListChatbotFlowResponse | null> => {
+    const queryElastic = {
+      size: 1,
+      _source: true,
+      query: {
+        bool: {
+          filter: [
+            { term: { account_id: accountId } },
+            { term: { chatbot_id: chatbotId } },
+            { term: { chatbot_flow_id: chatbotFlowId } },
+          ],
+        },
+      },
+    };
+
+    const result =
+      await this.elasticDatabaseService.select<ListChatbotFlowResponse>(
+        EElasticIndex.chatbot_flow,
+        queryElastic
+      );
     const hit = result?.hits?.hits?.[0] as
       ElasticHit<ListChatbotFlowResponse> | undefined;
 
@@ -512,6 +613,10 @@ export class ChatbotService {
     accountId: string,
     chatbotId: string
   ): Promise<ListChatbotFlowConfigurationsResponse | null> => {
+    if (!(await this.isChatbotActive(accountId, chatbotId))) {
+      return null;
+    }
+
     const queryElastic = {
       size: 1,
       _source: true,

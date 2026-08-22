@@ -1,5 +1,4 @@
-import { injectable, inject } from 'tsyringe';
-import { KafkaService } from './kafka.service';
+import { injectable } from 'tsyringe';
 import { KAFKA_WORKER_TOPIC_CONFIG } from '@core/common/functions/kafkaTopicConfig';
 
 @injectable()
@@ -7,11 +6,6 @@ export class KafkaBalanceQueueService {
   static readonly NUM_PARTITIONS = KAFKA_WORKER_TOPIC_CONFIG.numPartitions;
   static readonly REPLICATION_FACTOR =
     KAFKA_WORKER_TOPIC_CONFIG.replicationFactor;
-
-  constructor(
-    @inject(KafkaService)
-    private readonly kafkaService: KafkaService
-  ) {}
 
   getNumPartitions(): number {
     return KafkaBalanceQueueService.NUM_PARTITIONS;
@@ -28,13 +22,10 @@ export class KafkaBalanceQueueService {
   };
 
   delete = (serverId: string): Promise<void> => {
-    const allTopics = this.all(serverId);
-
-    return this.kafkaService.deleteTopics(allTopics);
-  };
-
-  close = async (): Promise<void> => {
-    await this.kafkaService.close();
+    void serverId;
+    return Promise.reject(
+      new Error('runtime_balance_kafka_topic_deletion_disabled')
+    );
   };
 
   worker = (serverId: string) => {

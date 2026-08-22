@@ -1,5 +1,8 @@
 import { injectable, inject } from 'tsyringe';
-import { WwebjsHelpersService } from './helpers.service';
+import {
+  WwebjsHelpersService,
+  type WwebjsProviderInvocationBoundary,
+} from './helpers.service';
 import { messageToWaLike } from '../util/messageToWaLike';
 import {
   resolveQuotedMessageId,
@@ -22,7 +25,8 @@ export class WwebjsMessageTextService {
       linkPreview?: IWAUrlInfo | null;
       mentions?: string[];
       extra?: Record<string, unknown>;
-    }
+    },
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<IMessageKeyResponse | undefined> {
     const sendOptions: {
       linkPreview?: boolean;
@@ -36,7 +40,12 @@ export class WwebjsMessageTextService {
       sendOptions.mentions = options.mentions;
     }
 
-    const msg = await this.helpers.sendMessage(jid, text, sendOptions);
+    const msg = await this.helpers.sendMessage(
+      jid,
+      text,
+      sendOptions,
+      beforeProviderInvoke
+    );
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -44,13 +53,20 @@ export class WwebjsMessageTextService {
     jid: string,
     text: string,
     quoted: { key: IWwebjsQuotedKeyInput },
-    options?: { extra?: Record<string, unknown> }
+    options?: { extra?: Record<string, unknown> },
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const quotedMessageId = await resolveQuotedMessageId(
       client,
       jid,
-      quoted.key
+      quoted.key,
+      (invoke) =>
+        this.helpers.invokeProviderLookup(
+          client,
+          'quoted_message_lookup',
+          invoke
+        )
     );
     const sendOptions: {
       quotedMessageId?: string;
@@ -63,7 +79,12 @@ export class WwebjsMessageTextService {
       sendOptions.quotedMessageId = quotedMessageId;
       sendOptions.ignoreQuoteErrors = false;
     }
-    const msg = await this.helpers.sendMessage(jid, text, sendOptions);
+    const msg = await this.helpers.sendMessage(
+      jid,
+      text,
+      sendOptions,
+      beforeProviderInvoke
+    );
 
     return messageToWaLike(msg ?? undefined);
   }

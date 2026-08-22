@@ -4,6 +4,16 @@ import { messageToWaLike } from '../util/messageToWaLike';
 import type { IMessageKeyResponse } from '@core/common/interfaces/IMessageKeyResponse';
 import type { IMessageKeyInput } from '@core/common/interfaces/IMessageKeyInput';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
+import { extractWwebjsMessageId } from '../util/wwebjsMessageId';
+import type { Client } from '@wwebjs/whatsapp-web.js';
+import { isProviderAuxiliaryInvocationFenceError } from '@core/common/functions/providerAuxiliaryInvocation';
+import { workerErrorDiagnostics } from '@core/common/functions/workerErrorDiagnostics';
+import { createHash } from 'node:crypto';
+
+function hashWwebjsEditLogIdentifier(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return `sha256:${createHash('sha256').update(value.trim()).digest('hex')}`;
+}
 
 export interface IWwebjsForwardMessageResult {
   sent: boolean;
@@ -27,47 +37,37 @@ export class WwebjsMessageEditDeleteService {
 
   private describeKey(key: IMessageKeyInput): Record<string, unknown> {
     return {
-      id: key.id,
-      remote_jid: key.remoteJid ?? key.remote_jid ?? null,
-      remote_jid_alt: key.remoteJidAlt ?? key.remote_jid_alt ?? null,
+      id_hash: hashWwebjsEditLogIdentifier(key.id),
+      remote_jid_hash: hashWwebjsEditLogIdentifier(
+        key.remoteJid ?? key.remote_jid
+      ),
+      remote_jid_alt_hash: hashWwebjsEditLogIdentifier(
+        key.remoteJidAlt ?? key.remote_jid_alt
+      ),
       from_me: key.fromMe ?? key.from_me ?? null,
-      participant: key.participant ?? null,
-      participant_alt: key.participant_alt ?? null,
+      participant_hash: hashWwebjsEditLogIdentifier(key.participant),
+      participant_alt_hash: hashWwebjsEditLogIdentifier(key.participant_alt),
     };
   }
 
-  private describeError(error: unknown): {
-    name?: string;
-    message: string;
-    stack?: string;
-  } {
-    if (error instanceof Error) {
-      return {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      };
-    }
-
-    if (typeof error === 'string') {
-      return { message: error };
-    }
-
-    return { message: String(error ?? '') };
+  private describeError(error: unknown) {
+    return workerErrorDiagnostics(error);
   }
 
   async deleteMessage(
-    key: IMessageKeyInput
+    key: IMessageKeyInput,
+    beforeProviderInvoke?: () => Promise<void>
   ): Promise<IMessageKeyResponse | undefined> {
+    const client = this.helpers.getClient();
     const startedAt = Date.now();
     const candidates = this.buildSerializedIdCandidates(key);
     console.info('[WwebjsEditDelete] delete_start', {
       key: this.describeKey(key),
       candidate_count: candidates.length,
-      candidates,
+      candidate_hashes: candidates.map(hashWwebjsEditLogIdentifier),
     });
 
-    const msg = await this.resolveMessageByKey(key);
+    const msg = await this.resolveMessageByKey(key, undefined, client);
 
     if (!msg) {
       console.warn('[WwebjsEditDelete] delete_not_found', {
@@ -78,7 +78,12 @@ export class WwebjsMessageEditDeleteService {
     }
 
     try {
-      await msg.delete(true);
+      await this.helpers.invokeProviderMutation(
+        client,
+        'delete_message',
+        beforeProviderInvoke,
+        () => msg.delete(true)
+      );
       console.info('[WwebjsEditDelete] delete_success', {
         key: this.describeKey(key),
         duration_ms: Date.now() - startedAt,
@@ -241,9 +246,9 @@ export class WwebjsMessageEditDeleteService {
   private async resolveMessageByChatScan(
     key: IMessageKeyInput,
     chatJid: string | undefined,
-    serializedCandidates: string[]
+    serializedCandidates: string[],
+    client = this.helpers.getClient()
   ): Promise<any | null> {
-    const client = this.helpers.getClient();
     const rawId = key.id?.trim();
     if (!rawId) {
       return null;
@@ -264,7 +269,11 @@ export class WwebjsMessageEditDeleteService {
       let chatMessages: any[] = [];
 
       try {
-        const chat = await client.getChatById(remoteCandidate);
+        const chat = await this.helpers.invokeProviderLookup(
+          client,
+          'edit_delete_message_lookup',
+          () => client.getChatById(remoteCandidate)
+        );
         if (
           !chat ||
           typeof (chat as { fetchMessages?: unknown }).fetchMessages !==
@@ -273,17 +282,26 @@ export class WwebjsMessageEditDeleteService {
           continue;
         }
 
-        chatMessages = await (
+        const fetchMessages = (
           chat as {
             fetchMessages: (searchOptions: {
               limit?: number;
               fromMe?: boolean;
             }) => Promise<any[]>;
           }
-        ).fetchMessages({
-          limit: this.FORWARD_SOURCE_SCAN_FETCH_LIMIT,
-        });
-      } catch {
+        ).fetchMessages.bind(chat);
+        chatMessages = await this.helpers.invokeProviderLookup(
+          client,
+          'edit_delete_message_lookup',
+          () =>
+            fetchMessages({
+              limit: this.FORWARD_SOURCE_SCAN_FETCH_LIMIT,
+            })
+        );
+      } catch (error) {
+        if (isProviderAuxiliaryInvocationFenceError(error)) {
+          throw error;
+        }
         continue;
       }
 
@@ -317,9 +335,9 @@ export class WwebjsMessageEditDeleteService {
 
   private async resolveMessageByKey(
     key: IMessageKeyInput,
-    chatJid?: string
+    chatJid?: string,
+    client = this.helpers.getClient()
   ): Promise<any | null> {
-    const client = this.helpers.getClient();
     const candidates = this.buildSerializedIdCandidates(key, chatJid);
 
     if (candidates.length === 0) {
@@ -328,17 +346,26 @@ export class WwebjsMessageEditDeleteService {
 
     for (const candidate of candidates) {
       try {
-        const message = await client.getMessageById(candidate);
+        const message = await this.helpers.invokeProviderLookup(
+          client,
+          'edit_delete_message_lookup',
+          () => client.getMessageById(candidate)
+        );
         if (message) {
           return message;
         }
-      } catch {}
+      } catch (error) {
+        if (isProviderAuxiliaryInvocationFenceError(error)) {
+          throw error;
+        }
+      }
     }
 
     const scannedMessage = await this.resolveMessageByChatScan(
       key,
       chatJid,
-      candidates
+      candidates,
+      client
     );
     if (scannedMessage) {
       return scannedMessage;
@@ -352,31 +379,7 @@ export class WwebjsMessageEditDeleteService {
   }
 
   private extractSerializedIdFromMessage(msg: unknown): string | undefined {
-    if (!msg || typeof msg !== 'object') {
-      return undefined;
-    }
-
-    const idValue = (msg as { id?: unknown }).id;
-    if (!idValue) {
-      return undefined;
-    }
-
-    if (
-      typeof idValue === 'object' &&
-      idValue !== null &&
-      '_serialized' in (idValue as object)
-    ) {
-      const serialized = (idValue as { _serialized?: unknown })._serialized;
-      return typeof serialized === 'string' && serialized.trim()
-        ? serialized
-        : undefined;
-    }
-
-    if (typeof idValue === 'string' && idValue.trim()) {
-      return idValue;
-    }
-
-    return undefined;
+    return extractWwebjsMessageId(msg);
   }
 
   private toEpochMillis(value: unknown): number | null {
@@ -392,12 +395,15 @@ export class WwebjsMessageEditDeleteService {
   }
 
   private async fetchRecentFromMeMessages(
+    client: Client,
     destinationJid: string
   ): Promise<any[]> {
-    const client = this.helpers.getClient();
-
     try {
-      const chat = await client.getChatById(destinationJid);
+      const chat = await this.helpers.invokeProviderLookup(
+        client,
+        'forward_destination_lookup',
+        () => client.getChatById(destinationJid)
+      );
       if (
         !chat ||
         typeof (chat as { fetchMessages?: unknown }).fetchMessages !==
@@ -406,28 +412,41 @@ export class WwebjsMessageEditDeleteService {
         return [];
       }
 
-      const messages = await (
+      const fetchMessages = (
         chat as {
           fetchMessages: (searchOptions: {
             limit?: number;
             fromMe?: boolean;
           }) => Promise<any[]>;
         }
-      ).fetchMessages({
-        limit: this.FORWARD_POLL_FETCH_LIMIT,
-        fromMe: true,
-      });
+      ).fetchMessages.bind(chat);
+      const messages = await this.helpers.invokeProviderLookup(
+        client,
+        'forward_destination_lookup',
+        () =>
+          fetchMessages({
+            limit: this.FORWARD_POLL_FETCH_LIMIT,
+            fromMe: true,
+          })
+      );
 
       return Array.isArray(messages) ? messages : [];
-    } catch {
+    } catch (error) {
+      if (isProviderAuxiliaryInvocationFenceError(error)) {
+        throw error;
+      }
       return [];
     }
   }
 
   private async snapshotDestinationMessageIds(
+    client: Client,
     destinationJid: string
   ): Promise<Set<string>> {
-    const messages = await this.fetchRecentFromMeMessages(destinationJid);
+    const messages = await this.fetchRecentFromMeMessages(
+      client,
+      destinationJid
+    );
     const ids = new Set<string>();
 
     for (const message of messages) {
@@ -478,6 +497,7 @@ export class WwebjsMessageEditDeleteService {
   }
 
   private async resolveForwardedMessageByPolling(
+    client: Client,
     destinationJid: string,
     snapshotIds: Set<string>,
     forwardStartedAtMs: number
@@ -485,7 +505,10 @@ export class WwebjsMessageEditDeleteService {
     const timeoutAt = Date.now() + this.FORWARD_POLL_TIMEOUT_MS;
 
     while (Date.now() <= timeoutAt) {
-      const messages = await this.fetchRecentFromMeMessages(destinationJid);
+      const messages = await this.fetchRecentFromMeMessages(
+        client,
+        destinationJid
+      );
       const candidate = this.pickRecentForwardedCandidate(
         messages,
         snapshotIds,
@@ -504,18 +527,20 @@ export class WwebjsMessageEditDeleteService {
 
   async editText(
     newText: string,
-    editKey: IMessageKeyInput
+    editKey: IMessageKeyInput,
+    beforeProviderInvoke?: () => Promise<void>
   ): Promise<IMessageKeyResponse | undefined> {
+    const client = this.helpers.getClient();
     const startedAt = Date.now();
     const candidates = this.buildSerializedIdCandidates(editKey);
     console.info('[WwebjsEditDelete] edit_start', {
       key: this.describeKey(editKey),
       text_length: newText.length,
       candidate_count: candidates.length,
-      candidates,
+      candidate_hashes: candidates.map(hashWwebjsEditLogIdentifier),
     });
 
-    const msg = await this.resolveMessageByKey(editKey);
+    const msg = await this.resolveMessageByKey(editKey, undefined, client);
 
     if (!msg) {
       console.warn('[WwebjsEditDelete] edit_not_found', {
@@ -534,9 +559,12 @@ export class WwebjsMessageEditDeleteService {
     }
 
     try {
-      const editedMessage = (await (
-        msg as { edit: (t: string) => Promise<unknown> }
-      ).edit(newText)) as Parameters<typeof messageToWaLike>[0];
+      const editedMessage = (await this.helpers.invokeProviderMutation(
+        client,
+        'edit_message',
+        beforeProviderInvoke,
+        () => (msg as { edit: (t: string) => Promise<unknown> }).edit(newText)
+      )) as Parameters<typeof messageToWaLike>[0];
       const normalized = messageToWaLike(editedMessage ?? undefined);
       if (!normalized) {
         console.warn('[WwebjsEditDelete] edit_not_allowed_or_null', {
@@ -563,9 +591,15 @@ export class WwebjsMessageEditDeleteService {
 
   async forwardMessage(
     destinationJid: string,
-    sourceKey: IMessageKeyInput
+    sourceKey: IMessageKeyInput,
+    beforeProviderInvoke?: () => Promise<void>
   ): Promise<IWwebjsForwardMessageResult> {
-    const msg = await this.resolveMessageByKey(sourceKey, destinationJid);
+    const client = this.helpers.getClient();
+    const msg = await this.resolveMessageByKey(
+      sourceKey,
+      destinationJid,
+      client
+    );
 
     if (
       !msg ||
@@ -579,52 +613,50 @@ export class WwebjsMessageEditDeleteService {
       };
     }
 
-    const snapshotIds =
-      await this.snapshotDestinationMessageIds(destinationJid);
+    const snapshotIds = await this.snapshotDestinationMessageIds(
+      client,
+      destinationJid
+    );
     const forwardStartedAtMs = Date.now();
 
-    try {
-      const forwarded = (await (
-        msg as { forward: (chatId: string) => Promise<unknown> }
-      ).forward(destinationJid)) as
-        | Parameters<typeof messageToWaLike>[0]
-        | null
-        | undefined;
+    const forwarded = (await this.helpers.invokeProviderMutation(
+      client,
+      'forward_message',
+      beforeProviderInvoke,
+      () =>
+        (msg as { forward: (chatId: string) => Promise<unknown> }).forward(
+          destinationJid
+        )
+    )) as Parameters<typeof messageToWaLike>[0] | null | undefined;
 
-      const directKey = messageToWaLike(forwarded);
-      if (directKey) {
-        return {
-          sent: true,
-          messageKey: directKey,
-          resolution_path: 'direct',
-        };
-      }
-
-      const polledMessage = await this.resolveForwardedMessageByPolling(
-        destinationJid,
-        snapshotIds,
-        forwardStartedAtMs
-      );
-      const polledKey = messageToWaLike(polledMessage);
-
-      if (polledKey) {
-        return {
-          sent: true,
-          messageKey: polledKey,
-          resolution_path: 'snapshot_poll',
-        };
-      }
-
+    const directKey = messageToWaLike(forwarded);
+    if (directKey) {
       return {
         sent: true,
-        resolution_path: 'unresolved',
-      };
-    } catch (error) {
-      return {
-        sent: false,
-        resolution_path: 'unresolved',
-        error: error instanceof Error ? error.message : String(error),
+        messageKey: directKey,
+        resolution_path: 'direct',
       };
     }
+
+    const polledMessage = await this.resolveForwardedMessageByPolling(
+      client,
+      destinationJid,
+      snapshotIds,
+      forwardStartedAtMs
+    );
+    const polledKey = messageToWaLike(polledMessage);
+
+    if (polledKey) {
+      return {
+        sent: true,
+        messageKey: polledKey,
+        resolution_path: 'snapshot_poll',
+      };
+    }
+
+    return {
+      sent: true,
+      resolution_path: 'unresolved',
+    };
   }
 }

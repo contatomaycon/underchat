@@ -34,8 +34,18 @@ import { UpgradeDiscountCalculatorRepository } from '@core/repositories/plan/Upg
 import { PaymentService } from './payment.service';
 import { CrossSellListerRepository } from '@core/repositories/planCrossSell/CrossSellLister.repository';
 import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
-import { OrderPaymentCreatorRepository } from '@core/repositories/plan/OrderPaymentCreator.repository';
+import {
+  OrderPaymentCreatorRepository,
+  type ICreateAccountPaymentInput,
+  type ICreateAccountPaymentCrossSellsInput,
+} from '@core/repositories/plan/OrderPaymentCreator.repository';
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
+import {
+  PlanEntitlementDenyFence,
+  PlanEntitlementService,
+} from './planEntitlement.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import { PlanEntitlementRepository } from '@core/repositories/planEntitlement/PlanEntitlement.repository';
 
 @injectable()
 export class PlanService {
@@ -75,8 +85,54 @@ export class PlanService {
     @inject(CrossSellListerRepository)
     private readonly crossSellListerRepository: CrossSellListerRepository,
     @inject(OrderPaymentCreatorRepository)
-    private readonly orderPaymentCreatorRepository: OrderPaymentCreatorRepository
+    private readonly orderPaymentCreatorRepository: OrderPaymentCreatorRepository,
+    @inject(PlanEntitlementRepository)
+    private readonly planEntitlementRepository: PlanEntitlementRepository,
+    @inject(PlanEntitlementService)
+    private readonly planEntitlementService: PlanEntitlementService
   ) {}
+
+  private readonly restorePlanEntitlementAfterFailure = async (
+    refresh: () => Promise<unknown>
+  ): Promise<void> => {
+    try {
+      await refresh();
+    } catch (error) {
+      console.error(
+        'Could not restore plan entitlement after a failed mutation.',
+        error
+      );
+    }
+  };
+
+  private readonly runWithDenyFence = async <T>(input: {
+    installFence: () => Promise<PlanEntitlementDenyFence[]>;
+    mutate: () => Promise<T>;
+    refresh: (fences?: readonly PlanEntitlementDenyFence[]) => Promise<unknown>;
+  }): Promise<T> => {
+    let fences: PlanEntitlementDenyFence[];
+    try {
+      fences = await input.installFence();
+    } catch (error) {
+      throw error;
+    }
+
+    let mutationCompleted = false;
+
+    try {
+      const result = await input.mutate();
+      mutationCompleted = true;
+      await input.refresh(fences);
+      return result;
+    } catch (error) {
+      if (!mutationCompleted) {
+        await this.restorePlanEntitlementAfterFailure(() =>
+          input.refresh(fences)
+        );
+      }
+      throw error;
+    }
+  };
 
   listPlans = async (
     perPage: number,
@@ -102,22 +158,73 @@ export class PlanService {
   updatePlan = async (
     planId: string,
     input: UpdatePlanRequest
-  ): Promise<boolean> => {
-    return this.planUpdaterRepository.updatePlan(planId, input);
-  };
+  ): Promise<boolean> => this.planUpdaterRepository.updatePlan(planId, input);
 
   deletePlan = async (t: any, planId: string): Promise<boolean> => {
-    return this.planDeleterTransactionRepository.deletePlan(t, planId);
+    return this.runWithDenyFence({
+      installFence: () =>
+        this.planEntitlementService.installDenyFencesForPlan(
+          planId,
+          EPlanProduct.integration
+        ),
+      mutate: () => this.planDeleterTransactionRepository.deletePlan(t, planId),
+      refresh: (fences) =>
+        fences?.length
+          ? this.planEntitlementService.refreshAccountsForPlan(
+              planId,
+              EPlanProduct.integration,
+              fences
+            )
+          : this.planEntitlementService.refreshAccountsForPlan(
+              planId,
+              EPlanProduct.integration
+            ),
+    });
   };
 
   createPlanItem = async (
     input: CreatePlanItemRequest
   ): Promise<string | null> => {
-    return this.planItemCreatorRepository.createPlanItem(input);
+    const isIntegration = input.plan_product_id === EPlanProduct.integration;
+
+    if (isIntegration) {
+      await this.planEntitlementService.refreshAccountsForPlan(
+        input.plan_id,
+        EPlanProduct.integration
+      );
+    }
+
+    const planItemId =
+      await this.planItemCreatorRepository.createPlanItem(input);
+
+    if (planItemId && isIntegration) {
+      await this.planEntitlementService.refreshAccountsForPlanItem(planItemId);
+    }
+
+    return planItemId;
   };
 
   deletePlanItem = async (planItemId: string): Promise<boolean> => {
-    return this.planItemDeleterRepository.deletePlanItemById(planItemId);
+    const context =
+      await this.planEntitlementRepository.findPlanItemContext(planItemId);
+
+    if (context?.plan_product_id !== EPlanProduct.integration) {
+      return this.planItemDeleterRepository.deletePlanItemById(planItemId);
+    }
+
+    return this.runWithDenyFence({
+      installFence: () =>
+        this.planEntitlementService.installDenyFencesForPlanItem(planItemId),
+      mutate: () =>
+        this.planItemDeleterRepository.deletePlanItemById(planItemId),
+      refresh: (fences) =>
+        fences?.length
+          ? this.planEntitlementService.refreshAccountsForPlanItem(
+              planItemId,
+              fences
+            )
+          : this.planEntitlementService.refreshAccountsForPlanItem(planItemId),
+    });
   };
 
   listPlanItems = async (planId: string): Promise<ListPlanItemResponse[]> => {
@@ -239,6 +346,16 @@ export class PlanService {
     billingPeriod: 'monthly' | 'annual';
   }): Promise<void> => {
     return this.orderPaymentCreatorRepository.createAccountPaymentCrossSells(
+      data
+    );
+  };
+
+  createAccountPaymentWithCrossSells = async (data: {
+    payment: ICreateAccountPaymentInput;
+    addons: ICreateAccountPaymentCrossSellsInput['addons'];
+    billingPeriod: ICreateAccountPaymentCrossSellsInput['billingPeriod'];
+  }): Promise<string> => {
+    return this.orderPaymentCreatorRepository.createAccountPaymentWithCrossSells(
       data
     );
   };

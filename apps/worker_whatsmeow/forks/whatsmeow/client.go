@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,6 +46,41 @@ type EventHandler func(evt any)
 type EventHandlerWithSuccessStatus func(evt any) bool
 type nodeHandler func(ctx context.Context, node *waBinary.Node)
 
+type socketBoundNode struct {
+	ctx        context.Context
+	node       *waBinary.Node
+	socket     *socket.NoiseSocket
+	generation uint64
+}
+
+type socketBindingContextKey struct{}
+
+// socketBindingNeutralContext keeps the caller lifecycle (deadline,
+// cancellation and unrelated values) while deliberately hiding the transport
+// identity carried by an inbound node handler. A replacement websocket must
+// never inherit the generation that requested the reconnect: doing so makes
+// connection-level work such as keepalives target a socket that has already
+// been retired.
+type socketBindingNeutralContext struct {
+	context.Context
+}
+
+func (ctx socketBindingNeutralContext) Value(key any) any {
+	if _, isSocketBinding := key.(socketBindingContextKey); isSocketBinding {
+		return nil
+	}
+	return ctx.Context.Value(key)
+}
+
+type socketBinding struct {
+	socket     *socket.NoiseSocket
+	generation uint64
+}
+
+type sessionDebugLogger interface {
+	SessionDebug(event string, fields map[string]any)
+}
+
 var nextHandlerID uint32
 
 type wrappedEventHandler struct {
@@ -67,6 +103,10 @@ type Client struct {
 	socket     *socket.NoiseSocket
 	socketLock sync.RWMutex
 	socketWait chan struct{}
+	// socketGeneration is protected by socketLock and advances whenever a new
+	// NoiseSocket is installed. JID and connection contexts are not suitable as
+	// a transport identity because they are intentionally reused on reconnect.
+	socketGeneration uint64
 
 	isLoggedIn            atomic.Bool
 	paired                atomic.Bool
@@ -115,9 +155,16 @@ type Client struct {
 	responseWaitersLock sync.Mutex
 
 	nodeHandlers      map[string]nodeHandler
-	handlerQueue      chan *waBinary.Node
+	handlerQueue      chan socketBoundNode
 	eventHandlers     []wrappedEventHandler
 	eventHandlersLock sync.RWMutex
+
+	connectionStatusMu          sync.Mutex
+	connectionStatus            events.ConnectionStatus
+	connectionStatusFence       store.ConnectionStatusFence
+	connectionStatusHandoff     connectionStatusHandoffPhase
+	connectionStatusPending     []events.ConnectionStatus
+	connectionStatusDispatching bool
 
 	messageRetries     map[string]int
 	messageRetriesLock sync.Mutex
@@ -260,7 +307,7 @@ func NewClient(deviceStore *store.Device, log waLog.Logger) *Client {
 		responseWaiters:    make(map[string]chan<- *waBinary.Node),
 		eventHandlers:      make([]wrappedEventHandler, 0, 1),
 		messageRetries:     make(map[string]int),
-		handlerQueue:       make(chan *waBinary.Node, handlerQueueSize),
+		handlerQueue:       make(chan socketBoundNode, handlerQueueSize),
 		appStateProc:       appstate.NewProcessor(deviceStore, log.Sub("AppState")),
 		socketWait:         make(chan struct{}),
 		expectedDisconnect: exsync.NewEvent(),
@@ -286,6 +333,7 @@ func NewClient(deviceStore *store.Device, log waLog.Logger) *Client {
 		BackgroundEventCtx: context.Background(),
 	}
 	cli.paired.Store(deviceStore.ID != nil)
+	cli.initializeConnectionStatus()
 	cli.nodeHandlers = map[string]nodeHandler{
 		"message":      cli.handleEncryptedMessage,
 		"appdata":      cli.handleEncryptedMessage,
@@ -435,11 +483,80 @@ func (cli *Client) getSocketWaitChan() <-chan struct{} {
 	return ch
 }
 
-func (cli *Client) closeSocketWaitChan() {
+func (cli *Client) currentSocketBinding() socketBinding {
+	if cli == nil {
+		return socketBinding{}
+	}
+	cli.socketLock.RLock()
+	binding := socketBinding{socket: cli.socket, generation: cli.socketGeneration}
+	cli.socketLock.RUnlock()
+	return binding
+}
+
+func (cli *Client) isCurrentSocketBinding(binding socketBinding) bool {
+	if cli == nil || binding.socket == nil || binding.generation == 0 {
+		return false
+	}
+	cli.socketLock.RLock()
+	isCurrent := cli.socket == binding.socket && cli.socketGeneration == binding.generation
+	cli.socketLock.RUnlock()
+	return isCurrent
+}
+
+func (cli *Client) markSocketBindingLoggedIn(binding socketBinding) bool {
+	if cli == nil || binding.socket == nil || binding.generation == 0 {
+		return false
+	}
 	cli.socketLock.Lock()
+	defer cli.socketLock.Unlock()
+	if cli.socket != binding.socket || cli.socketGeneration != binding.generation || !binding.socket.IsConnected() {
+		return false
+	}
+	cli.isLoggedIn.Store(true)
+	return true
+}
+
+func socketBindingFromContext(ctx context.Context) (socketBinding, bool) {
+	if ctx == nil {
+		return socketBinding{}, false
+	}
+	binding, ok := ctx.Value(socketBindingContextKey{}).(socketBinding)
+	return binding, ok && binding.socket != nil && binding.generation != 0
+}
+
+func contextWithSocketBinding(ctx context.Context, binding socketBinding) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, socketBindingContextKey{}, binding)
+}
+
+func contextWithoutSocketBinding(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	if _, bound := socketBindingFromContext(ctx); !bound {
+		return ctx
+	}
+	return socketBindingNeutralContext{Context: ctx}
+}
+
+func (cli *Client) closeSocketWaitChanFor(binding socketBinding) bool {
+	cli.socketLock.Lock()
+	defer cli.socketLock.Unlock()
+	if cli.socket != binding.socket || cli.socketGeneration != binding.generation {
+		return false
+	}
 	close(cli.socketWait)
 	cli.socketWait = make(chan struct{})
-	cli.socketLock.Unlock()
+	return true
+}
+
+// closeSocketWaitChan is retained for DangerousInternalClient compatibility.
+// Production lifecycle handlers must use closeSocketWaitChanFor with the
+// generation that produced their event.
+func (cli *Client) closeSocketWaitChan() {
+	cli.closeSocketWaitChanFor(cli.currentSocketBinding())
 }
 
 func (cli *Client) getOwnID() types.JID {
@@ -510,12 +627,25 @@ func (cli *Client) ConnectContext(ctx context.Context) error {
 	cli.socketLock.Lock()
 	defer cli.socketLock.Unlock()
 
+	if err := cli.prepareConnectionStatusForExplicitConnect(); err != nil {
+		return err
+	}
 	err := cli.unlockedConnect(ctx)
 	if isRetryableConnectError(err) && cli.InitialAutoReconnect && cli.EnableAutoReconnect {
+		cli.setConnectionStatus(connectionStatusTransition{
+			status:    events.ConnectionStatusReconnecting,
+			validity:  connectionValidityPreserve,
+			reason:    "initial_connect_retry",
+			errorCode: "connect_retryable",
+			connected: connectionConnectedFalse,
+		})
 		cli.Log.Errorf("Initial connection failed but reconnecting in background (%v)", err)
 		go cli.dispatchEvent(&events.Disconnected{})
 		go cli.autoReconnect(ctx)
 		return nil
+	}
+	if err != nil {
+		cli.setConnectionStatusForConnectError(err)
 	}
 	return err
 }
@@ -527,8 +657,42 @@ func (cli *Client) connect(ctx context.Context) error {
 	return cli.unlockedConnect(ctx)
 }
 
+func (cli *Client) connectAfterInternalReconnect(ctx context.Context) error {
+	cli.socketLock.Lock()
+	defer cli.socketLock.Unlock()
+	current, _, _ := cli.getConnectionStatusSnapshot()
+	if current.Status != events.ConnectionStatusReconnecting {
+		cli.logSessionDebug("internal_reconnect.connect_skipped", map[string]any{
+			"status":   current.Status,
+			"sequence": current.Sequence,
+			"reason":   "terminal_lifecycle",
+		})
+		return errConnectionStatusTerminal
+	}
+	err := cli.unlockedConnect(ctx)
+	cli.logSessionDebug("internal_reconnect.connect_completed", map[string]any{
+		"status":     current.Status,
+		"sequence":   current.Sequence,
+		"successful": err == nil,
+		"error":      err,
+	})
+	return err
+}
+
 func (cli *Client) unlockedConnect(ctx context.Context) error {
+	if inheritedBinding, bound := socketBindingFromContext(ctx); bound {
+		// Internal reconnects can originate in a node handler (notably the 515
+		// server-login restart after pairing). That handler is intentionally
+		// bound to the source generation for replies, but a new websocket is a
+		// new lifecycle and must resolve all future sends against itself.
+		cli.logSessionDebug("internal_reconnect.stale_context_binding_stripped", map[string]any{
+			"inherited_generation": inheritedBinding.generation,
+			"next_generation":      cli.socketGeneration + 1,
+		})
+		ctx = contextWithoutSocketBinding(ctx)
+	}
 	if cli.Store.Deleted {
+		cli.MarkConnectionInvalidSession()
 		return store.ErrDeviceDeleted
 	}
 	if cli.socket != nil {
@@ -536,6 +700,32 @@ func (cli *Client) unlockedConnect(ctx context.Context) error {
 			cli.unlockedDisconnect()
 		} else {
 			return ErrAlreadyConnected
+		}
+	}
+	currentStatus, _, _ := cli.getConnectionStatusSnapshot()
+	if currentStatus.Status != events.ConnectionStatusReconnecting {
+		cli.setConnectionStatus(connectionStatusTransition{
+			status:    events.ConnectionStatusConnecting,
+			validity:  connectionValidityPreserve,
+			connected: connectionConnectedFalse,
+		})
+	}
+	var routingInfo []byte
+	if cli.Store.ID != nil {
+		if reserver, ok := cli.Store.Container.(store.CompanionIdentityReserver); ok {
+			if err := reserver.ReserveCompanionIdentity(ctx, cli.Store); err != nil {
+				return fmt.Errorf("failed to reserve companion identity before connect: %w", err)
+			}
+		}
+		if cli.Store.Transport != nil {
+			var err error
+			routingInfo, err = cli.Store.Transport.GetTransportRoutingInfo(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to load edge routing before connect: %w", err)
+			}
+			if len(routingInfo) > 0 && store.ValidateWhatsAppTransportRoutingInfo(routingInfo) != nil {
+				return store.ErrInvalidWhatsAppTransportRoutingInfo
+			}
 		}
 	}
 
@@ -554,6 +744,18 @@ func (cli *Client) unlockedConnect(ctx context.Context) error {
 		//fs.HTTPHeaders.Set("Sec-Fetch-Dest", "empty")
 		//fs.HTTPHeaders.Set("Sec-Fetch-Mode", "websocket")
 		//fs.HTTPHeaders.Set("Sec-Fetch-Site", "cross-site")
+	}
+	if len(routingInfo) > 0 {
+		var err error
+		fs.URL, err = socket.URLWithRoutingInfo(fs.URL, routingInfo)
+		if err != nil {
+			return fmt.Errorf("failed to apply edge routing URL: %w", err)
+		}
+		fs.WireHeader, err = socket.BuildRoutingIntroHeader(routingInfo)
+		if err != nil {
+			return fmt.Errorf("failed to apply edge routing intro: %w", err)
+		}
+		cli.Log.Debugf("Loaded edge routing for reconnect (payload_size=%d)", len(routingInfo))
 	}
 	if err := fs.Connect(ctx); err != nil {
 		fs.Close(0)
@@ -577,6 +779,7 @@ func (cli *Client) onDisconnect(ctx context.Context, ns *socket.NoiseSocket, rem
 	cli.socketLock.Lock()
 	defer cli.socketLock.Unlock()
 	if cli.socket == ns {
+		cli.isLoggedIn.Store(false)
 		cli.socket = nil
 		cli.clearResponseWaiters(xmlStreamEndNode)
 		if !cli.isExpectedDisconnect() && (cli.forceAutoReconnect.Swap(false) || remote) {
@@ -611,6 +814,11 @@ func (cli *Client) autoReconnect(ctx context.Context) {
 	if !cli.EnableAutoReconnect || cli.Store.ID == nil {
 		return
 	}
+	cli.setConnectionStatus(connectionStatusTransition{
+		status:    events.ConnectionStatusReconnecting,
+		validity:  connectionValidityPreserve,
+		connected: connectionConnectedFalse,
+	})
 	for {
 		autoReconnectDelay := time.Duration(cli.AutoReconnectErrors) * 2 * time.Second
 		cli.Log.Debugf("Automatically reconnecting after %v", autoReconnectDelay)
@@ -622,7 +830,11 @@ func (cli *Client) autoReconnect(ctx context.Context) {
 			cli.Log.Debugf("Cancelling automatic reconnect due to context cancellation")
 			return
 		}
-		err := cli.connect(ctx)
+		err := cli.connectAfterInternalReconnect(ctx)
+		if errors.Is(err, errConnectionStatusTerminal) {
+			cli.Log.Debugf("Cancelling automatic reconnect because the client entered a terminal lifecycle")
+			return
+		}
 		if errors.Is(err, ErrAlreadyConnected) {
 			cli.Log.Debugf("Connect() said we're already connected after autoreconnect sleep")
 			return
@@ -633,6 +845,7 @@ func (cli *Client) autoReconnect(ctx context.Context) {
 			}
 			cli.Log.Errorf("Error reconnecting after autoreconnect sleep: %v", err)
 			if cli.AutoReconnectHook != nil && !cli.AutoReconnectHook(err) {
+				cli.MarkConnectionError("auto_reconnect_stopped")
 				cli.Log.Debugf("AutoReconnectHook returned false, not reconnecting")
 				return
 			}
@@ -666,7 +879,66 @@ func (cli *Client) Disconnect() {
 	cli.expectDisconnect()
 	cli.unlockedDisconnect()
 	cli.socketLock.Unlock()
+	cli.isLoggedIn.Store(false)
+	cli.markConnectionDisconnectedByCaller()
 	cli.clearDelayedMessageRequests()
+}
+
+// disconnectForReconnect closes the current transport as part of an internal
+// protocol recovery without turning it into an explicit client stop. Public
+// Disconnect remains a sticky lifecycle boundary: only tightly scoped
+// internal reconnect paths may use this helper.
+//
+// The return value is false when a concurrent terminal transition (for
+// example lease loss, logout or an explicit stop) won the race. Callers must
+// not open a replacement transport in that case.
+func (cli *Client) disconnectForReconnect(reason string) bool {
+	if cli == nil {
+		return false
+	}
+	cli.socketLock.Lock()
+	previous, _, _ := cli.getConnectionStatusSnapshot()
+	cli.expectDisconnect()
+	cli.unlockedDisconnect()
+	cli.isLoggedIn.Store(false)
+	next := cli.setConnectionStatus(connectionStatusTransition{
+		status:    events.ConnectionStatusReconnecting,
+		validity:  connectionValidityPreserve,
+		connected: connectionConnectedFalse,
+		reason:    sanitizeConnectionStatusIdentifier(reason, "internal_reconnect"),
+	})
+	cli.socketLock.Unlock()
+	cli.clearDelayedMessageRequests()
+	accepted := next.Status == events.ConnectionStatusReconnecting
+	cli.logSessionDebug("internal_reconnect.transport_closed", map[string]any{
+		"reason":            sanitizeConnectionStatusIdentifier(reason, "internal_reconnect"),
+		"previous_status":   previous.Status,
+		"previous_sequence": previous.Sequence,
+		"status":            next.Status,
+		"sequence":          next.Sequence,
+		"accepted":          accepted,
+	})
+	return accepted
+}
+
+func (cli *Client) logSessionDebug(event string, fields map[string]any) {
+	if cli == nil || cli.Log == nil {
+		return
+	}
+	debugger, ok := cli.Log.(sessionDebugLogger)
+	if !ok {
+		return
+	}
+	payload := make(map[string]any, len(fields)+3)
+	for key, value := range fields {
+		payload[key] = value
+	}
+	payload["provider"] = connectionStatusProvider
+	if cli.Store != nil {
+		payload["session_id"] = cli.Store.SessionID
+		payload["revision"] = cli.Store.RevisionID
+	}
+	debugger.SessionDebug(event, payload)
 }
 
 // ResetConnection disconnects from the WhatsApp web websocket and forces an automatic reconnection.
@@ -676,6 +948,12 @@ func (cli *Client) ResetConnection() {
 		return
 	}
 	cli.socketLock.Lock()
+	cli.isLoggedIn.Store(false)
+	cli.setConnectionStatus(connectionStatusTransition{
+		status:    events.ConnectionStatusReconnecting,
+		validity:  connectionValidityPreserve,
+		connected: connectionConnectedFalse,
+	})
 	cli.forceAutoReconnect.Store(true)
 	if cli.socket != nil {
 		cli.socket.Stop(true, true)
@@ -725,6 +1003,12 @@ func (cli *Client) Logout(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error sending logout request: %w", err)
 	}
+	cli.setConnectionStatus(connectionStatusTransition{
+		status:    events.ConnectionStatusLoggedOut,
+		validity:  connectionValidityInvalid,
+		reason:    "local_logout",
+		connected: connectionConnectedFalse,
+	})
 	cli.Disconnect()
 	err = cli.Store.Delete(ctx)
 	if err != nil {
@@ -819,6 +1103,18 @@ func (cli *Client) RemoveEventHandlers() {
 }
 
 func (cli *Client) handleFrame(ctx context.Context, data []byte) {
+	binding := cli.currentSocketBinding()
+	cli.handleFrameFromSocket(ctx, binding.socket, binding.generation, data)
+}
+
+func (cli *Client) handleFrameFromSocket(ctx context.Context, source *socket.NoiseSocket, generation uint64, data []byte) {
+	binding := socketBinding{socket: source, generation: generation}
+	if !cli.isCurrentSocketBinding(binding) {
+		cli.logSessionDebug("frame.stale_generation_ignored", map[string]any{
+			"generation": generation,
+		})
+		return
+	}
 	decompressed, err := waBinary.Unpack(data)
 	if err != nil {
 		cli.Log.Warnf("Failed to decompress frame: %v", err)
@@ -840,14 +1136,20 @@ func (cli *Client) handleFrame(ctx context.Context, data []byte) {
 	} else if cli.receiveResponse(ctx, node) {
 		// handled
 	} else if _, ok := cli.nodeHandlers[node.Tag]; ok {
+		boundNode := socketBoundNode{
+			ctx:        contextWithSocketBinding(ctx, binding),
+			node:       node,
+			socket:     source,
+			generation: generation,
+		}
 		select {
-		case cli.handlerQueue <- node:
+		case cli.handlerQueue <- boundNode:
 		case <-ctx.Done():
 		default:
 			cli.Log.Warnf("Handler queue is full, message ordering is no longer guaranteed")
 			go func() {
 				select {
-				case cli.handlerQueue <- node:
+				case cli.handlerQueue <- boundNode:
 				case <-ctx.Done():
 				}
 			}()
@@ -864,11 +1166,23 @@ func (cli *Client) handlerQueueLoop(evtCtx, connCtx context.Context) {
 Loop:
 	for {
 		select {
-		case node := <-cli.handlerQueue:
+		case queued := <-cli.handlerQueue:
+			binding := socketBinding{socket: queued.socket, generation: queued.generation}
+			if !cli.isCurrentSocketBinding(binding) {
+				cli.logSessionDebug("node_handler.stale_generation_ignored", map[string]any{
+					"node_tag":   queued.node.Tag,
+					"generation": queued.generation,
+				})
+				continue
+			}
+			node := queued.node
 			doneChan := make(chan struct{})
 			start := time.Now()
 			go func() {
-				cli.nodeHandlers[node.Tag](evtCtx, node)
+				// The queued context is the source connection's historical event
+				// context plus its immutable socket binding. This remains correct
+				// even if an older queue loop happens to dequeue the node.
+				cli.nodeHandlers[node.Tag](queued.ctx, node)
 				duration := time.Since(start)
 				close(doneChan)
 				if duration > 5*time.Second {
@@ -898,10 +1212,11 @@ func (cli *Client) sendNodeAndGetData(ctx context.Context, node waBinary.Node) (
 	if cli == nil {
 		return nil, ErrClientIsNil
 	}
-	cli.socketLock.RLock()
-	sock := cli.socket
-	cli.socketLock.RUnlock()
-	if sock == nil {
+	binding, bound := socketBindingFromContext(ctx)
+	if !bound {
+		binding = cli.currentSocketBinding()
+	}
+	if !cli.isCurrentSocketBinding(binding) {
 		return nil, ErrNotConnected
 	}
 
@@ -911,7 +1226,22 @@ func (cli *Client) sendNodeAndGetData(ctx context.Context, node waBinary.Node) (
 	}
 
 	cli.sendLog.Debugf("%s", &node)
-	return payload, sock.SendFrame(ctx, payload)
+	return payload, binding.socket.SendFrame(ctx, payload)
+}
+
+func (cli *Client) sendNodeOnSocket(ctx context.Context, binding socketBinding, node waBinary.Node) error {
+	if cli == nil {
+		return ErrClientIsNil
+	}
+	if !cli.isCurrentSocketBinding(binding) {
+		return ErrNotConnected
+	}
+	payload, err := waBinary.Marshal(node)
+	if err != nil {
+		return fmt.Errorf("failed to marshal node: %w", err)
+	}
+	cli.sendLog.Debugf("%s", &node)
+	return binding.socket.SendFrame(ctx, payload)
 }
 
 func (cli *Client) sendNode(ctx context.Context, node waBinary.Node) error {
@@ -920,6 +1250,14 @@ func (cli *Client) sendNode(ctx context.Context, node waBinary.Node) error {
 }
 
 func (cli *Client) dispatchEvent(evt any) (handlerFailed bool) {
+	cli.observeConnectionEvent(evt)
+	return cli.dispatchEventHandlers(evt)
+}
+
+func (cli *Client) dispatchEventHandlers(evt any) (handlerFailed bool) {
+	if _, isConnectionStatus := evt.(*events.ConnectionStatus); isConnectionStatus {
+		return cli.dispatchConnectionStatusEvent(evt)
+	}
 	cli.eventHandlersLock.RLock()
 	defer func() {
 		cli.eventHandlersLock.RUnlock()
@@ -929,11 +1267,21 @@ func (cli *Client) dispatchEvent(evt any) (handlerFailed bool) {
 		}
 	}()
 	for _, handler := range cli.eventHandlers {
-		if !handler.fn(evt) {
+		if !handler.fn(cli.detachedConnectionStatusEvent(evt)) {
 			return true
 		}
 	}
 	return false
+}
+
+func (cli *Client) dispatchConnectedFor(binding socketBinding) (handlerFailed bool) {
+	if !cli.markConnectionOnlineFor(binding) {
+		return false
+	}
+	if !cli.isCurrentSocketBinding(binding) {
+		return false
+	}
+	return cli.dispatchEventHandlers(&events.Connected{})
 }
 
 // ParseWebMessage parses a WebMessageInfo object into *events.Message to match what real-time messages have.
@@ -1016,4 +1364,90 @@ func (cli *Client) StoreLIDPNMapping(ctx context.Context, first, second types.JI
 	if err != nil {
 		cli.Log.Errorf("Failed to store LID-PN mapping for %s -> %s: %v", lid, pn, err)
 	}
+}
+
+const unifiedSessionOffset = 3 * 24 * time.Hour
+const unifiedSessionWindow = 7 * 24 * time.Hour
+const (
+	unifiedSessionSendTimeout          = 5 * time.Second
+	unifiedSessionAuxiliarySendTimeout = 500 * time.Millisecond
+)
+
+func unifiedSessionIDAt(now time.Time, serverTimeOffset time.Duration) string {
+	unifiedTimestamp := now.Add(serverTimeOffset).Add(unifiedSessionOffset)
+	unifiedID := unifiedTimestamp.UnixMilli() % unifiedSessionWindow.Milliseconds()
+	if unifiedID < 0 {
+		unifiedID += unifiedSessionWindow.Milliseconds()
+	}
+	return strconv.FormatInt(unifiedID, 10)
+}
+
+func (cli *Client) getUnifiedSessionID() string {
+	return unifiedSessionIDAt(
+		time.Now(),
+		time.Duration(cli.serverTimeOffset.Load()),
+	)
+}
+
+func unifiedSessionNode(id string) waBinary.Node {
+	return waBinary.Node{
+		Tag:   "ib",
+		Attrs: waBinary.Attrs{},
+		Content: []waBinary.Node{{
+			Tag: "unified_session",
+			Attrs: waBinary.Attrs{
+				"id": id,
+			},
+		}},
+	}
+}
+
+// sendUnifiedSession mirrors the official WhatsApp Web activity heartbeat.
+// It intentionally contains no user or credential data: the identifier is a
+// server-time-aligned value that rotates every week. Keeping this heartbeat
+// aligned prevents a healthy companion from being classified as inactive by
+// the primary device while its transport remains connected.
+func (cli *Client) sendUnifiedSession(ctx context.Context, binding socketBinding) error {
+	if cli == nil {
+		return ErrClientIsNil
+	}
+
+	if ctx == nil {
+		ctx = cli.BackgroundEventCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+	}
+	sendCtx, cancel := context.WithTimeout(ctx, unifiedSessionSendTimeout)
+	defer cancel()
+
+	// The caller must provide the exact connection that triggered this
+	// heartbeat. Never resolve cli.socket here: a delayed presence or lifecycle
+	// handler must not write into a replacement connection.
+	if !cli.isCurrentSocketBinding(binding) {
+		if cli.Log != nil {
+			cli.Log.Debugf("Failed to send unified_session telemetry: %v", ErrNotConnected)
+		}
+		cli.logSessionDebug("unified_session.send_failed", map[string]any{
+			"error_type": fmt.Sprintf("%T", ErrNotConnected),
+		})
+		return ErrNotConnected
+	}
+
+	node := unifiedSessionNode(cli.getUnifiedSessionID())
+	payload, err := waBinary.Marshal(node)
+	if err == nil {
+		err = binding.socket.SendFrame(sendCtx, payload)
+	}
+	if err != nil {
+		if cli.Log != nil {
+			cli.Log.Debugf("Failed to send unified_session telemetry: %v", err)
+		}
+		cli.logSessionDebug("unified_session.send_failed", map[string]any{
+			"error_type": fmt.Sprintf("%T", err),
+		})
+		return err
+	}
+	cli.logSessionDebug("unified_session.sent", map[string]any{})
+	return nil
 }

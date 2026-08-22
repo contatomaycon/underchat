@@ -29,6 +29,11 @@ import { ListContactRequest } from '@core/schema/contact/listContact/request.sch
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
 import { ESortByContact } from '@core/common/enums/ESortByContact';
 import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
+import {
+  resolveContactValidationStatus,
+  type ContactValidationStatus,
+} from '@core/common/types/ContactValidationStatus';
+import type { ContactValidationOrigin } from '@core/common/types/ContactValidationOrigin';
 
 @injectable()
 export class ContactListerRepository {
@@ -242,6 +247,7 @@ export class ContactListerRepository {
         notes: contact.notes,
         created_at: contact.created_at,
         is_valided: contact.is_valided,
+        validation_origin: contact.validation_origin,
         photo: contact.photo,
         user_id: user.user_id,
         user_name: sql<
@@ -345,6 +351,7 @@ export class ContactListerRepository {
       notes: string | null;
       created_at: string | null;
       is_valided: boolean | null;
+      validation_origin: ContactValidationOrigin | null;
       photo: string | null;
       user_id: string | null;
       user_name: string | null;
@@ -371,6 +378,10 @@ export class ContactListerRepository {
       birthday: contactItem.birthday,
       notes: contactItem.notes ?? null,
       is_valided: contactItem.is_valided ?? null,
+      validation_status: resolveContactValidationStatus(
+        contactItem.is_valided,
+        contactItem.validation_origin
+      ) as ContactValidationStatus,
       photo: contactItem.photo ?? null,
       responsible_attendant:
         contactItem.user_id && contactItem.user_name

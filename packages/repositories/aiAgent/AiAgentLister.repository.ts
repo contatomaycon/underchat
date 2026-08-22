@@ -118,7 +118,12 @@ export class AiAgentListerRepository {
         total: count(),
       })
       .from(aiAgent)
-      .where(eq(aiAgent.account_id, accountId))
+      .where(
+        and(
+          eq(aiAgent.account_id, accountId),
+          eq(aiAgent.status, EAiAgentStatus.active)
+        )
+      )
       .execute();
 
     if (!result.length) {

@@ -95,6 +95,20 @@ const attendantLabel = computed(() => {
   return limitCharacters(10, attendantFirstName.value);
 });
 
+const contactDisplayName = computed(() => {
+  const baseName = props.user?.contact?.name ?? props.user?.name;
+  const contactId = props.user?.contact?.id;
+
+  if (!contactId) {
+    return limitCharacters(20, baseName);
+  }
+
+  const nickname = chatStore.chatContacts[contactId]?.nickname?.trim();
+  const displayName = nickname ? `${baseName ?? ''} (${nickname})` : baseName;
+
+  return limitCharacters(20, displayName);
+});
+
 const chatbotTypeLabel = computed(() => {
   if (!props.showChatbotTypeIndicator || !props.user?.status) return null;
   const s = props.user.status;
@@ -488,9 +502,7 @@ onBeforeUnmount(() => {
       <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
         <div class="chat-name-row d-flex align-center gap-1 mb-0">
           <p class="chat-name text-base text-high-emphasis mb-0 text-truncate">
-            {{
-              limitCharacters(20, props.user?.contact?.name ?? props.user?.name)
-            }}
+            {{ contactDisplayName }}
           </p>
           <VChip
             v-if="props.user?.contact?.name"
@@ -903,6 +915,14 @@ onBeforeUnmount(() => {
   height: 16px !important;
   opacity: 0.7;
   flex-shrink: 0;
+}
+
+.chat.chat-active .contact-label {
+  position: relative;
+  z-index: 1;
+  opacity: 1;
+  color: rgb(var(--v-theme-primary)) !important;
+  background-color: rgb(var(--v-theme-surface)) !important;
 }
 
 .chat-name-row {

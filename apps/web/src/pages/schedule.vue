@@ -62,6 +62,10 @@ const itemsType = computed(() => [
   { id: EScheduleType.video, text: t('message_type_video') },
   { id: EScheduleType.audio, text: t('message_type_audio') },
   { id: EScheduleType.chatbot, text: t('message_type_chatbot') },
+  {
+    id: EScheduleType.official_template,
+    text: t('message_type_official_template'),
+  },
 ]);
 
 const itemsSendTo = computed(() => [
@@ -235,6 +239,9 @@ const getTypeLabel = (type: string): string => {
   if (type === EScheduleType.video) return t('message_type_video');
   if (type === EScheduleType.audio) return t('message_type_audio');
   if (type === EScheduleType.chatbot) return t('message_type_chatbot');
+  if (type === EScheduleType.official_template) {
+    return t('message_type_official_template');
+  }
   return type;
 };
 

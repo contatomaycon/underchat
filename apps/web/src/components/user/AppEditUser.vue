@@ -22,6 +22,12 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import { can } from '@/@layouts/plugins/casl';
 import { getUser } from '@/@webcore/localStorage/user';
+import {
+  normalizeCnpj,
+  validateCnpj,
+} from '@core/common/functions/validateCnpj';
+import { cnpjAlphanumericMask } from '@/@webcore/utils/masks';
+import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
 
 const userStore = useUsersStore();
 const { items: countryCodes } = useCountryCodes();
@@ -56,6 +62,7 @@ const accountsOptions = ref<{ id: string; text: string }[]>([]);
 const accountsLoading = ref(false);
 const permissionRoleId = ref<string | null>(null);
 const initialPermissionRoleId = ref<string | null>(null);
+const user_status_id = ref<string | null>(null);
 const rolesOptions = ref<{ id: string; name: string }[]>([]);
 const sectorIds = ref<string[]>([]);
 const initialSectorIds = ref<string[]>([]);
@@ -178,11 +185,32 @@ const emailValidator = (v: string | null | undefined) => {
   return re.test(s) || t('email_invalid');
 };
 
-const itemsStatus = ref([
-  { id: EUserStatus.active, text: t('active') },
-  { id: EUserStatus.inactive, text: t('inactive') },
-  { id: EUserStatus.blocked, text: t('blocked') },
-]);
+const itemsStatus = computed(() => {
+  const items = [
+    { id: EUserStatus.active, text: t('active') },
+    { id: EUserStatus.inactive, text: t('inactive') },
+    { id: EUserStatus.blocked, text: t('blocked') },
+  ];
+
+  const effectiveRoleId =
+    permissionRoleId.value ?? initialPermissionRoleId.value;
+
+  return isMasterOrAdministratorRole(effectiveRoleId)
+    ? items.filter((item) => item.id !== EUserStatus.blocked)
+    : items;
+});
+
+watch(
+  [permissionRoleId, initialPermissionRoleId],
+  ([roleId, initialRoleId]) => {
+    if (
+      isMasterOrAdministratorRole(roleId ?? initialRoleId) &&
+      user_status_id.value === EUserStatus.blocked
+    ) {
+      user_status_id.value = EUserStatus.active;
+    }
+  }
+);
 
 const itemsDocuments = ref([
   { value: EUserDocumentType.CPF, title: t('cpf') },
@@ -205,9 +233,9 @@ const docConfig = {
     placeholder: '000.000.000-00',
   },
   cnpj: {
-    mask: '##.###.###/####-##',
+    mask: cnpjAlphanumericMask,
     label: t('cnpj'),
-    placeholder: '00.000.000/0000-00',
+    placeholder: '00.AAA.000/00AA-00',
   },
 };
 
@@ -226,9 +254,10 @@ const docPlaceholder = computed(() =>
 );
 
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
+const normalizeDocumentInput = (value: string | null | undefined): string =>
+  isCNPJ.value ? normalizeCnpj(value ?? '') : onlyDigits(value ?? '');
 
 const cpfRegex = /^\d{11}$/;
-const cnpjRegex = /^\d{14}$/;
 
 const docRules = computed(() => [
   (v: string | null) => {
@@ -237,10 +266,11 @@ const docRules = computed(() => [
     if (!v) return true;
 
     const digits = onlyDigits(v ?? '');
-    if (!digits) return true;
+    const cnpj = normalizeCnpj(v ?? '');
+    if (!digits && !cnpj) return true;
 
     if (isCPF.value) return cpfRegex.test(digits) || t('cpf_invalid');
-    if (isCNPJ.value) return cnpjRegex.test(digits) || t('cnpj_invalid');
+    if (isCNPJ.value) return validateCnpj(v) || t('cnpj_invalid');
     return true;
   },
 ]);
@@ -298,7 +328,6 @@ const city_id = ref<string | null>(null);
 const isStateMenuOpen = ref(false);
 const isCityMenuOpen = ref(false);
 const district = ref<string | null>(null);
-const user_status_id = ref<string | null>(null);
 
 const photo = ref<string | null>(null);
 const photoFile = ref<File | null>(null);
@@ -755,7 +784,7 @@ const startEditDocument = async () => {
     isLoadingDocument.value = false;
 
     if (decryptedDocument) {
-      const digits = decryptedDocument.replaceAll(/\D/g, '');
+      const digits = normalizeDocumentInput(decryptedDocument);
       isDocumentDecrypted.value = true;
       await nextTick();
       document.value = digits;
@@ -771,13 +800,14 @@ const handleDocumentBlur = () => {
   if (!isDocumentDecrypted.value) return;
 
   if (document.value) {
-    const digits = String(document.value).replaceAll(/\D/g, '');
+    const digits = normalizeDocumentInput(document.value);
     document.value = digits;
   }
 
-  const currentDigits = document.value?.replaceAll(/\D/g, '') ?? '';
-  const originalDigits =
-    documentDecryptedOriginal.value?.replaceAll(/\D/g, '') ?? '';
+  const currentDigits = normalizeDocumentInput(document.value);
+  const originalDigits = normalizeDocumentInput(
+    documentDecryptedOriginal.value
+  );
 
   if (currentDigits === originalDigits) {
     isDocumentDecrypted.value = false;
@@ -802,7 +832,7 @@ const toggleDocumentVisibility = async () => {
   isLoadingDocument.value = false;
 
   if (decryptedDocument) {
-    const digits = decryptedDocument.replaceAll(/\D/g, '');
+    const digits = normalizeDocumentInput(decryptedDocument);
     isDocumentDecrypted.value = true;
     await nextTick();
     document.value = digits;
@@ -986,9 +1016,8 @@ const determineDocumentToSave = (): string | null | undefined => {
 
   if (!isDocumentDecrypted.value) return undefined;
 
-  const digits = document.value?.replaceAll(/\D/g, '') ?? '';
-  const originalDigits =
-    initialValues.value.document?.replaceAll(/\D/g, '') ?? '';
+  const digits = normalizeDocumentInput(document.value);
+  const originalDigits = normalizeDocumentInput(initialValues.value.document);
 
   if (digits === originalDigits) return undefined;
 
@@ -2969,7 +2998,7 @@ watch(
                       :placeholder="docPlaceholder"
                       :rules="docRules"
                       v-maska="docMask"
-                      inputmode="numeric"
+                      :inputmode="isCNPJ ? undefined : 'numeric'"
                       @blur="handleDocumentBlur"
                     >
                       <template #append-inner>

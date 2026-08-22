@@ -9,6 +9,7 @@ import {
   WorkerExternalConnectionTokenService,
 } from '@core/services/workerExternalConnectionToken.service';
 import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
+import type { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 
 @injectable()
 export class WorkerExternalConnectionViewerUseCase {
@@ -33,6 +34,8 @@ export class WorkerExternalConnectionViewerUseCase {
       throw new Error(t('worker_not_found'));
     }
 
+    this.validateWorkerSnapshot(t, payload, worker);
+
     const subject = `external:${payload.worker_id}`;
     const channel = workerCentrifugoQueue(payload.account_id);
 
@@ -55,6 +58,11 @@ export class WorkerExternalConnectionViewerUseCase {
         payload
       ),
       centrifugo_channel: channel,
+      connection_status: worker.connection_status ?? null,
+      connection_status_source_id: worker.connection_status_source_id ?? null,
+      connection_status_order: worker.connection_status_order ?? null,
+      connection_online_acknowledged:
+        worker.connection_online_acknowledged ?? false,
     };
   }
 
@@ -64,6 +72,30 @@ export class WorkerExternalConnectionViewerUseCase {
   ): WorkerExternalConnectionTokenPayload {
     try {
       return this.workerExternalConnectionTokenService.validate(token);
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(t(error.message));
+      }
+
+      throw error;
+    }
+  }
+
+  private validateWorkerSnapshot(
+    t: TFunction<'translation', undefined>,
+    payload: WorkerExternalConnectionTokenPayload,
+    worker: ViewWorkerResponse
+  ): void {
+    try {
+      this.workerExternalConnectionTokenService.validateWorkerSnapshot(
+        payload,
+        {
+          server_id: worker.server?.id,
+          worker_type_id: worker.type?.id,
+          worker_updated_at: worker.updated_at,
+          external_connection_revision: worker.external_connection_revision,
+        }
+      );
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(t(error.message));

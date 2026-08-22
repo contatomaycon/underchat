@@ -93,13 +93,14 @@ describe('ContactGroupCreatorUseCase', () => {
     );
     const t = jest.fn((key: string) => key);
 
-    await expect(useCase.execute(t as never, input, 'acc-1')).resolves.toBe(
-      true
-    );
+    await expect(
+      useCase.execute(t as never, input, 'acc-1', 'user-1')
+    ).resolves.toBe(true);
     expect(contactGroupService.createContactGroup).toHaveBeenCalledWith(
       t,
       'acc-1',
-      input
+      input,
+      'user-1'
     );
   });
 });

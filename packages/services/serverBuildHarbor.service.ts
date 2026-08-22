@@ -12,6 +12,7 @@ interface HarborTagDto {
 }
 
 interface HarborArtifactDto {
+  digest?: string;
   push_time?: string;
   tags?: HarborTagDto[];
 }
@@ -102,6 +103,18 @@ export class ServerBuildHarborService {
 
   private buildImageReference(imageName: string, version: string): string {
     return `${buildEnvironment.harborRegistry}/${buildEnvironment.harborNamespace}/${imageName}:${version}`;
+  }
+
+  private buildImageRepositoryReference(imageName: string): string {
+    const registry = buildEnvironment.harborRegistry
+      .trim()
+      .replace(/^https?:\/\//u, '')
+      .replace(/\/+$/u, '');
+    const namespace = buildEnvironment.harborNamespace
+      .trim()
+      .replace(/^\/+|\/+$/gu, '');
+
+    return `${registry}/${namespace}/${imageName}`;
   }
 
   private isVersionTag(tag: string): boolean {
@@ -210,6 +223,77 @@ export class ServerBuildHarborService {
     return this.sortVersionTagsDesc(Array.from(tagsByName.values()));
   }
 
+  /**
+   * Resolves a configured build reference once and returns a content-addressed
+   * Docker reference. Rollout callers must never pass a mutable tag to a host:
+   * the tag is only an approval/discovery handle at the control plane.
+   */
+  async resolveImmutableImageReference(
+    buildType: EServerBuildType,
+    imageReference: string
+  ): Promise<{ digest: string; imageReference: string }> {
+    const imageName = this.buildImageByType[buildType];
+    const repositoryReference = this.buildImageRepositoryReference(imageName);
+    const normalizedReference = imageReference
+      .trim()
+      .replace(/^https?:\/\//u, '');
+    const digestPrefix = `${repositoryReference}@`;
+    const tagPrefix = `${repositoryReference}:`;
+
+    if (normalizedReference.startsWith(digestPrefix)) {
+      const digest = normalizedReference.slice(digestPrefix.length);
+      if (!/^sha256:[a-f0-9]{64}$/u.test(digest)) {
+        throw new InvalidConfigurationError(
+          `Invalid immutable ${buildType} image digest.`
+        );
+      }
+
+      return {
+        digest,
+        imageReference: `${repositoryReference}@${digest}`,
+      };
+    }
+
+    if (!normalizedReference.startsWith(tagPrefix)) {
+      throw new InvalidConfigurationError(
+        `The ${buildType} image reference does not belong to the configured Harbor repository.`
+      );
+    }
+
+    const tag = normalizedReference.slice(tagPrefix.length);
+    if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/u.test(tag)) {
+      throw new InvalidConfigurationError(`Invalid ${buildType} image tag.`);
+    }
+
+    const repository = this.getRepositoryInfo(imageName);
+    const repositoryEncoded = encodeURIComponent(repository.repositoryName);
+    const projectEncoded = encodeURIComponent(repository.projectName);
+    const referenceEncoded = encodeURIComponent(tag);
+    const response = await this.getAxiosInstance().get<HarborArtifactDto>(
+      `/projects/${projectEncoded}/repositories/${repositoryEncoded}/artifacts/${referenceEncoded}`,
+      {
+        params: {
+          with_tag: true,
+          with_label: false,
+          with_scan_overview: false,
+          with_signature: false,
+          with_immutable_status: true,
+        },
+      }
+    );
+    const digest = response.data?.digest?.trim().toLowerCase() ?? '';
+    if (!/^sha256:[a-f0-9]{64}$/u.test(digest)) {
+      throw new InvalidConfigurationError(
+        `Harbor returned an invalid ${buildType} image digest.`
+      );
+    }
+
+    return {
+      digest,
+      imageReference: `${repositoryReference}@${digest}`,
+    };
+  }
+
   async listPairedBuildVersions(
     limit: number
   ): Promise<IHarborBuildVersionByType[]> {
@@ -234,62 +318,77 @@ export class ServerBuildHarborService {
       IHarborArtifactTag[]
     >;
 
-    const versionSets = buildTypes.map(
-      (buildType) => new Set(tagsByType[buildType].map((tag) => tag.tag))
-    );
-    const firstSet = versionSets[0] ?? new Set<string>();
-    const restSets = versionSets.slice(1);
-    const intersectedVersions = Array.from(firstSet).filter((version) =>
-      restSets.every((set) => set.has(version))
-    );
+    const versionsByTag = new Map<string, IHarborBuildVersionByType>();
 
-    const versions = intersectedVersions.map((version) => {
-      const imageReferences = {} as Record<EServerBuildType, string>;
-      const harborRepositories = {} as Record<EServerBuildType, string>;
-      const pushedAtCandidates: string[] = [];
+    for (const buildType of buildTypes) {
+      const imageName = this.buildImageByType[buildType];
+      const repositoryInfo = this.getRepositoryInfo(imageName);
 
-      for (const buildType of buildTypes) {
-        const imageName = this.buildImageByType[buildType];
-        const repositoryInfo = this.getRepositoryInfo(imageName);
-        harborRepositories[buildType] = repositoryInfo.repositoryPath;
-        imageReferences[buildType] = this.buildImageReference(
+      for (const tag of tagsByType[buildType].slice(0, limit)) {
+        const versionData = versionsByTag.get(tag.tag) ?? {
+          version: tag.tag,
+          created_at: null,
+          image_references: {},
+          harbor_repositories: {},
+        };
+
+        versionData.harbor_repositories[buildType] =
+          repositoryInfo.repositoryPath;
+        versionData.image_references[buildType] = this.buildImageReference(
           imageName,
-          version
+          tag.tag
         );
 
-        const matchedTag =
-          tagsByType[buildType].find((tag) => tag.tag === version) ?? null;
-        if (matchedTag?.pushed_at) {
-          pushedAtCandidates.push(matchedTag.pushed_at);
+        if (
+          tag.pushed_at &&
+          (!versionData.created_at ||
+            tag.pushed_at.localeCompare(versionData.created_at) > 0)
+        ) {
+          versionData.created_at = tag.pushed_at;
         }
+
+        versionsByTag.set(tag.tag, versionData);
+      }
+    }
+
+    return Array.from(versionsByTag.values()).sort((a, b) => {
+      if (a.created_at && b.created_at && a.created_at !== b.created_at) {
+        return b.created_at.localeCompare(a.created_at);
       }
 
-      return {
-        version,
-        created_at:
-          pushedAtCandidates.sort((a, b) => b.localeCompare(a))[0] ?? null,
-        image_references: imageReferences,
-        harbor_repositories: harborRepositories,
-      } as IHarborBuildVersionByType;
+      if (a.created_at && !b.created_at) {
+        return -1;
+      }
+
+      if (!a.created_at && b.created_at) {
+        return 1;
+      }
+
+      return b.version.localeCompare(a.version);
     });
+  }
 
-    return versions
-      .sort((a, b) => {
-        if (a.created_at && b.created_at && a.created_at !== b.created_at) {
-          return b.created_at.localeCompare(a.created_at);
-        }
+  async deleteBuildVersionArtifact(
+    buildType: EServerBuildType,
+    version: string
+  ): Promise<void> {
+    const imageName = this.buildImageByType[buildType];
+    const repository = this.getRepositoryInfo(imageName);
+    const projectEncoded = encodeURIComponent(repository.projectName);
+    const repositoryEncoded = encodeURIComponent(repository.repositoryName);
+    const referenceEncoded = encodeURIComponent(version);
 
-        if (a.created_at && !b.created_at) {
-          return -1;
-        }
+    try {
+      await this.getAxiosInstance().delete(
+        `/projects/${projectEncoded}/repositories/${repositoryEncoded}/artifacts/${referenceEncoded}`
+      );
+    } catch (error) {
+      if (error instanceof AxiosError && error.response?.status === 404) {
+        return;
+      }
 
-        if (!a.created_at && b.created_at) {
-          return 1;
-        }
-
-        return b.version.localeCompare(a.version);
-      })
-      .slice(0, limit);
+      throw error;
+    }
   }
 
   async deleteBuildVersionArtifacts(version: string): Promise<void> {
@@ -301,23 +400,7 @@ export class ServerBuildHarborService {
     ];
 
     for (const buildType of buildTypes) {
-      const imageName = this.buildImageByType[buildType];
-      const repository = this.getRepositoryInfo(imageName);
-      const projectEncoded = encodeURIComponent(repository.projectName);
-      const repositoryEncoded = encodeURIComponent(repository.repositoryName);
-      const referenceEncoded = encodeURIComponent(version);
-
-      try {
-        await this.getAxiosInstance().delete(
-          `/projects/${projectEncoded}/repositories/${repositoryEncoded}/artifacts/${referenceEncoded}`
-        );
-      } catch (error) {
-        if (error instanceof AxiosError && error.response?.status === 404) {
-          continue;
-        }
-
-        throw error;
-      }
+      await this.deleteBuildVersionArtifact(buildType, version);
     }
   }
 }

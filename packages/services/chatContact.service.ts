@@ -12,6 +12,7 @@ import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTempl
 import { EncryptService } from '@core/services/encrypt.service';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { normalizeCnpj } from '@core/common/functions/validateCnpj';
 
 @injectable()
 export class ChatContactService {
@@ -53,8 +54,8 @@ export class ChatContactService {
     }
 
     if (query?.filter_document) {
-      const documentDigits = onlyDigits(query.filter_document);
-      documentHash = this.encryptService.encrypt(documentDigits);
+      const document = normalizeCnpj(query.filter_document);
+      documentHash = this.encryptService.encrypt(document);
     }
 
     const [result, total] = await Promise.all([

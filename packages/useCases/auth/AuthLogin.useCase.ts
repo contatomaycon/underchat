@@ -214,7 +214,9 @@ export class AuthLoginUseCase {
         result.account_id,
         result.user_id
       ),
-      this.accountService.listActivePlanProductIds(result.account_id),
+      this.accountService.listActivePlanProductIds(result.account_id, {
+        bypassIntegrationCache: true,
+      }),
     ]);
 
     const planIsActive = await this.accountService.isPlanActive(

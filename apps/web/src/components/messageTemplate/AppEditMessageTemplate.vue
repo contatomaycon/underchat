@@ -4,6 +4,7 @@ import { useMessageTemplateStore } from '@/@webcore/stores/messageTemplate';
 import { EMessageStatus } from '@core/common/enums/EMessageStatus';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EditMessageTemplateParamsRequest } from '@core/schema/messageTemplate/editMessageTemplate/request.schema';
+import { reconcileMessageTemplateChannelIds } from '@/utils/messageTemplateChannelSelection';
 
 const messageTemplateStore = useMessageTemplateStore();
 const { t } = useI18n();
@@ -166,13 +167,21 @@ const acceptedFileTypes = computed(() => {
 
 const refFormEditMessageTemplate = ref<VForm>();
 
-const loadChannelOptions = async () => {
+const loadChannelOptions = async (): Promise<boolean> => {
   const workers = await messageTemplateStore.listMessageTemplateChannels();
 
-  channelOptions.value = (workers ?? []).map((worker) => ({
+  if (!workers) {
+    channelOptions.value = [];
+
+    return false;
+  }
+
+  channelOptions.value = workers.map((worker) => ({
     value: worker.id,
     text: worker.name,
   }));
+
+  return true;
 };
 
 function getExt(filename: string): string {
@@ -490,14 +499,19 @@ watch(
   [isVisible, messageTemplateId],
   async ([visible, id]) => {
     if (visible && id) {
-      await loadChannelOptions();
+      const channelsLoaded = await loadChannelOptions();
       resetForm();
       const messageTemplate =
         await messageTemplateStore.getMessageTemplateById(id);
       if (messageTemplate) {
         message.value = messageTemplate.message;
         command.value = messageTemplate.command;
-        channel_ids.value = messageTemplate.channel_ids ?? [];
+        channel_ids.value = channelsLoaded
+          ? reconcileMessageTemplateChannelIds(
+              messageTemplate.channel_ids,
+              channelOptions.value.map((option) => option.value)
+            )
+          : (messageTemplate.channel_ids ?? []);
         message_status_id.value =
           messageTemplate.message_status?.message_status_id ?? null;
         auto_send.value = messageTemplate.auto_send ?? false;

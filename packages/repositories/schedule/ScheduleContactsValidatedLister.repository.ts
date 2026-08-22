@@ -95,6 +95,7 @@ export class ScheduleContactsValidatedListerRepository {
         phone_ddi: contact.phone_ddi,
         phone_partial: contact.phone_partial,
         is_valided: contact.is_valided,
+        validation_origin: contact.validation_origin,
       })
       .from(contact)
       .where(and(...conditions))
@@ -108,6 +109,7 @@ export class ScheduleContactsValidatedListerRepository {
       phone_ddi: c.phone_ddi,
       phone_partial: c.phone_partial,
       is_validated: c.is_valided ?? false,
+      validation_origin: c.validation_origin ?? null,
     }));
   }
 

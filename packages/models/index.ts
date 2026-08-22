@@ -28,3 +28,6 @@ export * from './release';
 export * from './s3BackupUpload';
 export * from './internalChat';
 export * from './whatsapp';
+export * from './downloadArtifactConfig.model';
+export * from './outboundWebhook';
+export * from './config';

@@ -75,10 +75,9 @@ const formatPhone = (phone: string | null | undefined): string => {
   return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
 };
 
-const formattedPhone = computed(() => {
-  if (!lastContact.value?.phone_complete) return '';
-  return formatPhone(lastContact.value.phone_complete);
-});
+const formattedPhone = computed(() =>
+  formatPhoneComplete(lastContact.value?.phone, lastContact.value?.phone_ddi)
+);
 
 const refFormAddContact = ref<VForm>();
 
@@ -341,10 +340,17 @@ const statusCounts = computed(() => {
 });
 
 const formatPhoneComplete = (
-  phoneComplete: string | null | undefined
+  phone: string | null | undefined,
+  phoneDdi: string | null | undefined
 ): string => {
-  if (!phoneComplete) return '';
-  return formatPhone(phoneComplete);
+  if (!phone) return '';
+
+  const formattedPhone = formatPhone(phone);
+  const ddi = phoneDdi?.replaceAll(/\D/g, '');
+
+  if (!ddi) return formattedPhone;
+
+  return `(${ddi}) ${formattedPhone.replace(/^\((\d{2})\)\s/u, '$1 ')}`;
 };
 
 const statusChipsFirstRow = computed(() => {
@@ -602,7 +608,7 @@ onUnmounted(() => {
                   <tr v-for="(result, index) in filteredResults" :key="index">
                     <td>
                       <div class="font-weight-medium">
-                        {{ formatPhoneComplete(result.phone_complete) }}
+                        {{ formatPhoneComplete(result.phone, result.phone_ddi) }}
                       </div>
                     </td>
                     <td>

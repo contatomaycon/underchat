@@ -118,8 +118,10 @@ describe('TypingSimulationRuntimeService', () => {
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
 
+    const secret =
+      'postgres://worker:password@database:5432/underchat capability-secret qr-secret';
     balanceWorkerStatusGrpcClientService.getTypingSimulationConfig.mockRejectedValueOnce(
-      new Error('grpc unavailable')
+      Object.assign(new Error(secret), { code: 'ECONNRESET' })
     );
 
     await expect(service.getConfig('worker-1', 'account-1')).resolves.toEqual(
@@ -127,6 +129,14 @@ describe('TypingSimulationRuntimeService', () => {
     );
 
     expect(redis.set).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      '[TypingSimulationRuntime] config fetch failed',
+      expect.objectContaining({
+        error_name: 'error',
+        error_code: 'econnreset',
+      })
+    );
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain(secret);
     consoleErrorSpy.mockRestore();
   });
 });

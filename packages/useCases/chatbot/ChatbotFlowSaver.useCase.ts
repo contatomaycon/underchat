@@ -20,6 +20,32 @@ import {
   getOfficialChatbotNodes,
   isOfficialChatbotNodeType,
 } from '@core/common/functions/chatbotOfficialNodes';
+import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
+import {
+  assignStableApiRequestOutputKeys,
+  getUpstreamApiContracts,
+  validateChatbotApiVariableDependencies,
+} from '@core/common/functions/chatbotApiGraph';
+import {
+  createApiRequestFingerprint,
+  decryptApiRequestSecrets,
+  encryptApiRequestSecrets,
+  verifyApiRequestProof,
+} from '@core/common/functions/chatbotApiRequestSecurity';
+import type {
+  ChatbotFlowData,
+  ChatbotFlowNode,
+} from '@core/schema/chatbot/chatbotFlow.schema';
+import {
+  assignStableChatbotNodeOutputKeys,
+  isChatbotNodeOutputKey,
+} from '@core/common/functions/chatbotNodeOutputs';
+import { ChatbotApiRequestFlowValidationError } from '@core/common/exceptions/ChatbotApiRequestFlowValidationError';
+import { ChatbotUnderchatAccessError } from '@core/common/exceptions/ChatbotUnderchatAccessError';
+import { hasFullAccess } from '@core/common/functions/hasFullAccess';
+import type { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { validateOfficialWhatsappInteractiveNodeData } from '@core/common/functions/officialWhatsappInteractiveValidation';
+import { OfficialWhatsappInteractiveValidationError } from '@core/common/exceptions/OfficialWhatsappInteractiveValidationError';
 
 type MediaType = 'image' | 'video' | 'audio' | 'document';
 type WeekdayOptionId =
@@ -84,6 +110,18 @@ export class ChatbotFlowSaverUseCase {
   private readonly HOURS_OUTSIDE_OPTION_ID = 'outside-hours';
   private readonly HOLIDAY_IS_OPTION_ID = 'is-holiday';
   private readonly HOLIDAY_NOT_OPTION_ID = 'not-holiday';
+  private readonly DATA_NODE_TYPES = new Set([
+    'name',
+    'lastname',
+    'email',
+    'cpf',
+    'cnpj',
+  ]);
+  private readonly MESSAGE_NODE_CONTINUE_TYPES = new Set([
+    'automatic',
+    'after_response',
+  ]);
+  private readonly UNDERCHAT_LOOKUP_TYPES = new Set(['email', 'document']);
 
   constructor(
     @inject(ChatbotService)
@@ -93,8 +131,125 @@ export class ChatbotFlowSaverUseCase {
     @inject(StorageService)
     private readonly storageService: StorageService,
     @inject(ConverterService)
-    private readonly converterService: ConverterService
+    private readonly converterService: ConverterService,
+    @inject(PasswordEncryptorService)
+    private readonly passwordEncryptorService: PasswordEncryptorService = new PasswordEncryptorService()
   ) {}
+
+  private validateApiRequestNodes(
+    t: TFunction<'translation', undefined>,
+    requestData: ChatbotFlowData,
+    accountId: string
+  ): void {
+    const dependencyErrors =
+      validateChatbotApiVariableDependencies(requestData);
+    if (dependencyErrors.length > 0) {
+      const first = dependencyErrors[0];
+      const key =
+        first.code === 'missing_api_branch'
+          ? 'chatbot_flow_validation_api_branches_required'
+          : 'chatbot_flow_validation_api_variable_dependency';
+      throw new ChatbotApiRequestFlowValidationError(
+        t(key, {
+          nodeId: first.nodeId,
+          path: first.path ?? '',
+        })
+      );
+    }
+
+    for (const node of requestData.nodes) {
+      if (node.type !== 'apiRequest') continue;
+      const config = node.data.apiRequest;
+      if (!config) {
+        throw new ChatbotApiRequestFlowValidationError(
+          t('chatbot_flow_validation_api_configuration_required')
+        );
+      }
+      const evidence = config.test.evidence;
+      if (config.test.state !== 'tested' || !evidence) {
+        throw new ChatbotApiRequestFlowValidationError(
+          t('chatbot_flow_validation_api_test_required', {
+            nodeId: node.id,
+          })
+        );
+      }
+      const upstreamContracts = getUpstreamApiContracts(requestData, node.id);
+      const fingerprint = createApiRequestFingerprint(
+        config,
+        upstreamContracts
+      );
+      const proofIsValid =
+        fingerprint === evidence.fingerprint &&
+        verifyApiRequestProof(evidence.proof, {
+          accountId,
+          chatbotId: requestData.chatbot_id,
+          nodeId: node.id,
+          fingerprint,
+          testedAt: evidence.testedAt,
+          statusCode: evidence.statusCode,
+          bodyType: evidence.bodyType,
+          contract: config.capture.contract,
+          responseHeaders: config.capture.availableResponseHeaders,
+        });
+      if (!proofIsValid) {
+        throw new ChatbotApiRequestFlowValidationError(
+          t('chatbot_flow_validation_api_test_invalid', {
+            nodeId: node.id,
+          })
+        );
+      }
+    }
+  }
+
+  private assertUnderchatAccess(
+    t: TFunction<'translation', undefined>,
+    actions: IJwtGroupHierarchy[],
+    ...flows: Array<Pick<ChatbotFlowData, 'nodes'> | null | undefined>
+  ): void {
+    const containsUnderchat = flows.some((flow) =>
+      flow?.nodes.some((node) => node.type === 'underchat')
+    );
+    if (containsUnderchat && !hasFullAccess(actions)) {
+      throw new ChatbotUnderchatAccessError(t('permission_denied'));
+    }
+  }
+
+  private secureApiRequestNodes(
+    requestData: ChatbotFlowData,
+    previousFlow?: ChatbotFlowData | null
+  ): ChatbotFlowData {
+    const next = structuredClone(requestData);
+    const previousById = new Map(
+      (previousFlow?.nodes ?? []).flatMap((node) => {
+        const config = node.data.apiRequest;
+        if (node.type !== 'apiRequest' || !config) return [];
+        return [[node.id, config] as const];
+      })
+    );
+    for (const node of next.nodes) {
+      if (node.type !== 'apiRequest' || !node.data.apiRequest) continue;
+      node.data.apiRequest = encryptApiRequestSecrets(
+        node.data.apiRequest,
+        this.passwordEncryptorService,
+        previousById.get(node.id)
+      );
+    }
+    return next;
+  }
+
+  private revealApiRequestNodesForValidation(
+    requestData: ChatbotFlowData
+  ): ChatbotFlowData {
+    const next = structuredClone(requestData);
+    for (const node of next.nodes) {
+      if (node.type !== 'apiRequest' || !node.data.apiRequest) continue;
+      node.data.apiRequest = decryptApiRequestSecrets(
+        node.data.apiRequest,
+        this.passwordEncryptorService
+      );
+    }
+    return next;
+  }
 
   private normalizeHandleId(handle?: string | null): string | null {
     if (!handle) {
@@ -251,6 +406,14 @@ export class ChatbotFlowSaverUseCase {
 
     if (node.type === 'annotation') {
       return t('chatbot_annotation_node_title');
+    }
+
+    if (node.type === 'apiRequest') {
+      return t('chatbot_api_request');
+    }
+
+    if (node.type === 'underchat') {
+      return t('chatbot_underchat');
     }
 
     if (node.type === 'distribution') {
@@ -489,7 +652,11 @@ export class ChatbotFlowSaverUseCase {
     hasAttachmentFile: boolean | undefined,
     errors: string[]
   ): void {
-    if (!data.attachmentUrl && !hasAttachmentFile && !data.text) {
+    const hasVariableAttachment =
+      data.attachmentSource === 'variable' &&
+      typeof data.attachmentVariable === 'string' &&
+      data.attachmentVariable.trim().length > 0;
+    if (!data.attachmentUrl && !hasAttachmentFile && !hasVariableAttachment) {
       errors.push(
         t('chatbot_flow_validation_message_attachment_required', {
           nodeLabel: node.data?.title || node.label || node.id,
@@ -533,7 +700,7 @@ export class ChatbotFlowSaverUseCase {
       this.validateMediaMessage(t, node, data, hasAttachmentFile, errors);
     }
 
-    if (!data.continueType) {
+    if (!this.MESSAGE_NODE_CONTINUE_TYPES.has(data.continueType)) {
       errors.push(
         t('chatbot_flow_validation_continue_type_required', {
           nodeLabel: node.data?.title || node.label || node.id,
@@ -563,14 +730,53 @@ export class ChatbotFlowSaverUseCase {
     }
 
     const dataType = data.dataType;
-    if (
-      dataType === null ||
-      dataType === undefined ||
-      (typeof dataType === 'string' && dataType.trim() === '')
-    ) {
+    if (typeof dataType !== 'string' || !this.DATA_NODE_TYPES.has(dataType)) {
       errors.push(
         t('chatbot_flow_validation_data_type_required', {
           nodeLabel: data.title || node.label || node.id,
+        })
+      );
+    }
+  }
+
+  private validateUnderchatNode(
+    t: TFunction<'translation', undefined>,
+    node: ChatbotFlowNode,
+    requestData: SaveChatbotFlowRequestData,
+    errors: string[]
+  ): void {
+    if (node.type !== 'underchat') return;
+
+    const lookup = node.data.underchatLookup;
+    const hasValidConfiguration =
+      lookup?.version === 1 &&
+      this.UNDERCHAT_LOOKUP_TYPES.has(lookup.lookupType) &&
+      typeof lookup.lookupExpression === 'string' &&
+      lookup.lookupExpression.trim().length > 0 &&
+      lookup.lookupExpression.length <= 8192 &&
+      isChatbotNodeOutputKey('underchat', node.data.outputKey);
+
+    if (!hasValidConfiguration) {
+      errors.push(
+        t('chatbot_flow_validation_underchat_configuration_required', {
+          nodeLabel: this.getNodeLabel(t, node),
+        })
+      );
+    }
+
+    const outgoingEdges = requestData.edges.filter(
+      (edge) => edge.source === node.id
+    );
+    const handles = outgoingEdges.map((edge) => edge.sourceHandle);
+    const foundCount = handles.filter((handle) => handle === 'found').length;
+    const notFoundCount = handles.filter(
+      (handle) => handle === 'not_found'
+    ).length;
+
+    if (outgoingEdges.length !== 2 || foundCount !== 1 || notFoundCount !== 1) {
+      errors.push(
+        t('chatbot_flow_validation_underchat_branches_required', {
+          nodeLabel: this.getNodeLabel(t, node),
         })
       );
     }
@@ -750,6 +956,18 @@ export class ChatbotFlowSaverUseCase {
 
     const nodeLabel = this.getNodeLabel(t, node);
 
+    if (
+      data.conditionalOperand === 'variable' &&
+      (!data.conditionalVariable ||
+        String(data.conditionalVariable).trim().length === 0)
+    ) {
+      errors.push(
+        t('chatbot_flow_validation_conditional_variable_required', {
+          nodeLabel,
+        })
+      );
+    }
+
     for (let i = 0; i < conditions.length; i++) {
       const condition = conditions[i];
 
@@ -762,9 +980,11 @@ export class ChatbotFlowSaverUseCase {
       }
 
       if (
-        !condition.conditionTerm ||
-        (typeof condition.conditionTerm === 'string' &&
-          condition.conditionTerm.trim().length === 0)
+        condition.conditionType !== 'exists' &&
+        condition.conditionType !== 'not_exists' &&
+        (!condition.conditionTerm ||
+          (typeof condition.conditionTerm === 'string' &&
+            condition.conditionTerm.trim().length === 0))
       ) {
         errors.push(
           t('chatbot_flow_validation_conditional_term_required', {
@@ -1273,18 +1493,88 @@ export class ChatbotFlowSaverUseCase {
     });
   }
 
-  private validateOfficialOptionsLimit(
+  private getOfficialArrayField(data: any, field: string): unknown[] {
+    const value = this.getOfficialField(data, field);
+    return Array.isArray(value) ? value : [];
+  }
+
+  private validateOfficialOptionsPresence(
     t: TFunction<'translation', undefined>,
     node: any,
-    errors: string[],
-    maxOptions: number
+    errors: string[]
   ): void {
-    const options = Array.isArray(node.data?.options) ? node.data.options : [];
-    if (options.length === 0 || options.length > maxOptions) {
+    const options = this.getOfficialArrayField(node.data, 'options');
+    if (options.length === 0) {
       errors.push(
         t('chatbot_flow_validation_official_options_limit', {
           nodeLabel: this.getNodeLabel(t, node),
+          limit: node.type === 'officialReplyButtons' ? 3 : 10,
+          actual: 0,
         })
+      );
+    }
+  }
+
+  private validateOfficialInteractiveLimits(
+    t: TFunction<'translation', undefined>,
+    node: any
+  ): void {
+    const nodeLabel = this.getNodeLabel(t, node);
+    const issues = validateOfficialWhatsappInteractiveNodeData(
+      node.type,
+      node.data
+    );
+
+    const messages = issues.map((issue) => {
+      if (issue.code === 'emoji_not_allowed') {
+        return t('chatbot_flow_validation_official_emoji_not_allowed', {
+          nodeLabel,
+          field: issue.field,
+        });
+      }
+      if (issue.code === 'unsupported_field') {
+        return t('chatbot_flow_validation_official_field_not_supported', {
+          nodeLabel,
+          field: issue.field,
+        });
+      }
+      if (issue.code === 'required_field') {
+        return t('chatbot_flow_validation_official_field_required', {
+          nodeLabel,
+          field: issue.field,
+        });
+      }
+      if (issue.code === 'invalid_url') {
+        return t('chatbot_flow_validation_official_url_invalid', {
+          nodeLabel,
+          field: issue.field,
+        });
+      }
+      if (!('limit' in issue)) {
+        return t('chatbot_flow_validation_official_field_not_supported', {
+          nodeLabel,
+          field: issue.field,
+        });
+      }
+
+      const key =
+        issue.code === 'max_items' && node.type !== 'officialMultiProduct'
+          ? 'chatbot_flow_validation_official_options_limit'
+          : issue.code === 'max_items'
+            ? 'chatbot_flow_validation_official_items_limit'
+            : 'chatbot_flow_validation_official_text_limit';
+      return t(key, {
+        nodeLabel,
+        field: issue.field,
+        limit: issue.limit,
+        actual: issue.actual,
+      });
+    });
+
+    if (issues.length > 0) {
+      throw new OfficialWhatsappInteractiveValidationError(
+        issues,
+        [...new Set(messages)].join('; ')
       );
     }
   }
@@ -1298,15 +1588,17 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
+    this.validateOfficialInteractiveLimits(t, node);
+
     if (node.type === 'officialReplyButtons') {
       this.requireOfficialFields(t, node, errors, ['message']);
-      this.validateOfficialOptionsLimit(t, node, errors, 3);
+      this.validateOfficialOptionsPresence(t, node, errors);
       return;
     }
 
     if (node.type === 'officialList') {
       this.requireOfficialFields(t, node, errors, ['message', 'buttonText']);
-      this.validateOfficialOptionsLimit(t, node, errors, 10);
+      this.validateOfficialOptionsPresence(t, node, errors);
       return;
     }
 
@@ -1344,7 +1636,11 @@ export class ChatbotFlowSaverUseCase {
     }
 
     if (node.type === 'officialMultiProduct') {
-      this.requireOfficialFields(t, node, errors, ['catalogId']);
+      this.requireOfficialFields(t, node, errors, [
+        'message',
+        'header',
+        'catalogId',
+      ]);
       if (!this.hasOfficialMultiProductItems(node.data)) {
         errors.push(
           t('chatbot_flow_validation_official_field_required', {
@@ -1554,6 +1850,7 @@ export class ChatbotFlowSaverUseCase {
       }
 
       this.validateDataNode(t, node, errors);
+      this.validateUnderchatNode(t, node, requestData, errors);
       this.validateRedirectNode(t, node, errors);
       this.validateTagNode(t, node, errors);
       this.validateAnnotationNode(t, node, errors);
@@ -2038,6 +2335,7 @@ export class ChatbotFlowSaverUseCase {
     }
 
     this.validateFlow(t, requestData, input);
+    this.validateApiRequestNodes(t, requestData, accountId);
 
     const officialNodes = getOfficialChatbotNodes(requestData.nodes);
     if (officialNodes.length > 0) {
@@ -2065,15 +2363,32 @@ export class ChatbotFlowSaverUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     input: SaveChatbotFlowRequest & Record<string, unknown>,
-    accountId: string
+    accountId: string,
+    actions: IJwtGroupHierarchy[] = []
   ): Promise<string | null> {
-    const requestData = this.normalizeRequestData(input.request, t);
+    const parsedRequestData = this.normalizeRequestData(input.request, t);
+    const previousFlow = await this.chatbotService.findChatbotFlowByChatbotId(
+      accountId,
+      parsedRequestData.chatbot_id,
+      { includeInactive: true }
+    );
+    this.assertUnderchatAccess(t, actions, parsedRequestData, previousFlow);
+    const requestData = assignStableChatbotNodeOutputKeys(
+      assignStableApiRequestOutputKeys(parsedRequestData, previousFlow),
+      previousFlow
+    );
+    const securedRequestData = this.secureApiRequestNodes(
+      requestData,
+      previousFlow
+    );
+    const validationRequestData =
+      this.revealApiRequestNodesForValidation(securedRequestData);
 
-    await this.validate(t, requestData, input, accountId);
+    await this.validate(t, validationRequestData, input, accountId);
 
     const processedRequestData = await this.processMediaFiles(
       t,
-      requestData,
+      securedRequestData,
       input,
       accountId
     );

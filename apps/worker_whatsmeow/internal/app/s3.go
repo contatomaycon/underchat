@@ -22,7 +22,7 @@ type StorageClient struct {
 	cfg      Config
 	primary  *minio.Client
 	backup   *minio.Client
-	balance  *BalanceGRPCClient
+	postgres *WorkerPostgres
 	verified sync.Map
 }
 
@@ -36,7 +36,7 @@ type StoredObject struct {
 	UsedBackup  bool
 }
 
-func NewStorageClient(cfg Config, balance *BalanceGRPCClient) (*StorageClient, error) {
+func NewStorageClient(cfg Config, postgres *WorkerPostgres) (*StorageClient, error) {
 	primary, err := newMinioClient(cfg.S3Endpoint, cfg.S3AccessKeyID, cfg.S3SecretAccessKey, cfg.S3Region)
 	if err != nil && cfg.S3Endpoint != "" {
 		return nil, err
@@ -46,10 +46,10 @@ func NewStorageClient(cfg Config, balance *BalanceGRPCClient) (*StorageClient, e
 		return nil, err
 	}
 	return &StorageClient{
-		cfg:     cfg,
-		primary: primary,
-		backup:  backup,
-		balance: balance,
+		cfg:      cfg,
+		primary:  primary,
+		backup:   backup,
+		postgres: postgres,
 	}, nil
 }
 
@@ -120,7 +120,7 @@ func (s *StorageClient) Upload(ctx context.Context, accountID string, data []byt
 		Size:        int64(len(data)),
 		UsedBackup:  true,
 	}
-	_ = s.balance.RegisterS3BackupFallbackUpload(ctx, S3BackupFallbackUpload{
+	payload := S3BackupFallbackUpload{
 		AccountID:       accountID,
 		Bucket:          backupBucket,
 		ObjectKey:       key,
@@ -130,7 +130,16 @@ func (s *StorageClient) Upload(ctx context.Context, accountID string, data []byt
 		PrimaryAttempts: int32(primaryAttempts),
 		BackupAttempts:  int32(backupAttempts),
 		PrimaryError:    primaryErr.Error(),
-	})
+	}
+	if s.postgres != nil {
+		accountingCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		if err := s.postgres.RegisterS3BackupFallbackUpload(accountingCtx, s.cfg, payload); err != nil {
+			// This accounting row is intentionally best-effort. The uploaded
+			// object remains usable even if PostgreSQL is recovering.
+			log.Printf("whatsmeow s3 backup accounting deferred account_id=%s error_code=%s", accountID, safeOperationalErrorCode(err))
+		}
+	}
 	return object, nil
 }
 
@@ -162,7 +171,7 @@ func (s *StorageClient) ensureBucket(ctx context.Context, client *minio.Client, 
 	if _, ok := s.verified.Load(bucket); ok {
 		exists, err := client.BucketExists(ctx, bucket)
 		if err != nil {
-			log.Printf("whatsmeow s3 verified bucket check failed bucket=%s error=%v", bucket, err)
+			log.Printf("whatsmeow s3 verified bucket check failed bucket=%s error_code=%s", bucket, safeOperationalErrorCode(err))
 			return err
 		}
 		if exists {

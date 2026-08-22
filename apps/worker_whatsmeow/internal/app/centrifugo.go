@@ -62,10 +62,6 @@ func (c *CentrifugoClient) Publish(ctx context.Context, channel string, data any
 	return nil
 }
 
-func workerCentrifugoQueue(accountID string) string {
-	return "worker:account#" + accountID
-}
-
 func chatAccountCentrifugo(accountID string) string {
 	return "chat:account#" + accountID
 }

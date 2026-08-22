@@ -19,7 +19,10 @@ import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatQuickMessagePreview from '@/components/chat/ChatQuickMessagePreview.vue';
 import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
 import ChatQueueStatusBanner from '@/components/chat/ChatQueueStatusBanner.vue';
+import ChatRecordedAudioPreview from '@/components/chat/ChatRecordedAudioPreview.vue';
 import ConversationOpeningDialog from '@/components/chat/ConversationOpeningDialog.vue';
+import OfficialWindowNotice from '@/components/chat/official/OfficialWindowNotice.vue';
+import OfficialTemplateSendDialog from '@/components/chat/official/OfficialTemplateSendDialog.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
@@ -75,6 +78,7 @@ import {
 } from '@core/common/interfaces/IChatFilePreview';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
+import { v7 as uuidv7 } from 'uuid';
 import { refDebounced } from '@vueuse/core';
 import { getOffsetTop } from '@core/common/functions/getOffsetTop';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
@@ -83,6 +87,8 @@ import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { useI18n } from 'vue-i18n';
 import { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
 import type { ChatEditablePhotoPreview } from '@/components/chat/image-editor/types';
+import type { OfficialConversationContextResponse } from '@core/schema/chat/officialConversationContext/response.schema';
+import type { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
@@ -297,6 +303,7 @@ const openSelectedPhotoEditor = (photo: ChatEditablePhotoPreview) => {
 };
 
 const handleImageEditorSend = () => {
+  isImageEditorOpen.value = false;
   void sendMessage();
 };
 
@@ -323,7 +330,6 @@ const getMessageDraft = (chatId: string | null | undefined): string => {
 const isRecordingAudio = ref(false);
 const isRecordingPaused = ref(false);
 const audioViewOnce = ref(false);
-const audioPendingViewOnce = ref(false);
 const audioRecordingStartAt = ref<number | null>(null);
 const audioRecordingAccumulated = ref(0);
 const audioRecordingElapsedMs = ref(0);
@@ -340,6 +346,12 @@ const shouldPersistRecording = ref(false);
 const recordedAudioBlob = ref<Blob | null>(null);
 const recordedAudioUrl = ref<string | null>(null);
 const audioRecordingDurationSeconds = ref<number | null>(null);
+const recordedAudioMessageText = ref<string | null>(null);
+const recordedAudioReply = ref<ListMessageResult | null>(null);
+const isSendingRecordedAudio = ref(false);
+const hasRecordedAudioPreview = computed(
+  () => recordedAudioBlob.value !== null && recordedAudioUrl.value !== null
+);
 
 const viewerOpen = ref(false);
 const viewerSrc = ref<string>('');
@@ -383,6 +395,12 @@ const isLoadingAttendanceInactivityState = ref(false);
 const isUpdatingAttendanceInactivityState = ref(false);
 const operatorReplyPendingNow = ref(Date.now());
 const chatWorkers = ref<ListChatWorkersResponse>([]);
+const isOfficialTemplateDialogOpen = ref(false);
+const isLoadingOfficialConversationContext = ref(false);
+const isSendingOfficialTemplate = ref(false);
+const officialConversationContext =
+  ref<OfficialConversationContextResponse | null>(null);
+const officialConversationContextError = ref<string | null>(null);
 let operatorReplyPendingTicker: ReturnType<typeof setInterval> | null = null;
 const OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES = 15;
 
@@ -600,12 +618,77 @@ const canJoinConversation = computed(() => {
   return !isCurrentUserParticipantInActiveChat.value;
 });
 
+const officialWindowState = computed(() => {
+  if (!isOfficialActiveChat.value) {
+    return null;
+  }
+
+  return chatStore.activeChat?.official_window ?? null;
+});
+
+const isOfficialAwaitingContactReply = computed(
+  () => officialWindowState.value?.state === 'awaiting_contact_reply'
+);
+
+const isOfficialSendUncertain = computed(
+  () => officialWindowState.value?.state === 'send_uncertain'
+);
+
+const isOfficialOutsideServiceWindow = computed(
+  () => officialWindowState.value?.state === 'closed'
+);
+
+const isOfficialChatLocked = computed(() => {
+  if (!isOfficialActiveChat.value) {
+    return false;
+  }
+
+  return (
+    isOfficialAwaitingContactReply.value ||
+    isOfficialSendUncertain.value ||
+    isOfficialOutsideServiceWindow.value
+  );
+});
+
+const canSendOfficialTemplate = computed(() => {
+  return (
+    isOfficialActiveChat.value &&
+    isOfficialOutsideServiceWindow.value &&
+    chatStore.activeChat?.status === EChatStatus.in_chat &&
+    isCurrentUserParticipantInActiveChat.value
+  );
+});
+
+const officialConversationTemplates = computed(
+  () => officialConversationContext.value?.templates ?? []
+);
+
+const officialWindowBlockedMessage = computed(() => {
+  if (isOfficialAwaitingContactReply.value) {
+    return t('official_window_awaiting_description');
+  }
+
+  if (isOfficialSendUncertain.value) {
+    return t('official_window_uncertain_description');
+  }
+
+  if (isOfficialOutsideServiceWindow.value) {
+    return t('official_window_closed_description');
+  }
+
+  return t('must_join_conversation_to_reply');
+});
+
 const canComposeInActiveChat = computed(() => {
   if (!chatStore.activeChat?.chat_id) {
     return false;
   }
 
   if (isQueueStatus.value || isUraStatus.value || isClosedStatus.value) {
+    return false;
+  }
+
+  if (isOfficialChatLocked.value) {
     return false;
   }
 
@@ -683,6 +766,16 @@ watch(
     }
   },
   { immediate: true }
+);
+
+watch(
+  () => chatStore.activeChat?.chat_id,
+  () => {
+    isOfficialTemplateDialogOpen.value = false;
+    officialConversationContext.value = null;
+    officialConversationContextError.value = null;
+    isSendingOfficialTemplate.value = false;
+  }
 );
 
 watch(
@@ -791,6 +884,54 @@ const handleJoinConversation = async () => {
     });
   } finally {
     isJoinConversationLoading.value = false;
+  }
+};
+
+const openOfficialTemplateDialog = async () => {
+  const chatId = chatStore.activeChat?.chat_id;
+  if (!chatId || !canSendOfficialTemplate.value) {
+    return;
+  }
+
+  isOfficialTemplateDialogOpen.value = true;
+  isLoadingOfficialConversationContext.value = true;
+  officialConversationContextError.value = null;
+
+  try {
+    const context = await chatStore.viewOfficialConversationContext(chatId);
+    officialConversationContext.value = context;
+    if (!context) {
+      officialConversationContextError.value = t(
+        'official_templates_loading_error'
+      );
+    }
+  } finally {
+    isLoadingOfficialConversationContext.value = false;
+  }
+};
+
+const handleOfficialTemplateSubmit = async (
+  template: IOfficialWhatsappTemplateMessage
+) => {
+  const chatId = chatStore.activeChat?.chat_id;
+  if (!chatId || isSendingOfficialTemplate.value) {
+    return;
+  }
+
+  isSendingOfficialTemplate.value = true;
+  try {
+    const chat = await chatStore.sendOfficialTemplateToChat(chatId, {
+      name: template.name,
+      language: template.language,
+      variables: template.variables,
+    });
+
+    if (chat) {
+      isOfficialTemplateDialogOpen.value = false;
+      officialConversationContext.value = null;
+    }
+  } finally {
+    isSendingOfficialTemplate.value = false;
   }
 };
 
@@ -972,6 +1113,23 @@ const resetHeaderPhoneVisibility = () => {
   isHeaderPhoneDecrypted.value = false;
   isHeaderPhoneLoading.value = false;
 };
+
+const activeChatHeaderDisplayName = computed(() => {
+  const activeChat = chatStore.activeChat;
+  if (!activeChat) {
+    return '';
+  }
+
+  const baseName = activeChat.contact?.name ?? activeChat.name ?? '';
+  const contactId = activeChat.contact?.id;
+  if (!contactId) {
+    return baseName;
+  }
+
+  const nickname = chatStore.chatContacts[contactId]?.nickname?.trim();
+
+  return nickname ? `${baseName} (${nickname})` : baseName;
+});
 
 const activeChatHeaderPhoneMasked = computed(() => {
   const activeChat = chatStore.activeChat;
@@ -1228,7 +1386,6 @@ watch(
     }
 
     audioViewOnce.value = false;
-    audioPendingViewOnce.value = false;
   },
   { immediate: true }
 );
@@ -1938,11 +2095,12 @@ const hasAttachmentsOrContent = computed(
     selectedVideos.value.length > 0 ||
     selectedAudios.value.length > 0 ||
     selectedContacts.value.length > 0 ||
-    isRecordingAudio.value
+    isRecordingAudio.value ||
+    hasRecordedAudioPreview.value
 );
 const hasSelectedAudios = computed(() => selectedAudios.value.length > 0);
 
-const createMessageHash = () => crypto.randomUUID();
+const createMessageHash = () => uuidv7();
 
 const cloneLinkPreview = (): ViewLinkPreviewResponse | undefined => {
   const preview = linkPreview.value;
@@ -1969,6 +2127,13 @@ const buildQuotedPayload = (
   } satisfies IQuotedMessage['key'];
 
   const quotedType = reply.content?.type as EMessageType | undefined;
+  const quotedContact = reply.content?.contact
+    ? {
+        ...reply.content.contact,
+        contact_id: reply.content.contact.contact_id ?? null,
+        name: reply.content.contact.name ?? '',
+      }
+    : null;
 
   const quoted: IQuotedMessage = {
     key,
@@ -1980,7 +2145,7 @@ const buildQuotedPayload = (
     audio: reply.content?.audio ?? null,
     sticker: reply.content?.sticker ?? null,
     location: reply.content?.location ?? null,
-    contact: reply.content?.contact ?? null,
+    contact: quotedContact,
   };
 
   if (quotedType === EMessageType.contacts && reply.content?.contacts) {
@@ -2343,6 +2508,7 @@ const createImageFormData = (
 
   formData.append('images', photo.file);
   formData.append('hash', hash);
+  formData.append('operation_id', hash);
 
   return formData;
 };
@@ -2365,6 +2531,7 @@ const createDocumentFormData = (
 
   formData.append('documents', doc.file);
   formData.append('hash', hash);
+  formData.append('operation_id', hash);
 
   return formData;
 };
@@ -2391,6 +2558,7 @@ const createVideoFormData = (
   }
 
   formData.append('hash', hash);
+  formData.append('operation_id', hash);
 
   return formData;
 };
@@ -2424,6 +2592,7 @@ const createAudioFormData = (
   }
 
   formData.append('hash', hash);
+  formData.append('operation_id', hash);
 
   return formData;
 };
@@ -2447,6 +2616,7 @@ const createTextMessageBody = (
       ? (preview as ViewLinkPreviewResponse)
       : undefined,
     hash,
+    operation_id: hash,
   };
 
   if (replyId) {
@@ -2885,6 +3055,7 @@ const sendContactsMessage = async (
       }
       formData.append('contacts', contact.contact_id);
       formData.append('hash', hash);
+      formData.append('operation_id', hash);
 
       const success = await chatStore.createMessageWithContacts(formData, {
         skipLoading: true,
@@ -2953,6 +3124,7 @@ const sendLocationMessage = async (
     formData.append('location_address', location.address);
   }
   formData.append('hash', hash);
+  formData.append('operation_id', hash);
 
   const success = await chatStore.createMessageWithLocation(formData, {
     skipLoading: true,
@@ -3047,6 +3219,7 @@ const sendAnnotationMessage = async (): Promise<void> => {
     type: EMessageType.annotation,
     message: messageValue,
     hash,
+    operation_id: hash,
   };
 
   isAnnotationModalOpen.value = false;
@@ -3168,10 +3341,7 @@ const sendMessage = async () => {
   if (!canSendMessage()) return;
   if (!hasActiveChat()) return;
   if (!canComposeInActiveChat.value) {
-    chatStore.showSnackbar(
-      t('must_join_conversation_to_reply'),
-      EColor.warning
-    );
+    chatStore.showSnackbar(officialWindowBlockedMessage.value, EColor.warning);
     return;
   }
 
@@ -3360,6 +3530,11 @@ const openChat = async (
         return;
       }
 
+      chatStore.applyOfficialWindowSnapshot(
+        chatId,
+        messagesData.official_window
+      );
+
       chatStore.listMessages = filterMessagesForChat(
         [...messagesData.results].reverse(),
         chatId
@@ -3394,11 +3569,13 @@ const openChat = async (
         chatStore.activeChat as unknown as IChat,
         chatStore.user?.user_id
       ) &&
-      (chatStore.activeChat.summary?.unread_count ?? 0) > 0 &&
       !options?.skipClearSummary
     ) {
-      chatStore.clearActiveChatUnreadCountLocally();
-      void chatStore.clearChatSummary(chatId);
+      const shouldPersistUnreadClear =
+        chatStore.clearActiveChatUnreadCountLocally();
+      if (shouldPersistUnreadClear) {
+        void chatStore.clearChatSummary(chatId);
+      }
     }
 
     if (vuetifyDisplays.smAndDown.value) {
@@ -3823,12 +4000,23 @@ const resetRecordingState = () => {
   isRecordingAudio.value = false;
   isRecordingPaused.value = false;
   audioViewOnce.value = false;
-  audioPendingViewOnce.value = false;
   audioRecordingStartAt.value = null;
   audioRecordingAccumulated.value = 0;
   audioRecordingElapsedMs.value = 0;
   audioRecordingDurationSeconds.value = null;
   audioChunksRef.value = [];
+};
+
+const clearRecordedAudioPreview = () => {
+  if (recordedAudioUrl.value) {
+    URL.revokeObjectURL(recordedAudioUrl.value);
+  }
+  recordedAudioUrl.value = null;
+  recordedAudioBlob.value = null;
+  audioRecordingDurationSeconds.value = null;
+  recordedAudioMessageText.value = null;
+  recordedAudioReply.value = null;
+  audioViewOnce.value = false;
 };
 
 const handleRecorderStop = async (
@@ -3838,7 +4026,6 @@ const handleRecorderStop = async (
   capturedChunks?: Blob[],
   capturedRecorder?: MediaRecorder | null,
   capturedShouldPersist?: boolean,
-  capturedViewOnce?: boolean,
   capturedElapsedMs?: number
 ) => {
   const isCurrentSession = () =>
@@ -3847,10 +4034,8 @@ const handleRecorderStop = async (
   const recorder = capturedRecorder ?? mediaRecorderRef.value;
   const chunks = capturedChunks ?? audioChunksRef.value;
   const saveRecording = capturedShouldPersist ?? shouldPersistRecording.value;
-  const viewOnce = normalizeAudioViewOnceForActiveChat(
-    capturedViewOnce ?? audioPendingViewOnce.value
-  );
   const elapsedMs = capturedElapsedMs ?? audioRecordingElapsedMs.value;
+  let audioWithinLimit = false;
 
   if (isCurrentSession()) {
     shouldPersistRecording.value = false;
@@ -3895,7 +4080,7 @@ const handleRecorderStop = async (
       audioRecordingDurationSeconds.value = durationSeconds;
     }
 
-    const audioWithinLimit = blob.size <= MAX_AUDIO_SIZE_BYTES;
+    audioWithinLimit = blob.size <= MAX_AUDIO_SIZE_BYTES;
     if (!audioWithinLimit) {
       chatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
       if (isCurrentSession() && recordedAudioUrl.value) {
@@ -3903,34 +4088,29 @@ const handleRecorderStop = async (
         recordedAudioUrl.value = null;
       }
     }
-    if (audioWithinLimit) {
-      await sendAudioMessage(
-        blob,
-        mimeType,
-        durationSeconds,
-        viewOnce,
-        savedMessageText,
-        savedReply || undefined
-      );
-      if (isCurrentSession()) {
-        recordedAudioUrl.value = null;
-      }
+    if (audioWithinLimit && isCurrentSession()) {
+      recordedAudioMessageText.value = savedMessageText ?? null;
+      recordedAudioReply.value = savedReply ?? null;
     }
-    if (isCurrentSession()) {
+    if (!audioWithinLimit && isCurrentSession()) {
       recordedAudioBlob.value = null;
+      recordedAudioMessageText.value = null;
+      recordedAudioReply.value = null;
     }
   }
 
   if (isCurrentSession()) {
     releaseAudioResources();
 
-    audioViewOnce.value = false;
-    audioPendingViewOnce.value = false;
     audioRecordingStartAt.value = null;
     audioRecordingAccumulated.value = 0;
     audioRecordingElapsedMs.value = 0;
-    audioRecordingDurationSeconds.value = null;
     audioChunksRef.value = [];
+
+    if (!saveRecording || !audioWithinLimit) {
+      audioViewOnce.value = false;
+      audioRecordingDurationSeconds.value = null;
+    }
   }
 };
 
@@ -3956,7 +4136,6 @@ const stopAudioRecordingInternal = (
   const capturedChunks = [...audioChunksRef.value];
   const capturedRecorder = mediaRecorderRef.value;
   const capturedShouldPersist = shouldPersistRecording.value;
-  const capturedViewOnce = audioPendingViewOnce.value;
   const capturedElapsedMs = audioRecordingElapsedMs.value;
 
   if (capturedRecorder) {
@@ -3973,7 +4152,6 @@ const stopAudioRecordingInternal = (
         capturedChunks,
         capturedRecorder,
         capturedShouldPersist,
-        capturedViewOnce,
         capturedElapsedMs
       ).catch(() => {});
     };
@@ -3990,7 +4168,6 @@ const stopAudioRecordingInternal = (
     capturedChunks,
     capturedRecorder,
     capturedShouldPersist,
-    capturedViewOnce,
     capturedElapsedMs
   ).catch(() => {});
 };
@@ -4022,10 +4199,6 @@ const finalizeAudioRecording = () => {
   const savedMsg = msg.value;
   const savedReply = chatStore.messageReply;
 
-  msg.value = '';
-  linkPreview.value = null;
-  chatStore.clearMessageReply();
-
   isRecordingAudio.value = false;
   isRecordingPaused.value = false;
 
@@ -4041,10 +4214,41 @@ const finalizeAudioRecording = () => {
   audioRecordingElapsedMs.value = 0;
 
   shouldPersistRecording.value = true;
-  audioPendingViewOnce.value = normalizeAudioViewOnceForActiveChat(
-    audioViewOnce.value
-  );
   stopAudioRecordingInternal(savedMsg, savedReply);
+};
+
+const discardRecordedAudioPreview = () => {
+  if (isSendingRecordedAudio.value) return;
+  clearRecordedAudioPreview();
+};
+
+const sendRecordedAudioPreview = async () => {
+  const blob = recordedAudioBlob.value;
+  if (!blob || isSendingRecordedAudio.value) return;
+
+  const duration = audioRecordingDurationSeconds.value;
+  const viewOnce = normalizeAudioViewOnceForActiveChat(audioViewOnce.value);
+  const messageText = recordedAudioMessageText.value;
+  const reply = recordedAudioReply.value ?? undefined;
+
+  isSendingRecordedAudio.value = true;
+  clearRecordedAudioPreview();
+  msg.value = '';
+  linkPreview.value = null;
+  chatStore.clearMessageReply();
+
+  try {
+    await sendAudioMessage(
+      blob,
+      blob.type || 'audio/ogg;codecs=opus',
+      duration,
+      viewOnce,
+      messageText,
+      reply
+    );
+  } finally {
+    isSendingRecordedAudio.value = false;
+  }
 };
 
 const togglePauseAudioRecording = async () => {
@@ -4085,7 +4289,6 @@ const togglePauseAudioRecording = async () => {
 const toggleViewOnceAudio = () => {
   if (!canUseAudioViewOnce.value) {
     audioViewOnce.value = false;
-    audioPendingViewOnce.value = false;
     return;
   }
 
@@ -4097,16 +4300,9 @@ const startAudioRecording = async () => {
 
   recordingSessionId++;
 
+  clearRecordedAudioPreview();
   releaseAudioResources();
   resetRecordingState();
-
-  if (recordedAudioUrl.value) {
-    URL.revokeObjectURL(recordedAudioUrl.value);
-    recordedAudioUrl.value = null;
-  }
-  recordedAudioBlob.value = null;
-  audioRecordingDurationSeconds.value = null;
-  audioPendingViewOnce.value = false;
 
   try {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -5286,6 +5482,7 @@ const createQuickMessageFormData = (
   const formData = new FormData();
   formData.append('type', type);
   formData.append('hash', hash);
+  formData.append('operation_id', hash);
 
   if (messageValue) {
     formData.append('message', messageValue);
@@ -5304,10 +5501,7 @@ const sendQuickMessage = async () => {
   if (!selectedQuickMessage.value) return;
   if (!hasActiveChat()) return;
   if (!canComposeInActiveChat.value) {
-    chatStore.showSnackbar(
-      t('must_join_conversation_to_reply'),
-      EColor.warning
-    );
+    chatStore.showSnackbar(officialWindowBlockedMessage.value, EColor.warning);
     return;
   }
 
@@ -5563,6 +5757,16 @@ const onSendTemplateButton = async (e: Event) => {
   if (!text || !hasActiveChat()) return;
   if (isQueueOrUraStatus.value) return;
 
+  if (isOfficialChatLocked.value) {
+    if (canSendOfficialTemplate.value) {
+      await openOfficialTemplateDialog();
+      return;
+    }
+
+    chatStore.showSnackbar(officialWindowBlockedMessage.value, EColor.warning);
+    return;
+  }
+
   const sent = await sendTextMessage(text);
   if (sent) {
     clearOperatorReplyPendingAlertLocally();
@@ -5651,12 +5855,16 @@ const onScrollToMessageEvt = (e: Event) => {
 
 const retryTextMessage = async (
   content: NonNullable<ListMessageResult['content']>,
-  hash: string
+  hash: string,
+  operationId: string,
+  retryOf?: string
 ): Promise<void> => {
   const messageBody: CreateMessageChatsBody = {
     type: EMessageType.text,
     message: content.message ?? '',
     hash,
+    operation_id: operationId,
+    ...(retryOf ? { retry_of: retryOf } : {}),
   };
 
   if (content.link_preview) {
@@ -5677,7 +5885,9 @@ const retryTextMessage = async (
 
 const retryImageMessage = async (
   content: NonNullable<ListMessageResult['content']>,
-  hash: string
+  hash: string,
+  operationId: string,
+  retryOf?: string
 ): Promise<void> => {
   try {
     const response = await fetch(content.image!.url!);
@@ -5702,6 +5912,8 @@ const retryImageMessage = async (
       replyId,
       hash
     );
+    formData.append('operation_id', operationId);
+    if (retryOf) formData.append('retry_of', retryOf);
 
     chatStore.updateLocalMessageProgress(hash, 0);
     const success = await chatStore.createMessageWithImages(formData, {
@@ -5721,7 +5933,9 @@ const retryImageMessage = async (
 
 const retryVideoMessage = async (
   content: NonNullable<ListMessageResult['content']>,
-  hash: string
+  hash: string,
+  operationId: string,
+  retryOf?: string
 ): Promise<void> => {
   try {
     const response = await fetch(content.video!.url!);
@@ -5750,6 +5964,8 @@ const retryVideoMessage = async (
       replyId,
       hash
     );
+    formData.append('operation_id', operationId);
+    if (retryOf) formData.append('retry_of', retryOf);
 
     chatStore.updateLocalMessageProgress(hash, 0);
     const success = await chatStore.createMessageWithVideos(formData, {
@@ -5769,7 +5985,9 @@ const retryVideoMessage = async (
 
 const retryAudioMessage = async (
   content: NonNullable<ListMessageResult['content']>,
-  hash: string
+  hash: string,
+  operationId: string,
+  retryOf?: string
 ): Promise<void> => {
   try {
     const response = await fetch(content.audio!.url!);
@@ -5792,6 +6010,8 @@ const retryAudioMessage = async (
       hash,
       content.audio!.ptt ?? false
     );
+    formData.append('operation_id', operationId);
+    if (retryOf) formData.append('retry_of', retryOf);
 
     chatStore.updateLocalMessageProgress(hash, 0);
     const success = await chatStore.createMessageWithAudios(formData, {
@@ -5811,7 +6031,9 @@ const retryAudioMessage = async (
 
 const retryDocumentMessage = async (
   content: NonNullable<ListMessageResult['content']>,
-  hash: string
+  hash: string,
+  operationId: string,
+  retryOf?: string
 ): Promise<void> => {
   try {
     const response = await fetch(content.document!.url!);
@@ -5840,6 +6062,8 @@ const retryDocumentMessage = async (
       replyId,
       hash
     );
+    formData.append('operation_id', operationId);
+    if (retryOf) formData.append('retry_of', retryOf);
 
     chatStore.updateLocalMessageProgress(hash, 0);
     const success = await chatStore.createMessageWithDocuments(formData, {
@@ -5859,7 +6083,9 @@ const retryDocumentMessage = async (
 
 const retryContactMessage = async (
   content: NonNullable<ListMessageResult['content']>,
-  hash: string
+  hash: string,
+  operationId: string,
+  retryOf?: string
 ): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) {
     markUploadError(hash);
@@ -5884,6 +6110,8 @@ const retryContactMessage = async (
   }
   formData.append('contacts', content.contact.contact_id);
   formData.append('hash', hash);
+  formData.append('operation_id', operationId);
+  if (retryOf) formData.append('retry_of', retryOf);
 
   const success = await chatStore.createMessageWithContacts(formData, {
     skipLoading: true,
@@ -5901,31 +6129,39 @@ const onRetryMessage = async (e: Event) => {
   const content = message.content;
   if (!content) return;
 
-  const hash = message.hash;
-  chatStore.clearLocalMessageState(hash);
+  const previousHash = message.hash;
+  const previousOperationId = message.message_id?.trim();
+  if (!previousOperationId) return;
+  const isExplicitTerminalRetry = ['failed', 'expired', 'ambiguous'].includes(
+    message.delivery_status ?? ''
+  );
+  const operationId = isExplicitTerminalRetry ? uuidv7() : previousOperationId;
+  const retryOf = isExplicitTerminalRetry ? previousOperationId : undefined;
+  const hash = isExplicitTerminalRetry ? operationId : previousHash;
+  chatStore.clearLocalMessageState(previousHash);
 
   if (content.type === EMessageType.text) {
-    await retryTextMessage(content, hash);
+    await retryTextMessage(content, hash, operationId, retryOf);
     return;
   }
 
   if (content.type === EMessageType.image && content.image?.url) {
-    await retryImageMessage(content, hash);
+    await retryImageMessage(content, hash, operationId, retryOf);
     return;
   }
 
   if (content.type === EMessageType.video && content.video?.url) {
-    await retryVideoMessage(content, hash);
+    await retryVideoMessage(content, hash, operationId, retryOf);
     return;
   }
 
   if (content.type === EMessageType.audio && content.audio?.url) {
-    await retryAudioMessage(content, hash);
+    await retryAudioMessage(content, hash, operationId, retryOf);
     return;
   }
 
   if (content.type === EMessageType.document && content.document?.url) {
-    await retryDocumentMessage(content, hash);
+    await retryDocumentMessage(content, hash, operationId, retryOf);
     return;
   }
 
@@ -5933,7 +6169,7 @@ const onRetryMessage = async (e: Event) => {
     content.type === EMessageType.contact_card &&
     content.contact?.contact_id
   ) {
-    await retryContactMessage(content, hash);
+    await retryContactMessage(content, hash, operationId, retryOf);
   }
 };
 
@@ -6188,11 +6424,12 @@ const handleGlobalChatUpdate = async (e: Event) => {
 
   const activeChatIdBeforeUpdate = chatStore.activeChat?.chat_id;
   if (chatStore.isActiveChatSummaryOnlyUpdate(chatData)) {
+    chatStore.reconcileUnreadSummaryFromChat(chatData);
     chatStore.clearActiveChatUnreadCountLocally();
-    chatStore.scheduleUnreadSummaryRefresh();
     return;
   }
 
+  chatStore.reconcileUnreadSummaryFromChat(chatData);
   chatStore.addChat(chatData);
 
   const isActiveChatForUser =
@@ -6212,7 +6449,6 @@ const handleGlobalChatUpdate = async (e: Event) => {
     if (shouldPreserveMessages) {
       chatStore.setActiveChat(chatData.chat_id);
       chatStore.clearActiveChatUnreadCountLocally();
-      chatStore.scheduleUnreadSummaryRefresh();
     } else {
       const messagesData = await chatStore.getChatMessagesById(
         chatData.chat_id,
@@ -6236,6 +6472,11 @@ const handleGlobalChatUpdate = async (e: Event) => {
       if (chatStore.activeChat?.chat_id !== chatData.chat_id) {
         return;
       }
+
+      chatStore.applyOfficialWindowSnapshot(
+        chatData.chat_id,
+        messagesData.official_window
+      );
 
       chatStore.listMessages = filterMessagesForChat(
         [...messagesData.results].reverse(),
@@ -6396,10 +6637,7 @@ onUnmounted(async () => {
 onBeforeUnmount(() => {
   shouldPersistRecording.value = false;
   cancelAudioRecording();
-  if (recordedAudioUrl.value) {
-    URL.revokeObjectURL(recordedAudioUrl.value);
-    recordedAudioUrl.value = null;
-  }
+  clearRecordedAudioPreview();
 });
 </script>
 
@@ -6562,10 +6800,7 @@ onBeforeUnmount(() => {
                   class="d-flex align-center gap-2 mb-0 active-chat-name-row"
                 >
                   <div class="text-h6 mb-0 font-weight-regular text-truncate">
-                    {{
-                      chatStore.activeChat.contact?.name ??
-                      chatStore.activeChat.name
-                    }}
+                    {{ activeChatHeaderDisplayName }}
                   </div>
                   <VChip
                     v-if="chatStore.activeChat.contact?.name"
@@ -6776,6 +7011,14 @@ onBeforeUnmount(() => {
                 :title="t('transfer')"
               >
                 <VIcon icon="tabler-arrows-right-left" />
+              </IconBtn>
+              <IconBtn
+                v-if="canSendOfficialTemplate"
+                :disabled="isLoadingOfficialConversationContext"
+                @click="openOfficialTemplateDialog"
+                :title="t('official_window_send_template')"
+              >
+                <VIcon icon="tabler-template" />
               </IconBtn>
               <IconBtn @click="isSearchSidebarOpen = true">
                 <VIcon icon="tabler-search" />
@@ -7359,12 +7602,24 @@ onBeforeUnmount(() => {
                 variant="flat"
                 icon
                 rounded="pill"
-                aria-label="Enviar áudio gravado"
+                aria-label="Finalizar gravação para ouvir"
                 @click="finalizeAudioRecording"
               >
-                <VIcon size="20">tabler-send</VIcon>
+                <VIcon size="20">tabler-check</VIcon>
               </VBtn>
             </div>
+
+            <ChatRecordedAudioPreview
+              v-else-if="hasRecordedAudioPreview && recordedAudioUrl"
+              :src="recordedAudioUrl"
+              :duration-seconds="audioRecordingDurationSeconds"
+              :view-once="audioViewOnce"
+              :can-use-view-once="canUseAudioViewOnce"
+              :sending="isSendingRecordedAudio"
+              @discard="discardRecordedAudioPreview"
+              @send="sendRecordedAudioPreview"
+              @update:view-once="audioViewOnce = $event"
+            />
 
             <ChatQueueStatusBanner
               :is-queue-status="isQueueOrUraStatus"
@@ -7385,17 +7640,38 @@ onBeforeUnmount(() => {
 
             <VAlert
               v-if="showOperatorReplyPendingBanner"
-              type="warning"
+              color="warning"
               variant="tonal"
-              border="start"
-              class="operator-reply-pending-banner mb-2"
+              density="comfortable"
+              class="operator-reply-pending-banner"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
             >
-              {{
-                $t('chat_operator_reply_pending_alert_banner', {
-                  minutes: operatorReplyPendingElapsedMinutes,
-                })
-              }}
+              <template #prepend>
+                <VIcon icon="tabler-alert-triangle" size="22" />
+              </template>
+
+              <div class="operator-reply-pending-banner__copy">
+                <strong>
+                  {{ $t('chat_operator_reply_pending_alert_title') }}
+                </strong>
+                <span>
+                  {{
+                    $t('chat_operator_reply_pending_alert_banner', {
+                      minutes: operatorReplyPendingElapsedMinutes,
+                    })
+                  }}
+                </span>
+              </div>
             </VAlert>
+
+            <OfficialWindowNotice
+              :window="officialWindowState"
+              :can-send-template="canSendOfficialTemplate"
+              :loading="isLoadingOfficialConversationContext"
+              @send-template="openOfficialTemplateDialog"
+            />
 
             <VCard
               v-if="
@@ -7453,7 +7729,7 @@ onBeforeUnmount(() => {
 
             <div class="position-relative">
               <VTextarea
-                v-if="!isRecordingAudio"
+                v-if="!isRecordingAudio && !hasRecordedAudioPreview"
                 ref="composerRef"
                 :key="contact_id"
                 v-model="msg"
@@ -7567,14 +7843,22 @@ onBeforeUnmount(() => {
                     location="top start"
                     :close-on-content-click="false"
                     offset="8"
-                    :disabled="!!selectedQuickMessage || hasSelectedAudios"
+                    :disabled="
+                      !!selectedQuickMessage ||
+                      hasSelectedAudios ||
+                      !canComposeInActiveChat
+                    "
                   >
                     <template #activator="{ props }">
                       <IconBtn
                         v-bind="props"
                         class="composer-btn"
                         aria-label="Emoji"
-                        :disabled="!!selectedQuickMessage || hasSelectedAudios"
+                        :disabled="
+                          !!selectedQuickMessage ||
+                          hasSelectedAudios ||
+                          !canComposeInActiveChat
+                        "
                       >
                         <VIcon size="22">tabler-mood-smile</VIcon>
                       </IconBtn>
@@ -7721,6 +8005,18 @@ onBeforeUnmount(() => {
   <ChatLocationPicker
     v-model="isLocationPickerOpen"
     @confirm="handleLocationPickerConfirm"
+  />
+
+  <OfficialTemplateSendDialog
+    v-model="isOfficialTemplateDialogOpen"
+    :chat-name="
+      chatStore.activeChat?.name ?? chatStore.activeChat?.contact?.name
+    "
+    :templates="officialConversationTemplates"
+    :loading="isLoadingOfficialConversationContext"
+    :submitting="isSendingOfficialTemplate"
+    :error="officialConversationContextError"
+    @submit="handleOfficialTemplateSubmit"
   />
 
   <ChatContactViewModal
@@ -9380,8 +9676,20 @@ $chat-app-header-height: 76px;
 }
 
 .operator-reply-pending-banner {
-  border-color: rgba(var(--v-theme-error), 0.45) !important;
-  background: rgba(var(--v-theme-error), 0.08) !important;
+  border-radius: 8px;
+  margin: 8px 12px 10px;
+}
+
+.operator-reply-pending-banner__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.operator-reply-pending-banner__copy span {
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.86rem;
+  line-height: 1.35;
 }
 
 .attendants-info-loading {

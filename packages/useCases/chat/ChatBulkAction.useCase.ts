@@ -10,10 +10,13 @@ import {
 } from '@core/schema/chat/bulkAction/request.schema';
 import { BulkActionChatResponse } from '@core/schema/chat/bulkAction/response.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { MY_CHATS_STATUS } from '@core/schema/chat/listChats/request.schema';
+import {
+  MY_CHATS_STATUS,
+  ListChatsQuery,
+} from '@core/schema/chat/listChats/request.schema';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
-import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 
 type BulkCategory = (typeof BULK_CHAT_CATEGORIES)[number];
 
@@ -265,7 +268,8 @@ export class ChatBulkActionUseCase {
     input: BulkActionChatRequest,
     actions: IJwtGroupHierarchy[],
     userSectors: string[],
-    userChannels: { id: string; name: string }[]
+    userChannels: { id: string; name: string }[],
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<BulkActionChatResponse> {
     this.validateInput(t, input);
 
@@ -305,7 +309,8 @@ export class ChatBulkActionUseCase {
             actorUserId,
             permissionRoleId,
             actions,
-            userChannels
+            userChannels,
+            webhookSource
           );
 
           successCount += 1;
@@ -326,7 +331,8 @@ export class ChatBulkActionUseCase {
           },
           actions,
           userChannels,
-          { skipClosureCommentValidation: true }
+          { skipClosureCommentValidation: true },
+          webhookSource
         );
 
         if (!closeResult) {

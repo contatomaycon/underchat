@@ -7,9 +7,11 @@ import {
   onUnmounted,
   watch,
   nextTick,
+  useTemplateRef,
 } from 'vue';
 import { VueFlow } from '@vue-flow/core';
 import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
+import { useDisplay } from 'vuetify';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { EAiAgentPermissions } from '@core/common/enums/EPermissions/aiAgent';
@@ -23,6 +25,7 @@ import ChatbotFinishNode from '@/components/chatbot/ChatbotFinishNode.vue';
 import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
 import ChatbotMessageNode from '@/components/chatbot/ChatbotMessageNode.vue';
 import ChatbotDataNode from '@/components/chatbot/ChatbotDataNode.vue';
+import ChatbotUnderchatNode from '@/components/chatbot/ChatbotUnderchatNode.vue';
 import ChatbotContactNode from '@/components/chatbot/ChatbotContactNode.vue';
 import ChatbotAiAgentNode from '@/components/chatbot/ChatbotAiAgentNode.vue';
 import ChatbotAnnotationNode from '@/components/chatbot/ChatbotAnnotationNode.vue';
@@ -33,18 +36,59 @@ import ChatbotWeekdayNode from '@/components/chatbot/ChatbotWeekdayNode.vue';
 import ChatbotHoursNode from '@/components/chatbot/ChatbotHoursNode.vue';
 import ChatbotHolidayNode from '@/components/chatbot/ChatbotHolidayNode.vue';
 import ChatbotOfficialNode from '@/components/chatbot/ChatbotOfficialNode.vue';
+import ChatbotInactivityAlertConfig from '@/components/chatbot/ChatbotInactivityAlertConfig.vue';
+import ChatbotNodePalette from '@/components/chatbot/ChatbotNodePalette.vue';
+import ChatbotApiRequestNode from '@/components/chatbot/api-request/ChatbotApiRequestNode.vue';
+import {
+  createDefaultApiRequestConfig,
+  formatApiVariableTag,
+  getNextApiOutputKey,
+  markApiRequestChanged,
+  normalizeApiRequestConfig,
+  type ApiRequestConfig,
+  type ApiRequestTestInput,
+  type ApiRequestTestResult,
+  type ApiRequestVariable,
+} from '@/components/chatbot/api-request/types';
 import {
   OFFICIAL_CHATBOT_NODE_TYPES,
   isOfficialChatbotNodeType,
+  isOfficialWaitForResponseNodeType,
 } from '@core/common/functions/chatbotOfficialNodes';
+import {
+  computeChatbotFlowDominators,
+  getUpstreamApiContracts,
+  isChatbotNodeOutputAvailableAtNode,
+  validateChatbotApiVariableDependencies,
+} from '@core/common/functions/chatbotApiGraph';
+import {
+  formatChatbotNodeOutputTag,
+  getChatbotNodeOutputDefinition,
+  getNextChatbotNodeOutputKey,
+  isChatbotCaptureNodeType,
+  isChatbotNodeOutputKey,
+  type ChatbotCaptureNodeType,
+} from '@core/common/functions/chatbotNodeOutputs';
 import { OfficialCapabilitiesResponse } from '@core/schema/chatbot/officialCapabilities/response.schema';
 import { OfficialTemplatesResponse } from '@core/schema/chatbot/officialTemplates/response.schema';
+import type { UnderchatLookupConfig } from '@core/schema/chatbot/chatbotFlow.schema';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
 import { getUser } from '@/@webcore/localStorage/user';
+import type {
+  ChatbotNodePaletteCategory,
+  ChatbotNodePaletteItem,
+} from '@/types/chatbotNodePalette';
+import { createUnderchatVariableCatalog } from '@/utils/underchatVariableCatalog';
+import { useChatbotInactivityTargets } from '@/composables/useChatbotInactivityTargets';
+import type { ChatbotInactivityRedirectType } from '@/types/chatbotInactivityAlert';
+import {
+  OFFICIAL_INTERACTIVE_LIMITS,
+  findOfficialInteractiveLimitViolation,
+} from '@/utils/officialInteractiveLimits';
 
 definePage({
   meta: {
@@ -66,6 +110,7 @@ const nodeTypes = {
   tag: markRaw(ChatbotTagNode),
   message: markRaw(ChatbotMessageNode),
   data: markRaw(ChatbotDataNode),
+  underchat: markRaw(ChatbotUnderchatNode),
   contact: markRaw(ChatbotContactNode),
   aiAgent: markRaw(ChatbotAiAgentNode),
   annotation: markRaw(ChatbotAnnotationNode),
@@ -75,6 +120,7 @@ const nodeTypes = {
   weekday: markRaw(ChatbotWeekdayNode),
   hours: markRaw(ChatbotHoursNode),
   holiday: markRaw(ChatbotHolidayNode),
+  apiRequest: markRaw(ChatbotApiRequestNode),
   officialReplyButtons: markRaw(ChatbotOfficialNode),
   officialList: markRaw(ChatbotOfficialNode),
   officialCtaUrl: markRaw(ChatbotOfficialNode),
@@ -96,8 +142,35 @@ const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 const chatbotStore = useChatbotStore();
+const {
+  channels: inactivityChannels,
+  chatbots: inactivityChatbots,
+  selectedChannelId: inactivityAlertSelectedChannel,
+  selectedChatbotId: inactivityAlertSelectedChatbot,
+  isLoadingChannels: isLoadingInactivityChannels,
+  isLoadingChatbots: isLoadingInactivityChatbots,
+  loadChannels: loadInactivityChannels,
+  changeChannel: changeInactivityChannel,
+  restoreSelection: restoreInactivityChatbotSelection,
+} = useChatbotInactivityTargets();
+const { width: viewportWidth } = useDisplay();
 
 const aiAgentStore = useAiAgentStore();
+
+const hasFullAccess = computed(() =>
+  can([EGeneralPermissions.full_access, EGeneralPermissions.full_access_group])
+);
+
+const isMobilePalette = computed(() => viewportWidth.value < 720);
+const flowAreaRef = useTemplateRef<HTMLElement>('flowArea');
+
+const nodePaletteStorageKey = computed(() => {
+  const user = getUser();
+  const accountId = user?.account_id || 'anonymous-account';
+  const userId = user?.user_id || 'anonymous-user';
+
+  return `underchat:chatbot-flow:node-palette:v1:${accountId}:${userId}`;
+});
 
 const canUseAiAgentPermission = computed(() => {
   return can([
@@ -211,12 +284,198 @@ const officialNodeItems: Array<{
   { type: 'officialReaction', label: 'Reação', icon: 'tabler-mood-smile' },
 ];
 
+const nodePaletteCategories = computed<ChatbotNodePaletteCategory[]>(() => [
+  {
+    id: 'conversation',
+    label: t('chatbot_palette_conversation'),
+    icon: 'tabler-message-circle-2',
+  },
+  {
+    id: 'attendance',
+    label: t('chatbot_palette_attendance'),
+    icon: 'tabler-route',
+  },
+  {
+    id: 'rules',
+    label: t('chatbot_palette_rules'),
+    icon: 'tabler-adjustments-code',
+  },
+  {
+    id: 'organization',
+    label: t('chatbot_palette_organization'),
+    icon: 'tabler-notes',
+  },
+  {
+    id: 'integrations',
+    label: t('chatbot_palette_integrations'),
+    icon: 'tabler-plug-connected',
+  },
+  {
+    id: 'official',
+    label: t('chatbot_palette_official'),
+    icon: 'tabler-brand-whatsapp',
+  },
+]);
+
+const nodePaletteItems = computed<ChatbotNodePaletteItem[]>(() => {
+  const items: ChatbotNodePaletteItem[] = [
+    {
+      id: 'menu',
+      category: 'conversation',
+      label: t('chatbot_menu'),
+      icon: 'tabler-menu-2',
+      tone: 'primary',
+    },
+    {
+      id: 'satisfaction',
+      category: 'conversation',
+      label: t('chatbot_satisfaction'),
+      icon: 'tabler-star',
+      tone: 'warning',
+    },
+    {
+      id: 'message',
+      category: 'conversation',
+      label: t('chatbot_message'),
+      icon: 'tabler-message',
+      tone: 'primary',
+    },
+    {
+      id: 'randomMessage',
+      category: 'conversation',
+      label: t('chatbot_random_message'),
+      icon: 'tabler-message-2',
+      tone: 'randomMessage',
+    },
+    {
+      id: 'redirect',
+      category: 'attendance',
+      label: t('chatbot_redirect'),
+      icon: 'tabler-arrow-forward',
+      tone: 'info',
+    },
+    {
+      id: 'distribution',
+      category: 'attendance',
+      label: t('chatbot_distribution'),
+      icon: 'tabler-users-group',
+      tone: 'distribution',
+    },
+    {
+      id: 'contact',
+      category: 'attendance',
+      label: t('chatbot_contact'),
+      icon: 'tabler-users',
+      tone: 'tertiary',
+    },
+    {
+      id: 'tag',
+      category: 'attendance',
+      label: t('chatbot_tag_node_title'),
+      icon: 'tabler-tag',
+      tone: 'secondary',
+    },
+    {
+      id: 'finish',
+      category: 'attendance',
+      label: t('chatbot_finish'),
+      icon: 'tabler-circle-check',
+      tone: 'error',
+    },
+    {
+      id: 'data',
+      category: 'rules',
+      label: t('chatbot_data'),
+      icon: 'tabler-database',
+      tone: 'info',
+    },
+    {
+      id: 'conditional',
+      category: 'rules',
+      label: t('chatbot_conditional'),
+      icon: 'tabler-code',
+      tone: 'warning',
+    },
+    {
+      id: 'weekday',
+      category: 'rules',
+      label: t('chatbot_weekday'),
+      icon: 'tabler-calendar',
+      tone: 'primary',
+    },
+    {
+      id: 'hours',
+      category: 'rules',
+      label: t('chatbot_hours'),
+      icon: 'tabler-clock-hour-3',
+      tone: 'warning',
+    },
+    {
+      id: 'holiday',
+      category: 'rules',
+      label: t('chatbot_holidays'),
+      icon: 'tabler-calendar-star',
+      tone: 'primary',
+    },
+    {
+      id: 'annotation',
+      category: 'organization',
+      label: t('chatbot_annotation_node_title'),
+      icon: 'tabler-note',
+      tone: 'annotation',
+    },
+    {
+      id: 'apiRequest',
+      category: 'integrations',
+      label: t('chatbot_api_request'),
+      icon: 'tabler-api',
+      tone: 'info',
+    },
+  ];
+
+  if (hasFullAccess.value) {
+    items.push({
+      id: 'underchat',
+      category: 'integrations',
+      label: t('chatbot_underchat'),
+      icon: 'tabler-user-search',
+      tone: 'info',
+    });
+  }
+
+  if (canUseAiAgentPermission.value && canUseAiAgent.value) {
+    items.splice(7, 0, {
+      id: 'aiAgent',
+      category: 'attendance',
+      label: t('chatbot_ai_agent'),
+      icon: 'tabler-brain',
+      tone: 'primary',
+    });
+  }
+
+  if (canUseOfficialNodes.value) {
+    items.push(
+      ...officialNodeItems.map((item) => ({
+        id: item.type,
+        category: 'official' as const,
+        label: item.label,
+        icon: item.icon,
+        tone: 'success' as const,
+      }))
+    );
+  }
+
+  return items;
+});
+
 const isConfigModalOpen = ref(false);
 const inactivityAlertStatus = ref<'active' | 'inactive'>('inactive');
 const inactivityAlertQuantity = ref('');
 const inactivityAlertTime = ref('');
 const inactivityAlertAction = ref<'redirect' | 'finish' | null>(null);
-const inactivityAlertRedirectType = ref<'user' | 'sector' | null>(null);
+const inactivityAlertRedirectType = ref<ChatbotInactivityRedirectType | null>(
+  null
+);
 const inactivityAlertSelectedUser = ref<string | null>(null);
 const inactivityAlertSelectedSector = ref<string | null>(null);
 const inactivityAlertSelectedSectorUser = ref<string | null>(null);
@@ -291,48 +550,7 @@ const safeDefaultTransferMessageSectorUserText = computed(() => {
   return defaultTransferMessageSectorUserText.value || '';
 });
 
-const availableVariables = computed(() => [
-  {
-    tag: '{{ sector }}',
-    description: t('chatbot_variable_sector_description'),
-  },
-  {
-    tag: '{{ user }}',
-    description: t('chatbot_variable_user_description'),
-  },
-  {
-    tag: '{{ greeting }}',
-    description: t('chatbot_variable_greeting_description'),
-  },
-  {
-    tag: '{{ name }}',
-    description: t('chatbot_variable_name_description'),
-  },
-  {
-    tag: '{{ protocol }}',
-    description: t('chatbot_variable_protocol_description'),
-  },
-  {
-    tag: '{{ date }}',
-    description: t('chatbot_variable_date_description'),
-  },
-  {
-    tag: '{{ time }}',
-    description: t('chatbot_variable_time_description'),
-  },
-  {
-    tag: '{{ account_name }}',
-    description: t('chatbot_variable_account_name_description'),
-  },
-  {
-    tag: '{{ phone }}',
-    description: t('chatbot_variable_phone_description'),
-  },
-  {
-    tag: '{{ channel_name }}',
-    description: t('chatbot_variable_channel_name_description'),
-  },
-]);
+const availableVariables = computed(() => createUnderchatVariableCatalog(t));
 
 const inactivityMessage = ref('');
 const invalidMenuOptionMessage = ref('');
@@ -358,20 +576,6 @@ const isTransferMessageSectorUserEnabled = ref(true);
 
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
 
-const inactivityAlertQuantityComputed = computed({
-  get: () => inactivityAlertQuantity.value,
-  set: (value: string) => {
-    inactivityAlertQuantity.value = onlyDigits(value);
-  },
-});
-
-const inactivityAlertTimeComputed = computed({
-  get: () => inactivityAlertTime.value,
-  set: (value: string) => {
-    inactivityAlertTime.value = onlyDigits(value);
-  },
-});
-
 const redirectFailedAttemptsQuantityComputed = computed({
   get: () => redirectFailedAttemptsQuantity.value,
   set: (value: string) => {
@@ -379,36 +583,47 @@ const redirectFailedAttemptsQuantityComputed = computed({
   },
 });
 
-const showInactivityAlertFields = computed(
-  () => inactivityAlertStatus.value === 'active'
-);
-
-const showInactivityAlertActionFields = computed(
-  () => showInactivityAlertFields.value && inactivityAlertAction.value !== null
-);
-
-const showInactivityAlertRedirectFields = computed(
+const isInactivityChatbotTargetIncomplete = computed(
   () =>
-    showInactivityAlertActionFields.value &&
-    inactivityAlertAction.value === 'redirect'
+    inactivityAlertStatus.value === 'active' &&
+    inactivityAlertAction.value === 'redirect' &&
+    inactivityAlertRedirectType.value === 'chatbot' &&
+    (!inactivityAlertSelectedChannel.value ||
+      !inactivityAlertSelectedChatbot.value)
 );
 
-const showInactivityAlertUserField = computed(
+const isPositiveIntegerInput = (value: string): boolean =>
+  /^[1-9]\d*$/u.test(value);
+
+const isInactivityAlertQuantityInvalid = computed(
   () =>
-    showInactivityAlertRedirectFields.value &&
-    inactivityAlertRedirectType.value === 'user'
+    inactivityAlertStatus.value === 'active' &&
+    !isPositiveIntegerInput(inactivityAlertQuantity.value)
 );
 
-const showInactivityAlertSectorField = computed(
+const isInactivityAlertTimeInvalid = computed(
   () =>
-    showInactivityAlertRedirectFields.value &&
-    inactivityAlertRedirectType.value === 'sector'
+    inactivityAlertStatus.value === 'active' &&
+    !isPositiveIntegerInput(inactivityAlertTime.value)
 );
 
-const showInactivityAlertSectorUserField = computed(
+const inactivityAlertQuantityError = computed(() =>
+  isInactivityAlertQuantityInvalid.value
+    ? t('chatbot_flow_validation_inactivity_quantity_required')
+    : null
+);
+
+const inactivityAlertTimeError = computed(() =>
+  isInactivityAlertTimeInvalid.value
+    ? t('chatbot_flow_validation_inactivity_time_required')
+    : null
+);
+
+const isInactivityAlertConfigurationIncomplete = computed(
   () =>
-    showInactivityAlertSectorField.value &&
-    inactivityAlertSelectedSector.value !== null
+    isInactivityAlertQuantityInvalid.value ||
+    isInactivityAlertTimeInvalid.value ||
+    isInactivityChatbotTargetIncomplete.value
 );
 
 const showRedirectFailedAttemptsFields = computed(
@@ -544,6 +759,12 @@ const loadInactivitySectorUsers = async (sectorId: string) => {
   }
 };
 
+const handleInactivityChannelChange = async (
+  workerId: string | null
+): Promise<void> => {
+  await changeInactivityChannel(workerId);
+};
+
 const loadRedirectFailedAttemptsUsers = async () => {
   const user = getUser();
   if (!user?.account_id) return;
@@ -628,6 +849,7 @@ watch(
 );
 
 const openConfigModal = async () => {
+  if (isFlowReadOnly.value) return;
   isConfigModalOpen.value = true;
   try {
     isLoadingConfigurations.value = true;
@@ -656,6 +878,348 @@ const initialEdges: Edge[] = [];
 
 const nodes = ref<Node[]>(initialNodes);
 const edges = ref<Edge[]>(initialEdges);
+const isFlowReadOnly = ref(false);
+const apiUpstreamContractSignatures = new Map<string, string>();
+const reservedApiOutputKeys = new Set<string>();
+const reservedNodeOutputKeys: Record<ChatbotCaptureNodeType, Set<string>> = {
+  data: new Set<string>(),
+  message: new Set<string>(),
+  underchat: new Set<string>(),
+};
+const VARIABLE_CONSUMER_NODE_TYPES = new Set([
+  'menu',
+  'satisfaction',
+  'message',
+  'data',
+  'underchat',
+  'conditional',
+  'holiday',
+  'annotation',
+  'officialTemplate',
+]);
+
+const RUNTIME_NODE_DATA_KEYS = new Set([
+  'attachmentFile',
+  'availableOfficialTemplates',
+  'availableVariables',
+  'isLoadingOfficialTemplates',
+  'officialTemplatesError',
+  'onRemove',
+  'onRemoveCondition',
+  'onRemoveInteractionsEdge',
+  'onRemoveOption',
+  'onTest',
+  'onUpdate',
+  'readOnly',
+  'restricted',
+  'upstreamContracts',
+]);
+
+const toSerializableValue = (value: unknown): unknown => {
+  if (typeof value === 'function' || value === undefined) return undefined;
+  if (typeof File !== 'undefined' && value instanceof File) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => toSerializableValue(entry))
+      .filter((entry) => entry !== undefined);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !RUNTIME_NODE_DATA_KEYS.has(key))
+        .map(([key, entry]) => [key, toSerializableValue(entry)])
+        .filter(([, entry]) => entry !== undefined)
+    );
+  }
+  return value;
+};
+
+const toSerializableNodeData = (
+  data: Record<string, unknown> | undefined
+): Record<string, any> =>
+  (toSerializableValue(data || {}) as Record<string, any>) || {};
+
+const getGraphFlow = () => ({
+  chatbot_id: chatbotId.value || '',
+  nodes: nodes.value.map((node) => ({
+    id: node.id,
+    type: node.type || '',
+    position: { x: node.position.x, y: node.position.y },
+    data: toSerializableNodeData(node.data as Record<string, unknown>),
+  })),
+  edges: edges.value.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle ? String(edge.sourceHandle) : undefined,
+    targetHandle: edge.targetHandle ? String(edge.targetHandle) : undefined,
+  })),
+});
+
+const isCapturedApiField = (
+  config: ApiRequestConfig,
+  path: string
+): boolean => {
+  if (config.capture.mode === 'full') return true;
+  return config.capture.paths.some(
+    (selectedPath) =>
+      path === selectedPath || path.startsWith(`${selectedPath}.`)
+  );
+};
+
+const getVariablesForNode = (nodeId: string): ApiRequestVariable[] => {
+  const globalVariables: ApiRequestVariable[] = availableVariables.value.map(
+    (variable) => ({
+      ...variable,
+      label: variable.tag,
+      type: 'string',
+    })
+  );
+  const graph = getGraphFlow();
+  const dominators =
+    computeChatbotFlowDominators(graph as any).get(nodeId) ?? new Set<string>();
+  const upstreamVariables: ApiRequestVariable[] = [];
+
+  for (const node of graph.nodes) {
+    if (node.id === nodeId) continue;
+
+    const capturedOutput = getChatbotNodeOutputDefinition(node);
+    if (
+      capturedOutput &&
+      isChatbotNodeOutputAvailableAtNode(
+        graph as any,
+        node.id,
+        nodeId,
+        capturedOutput.sourceHandle
+      )
+    ) {
+      for (const field of capturedOutput.fields) {
+        const descriptionKey =
+          capturedOutput.nodeType === 'data'
+            ? 'chatbot_captured_output_data_help'
+            : capturedOutput.nodeType === 'underchat'
+              ? 'chatbot_underchat_output_description'
+              : 'chatbot_captured_output_message_help';
+        upstreamVariables.push({
+          tag: formatChatbotNodeOutputTag(capturedOutput.outputKey, field.path),
+          label: `${capturedOutput.outputKey} · ${field.path}`,
+          description: t(descriptionKey),
+          type: field.type,
+          sourceNodeId: node.id,
+        });
+      }
+    }
+
+    if (!dominators.has(node.id)) continue;
+    if (node.type !== 'apiRequest') continue;
+
+    const config = node.data.apiRequest as ApiRequestConfig | undefined;
+    if (!config || config.test.state !== 'tested' || !config.test.evidence) {
+      continue;
+    }
+    const source = config.outputKey;
+    upstreamVariables.push(
+      {
+        tag: formatApiVariableTag(source),
+        label: `${source} · resposta`,
+        description: 'Corpo capturado da chamada de API.',
+        type: 'object',
+        sourceNodeId: node.id,
+      },
+      {
+        tag: formatApiVariableTag(source, '_response.status'),
+        label: `${source} · status HTTP`,
+        description: 'Código de status retornado pelo endpoint.',
+        type: 'number',
+        sourceNodeId: node.id,
+      }
+    );
+
+    for (const field of config.capture.contract) {
+      if (!isCapturedApiField(config, field.path)) continue;
+      upstreamVariables.push({
+        tag: formatApiVariableTag(source, field.path),
+        label: field.path,
+        description: field.projectedFromArray
+          ? `${source} · projeção de array`
+          : `${source} · ${field.type}`,
+        type: field.type,
+        sourceNodeId: node.id,
+      });
+    }
+
+    for (const header of config.capture.responseHeaders) {
+      upstreamVariables.push({
+        tag: formatApiVariableTag(source, `_response.headers.${header}`),
+        label: `${source} · ${header}`,
+        description: 'Header capturado da resposta.',
+        type: 'string',
+        sourceNodeId: node.id,
+      });
+    }
+  }
+
+  return [...globalVariables, ...upstreamVariables].filter(
+    (variable, index, catalog) =>
+      catalog.findIndex((candidate) => candidate.tag === variable.tag) === index
+  );
+};
+
+const getApiUpstreamContracts = (nodeId: string): Record<string, unknown> =>
+  getUpstreamApiContracts(getGraphFlow() as any, nodeId);
+
+const testApiRequestNode = async (
+  input: ApiRequestTestInput
+): Promise<ApiRequestTestResult> => {
+  if (!chatbotId.value) {
+    throw new Error('ChatBot não identificado para executar o teste.');
+  }
+
+  return chatbotStore.testChatbotApiRequest({
+    chatbot_id: chatbotId.value,
+    node_id: input.nodeId,
+    configuration: input.config,
+    sample_variables: input.sampleVariables,
+    upstream_contracts:
+      input.upstreamContracts ?? getApiUpstreamContracts(input.nodeId),
+    confirm_side_effects: input.confirmSideEffects,
+  });
+};
+
+const updateApiRequestNode = (
+  nodeId: string,
+  config: ApiRequestConfig
+): void => {
+  const node = nodes.value.find((candidate) => candidate.id === nodeId);
+  if (!node?.data) return;
+  node.data.apiRequest = normalizeApiRequestConfig(config, {
+    outputKey: config.outputKey,
+  });
+};
+
+const applyApiRequestRuntimeData = (node: Node): void => {
+  if (node.type !== 'apiRequest') return;
+  if (!node.data) node.data = {};
+  node.data.availableVariables = getVariablesForNode(node.id);
+  node.data.upstreamContracts = getApiUpstreamContracts(node.id);
+  node.data.onUpdate = (config: ApiRequestConfig) =>
+    updateApiRequestNode(node.id, config);
+  node.data.onTest = testApiRequestNode;
+};
+
+const updateUnderchatNode = (
+  nodeId: string,
+  underchatLookup: UnderchatLookupConfig
+): void => {
+  if (isFlowReadOnly.value || !hasFullAccess.value) return;
+  const node = nodes.value.find((candidate) => candidate.id === nodeId);
+  if (!node?.data || node.type !== 'underchat') return;
+  node.data.underchatLookup = { ...underchatLookup, version: 1 };
+};
+
+const applyUnderchatRuntimeData = (node: Node): void => {
+  if (node.type !== 'underchat') return;
+  if (!node.data) node.data = {};
+
+  const restricted = node.data.restricted === true || !hasFullAccess.value;
+  const readOnly = isFlowReadOnly.value || restricted;
+  node.data.restricted = restricted;
+  node.data.readOnly = readOnly;
+  node.data.availableVariables = restricted ? [] : getVariablesForNode(node.id);
+  node.data.onUpdate = readOnly
+    ? undefined
+    : (lookup: UnderchatLookupConfig) => updateUnderchatNode(node.id, lookup);
+  if (readOnly) delete node.data.onRemove;
+};
+
+const syncRuntimeVariableCatalogs = (): void => {
+  for (const node of nodes.value) {
+    if (!node.data) node.data = {};
+    if (node.type === 'apiRequest') {
+      applyApiRequestRuntimeData(node);
+      const upstreamSignature = JSON.stringify(
+        node.data.upstreamContracts || {}
+      );
+      const previousSignature = apiUpstreamContractSignatures.get(node.id);
+      const config = node.data.apiRequest as ApiRequestConfig | undefined;
+      if (
+        previousSignature !== undefined &&
+        previousSignature !== upstreamSignature &&
+        config?.test.evidence
+      ) {
+        node.data.apiRequest = markApiRequestChanged(config);
+      }
+      apiUpstreamContractSignatures.set(node.id, upstreamSignature);
+      continue;
+    }
+    if (node.type === 'underchat') {
+      applyUnderchatRuntimeData(node);
+      continue;
+    }
+    if (node.type && VARIABLE_CONSUMER_NODE_TYPES.has(node.type)) {
+      node.data.availableVariables = getVariablesForNode(node.id);
+    }
+  }
+  const currentNodeIds = new Set(nodes.value.map((node) => node.id));
+  for (const nodeId of apiUpstreamContractSignatures.keys()) {
+    if (!currentNodeIds.has(nodeId))
+      apiUpstreamContractSignatures.delete(nodeId);
+  }
+};
+
+const apiGraphSignature = computed<string>(() => {
+  const apiNodes: Array<{ id: string; config: unknown }> = [];
+  const capturedOutputNodes: Array<{ id: string; config: unknown }> = [];
+  const consumers: string[] = [];
+  for (const node of nodes.value as Node[]) {
+    if (node.type === 'apiRequest') {
+      const config = node.data?.apiRequest as ApiRequestConfig | undefined;
+      apiNodes.push({
+        id: node.id,
+        config: config
+          ? {
+              outputKey: config.outputKey,
+              capture: config.capture,
+              testState: config.test.state,
+              hasEvidence: Boolean(config.test.evidence),
+            }
+          : null,
+      });
+    }
+    if (isChatbotCaptureNodeType(node.type)) {
+      capturedOutputNodes.push({
+        id: node.id,
+        config: {
+          type: node.type,
+          outputKey: node.data?.outputKey,
+          dataType: node.data?.dataType,
+          continueType: node.data?.continueType,
+          underchatLookup: node.data?.underchatLookup,
+        },
+      });
+    }
+    if (node.type && VARIABLE_CONSUMER_NODE_TYPES.has(node.type)) {
+      consumers.push(node.id);
+    }
+  }
+  const edgeSignature: Array<[string, string, string | null, string | null]> =
+    edges.value.map((edge) => [
+      edge.source,
+      edge.target,
+      edge.sourceHandle ? String(edge.sourceHandle) : null,
+      edge.targetHandle ? String(edge.targetHandle) : null,
+    ]);
+
+  return JSON.stringify({
+    globals: availableVariables.value,
+    apiNodes,
+    capturedOutputNodes,
+    consumers,
+    edges: edgeSignature,
+  });
+});
+
+watch(apiGraphSignature, syncRuntimeVariableCatalogs, { immediate: true });
 
 const selectedEdgeId = ref<string | null>(null);
 const contextMenuPosition = ref<{ x: number; y: number } | null>(null);
@@ -664,6 +1228,18 @@ const contextMenuEdgeId = ref<string | null>(null);
 const contextMenuCard = ref<HTMLElement | null>(null);
 
 let nodeIdCounter = 2;
+const allocateApiOutputKey = (): string => {
+  const outputKey = getNextApiOutputKey([...reservedApiOutputKeys]);
+  reservedApiOutputKeys.add(outputKey);
+  return outputKey;
+};
+const allocateNodeOutputKey = (type: ChatbotCaptureNodeType): string => {
+  const outputKey = getNextChatbotNodeOutputKey(type, [
+    ...reservedNodeOutputKeys[type],
+  ]);
+  reservedNodeOutputKeys[type].add(outputKey);
+  return outputKey;
+};
 const optionNodeTypes = new Set([
   'menu',
   'satisfaction',
@@ -926,6 +1502,7 @@ const getSecureRandom = (max: number, min = 0): number => {
 };
 
 const removeNode = (nodeId: string) => {
+  if (isFlowReadOnly.value) return;
   const nodeIndex = nodes.value.findIndex((n) => n.id === nodeId);
   if (nodeIndex > -1) {
     nodes.value.splice(nodeIndex, 1);
@@ -937,6 +1514,7 @@ const removeNode = (nodeId: string) => {
 };
 
 const removeEdge = (edgeId: string) => {
+  if (isFlowReadOnly.value) return;
   const edgeIndex = edges.value.findIndex((e) => e.id === edgeId);
   if (edgeIndex > -1) {
     edges.value.splice(edgeIndex, 1);
@@ -949,6 +1527,8 @@ const handleRemoveEdge = (event?: MouseEvent | KeyboardEvent) => {
     event.stopPropagation();
     event.preventDefault();
   }
+
+  if (isFlowReadOnly.value) return;
 
   const edgeIdToRemove = contextMenuEdgeId.value || selectedEdgeId.value;
 
@@ -980,6 +1560,7 @@ const onEdgeContextMenu = (event: any) => {
   const mouseEvent = event.event as MouseEvent;
   mouseEvent.preventDefault();
   mouseEvent.stopPropagation();
+  if (isFlowReadOnly.value) return;
   for (const edge of edges.value) {
     (edge as any).selected = edge.id === event.edge.id;
   }
@@ -1010,6 +1591,7 @@ const onPaneClick = () => {
 };
 
 const handleDeleteKey = (event: KeyboardEvent) => {
+  if (isFlowReadOnly.value) return;
   if (event.key === 'Delete' || event.key === 'Backspace') {
     if (selectedEdgeId.value) {
       removeEdge(selectedEdgeId.value);
@@ -1019,6 +1601,7 @@ const handleDeleteKey = (event: KeyboardEvent) => {
 };
 
 const removeOptionEdge = (nodeId: string, optionId: string) => {
+  if (isFlowReadOnly.value) return;
   const sourceHandle = `option-${optionId}-source`;
   edges.value = edges.value.filter(
     (e) => !(e.source === nodeId && e.sourceHandle === sourceHandle)
@@ -1026,6 +1609,7 @@ const removeOptionEdge = (nodeId: string, optionId: string) => {
 };
 
 const removeConditionEdge = (nodeId: string, conditionId: string) => {
+  if (isFlowReadOnly.value) return;
   const sourceHandle = `condition-${conditionId}-source`;
   edges.value = edges.value.filter(
     (e) => !(e.source === nodeId && e.sourceHandle === sourceHandle)
@@ -1033,6 +1617,7 @@ const removeConditionEdge = (nodeId: string, conditionId: string) => {
 };
 
 const removeInteractionsEdge = (nodeId: string) => {
+  if (isFlowReadOnly.value) return;
   const sourceHandle = 'interactions-quantity-source';
   const normalizedHandle = 'interactions-quantity';
   edges.value = edges.value.filter(
@@ -1197,9 +1782,13 @@ const addMessageNode = (position?: { x: number; y: number }) => {
       y: getSecureRandom(300) + 100,
     },
     data: {
+      outputKey: allocateNodeOutputKey('message'),
       messageType: null,
       text: '',
       attachmentFile: null,
+      attachmentSource: 'upload',
+      attachmentVariable: '',
+      attachmentFileName: '',
       attachmentUrl: null,
       attachmentMimetype: null,
       attachmentDuration: null,
@@ -1210,6 +1799,25 @@ const addMessageNode = (position?: { x: number; y: number }) => {
     },
   };
   nodes.value.push(newNode);
+};
+
+const addApiRequestNode = (position?: { x: number; y: number }) => {
+  const nodeId = `apiRequest-${nodeIdCounter++}`;
+  const outputKey = allocateApiOutputKey();
+  const newNode: Node = {
+    id: nodeId,
+    type: 'apiRequest',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      apiRequest: createDefaultApiRequestConfig(outputKey),
+      onRemove: () => removeNode(nodeId),
+    },
+  };
+  nodes.value.push(newNode);
+  applyApiRequestRuntimeData(newNode);
 };
 
 const addRandomMessageNode = (position?: { x: number; y: number }) => {
@@ -1240,8 +1848,10 @@ const addDataNode = (position?: { x: number; y: number }) => {
       y: getSecureRandom(300) + 100,
     },
     data: {
+      outputKey: allocateNodeOutputKey('data'),
       dataType: null,
       firstName: t('chatbot_data_default_name_question'),
+      lastName: t('chatbot_data_default_lastname_question'),
       email: t('chatbot_data_default_email_question'),
       cpf: t('chatbot_data_default_cpf_question'),
       cnpj: t('chatbot_data_default_cnpj_question'),
@@ -1249,6 +1859,30 @@ const addDataNode = (position?: { x: number; y: number }) => {
     },
   };
   nodes.value.push(newNode);
+};
+
+const addUnderchatNode = (position?: { x: number; y: number }) => {
+  if (isFlowReadOnly.value || !hasFullAccess.value) return;
+  const nodeId = `underchat-${nodeIdCounter++}`;
+  const newNode: Node = {
+    id: nodeId,
+    type: 'underchat',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      outputKey: allocateNodeOutputKey('underchat'),
+      underchatLookup: {
+        version: 1,
+        lookupType: 'email',
+        lookupExpression: '',
+      },
+      onRemove: () => removeNode(nodeId),
+    },
+  };
+  nodes.value.push(newNode);
+  applyUnderchatRuntimeData(newNode);
 };
 
 const addDistributionNode = (position?: { x: number; y: number }) => {
@@ -1280,6 +1914,8 @@ const addConditionalNode = (position?: { x: number; y: number }) => {
       y: getSecureRandom(300) + 100,
     },
     data: {
+      conditionalOperand: 'message',
+      conditionalVariable: '',
       conditions: [],
       onRemove: () => removeNode(nodeId),
       onRemoveCondition: (conditionId: string) =>
@@ -1372,6 +2008,10 @@ const getOfficialDefaultData = (nodeType: OfficialNodeType) => {
     onRemove: undefined,
   };
 
+  if (isOfficialWaitForResponseNodeType(nodeType)) {
+    baseData.continueType = 'after_response';
+  }
+
   if (nodeType === 'officialReplyButtons') {
     return {
       ...baseData,
@@ -1390,6 +2030,7 @@ const getOfficialDefaultData = (nodeType: OfficialNodeType) => {
       message: 'Escolha uma opção',
       text: 'Escolha uma opção',
       buttonText: 'Selecionar',
+      sectionTitle: 'Opções',
       options: [
         { id: '1', text: 'Opção 1', description: '' },
         { id: '2', text: 'Opção 2', description: '' },
@@ -1404,6 +2045,7 @@ const getOfficialDefaultData = (nodeType: OfficialNodeType) => {
       text: 'Abrir link',
       buttonText: 'Abrir link',
       url: '',
+      continueType: 'automatic',
     };
   }
 
@@ -1441,6 +2083,7 @@ const getOfficialDefaultData = (nodeType: OfficialNodeType) => {
   if (nodeType === 'officialMultiProduct') {
     return {
       ...baseData,
+      header: 'Produtos',
       message: 'Veja os produtos',
       text: 'Veja os produtos',
       catalogId: '',
@@ -1499,7 +2142,6 @@ const getOfficialDefaultData = (nodeType: OfficialNodeType) => {
       templateCategory: null,
       templateComponents: [],
       templatePreview: null,
-      continueType: 'automatic',
     };
   }
 
@@ -1618,7 +2260,50 @@ const addAiAgentNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode);
 };
 
+type FlowNodePosition = { x: number; y: number };
+
+const createNodeFromPalette = (
+  nodeType: string,
+  position?: FlowNodePosition
+): void => {
+  if (isFlowReadOnly.value) return;
+  if (nodeType === 'underchat' && !hasFullAccess.value) return;
+
+  if (isOfficialChatbotNodeType(nodeType)) {
+    addOfficialNode(nodeType as OfficialNodeType, position);
+    return;
+  }
+
+  const nodeCreators: Record<
+    string,
+    (targetPosition?: FlowNodePosition) => void
+  > = {
+    menu: addMenuNode,
+    satisfaction: addSatisfactionNode,
+    redirect: addRedirectNode,
+    finish: addFinishNode,
+    tag: addTagNode,
+    message: addMessageNode,
+    randomMessage: addRandomMessageNode,
+    data: addDataNode,
+    underchat: addUnderchatNode,
+    contact: addContactMenuNode,
+    aiAgent: addAiAgentNode,
+    annotation: addAnnotationNode,
+    distribution: addDistributionNode,
+    conditional: addConditionalNode,
+    weekday: addWeekdayNode,
+    hours: addHoursNode,
+    holiday: addHolidayNode,
+    apiRequest: addApiRequestNode,
+  };
+
+  nodeCreators[nodeType]?.(position);
+};
+
 const isValidConnection = (connection: Connection): boolean => {
+  if (isFlowReadOnly.value) return false;
+
   const sourceHandleId = connection.sourceHandle
     ? String(connection.sourceHandle)
     : null;
@@ -1626,12 +2311,35 @@ const isValidConnection = (connection: Connection): boolean => {
     ? String(connection.targetHandle)
     : null;
 
+  const sourceNode = nodes.value.find((node) => node.id === connection.source);
+  if (
+    sourceNode?.type === 'underchat' &&
+    (sourceHandleId === 'found' || sourceHandleId === 'not_found')
+  ) {
+    const alreadyConnected = edges.value.some(
+      (edge) =>
+        edge.source === connection.source &&
+        edge.sourceHandle === sourceHandleId &&
+        (edge.target !== connection.target ||
+          (edge.targetHandle || null) !== targetHandleId)
+    );
+    if (alreadyConnected) {
+      chatbotStore.showSnackbar(
+        t('chatbot_flow_validation_underchat_handle_already_connected'),
+        EColor.error
+      );
+      return false;
+    }
+  }
+
   if (!sourceHandleId && !targetHandleId) {
     const nodeTypesOnlyTarget = ['redirect', 'distribution', 'finish'];
     const nodeTypesOnlySource = ['start'];
-    const sourceNode = nodes.value.find((n) => n.id === connection.source);
+    const plainSourceNode = nodes.value.find(
+      (node) => node.id === connection.source
+    );
     const targetNode = nodes.value.find((n) => n.id === connection.target);
-    const sourceType = sourceNode?.type as string | undefined;
+    const sourceType = plainSourceNode?.type as string | undefined;
     const targetType = targetNode?.type as string | undefined;
 
     if (sourceType && nodeTypesOnlyTarget.includes(sourceType)) {
@@ -1660,7 +2368,11 @@ const isValidConnection = (connection: Connection): boolean => {
       lowerId.endsWith('source') ||
       lowerId === 'interactions-quantity' ||
       lowerId === 'fallback' ||
-      lowerId === 'default'
+      lowerId === 'default' ||
+      lowerId === 'success' ||
+      lowerId === 'failure' ||
+      lowerId === 'found' ||
+      lowerId === 'not_found'
     );
   };
 
@@ -1736,6 +2448,8 @@ const isValidConnection = (connection: Connection): boolean => {
 };
 
 const onConnect = (connection: Connection) => {
+  if (isFlowReadOnly.value) return;
+
   if (!isValidConnection(connection)) {
     return;
   }
@@ -1832,6 +2546,7 @@ const isPositionChange = (
 };
 
 const onNodesChange = (changes: NodeChange[]) => {
+  if (isFlowReadOnly.value) return;
   for (const change of changes) {
     if (!isPositionChange(change)) continue;
 
@@ -1846,83 +2561,84 @@ const isLoadingFlow = ref(false);
 const draggedNodeType = ref<string | null>(null);
 const vueFlowRef = ref<InstanceType<typeof VueFlow> | null>(null);
 
+const zoomInFlow = (): void => {
+  void vueFlowRef.value?.zoomIn();
+};
+
+const zoomOutFlow = (): void => {
+  void vueFlowRef.value?.zoomOut();
+};
+
+const fitFlowView = (): void => {
+  void vueFlowRef.value?.fitView({ padding: 0.24, duration: 220 });
+};
+
+const getFlowCanvasElement = (): HTMLElement | null =>
+  flowAreaRef.value?.querySelector<HTMLElement>('.vue-flow') || null;
+
+const getFlowPositionFromClient = (
+  clientX: number,
+  clientY: number
+): FlowNodePosition | null => {
+  const vueFlowElement = getFlowCanvasElement();
+  if (!vueFlowElement) return null;
+
+  const rect = vueFlowElement.getBoundingClientRect();
+  const viewport = vueFlowRef.value?.viewport || { x: 0, y: 0, zoom: 1 };
+
+  return {
+    x: (clientX - rect.left - viewport.x) / viewport.zoom,
+    y: (clientY - rect.top - viewport.y) / viewport.zoom,
+  };
+};
+
+const onPaletteCreate = (nodeType: string): void => {
+  if (isFlowReadOnly.value) return;
+  const vueFlowElement = getFlowCanvasElement();
+  if (!vueFlowElement) return;
+
+  const rect = vueFlowElement.getBoundingClientRect();
+  const position = getFlowPositionFromClient(
+    rect.left + rect.width / 2,
+    rect.top + rect.height / 2
+  );
+
+  if (position) {
+    createNodeFromPalette(nodeType, position);
+  }
+};
+
+const onPaletteDragStart = (nodeType: string, event: DragEvent): void => {
+  if (isFlowReadOnly.value) return;
+  draggedNodeType.value = nodeType;
+
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.dropEffect = 'move';
+    event.dataTransfer.setData('application/x-underchat-node', nodeType);
+  }
+};
+
+const onPaletteDragEnd = (): void => {
+  draggedNodeType.value = null;
+};
+
 const onDrop = (event: DragEvent) => {
-  if (!draggedNodeType.value) return;
+  if (isFlowReadOnly.value) return;
+  const nodeType = draggedNodeType.value;
+  if (!nodeType) return;
 
   event.preventDefault();
   event.stopPropagation();
 
-  const vueFlowElement = document.querySelector('.vue-flow') as HTMLElement;
-  if (!vueFlowElement) return;
-
-  const rect = vueFlowElement.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-
-  const viewport = vueFlowRef.value?.viewport || { x: 0, y: 0, zoom: 1 };
-  const position = {
-    x: (x - viewport.x) / viewport.zoom,
-    y: (y - viewport.y) / viewport.zoom,
-  };
-
-  if (isOfficialChatbotNodeType(draggedNodeType.value)) {
-    addOfficialNode(draggedNodeType.value as OfficialNodeType, position);
+  try {
+    const position = getFlowPositionFromClient(event.clientX, event.clientY);
+    if (position) {
+      createNodeFromPalette(nodeType, position);
+    }
+  } finally {
     draggedNodeType.value = null;
-    return;
   }
-
-  switch (draggedNodeType.value) {
-    case 'menu':
-      addMenuNode(position);
-      break;
-    case 'satisfaction':
-      addSatisfactionNode(position);
-      break;
-    case 'redirect':
-      addRedirectNode(position);
-      break;
-    case 'finish':
-      addFinishNode(position);
-      break;
-    case 'tag':
-      addTagNode(position);
-      break;
-    case 'message':
-      addMessageNode(position);
-      break;
-    case 'randomMessage':
-      addRandomMessageNode(position);
-      break;
-    case 'data':
-      addDataNode(position);
-      break;
-    case 'contact':
-      addContactMenuNode(position);
-      break;
-    case 'aiAgent':
-      addAiAgentNode(position);
-      break;
-    case 'annotation':
-      addAnnotationNode(position);
-      break;
-    case 'distribution':
-      addDistributionNode(position);
-      break;
-    case 'conditional':
-      addConditionalNode(position);
-      break;
-    case 'weekday':
-      addWeekdayNode(position);
-      break;
-    case 'hours':
-      addHoursNode(position);
-      break;
-    case 'holiday':
-      addHolidayNode(position);
-      break;
-  }
-
-  draggedNodeType.value = null;
 };
 
 const prepareNodesForSave = (
@@ -1936,7 +2652,14 @@ const prepareNodesForSave = (
   draggable?: boolean;
 }> => {
   return nodesToSave.map((node) => {
-    const nodeData: Record<string, any> = { ...node.data };
+    const nodeData = toSerializableNodeData(
+      node.data as Record<string, unknown> | undefined
+    );
+    if (node.type === 'officialCtaUrl') {
+      nodeData.continueType = 'automatic';
+    } else if (isOfficialWaitForResponseNodeType(node.type)) {
+      nodeData.continueType = 'after_response';
+    }
     if (nodeData && 'attachmentFile' in nodeData) {
       delete nodeData.attachmentFile;
     }
@@ -2022,6 +2745,117 @@ const validateAllNodesConnected = (): string | null => {
     });
   }
 
+  return null;
+};
+
+const validateApiRequestNodesBeforeSave = (): string | null => {
+  for (const node of nodes.value) {
+    if (node.type !== 'apiRequest') continue;
+    const config = node.data?.apiRequest as ApiRequestConfig | undefined;
+    const nodeLabel = config?.outputKey || node.label || node.id;
+    if (!config) {
+      return `Configure o node de API "${nodeLabel}".`;
+    }
+    if (config.test.state !== 'tested' || !config.test.evidence) {
+      return `Teste novamente a chamada "${nodeLabel}" antes de salvar.`;
+    }
+
+    const outgoing = edges.value.filter((edge) => edge.source === node.id);
+    if (!outgoing.some((edge) => edge.sourceHandle === 'success')) {
+      return `Conecte a saída Sucesso da chamada "${nodeLabel}".`;
+    }
+    if (!outgoing.some((edge) => edge.sourceHandle === 'failure')) {
+      return `Conecte a saída Falha da chamada "${nodeLabel}".`;
+    }
+  }
+
+  try {
+    const [dependencyError] = validateChatbotApiVariableDependencies(
+      getGraphFlow() as any
+    );
+    if (!dependencyError) return null;
+    const node = nodes.value.find(
+      (candidate) => candidate.id === dependencyError.nodeId
+    );
+    const nodeLabel =
+      node?.data?.title || node?.label || dependencyError.nodeId;
+    if (dependencyError.code === 'missing_api_origin') {
+      return `A variável {{ ${dependencyError.path} }} usada em "${nodeLabel}" não possui uma API de origem.`;
+    }
+    if (dependencyError.code === 'missing_output_origin') {
+      return t('chatbot_flow_validation_output_origin_missing', {
+        path: `{{ ${dependencyError.path} }}`,
+        nodeLabel,
+      });
+    }
+    if (dependencyError.code === 'uncaptured_api_path') {
+      return `O caminho {{ ${dependencyError.path} }} usado em "${nodeLabel}" não está capturado na API de origem.`;
+    }
+    if (dependencyError.code === 'uncaptured_output_path') {
+      return t('chatbot_flow_validation_output_path_unavailable', {
+        path: `{{ ${dependencyError.path} }}`,
+        nodeLabel,
+      });
+    }
+    if (dependencyError.code === 'ambiguous_output_dependency') {
+      return t('chatbot_flow_validation_output_dependency_ambiguous', {
+        path: `{{ ${dependencyError.path} }}`,
+        nodeLabel,
+      });
+    }
+    if (dependencyError.code === 'missing_api_branch') {
+      const branch = dependencyError.path === 'success' ? 'Sucesso' : 'Falha';
+      return `Conecte a saída ${branch} do node "${nodeLabel}".`;
+    }
+    return `A variável {{ ${dependencyError.path} }} não é garantida em todos os caminhos até "${nodeLabel}".`;
+  } catch {
+    return 'Há uma variável de API inválida ou insegura no fluxo.';
+  }
+};
+
+const validateUnderchatNodesBeforeSave = (): string | null => {
+  for (const node of nodes.value) {
+    if (node.type !== 'underchat') continue;
+    const nodeLabel = node.data?.outputKey || node.label || node.id;
+    if (!getChatbotNodeOutputDefinition(node as any)) {
+      return t('chatbot_flow_validation_underchat_configuration_required', {
+        nodeLabel,
+      });
+    }
+
+    const outgoing = edges.value.filter((edge) => edge.source === node.id);
+    const foundCount = outgoing.filter(
+      (edge) => edge.sourceHandle === 'found'
+    ).length;
+    const notFoundCount = outgoing.filter(
+      (edge) => edge.sourceHandle === 'not_found'
+    ).length;
+    if (outgoing.length !== 2 || foundCount !== 1 || notFoundCount !== 1) {
+      return t('chatbot_flow_validation_underchat_branches_required', {
+        nodeLabel,
+      });
+    }
+  }
+  return null;
+};
+
+const validateVariableAttachmentsBeforeSave = (): string | null => {
+  for (const node of nodes.value) {
+    if (node.type !== 'message') continue;
+    const data = node.data as Record<string, unknown> | undefined;
+    const messageType = data?.messageType;
+    const usesMedia = ['image', 'audio', 'video', 'document'].includes(
+      String(messageType || '')
+    );
+    if (!usesMedia || data?.attachmentSource !== 'variable') continue;
+    if (
+      typeof data.attachmentVariable !== 'string' ||
+      !data.attachmentVariable.trim()
+    ) {
+      const nodeLabel = node.data?.title || node.label || node.id;
+      return `Selecione a variável do anexo no node "${nodeLabel}".`;
+    }
+  }
   return null;
 };
 
@@ -2280,12 +3114,46 @@ const validateOfficialNodesBeforeSave = (): string | null => {
   }
 
   for (const node of nodes.value) {
+    const limitViolation = findOfficialInteractiveLimitViolation(
+      node.type ?? '',
+      node.data as Record<string, unknown> | undefined
+    );
+    if (limitViolation) {
+      const nodeLabel = node.data?.title || node.label || node.id;
+      if (limitViolation.kind === 'emoji') {
+        return t('chatbot_flow_validation_official_meta_emoji', {
+          field: t(limitViolation.fieldLabelKey),
+          nodeLabel,
+        });
+      }
+      return t('chatbot_flow_validation_official_meta_limit', {
+        field: t(limitViolation.fieldLabelKey),
+        nodeLabel,
+        actual: limitViolation.actual,
+        limit: limitViolation.limit,
+      });
+    }
+
     if (node.type === 'officialMultiProduct') {
       const nodeLabel = node.data?.title || node.label || node.id;
+      const header =
+        typeof node.data?.header === 'string' ? node.data.header.trim() : '';
+      const body =
+        typeof node.data?.message === 'string'
+          ? node.data.message.trim()
+          : typeof node.data?.text === 'string'
+            ? node.data.text.trim()
+            : '';
       const catalogId =
         typeof node.data?.catalogId === 'string'
           ? node.data.catalogId.trim()
           : '';
+
+      if (!header || !body) {
+        return t('chatbot_flow_validation_official_multi_product_content', {
+          nodeLabel,
+        });
+      }
 
       if (!catalogId || !hasOfficialMultiProductItems(node)) {
         return `Informe o ID do catálogo e pelo menos um produto no node "${nodeLabel}".`;
@@ -2312,7 +3180,10 @@ const validateOfficialNodesBeforeSave = (): string | null => {
 
     const nodeLabel = node.data?.title || node.label || node.id;
     const options = Array.isArray(node.data?.options) ? node.data.options : [];
-    const maxOptions = node.type === 'officialReplyButtons' ? 3 : 10;
+    const maxOptions =
+      node.type === 'officialReplyButtons'
+        ? OFFICIAL_INTERACTIVE_LIMITS.replyButtonCount
+        : 10;
 
     if (options.length === 0 || options.length > maxOptions) {
       return `Revise as opções do node "${nodeLabel}".`;
@@ -2340,6 +3211,7 @@ const validateOfficialNodesBeforeSave = (): string | null => {
 };
 
 const handleSave = async () => {
+  if (isFlowReadOnly.value) return;
   if (!chatbotId.value) {
     chatbotStore.showSnackbar(
       t('chatbot_flow_validation_chatbot_id_required'),
@@ -2351,6 +3223,25 @@ const handleSave = async () => {
   const validationError = validateAllNodesConnected();
   if (validationError) {
     chatbotStore.showSnackbar(validationError, EColor.error);
+    return;
+  }
+
+  const underchatValidationError = validateUnderchatNodesBeforeSave();
+  if (underchatValidationError) {
+    chatbotStore.showSnackbar(underchatValidationError, EColor.error);
+    return;
+  }
+
+  const apiRequestValidationError = validateApiRequestNodesBeforeSave();
+  if (apiRequestValidationError) {
+    chatbotStore.showSnackbar(apiRequestValidationError, EColor.error);
+    return;
+  }
+
+  const variableAttachmentValidationError =
+    validateVariableAttachmentsBeforeSave();
+  if (variableAttachmentValidationError) {
+    chatbotStore.showSnackbar(variableAttachmentValidationError, EColor.error);
     return;
   }
 
@@ -2479,7 +3370,7 @@ const handleSave = async () => {
       const messageType = data.messageType;
       const attachmentFile = data.attachmentFile as File | null;
 
-      if (!attachmentFile) {
+      if (data.attachmentSource === 'variable' || !attachmentFile) {
         continue;
       }
 
@@ -2583,6 +3474,15 @@ const processMessageNodeData = (nodeData: any): void => {
   if (nodeData.messageType === undefined) nodeData.messageType = null;
   if (nodeData.text === undefined) nodeData.text = '';
   if (nodeData.attachmentFile === undefined) nodeData.attachmentFile = null;
+  if (nodeData.attachmentSource === undefined) {
+    nodeData.attachmentSource = nodeData.attachmentVariable
+      ? 'variable'
+      : 'upload';
+  }
+  if (nodeData.attachmentVariable === undefined)
+    nodeData.attachmentVariable = '';
+  if (nodeData.attachmentFileName === undefined)
+    nodeData.attachmentFileName = '';
   if (nodeData.attachmentUrl === undefined) nodeData.attachmentUrl = null;
   if (nodeData.attachmentMimetype === undefined)
     nodeData.attachmentMimetype = null;
@@ -2591,6 +3491,17 @@ const processMessageNodeData = (nodeData: any): void => {
   if (nodeData.attachmentWidth === undefined) nodeData.attachmentWidth = null;
   if (nodeData.attachmentHeight === undefined) nodeData.attachmentHeight = null;
   if (nodeData.continueType === undefined) nodeData.continueType = null;
+};
+
+const processApiRequestNodeData = (nodeData: any): void => {
+  const rawOutputKey = nodeData.apiRequest?.outputKey;
+  const outputKey =
+    typeof rawOutputKey === 'string' && /^api_[1-9]\d*$/.test(rawOutputKey)
+      ? rawOutputKey
+      : 'api_1';
+  nodeData.apiRequest = normalizeApiRequestConfig(nodeData.apiRequest, {
+    outputKey,
+  });
 };
 
 const processRandomMessageNodeData = (nodeData: any): void => {
@@ -2612,6 +3523,18 @@ const processDataNodeData = (nodeData: any): void => {
     nodeData.cnpj = t('chatbot_data_default_cnpj_question');
 };
 
+const processUnderchatNodeData = (nodeData: any): void => {
+  const lookup = nodeData.underchatLookup;
+  nodeData.underchatLookup = {
+    version: 1,
+    lookupType: lookup?.lookupType === 'document' ? 'document' : 'email',
+    lookupExpression:
+      typeof lookup?.lookupExpression === 'string'
+        ? lookup.lookupExpression
+        : '',
+  } satisfies UnderchatLookupConfig;
+};
+
 const processDistributionNodeData = (nodeData: any): void => {
   if (nodeData.distributionType === undefined) nodeData.distributionType = null;
   if (nodeData.distributionHasSector === undefined)
@@ -2621,9 +3544,24 @@ const processDistributionNodeData = (nodeData: any): void => {
 };
 
 const processConditionalNodeData = (nodeData: any): void => {
+  if (
+    nodeData.conditionalOperand !== 'message' &&
+    nodeData.conditionalOperand !== 'variable'
+  ) {
+    nodeData.conditionalOperand = 'message';
+  }
+  if (typeof nodeData.conditionalVariable !== 'string') {
+    nodeData.conditionalVariable = '';
+  }
   if (!Array.isArray(nodeData.conditions)) {
     nodeData.conditions = [];
   }
+  nodeData.conditions = nodeData.conditions.map((condition: any) => ({
+    ...condition,
+    valueType: ['string', 'number', 'boolean'].includes(condition?.valueType)
+      ? condition.valueType
+      : 'string',
+  }));
 };
 
 const processWeekdayNodeData = (nodeData: any): void => {
@@ -2692,6 +3630,12 @@ const processOfficialNodeData = (node: Node): void => {
       type: node.type,
     },
   };
+
+  if (node.type === 'officialCtaUrl') {
+    node.data.continueType = 'automatic';
+  } else if (isOfficialWaitForResponseNodeType(node.type)) {
+    node.data.continueType = 'after_response';
+  }
 
   if (node.type === 'officialReplyButtons' || node.type === 'officialList') {
     processMenuNodeData(node.data);
@@ -2796,6 +3740,9 @@ const processNodeDataByType = (node: Node): void => {
     case 'data':
       processDataNodeData(node.data);
       break;
+    case 'underchat':
+      processUnderchatNodeData(node.data);
+      break;
     case 'aiAgent':
       processAiAgentNodeData(node.data);
       break;
@@ -2817,6 +3764,9 @@ const processNodeDataByType = (node: Node): void => {
     case 'holiday':
       processHolidayNodeData(node.data);
       break;
+    case 'apiRequest':
+      processApiRequestNodeData(node.data);
+      break;
   }
 };
 
@@ -2827,11 +3777,13 @@ const processLoadedNode = (node: Node): Node => {
       node.data = {};
     }
   } else {
-    node.draggable = true;
+    node.draggable = !isFlowReadOnly.value;
     if (!node.data) {
       node.data = {};
     }
-    node.data.onRemove = () => removeNode(node.id);
+    if (!isFlowReadOnly.value) {
+      node.data.onRemove = () => removeNode(node.id);
+    }
 
     if (
       node.type === 'menu' ||
@@ -2862,6 +3814,12 @@ const processLoadedNode = (node: Node): Node => {
   if (node.type === 'officialTemplate' && node.data) {
     applyOfficialTemplateContextToData(node.data as Record<string, any>);
   }
+  if (node.type === 'apiRequest') {
+    applyApiRequestRuntimeData(node);
+  }
+  if (node.type === 'underchat') {
+    applyUnderchatRuntimeData(node);
+  }
   return node;
 };
 
@@ -2885,6 +3843,68 @@ const calculateMaxNodeId = (loadedNodes: Node[]): number => {
 };
 
 const processLoadedNodes = (loadedNodes: Node[]): void => {
+  apiUpstreamContractSignatures.clear();
+  reservedApiOutputKeys.clear();
+  reservedNodeOutputKeys.data.clear();
+  reservedNodeOutputKeys.message.clear();
+  reservedNodeOutputKeys.underchat.clear();
+
+  for (const node of loadedNodes) {
+    if (node.type === 'apiRequest') {
+      const requestedKey = (
+        node.data?.apiRequest as ApiRequestConfig | undefined
+      )?.outputKey;
+      if (
+        typeof requestedKey === 'string' &&
+        /^api_[1-9]\d*$/.test(requestedKey)
+      ) {
+        reservedApiOutputKeys.add(requestedKey);
+      }
+    }
+    if (
+      isChatbotCaptureNodeType(node.type) &&
+      isChatbotNodeOutputKey(node.type, node.data?.outputKey)
+    ) {
+      reservedNodeOutputKeys[node.type].add(node.data.outputKey);
+    }
+  }
+
+  const assignedApiOutputKeys = new Set<string>();
+  const assignedNodeOutputKeys: Record<ChatbotCaptureNodeType, Set<string>> = {
+    data: new Set<string>(),
+    message: new Set<string>(),
+    underchat: new Set<string>(),
+  };
+  for (const node of loadedNodes) {
+    if (!node.data) node.data = {};
+    if (isChatbotCaptureNodeType(node.type)) {
+      const requestedKey = node.data.outputKey;
+      const outputKey =
+        isChatbotNodeOutputKey(node.type, requestedKey) &&
+        !assignedNodeOutputKeys[node.type].has(requestedKey)
+          ? requestedKey
+          : allocateNodeOutputKey(node.type);
+      node.data.outputKey = outputKey;
+      assignedNodeOutputKeys[node.type].add(outputKey);
+    }
+    if (node.type === 'apiRequest') {
+      const rawConfig = (node.data.apiRequest ||
+        {}) as Partial<ApiRequestConfig>;
+      const requestedKey = rawConfig.outputKey;
+      const outputKey =
+        typeof requestedKey === 'string' &&
+        /^api_[1-9]\d*$/.test(requestedKey) &&
+        !assignedApiOutputKeys.has(requestedKey)
+          ? requestedKey
+          : allocateApiOutputKey();
+      node.data.apiRequest = normalizeApiRequestConfig(
+        { ...rawConfig, outputKey },
+        { outputKey }
+      );
+      assignedApiOutputKeys.add(outputKey);
+    }
+  }
+
   nodes.value = loadedNodes.map(processLoadedNode);
   const maxId = calculateMaxNodeId(loadedNodes);
   nodeIdCounter = maxId + 1;
@@ -2920,6 +3940,7 @@ const loadChatbotFlow = async () => {
     return;
   }
 
+  isFlowReadOnly.value = false;
   isLoadingFlow.value = true;
 
   try {
@@ -2929,10 +3950,14 @@ const loadChatbotFlow = async () => {
       return;
     }
 
+    isFlowReadOnly.value = flow.read_only === true || flow.restricted === true;
+
     if (flow.nodes && flow.nodes.length > 0) {
       processLoadedNodes(flow.nodes as Node[]);
     } else {
-      nodes.value = initialNodes;
+      processLoadedNodes(
+        initialNodes.map((node) => ({ ...node, data: { ...node.data } }))
+      );
     }
 
     if (flow.edges && flow.edges.length > 0) {
@@ -3011,8 +4036,8 @@ const processInactivityAlertConfig = async (config: any): Promise<void> => {
     inactivityAlertAction.value = config.action as 'redirect' | 'finish';
   }
   if (config.redirect_type) {
-    inactivityAlertRedirectType.value = config.redirect_type as
-      'user' | 'sector';
+    inactivityAlertRedirectType.value =
+      config.redirect_type as ChatbotInactivityRedirectType;
   }
   if (config.selected_user) {
     inactivityAlertSelectedUser.value = config.selected_user;
@@ -3024,6 +4049,10 @@ const processInactivityAlertConfig = async (config: any): Promise<void> => {
   if (config.selected_sector_user) {
     inactivityAlertSelectedSectorUser.value = config.selected_sector_user;
   }
+  await restoreInactivityChatbotSelection(
+    config.selected_channel,
+    config.selected_chatbot
+  );
 };
 
 const processRedirectFailedAttemptsConfig = async (
@@ -3055,6 +4084,7 @@ const processRedirectFailedAttemptsConfig = async (
 const loadInitialData = async (): Promise<void> => {
   await loadInactivitySectors();
   await loadInactivityUsers();
+  await loadInactivityChannels();
   await loadRedirectFailedAttemptsSectors();
   await loadRedirectFailedAttemptsUsers();
 };
@@ -3188,6 +4218,7 @@ const loadChatbotFlowConfigurations = async () => {
 };
 
 const handleSaveConfigurations = async () => {
+  if (isFlowReadOnly.value) return;
   if (!chatbotId.value) {
     chatbotStore.showSnackbar(
       t('chatbot_flow_validation_chatbot_id_required'),
@@ -3196,25 +4227,69 @@ const handleSaveConfigurations = async () => {
     return;
   }
 
+  if (isInactivityAlertQuantityInvalid.value) {
+    chatbotStore.showSnackbar(
+      t('chatbot_flow_validation_inactivity_quantity_required'),
+      EColor.error
+    );
+    return;
+  }
+  if (isInactivityAlertTimeInvalid.value) {
+    chatbotStore.showSnackbar(
+      t('chatbot_flow_validation_inactivity_time_required'),
+      EColor.error
+    );
+    return;
+  }
+
+  if (
+    isInactivityChatbotTargetIncomplete.value &&
+    !inactivityAlertSelectedChannel.value
+  ) {
+    chatbotStore.showSnackbar(t('channel_required'), EColor.error);
+    return;
+  }
+  if (isInactivityChatbotTargetIncomplete.value) {
+    chatbotStore.showSnackbar(t('chatbot_required'), EColor.error);
+    return;
+  }
+
   try {
     isSavingConfigurations.value = true;
+    const inactivityRedirectDestination =
+      inactivityAlertRedirectType.value === 'user'
+        ? {
+            selected_user: inactivityAlertSelectedUser.value || undefined,
+          }
+        : inactivityAlertRedirectType.value === 'sector'
+          ? {
+              selected_sector: inactivityAlertSelectedSector.value || undefined,
+              selected_sector_user:
+                inactivityAlertSelectedSectorUser.value || undefined,
+            }
+          : inactivityAlertRedirectType.value === 'chatbot'
+            ? {
+                selected_channel:
+                  inactivityAlertSelectedChannel.value || undefined,
+                selected_chatbot:
+                  inactivityAlertSelectedChatbot.value || undefined,
+              }
+            : {};
     const configurations = {
       inactivity_alert:
         inactivityAlertStatus.value === 'active'
           ? {
               status: inactivityAlertStatus.value,
-              quantity: inactivityAlertQuantity.value
-                ? Number.parseInt(inactivityAlertQuantity.value)
-                : undefined,
-              time: inactivityAlertTime.value
-                ? Number.parseInt(inactivityAlertTime.value)
-                : undefined,
+              quantity: Number.parseInt(inactivityAlertQuantity.value),
+              time: Number.parseInt(inactivityAlertTime.value),
               action: inactivityAlertAction.value || undefined,
-              redirect_type: inactivityAlertRedirectType.value || undefined,
-              selected_user: inactivityAlertSelectedUser.value || undefined,
-              selected_sector: inactivityAlertSelectedSector.value || undefined,
-              selected_sector_user:
-                inactivityAlertSelectedSectorUser.value || undefined,
+              ...(inactivityAlertAction.value === 'redirect'
+                ? {
+                    redirect_type:
+                      inactivityAlertRedirectType.value || undefined,
+                    ...inactivityRedirectDestination,
+                  }
+                : {}),
             }
           : undefined,
       redirect_failed_attempts:
@@ -3341,12 +4416,38 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <VCard :title="`${t('configurations')} ${t('chatbot')}`">
-      <VCardText>
-        <div class="actions-row">
+    <VCard class="chatbot-flow-workspace">
+      <header class="workspace-header">
+        <div class="workspace-heading">
+          <span class="workspace-heading__icon" aria-hidden="true">
+            <VIcon icon="tabler-message-chatbot" size="24" />
+          </span>
+          <div>
+            <p class="workspace-heading__eyebrow">{{ t('chatbot') }}</p>
+            <h1 class="workspace-heading__title">
+              {{ t('configurations') }} {{ t('chatbot') }}
+            </h1>
+            <p class="workspace-heading__subtitle">
+              {{ t('chatbot_flow_workspace_subtitle') }}
+            </p>
+          </div>
+        </div>
+
+        <div class="workspace-actions">
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            data-testid="chatbot-flow-settings"
+            :disabled="isFlowReadOnly"
+            @click="openConfigModal"
+          >
+            <VIcon icon="tabler-settings" class="me-2" />
+            {{ t('chatbot_configurations') }}
+          </VBtn>
           <VBtn
             variant="tonal"
             color="info"
+            data-testid="chatbot-flow-variables"
             @click="isVariablesSidebarOpen = true"
           >
             <VIcon icon="tabler-code" class="me-2" />
@@ -3358,402 +4459,122 @@ onUnmounted(() => {
           <VBtn
             color="primary"
             :loading="isLoadingFlow"
-            :disabled="!chatbotId"
+            :disabled="!chatbotId || isFlowReadOnly"
             @click="handleSave"
           >
             {{ t('save') }}
           </VBtn>
         </div>
+      </header>
+
+      <VDivider />
+
+      <VCardText class="workspace-body">
         <div class="flow-layout">
-          <div class="node-menu">
-            <VBtn color="secondary" @click="openConfigModal">
-              <VIcon icon="tabler-settings" class="me-2" />
-              {{ t('chatbot_configurations') }}
-            </VBtn>
-            <VBtn
-              color="primary"
-              draggable="true"
-              @dragstart.stop="
-                (e: DragEvent) => {
-                  draggedNodeType = 'menu';
-                  e.dataTransfer!.effectAllowed = 'move';
-                  e.dataTransfer!.dropEffect = 'move';
-                }
-              "
-              @dragend="
-                () => {
-                  draggedNodeType = null;
-                }
-              "
-              style="cursor: grab"
-            >
-              <VIcon icon="tabler-menu-2" class="me-2" />
-              {{ t('chatbot_menu') }}
-            </VBtn>
-            <VBtn
-              color="warning"
-              draggable="true"
-              @dragstart.stop="
-                (e: DragEvent) => {
-                  draggedNodeType = 'satisfaction';
-                  e.dataTransfer!.effectAllowed = 'move';
-                  e.dataTransfer!.dropEffect = 'move';
-                }
-              "
-              @dragend="
-                () => {
-                  draggedNodeType = null;
-                }
-              "
-              style="cursor: grab"
-            >
-              <VIcon icon="tabler-star" class="me-2" />
-              {{ t('chatbot_satisfaction') }}
-            </VBtn>
-            <VDivider class="my-2" />
-            <div class="node-options-container">
-              <div class="text-caption text-medium-emphasis mb-2">
-                {{ t('chatbot_options') }}
-              </div>
-              <div class="node-options-scroll">
-                <VBtn
-                  color="info"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'redirect';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-arrow-forward" class="me-2" />
-                  {{ t('chatbot_redirect') }}
-                </VBtn>
-                <VBtn
-                  color="error"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'finish';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-circle-check" class="me-2" />
-                  {{ t('chatbot_finish') }}
-                </VBtn>
-                <VBtn
-                  color="secondary"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'tag';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-tag" class="me-2" />
-                  {{ t('chatbot_tag_node_title') }}
-                </VBtn>
-                <VBtn
-                  color="primary"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'message';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-message" class="me-2" />
-                  {{ t('chatbot_message') }}
-                </VBtn>
-                <VBtn
-                  color="randomMessage"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'randomMessage';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-message-2" class="me-2" />
-                  {{ t('chatbot_random_message') }}
-                </VBtn>
-                <VBtn
-                  color="info"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'data';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-database" class="me-2" />
-                  {{ t('chatbot_data') }}
-                </VBtn>
-                <VBtn
-                  color="primary"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'weekday';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-calendar" class="me-2" />
-                  {{ t('chatbot_weekday') }}
-                </VBtn>
-                <VBtn
-                  color="warning"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'hours';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-clock-hour-3" class="me-2" />
-                  {{ t('chatbot_hours') }}
-                </VBtn>
-                <VBtn
-                  color="primary"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'holiday';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-calendar-star" class="me-2" />
-                  {{ t('chatbot_holidays') }}
-                </VBtn>
-                <VBtn
-                  color="distribution"
-                  draggable="true"
-                  class="distribution-btn"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'distribution';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-users-group" class="me-2" />
-                  <span class="distribution-btn-text">{{
-                    t('chatbot_distribution')
-                  }}</span>
-                </VBtn>
-                <VBtn
-                  color="tertiary"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'contact';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-users" class="me-2" />
-                  {{ t('chatbot_contact') }}
-                </VBtn>
-                <VBtn
-                  v-if="canUseAiAgentPermission && canUseAiAgent"
-                  color="primary"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'aiAgent';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-brain" class="me-2" />
-                  {{ t('chatbot_ai_agent') }}
-                </VBtn>
-                <VBtn
-                  color="annotation"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'annotation';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-note" class="me-2" />
-                  {{ t('chatbot_annotation_node_title') }}
-                </VBtn>
-                <VBtn
-                  color="warning"
-                  draggable="true"
-                  @dragstart.stop="
-                    (e: DragEvent) => {
-                      draggedNodeType = 'conditional';
-                      e.dataTransfer!.effectAllowed = 'move';
-                      e.dataTransfer!.dropEffect = 'move';
-                    }
-                  "
-                  @dragend="
-                    () => {
-                      draggedNodeType = null;
-                    }
-                  "
-                  style="cursor: grab"
-                >
-                  <VIcon icon="tabler-code" class="me-2" />
-                  {{ t('chatbot_conditional') }}
-                </VBtn>
-                <template v-if="canUseOfficialNodes">
-                  <VDivider class="my-1" />
-                  <div class="official-palette-title">Oficial</div>
-                  <VBtn
-                    v-for="item in officialNodeItems"
-                    :key="item.type"
-                    color="success"
-                    draggable="true"
-                    class="official-palette-btn"
-                    @dragstart.stop="
-                      (e: DragEvent) => {
-                        draggedNodeType = item.type;
-                        e.dataTransfer!.effectAllowed = 'move';
-                        e.dataTransfer!.dropEffect = 'move';
-                      }
-                    "
-                    @dragend="
-                      () => {
-                        draggedNodeType = null;
-                      }
-                    "
-                    style="cursor: grab"
-                  >
-                    <VIcon :icon="item.icon" class="me-2" />
-                    <span class="official-palette-label">{{ item.label }}</span>
-                  </VBtn>
-                </template>
-              </div>
+          <div
+            ref="flowArea"
+            class="flow-area"
+            :class="{ 'flow-area--read-only': isFlowReadOnly }"
+            data-testid="chatbot-flow-canvas"
+          >
+            <div class="flow-canvas-surface" :inert="isFlowReadOnly">
+              <VueFlow
+                ref="vueFlowRef"
+                v-model:nodes="nodes"
+                v-model:edges="edges"
+                :node-types="nodeTypes"
+                :min-zoom="0.2"
+                :max-zoom="4"
+                :default-viewport="{ zoom: 1 }"
+                :connection-line-style="{ stroke: '#1a192b', strokeWidth: 2 }"
+                :default-edge-options="{
+                  markerEnd: {
+                    type: 'arrowclosed',
+                    color: '#1a192b',
+                  } as any,
+                  style: { stroke: '#1a192b', strokeWidth: 2 },
+                }"
+                :connection-radius="20"
+                :nodes-draggable="!isFlowReadOnly"
+                :nodes-connectable="!isFlowReadOnly"
+                :edges-updatable="!isFlowReadOnly"
+                :delete-key-code="isFlowReadOnly ? null : 'Backspace'"
+                :is-valid-connection="isValidConnection"
+                @connect="onConnect"
+                @nodes-change="onNodesChange"
+                @drop="onDrop"
+                @dragover.prevent
+                @edge-click="onEdgeClick"
+                @edge-context-menu="onEdgeContextMenu"
+                @pane-click="onPaneClick"
+              />
             </div>
-          </div>
-          <div class="vertical-divider" />
-          <div class="flow-area">
-            <VueFlow
-              ref="vueFlowRef"
-              v-model:nodes="nodes"
-              v-model:edges="edges"
-              :node-types="nodeTypes"
-              :min-zoom="0.2"
-              :max-zoom="4"
-              :default-viewport="{ zoom: 1 }"
-              :connection-line-style="{ stroke: '#1a192b', strokeWidth: 2 }"
-              :default-edge-options="{
-                markerEnd: { type: 'arrowclosed', color: '#1a192b' } as any,
-                style: { stroke: '#1a192b', strokeWidth: 2 },
-              }"
-              :connection-radius="20"
-              :is-valid-connection="isValidConnection"
-              @connect="onConnect"
-              @nodes-change="onNodesChange"
-              @drop="onDrop"
-              @dragover.prevent
-              @edge-click="onEdgeClick"
-              @edge-context-menu="onEdgeContextMenu"
-              @pane-click="onPaneClick"
+
+            <div
+              v-if="isFlowReadOnly"
+              class="flow-read-only-notice"
+              role="status"
+            >
+              <VIcon icon="tabler-shield-lock" size="17" />
+              <span>{{ t('chatbot_underchat_flow_read_only') }}</span>
+            </div>
+
+            <div
+              class="flow-toolbar"
+              role="group"
+              :aria-label="t('chatbot_flow_canvas_help')"
+            >
+              <VTooltip location="end">
+                <template #activator="{ props }">
+                  <VBtn
+                    v-bind="props"
+                    icon="tabler-minus"
+                    variant="text"
+                    size="small"
+                    :aria-label="t('chatbot_flow_zoom_out')"
+                    @click="zoomOutFlow"
+                  />
+                </template>
+                {{ t('chatbot_flow_zoom_out') }}
+              </VTooltip>
+              <VTooltip location="end">
+                <template #activator="{ props }">
+                  <VBtn
+                    v-bind="props"
+                    icon="tabler-focus-centered"
+                    variant="text"
+                    size="small"
+                    :aria-label="t('chatbot_flow_fit_view')"
+                    @click="fitFlowView"
+                  />
+                </template>
+                {{ t('chatbot_flow_fit_view') }}
+              </VTooltip>
+              <VTooltip location="end">
+                <template #activator="{ props }">
+                  <VBtn
+                    v-bind="props"
+                    icon="tabler-plus"
+                    variant="text"
+                    size="small"
+                    :aria-label="t('chatbot_flow_zoom_in')"
+                    @click="zoomInFlow"
+                  />
+                </template>
+                {{ t('chatbot_flow_zoom_in') }}
+              </VTooltip>
+            </div>
+
+            <ChatbotNodePalette
+              v-if="!isFlowReadOnly"
+              :items="nodePaletteItems"
+              :categories="nodePaletteCategories"
+              :container-element="flowAreaRef"
+              :storage-key="nodePaletteStorageKey"
+              :is-mobile="isMobilePalette"
+              @create="onPaletteCreate"
+              @drag-start="onPaletteDragStart"
+              @drag-end="onPaletteDragEnd"
             />
           </div>
         </div>
@@ -3909,223 +4730,49 @@ onUnmounted(() => {
                 </VCard>
               </template>
               <template v-else>
-                <VCard variant="outlined" class="mb-4">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_inactivity_alert') }}
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{ t('chatbot_inactivity_alert_description') }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <div class="mb-3">
-                      <VLabel class="mb-1 text-body-2">{{
-                        t('chatbot_inactivity_alert')
-                      }}</VLabel>
-                      <AppSelectSearch
-                        v-model="inactivityAlertStatus"
-                        :items="[
-                          {
-                            id: 'active',
-                            title: t('chatbot_inactivity_alert_active'),
-                          },
-                          {
-                            id: 'inactive',
-                            title: t('chatbot_inactivity_alert_inactive'),
-                          },
-                        ]"
-                        item-value="id"
-                        item-title="title"
-                        :clearable="false"
-                      />
-                    </div>
-
-                    <div v-if="showInactivityAlertFields">
-                      <div class="mb-3">
-                        <VLabel class="mb-1 text-body-2">{{
-                          t('chatbot_inactivity_alert_quantity')
-                        }}</VLabel>
-                        <VTextField
-                          v-model="inactivityAlertQuantityComputed"
-                          @keydown="onKeyPress"
-                          @paste.prevent="
-                            (e: ClipboardEvent) => {
-                              const pastedText =
-                                e.clipboardData?.getData('text') || '';
-                              const numericValue = onlyDigits(pastedText);
-                              if (numericValue) {
-                                inactivityAlertQuantityComputed = numericValue;
-                              }
-                            }
-                          "
-                          variant="outlined"
-                          density="compact"
-                          hide-details
-                          inputmode="numeric"
-                          type="text"
-                        />
-                      </div>
-
-                      <div class="mb-3">
-                        <VLabel class="mb-1 text-body-2">{{
-                          t('chatbot_inactivity_alert_time')
-                        }}</VLabel>
-                        <VTextField
-                          v-model="inactivityAlertTimeComputed"
-                          @keydown="onKeyPress"
-                          @paste.prevent="
-                            (e: ClipboardEvent) => {
-                              const pastedText =
-                                e.clipboardData?.getData('text') || '';
-                              const numericValue = onlyDigits(pastedText);
-                              if (numericValue) {
-                                inactivityAlertTimeComputed = numericValue;
-                              }
-                            }
-                          "
-                          variant="outlined"
-                          density="compact"
-                          hide-details
-                          inputmode="numeric"
-                          type="text"
-                        />
-                      </div>
-
-                      <div class="mb-3">
-                        <VLabel class="mb-1 text-body-2">{{
-                          t('chatbot_action')
-                        }}</VLabel>
-                        <AppSelectSearch
-                          v-model="inactivityAlertAction"
-                          :items="[
-                            { id: 'redirect', title: t('chatbot_redirect') },
-                            { id: 'finish', title: t('chatbot_finish') },
-                          ]"
-                          item-value="id"
-                          item-title="title"
-                          :clearable="false"
-                        />
-                      </div>
-
-                      <div v-if="showInactivityAlertRedirectFields">
-                        <div class="mb-3">
-                          <VLabel class="mb-1 text-body-2">{{
-                            t('chatbot_redirect_to')
-                          }}</VLabel>
-                          <AppSelectSearch
-                            v-model="inactivityAlertRedirectType"
-                            :items="[
-                              {
-                                id: 'user',
-                                title: t('chatbot_redirect_user'),
-                              },
-                              {
-                                id: 'sector',
-                                title: t('chatbot_redirect_sector'),
-                              },
-                            ]"
-                            item-value="id"
-                            item-title="title"
-                            :clearable="false"
-                          />
-                        </div>
-
-                        <div v-if="showInactivityAlertUserField" class="mb-3">
-                          <AppSelectSearch
-                            v-model="inactivityAlertSelectedUser"
-                            :items="inactivityUsers"
-                            :label="t('chatbot_user_label')"
-                            :placeholder="t('chatbot_search')"
-                            :loading="isLoadingInactivityUsers"
-                            :clearable="true"
-                            item-value="value"
-                            item-title="title"
-                            @select="loadInactivityUsers()"
-                          >
-                            <template #item-prepend="{ item }">
-                              <VAvatar
-                                size="32"
-                                :variant="!item.photo ? 'tonal' : undefined"
-                                color="primary"
-                              >
-                                <VImg
-                                  v-if="item.photo"
-                                  :src="item.photo"
-                                  :alt="item.title"
-                                />
-                                <VIcon v-else icon="tabler-user" size="18" />
-                              </VAvatar>
-                            </template>
-                          </AppSelectSearch>
-                        </div>
-
-                        <div v-if="showInactivityAlertSectorField" class="mb-3">
-                          <AppSelectSearch
-                            v-model="inactivityAlertSelectedSector"
-                            :items="inactivitySectors"
-                            :label="t('chatbot_sector_label')"
-                            :placeholder="t('chatbot_search')"
-                            :loading="isLoadingInactivitySectors"
-                            :clearable="true"
-                            item-value="value"
-                            item-title="title"
-                            @select="loadInactivitySectors()"
-                          >
-                            <template #item-prepend="{ item }">
-                              <VAvatar
-                                size="24"
-                                :style="{
-                                  backgroundColor: item.color || '#1976D2',
-                                }"
-                              />
-                            </template>
-                          </AppSelectSearch>
-                        </div>
-
-                        <div
-                          v-if="showInactivityAlertSectorUserField"
-                          class="mb-3"
-                        >
-                          <AppSelectSearch
-                            v-model="inactivityAlertSelectedSectorUser"
-                            :items="inactivitySectorUsers"
-                            :label="t('chatbot_sector_user_label')"
-                            :placeholder="t('chatbot_search_optional')"
-                            :loading="isLoadingInactivitySectorUsers"
-                            :clearable="true"
-                            item-value="value"
-                            item-title="title"
-                            @select="
-                              inactivityAlertSelectedSector
-                                ? loadInactivitySectorUsers(
-                                    inactivityAlertSelectedSector
-                                  )
-                                : undefined
-                            "
-                          >
-                            <template #item-prepend="{ item }">
-                              <VAvatar
-                                size="32"
-                                :variant="!item.photo ? 'tonal' : undefined"
-                                color="primary"
-                              >
-                                <VImg
-                                  v-if="item.photo"
-                                  :src="item.photo"
-                                  :alt="item.title"
-                                />
-                                <VIcon v-else icon="tabler-user" size="18" />
-                              </VAvatar>
-                            </template>
-                          </AppSelectSearch>
-                        </div>
-                      </div>
-                    </div>
-                  </VCardText>
-                </VCard>
-
+                <ChatbotInactivityAlertConfig
+                  :status="inactivityAlertStatus"
+                  :quantity="inactivityAlertQuantity"
+                  :time="inactivityAlertTime"
+                  :quantity-error="inactivityAlertQuantityError"
+                  :time-error="inactivityAlertTimeError"
+                  :action="inactivityAlertAction"
+                  :redirect-type="inactivityAlertRedirectType"
+                  :selected-user="inactivityAlertSelectedUser"
+                  :selected-sector="inactivityAlertSelectedSector"
+                  :selected-sector-user="inactivityAlertSelectedSectorUser"
+                  :selected-channel="inactivityAlertSelectedChannel"
+                  :selected-chatbot="inactivityAlertSelectedChatbot"
+                  :users="inactivityUsers"
+                  :sectors="inactivitySectors"
+                  :sector-users="inactivitySectorUsers"
+                  :channels="inactivityChannels"
+                  :chatbots="inactivityChatbots"
+                  :loading-users="isLoadingInactivityUsers"
+                  :loading-sectors="isLoadingInactivitySectors"
+                  :loading-sector-users="isLoadingInactivitySectorUsers"
+                  :loading-channels="isLoadingInactivityChannels"
+                  :loading-chatbots="isLoadingInactivityChatbots"
+                  @update:status="inactivityAlertStatus = $event"
+                  @update:quantity="inactivityAlertQuantity = $event"
+                  @update:time="inactivityAlertTime = $event"
+                  @update:action="inactivityAlertAction = $event"
+                  @update:redirect-type="inactivityAlertRedirectType = $event"
+                  @update:selected-user="inactivityAlertSelectedUser = $event"
+                  @update:selected-sector="
+                    inactivityAlertSelectedSector = $event
+                  "
+                  @update:selected-sector-user="
+                    inactivityAlertSelectedSectorUser = $event
+                  "
+                  @update:selected-channel="handleInactivityChannelChange"
+                  @update:selected-chatbot="
+                    inactivityAlertSelectedChatbot = $event
+                  "
+                  @refresh-users="loadInactivityUsers"
+                  @refresh-sectors="loadInactivitySectors"
+                  @refresh-sector-users="loadInactivitySectorUsers"
+                />
                 <VCard variant="outlined" class="mb-4">
                   <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
                     {{ t('chatbot_redirect_failed_attempts') }}
@@ -4821,7 +5468,9 @@ onUnmounted(() => {
           <VBtn
             color="primary"
             :loading="isSavingConfigurations"
-            :disabled="isSavingConfigurations"
+            :disabled="
+              isSavingConfigurations || isInactivityAlertConfigurationIncomplete
+            "
             @click="handleSaveConfigurations"
           >
             {{ t('save') }}
@@ -4832,7 +5481,7 @@ onUnmounted(() => {
 
     <Teleport to="body">
       <VCard
-        v-if="isContextMenuOpen && contextMenuPosition"
+        v-if="isContextMenuOpen && contextMenuPosition && !isFlowReadOnly"
         ref="contextMenuCard"
         :style="{
           position: 'fixed',
@@ -4877,12 +5526,29 @@ onUnmounted(() => {
 }
 
 :deep(.vue-flow__handle) {
-  width: 24px;
-  height: 24px;
-  border: 4px solid white;
+  box-sizing: border-box;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px;
+  min-height: 20px;
+  border: 3px solid white !important;
   border-radius: 50%;
   background-color: #b1b1b7;
+  box-shadow: 0 0 0 1px rgba(22, 43, 69, 0.17);
   z-index: 10;
+}
+
+:deep(.vue-flow__handle-top) {
+  top: 0 !important;
+}
+
+:deep(.vue-flow__handle-bottom) {
+  bottom: 0 !important;
+}
+
+:deep(.chatbot-workbench-node .vue-flow__handle-right) {
+  right: -22px !important;
+  transform: translateY(-50%) !important;
 }
 
 :deep(.vue-flow__handle.connectable) {
@@ -4890,145 +5556,269 @@ onUnmounted(() => {
 }
 
 :deep(.handle-target),
-:deep(.vue-flow__handle.handle-target) {
+:deep(.vue-flow__handle.handle-target),
+:deep(.vue-flow__handle-target) {
   background-color: #4caf50 !important;
 }
 
 :deep(.handle-source),
-:deep(.vue-flow__handle.handle-source) {
+:deep(.vue-flow__handle.handle-source),
+:deep(.vue-flow__handle-source) {
   background-color: #f44336 !important;
 }
 
-.flow-layout {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  height: 600px;
-}
-
-.node-menu {
-  width: 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-top: 4px;
-  padding-right: 12px;
-  height: 100%;
+.chatbot-flow-workspace {
+  container-type: inline-size;
   overflow: hidden;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  background:
+    radial-gradient(
+      circle at 5% 0%,
+      rgba(var(--v-theme-primary), 0.1),
+      transparent 31rem
+    ),
+    rgb(var(--v-theme-surface));
 }
 
-.node-options-container {
+.workspace-header {
   display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.node-options-scroll {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 8px;
-  flex: 1;
-}
-
-.node-options-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.node-options-scroll::-webkit-scrollbar-track {
-  background: rgba(var(--v-theme-surface-variant), 0.3);
-  border-radius: 4px;
-}
-
-.node-options-scroll::-webkit-scrollbar-thumb {
-  background: rgba(var(--v-theme-on-surface), 0.3);
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-.node-options-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--v-theme-on-surface), 0.5);
-}
-
-.distribution-btn {
-  height: auto;
-  min-height: 40px;
-  white-space: normal;
-}
-
-.distribution-btn :deep(.v-btn__content) {
-  flex-wrap: wrap;
   align-items: center;
-  text-align: left;
-  gap: 4px;
-  padding: 8px 2px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 22px 24px;
 }
 
-.distribution-btn-text {
-  white-space: normal;
-  word-break: break-word;
-  line-height: 1.3;
-  flex: 1;
+.workspace-heading {
+  display: flex;
   min-width: 0;
+  align-items: center;
+  gap: 14px;
 }
 
-.official-palette-title {
-  color: rgba(var(--v-theme-on-surface), 0.68);
-  font-size: 0.78rem;
-  font-weight: 700;
+.workspace-heading__icon {
+  display: inline-grid;
+  flex: 0 0 48px;
+  place-items: center;
+  border: 1px solid rgba(var(--v-theme-primary), 0.18);
+  border-radius: 16px;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(var(--v-theme-primary), 0.18),
+      rgba(var(--v-theme-primary), 0.06)
+    ),
+    rgb(var(--v-theme-surface));
+  block-size: 48px;
+  color: rgb(var(--v-theme-primary));
+  inline-size: 48px;
+}
+
+.workspace-heading__eyebrow {
+  margin: 0 0 2px;
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
   line-height: 1.2;
-  padding: 2px 4px;
+  text-transform: uppercase;
 }
 
-.official-palette-btn {
-  height: auto;
-  min-height: 38px;
-  white-space: normal;
+.workspace-heading__title {
+  margin: 0;
+  color: rgb(var(--v-theme-on-surface));
+  font-size: clamp(1.15rem, 1.7vw, 1.45rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
 }
 
-.official-palette-btn :deep(.v-btn__content) {
-  justify-content: flex-start;
-  min-width: 0;
-  padding-block: 6px;
-  text-align: left;
+.workspace-heading__subtitle {
+  margin: 5px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.86rem;
+  line-height: 1.45;
 }
 
-.official-palette-label {
-  min-width: 0;
-  overflow: hidden;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: normal;
+.workspace-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-inline-size: 100%;
+  min-inline-size: 0;
 }
 
-.vertical-divider {
-  width: 1px;
-  background-color: #e0e0e0;
-  align-self: stretch;
+.workspace-body {
+  padding: 16px !important;
+}
+
+.flow-layout {
+  block-size: clamp(640px, calc(100dvh - 250px), 840px);
+  min-block-size: 640px;
 }
 
 .flow-area {
-  flex: 1;
-  height: 100%;
-  min-height: 600px;
-  min-width: 400px;
   position: relative;
+  block-size: 100%;
+  min-block-size: 0;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 18px;
+  background:
+    radial-gradient(
+        circle,
+        rgba(var(--v-theme-primary), 0.16) 1px,
+        transparent 1.2px
+      )
+      0 0 / 22px 22px,
+    linear-gradient(
+      180deg,
+      rgba(var(--v-theme-primary), 0.035),
+      transparent 24%
+    ),
+    rgb(var(--v-theme-surface));
+  box-shadow:
+    inset 0 1px 0 rgba(var(--v-theme-on-surface), 0.03),
+    0 18px 48px rgba(var(--v-theme-on-surface), 0.05);
 }
 
 .flow-area :deep(.vue-flow) {
-  width: 100%;
-  height: 100%;
+  block-size: 100%;
+  inline-size: 100%;
 }
 
-.actions-row {
+.flow-canvas-surface {
+  block-size: 100%;
+  inline-size: 100%;
+}
+
+.flow-area :deep(.vue-flow__pane) {
+  background: transparent;
+}
+
+.flow-area--read-only :deep(.vue-flow__node) {
+  pointer-events: none;
+}
+
+.flow-read-only-notice {
+  position: absolute;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-inline-size: min(440px, calc(100% - 32px));
+  padding: 8px 11px;
+  border: 1px solid rgba(var(--v-theme-warning), 0.24);
+  border-radius: 10px;
+  background: rgba(var(--v-theme-surface), 0.94);
+  box-shadow: 0 8px 24px rgba(var(--v-theme-on-surface), 0.1);
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  inset-block-start: 14px;
+  inset-inline-end: 14px;
+  pointer-events: none;
+}
+
+.flow-read-only-notice :deep(.v-icon) {
+  flex: 0 0 auto;
+  color: rgb(var(--v-theme-warning));
+}
+
+.flow-toolbar {
+  position: absolute;
+  z-index: 4;
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-bottom: 16px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 12px;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 10px 28px rgba(var(--v-theme-on-surface), 0.12);
+  inset-block-end: 14px;
+  inset-inline-start: 14px;
+}
+
+.flow-toolbar :deep(.v-btn) {
+  border-radius: 0;
+  border-color: rgba(var(--v-theme-on-surface), 0.08);
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.flow-toolbar :deep(.v-btn:hover) {
+  background: rgba(var(--v-theme-primary), 0.1);
+  color: rgb(var(--v-theme-primary));
+}
+
+.flow-toolbar :deep(.v-btn + .v-btn) {
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+@container (max-width: 1180px) {
+  .workspace-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workspace-actions {
+    inline-size: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 959px) {
+  .workspace-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workspace-actions {
+    justify-content: flex-start;
+  }
+
+  .flow-layout {
+    block-size: clamp(600px, calc(100dvh - 290px), 760px);
+    min-block-size: 600px;
+  }
+}
+
+@media (max-width: 719px) {
+  .workspace-header {
+    gap: 16px;
+    padding: 18px;
+  }
+
+  .workspace-heading__subtitle {
+    display: none;
+  }
+
+  .workspace-actions {
+    inline-size: 100%;
+  }
+
+  .workspace-actions :deep(.v-btn) {
+    flex: 1 1 auto;
+  }
+
+  .workspace-body {
+    padding: 10px !important;
+  }
+
+  .flow-layout {
+    block-size: calc(100dvh - 230px);
+    min-block-size: 540px;
+  }
+
+  .flow-area {
+    border-radius: 14px;
+  }
+
+  .flow-toolbar {
+    inset-block-end: 10px;
+    inset-inline-start: 10px;
+  }
 }
 
 .config-description {

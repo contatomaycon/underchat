@@ -1,8 +1,9 @@
 import * as schema from '@core/models';
 import { worker } from '@core/models';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, isNull } from 'drizzle-orm';
+import { and, count, eq, isNull, notInArray } from 'drizzle-orm';
 
 @injectable()
 export class WorkerTotalViewerRepository {
@@ -16,7 +17,18 @@ export class WorkerTotalViewerRepository {
         total: count(),
       })
       .from(worker)
-      .where(and(eq(worker.account_id, accountId), isNull(worker.deleted_at)))
+      .where(
+        and(
+          eq(worker.account_id, accountId),
+          isNull(worker.deleted_at),
+          notInArray(worker.worker_status_id, [
+            EWorkerStatus.blocked,
+            EWorkerStatus.stopped,
+            EWorkerStatus.delete,
+            EWorkerStatus.deleting,
+          ])
+        )
+      )
       .execute();
 
     if (!result.length) {

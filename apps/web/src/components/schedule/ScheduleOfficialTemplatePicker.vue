@@ -5,23 +5,23 @@ import type {
   IOfficialWhatsappTemplateMessage,
 } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 import type { OfficialTemplatesResponse } from '@core/schema/chatbot/officialTemplates/response.schema';
+import OfficialTemplateVariableField from '@/components/chat/official/OfficialTemplateVariableField.vue';
+import type { ApiRequestVariable } from '@/components/chatbot/api-request/types';
 import {
   buildOfficialTemplateKey,
   buildOfficialTemplatePreview,
   buildOfficialTemplateVariablePayload,
   createManualOfficialTemplateVariable,
   createOfficialTemplateOptions,
+  createOfficialTemplateVariableValueRecord,
   findOfficialTemplate,
   formatOfficialTemplateLanguage,
+  formatOfficialTemplateVariableLabel,
+  normalizeEditableOfficialTemplateVariables,
   refreshOfficialTemplateVariableKey,
   type OfficialTemplate,
   type OfficialTemplateVariableValue,
 } from '@/utils/officialTemplate';
-
-interface AvailableTag {
-  tag: string;
-  description: string;
-}
 
 const props = withDefaults(
   defineProps<{
@@ -29,7 +29,7 @@ const props = withDefaults(
     templates: OfficialTemplatesResponse;
     loading?: boolean;
     error?: string | null;
-    availableTags: AvailableTag[];
+    availableTags: ApiRequestVariable[];
   }>(),
   {
     loading: false,
@@ -82,6 +82,7 @@ const templateFromModel = computed<OfficialTemplate | null>(() => {
     name: template.name,
     language: template.language,
     status: 'APPROVED',
+    parameter_format: template.parameter_format,
     category: template.category ?? null,
     components,
     variables: collectVariablesFromComponents(components),
@@ -121,27 +122,13 @@ const variableRows = computed<IOfficialTemplateVariable[]>(() =>
     ? detectedVariableRows.value
     : manualVariables.value
 );
-const formatVariableLabel = (
-  variable: Pick<IOfficialTemplateVariable, 'component_type' | 'index'>
-) => `${variable.component_type} {{${variable.index}}}`;
 const areVariablesValid = computed(() =>
   variableRows.value.every((variable) =>
     variableValues.value[variable.key]?.trim()
   )
 );
 const selectedVariableValues = computed<OfficialTemplateVariableValue[]>(() =>
-  hasDetectedVariables.value
-    ? buildOfficialTemplateVariablePayload(
-        detectedVariableRows.value,
-        variableValues.value
-      )
-    : manualVariables.value.map((variable) => ({
-        key: variable.key,
-        component_type: variable.component_type,
-        index: variable.index,
-        button_index: variable.button_index ?? null,
-        value: variableValues.value[variable.key]?.trim() ?? '',
-      }))
+  buildOfficialTemplateVariablePayload(variableRows.value, variableValues.value)
 );
 const selectedPreview = computed(() =>
   buildOfficialTemplatePreview(
@@ -179,17 +166,14 @@ const hydrateFromModel = () => {
   );
   const values = template.variables ?? [];
   variableValues.value = Object.fromEntries(
-    values.map((variable) => [variable.key, variable.value ?? ''])
+    values.map((variable) => [variable.key, String(variable.value ?? '')])
   );
 
   const detectedVariables = collectVariablesFromComponents(template.components);
   manualVariables.value =
     detectedVariables.length > 0
       ? []
-      : values.map((variable) => ({
-          ...variable,
-          value: variable.value ?? '',
-        }));
+      : normalizeEditableOfficialTemplateVariables(values);
 
   isHydratingFromModel.value = false;
   emit('valid-change', isValid.value);
@@ -213,6 +197,7 @@ const emitCurrentPayload = () => {
     language: template.language,
     category: template.category ?? null,
     status: template.status,
+    parameter_format: template.parameter_format,
     components: template.components,
     preview: template.preview,
     variables: selectedVariableValues.value,
@@ -289,7 +274,9 @@ watch(selectedTemplateKey, () => {
     return;
   }
 
-  variableValues.value = {};
+  variableValues.value = createOfficialTemplateVariableValueRecord(
+    selectedTemplate.value?.variables
+  );
   manualVariables.value = [];
 });
 
@@ -362,14 +349,12 @@ watch(
             class="schedule-official-template__variable-field"
           >
             <span class="schedule-official-template__variable-label">
-              {{ formatVariableLabel(variable) }}
+              {{ formatOfficialTemplateVariableLabel(variable) }}
             </span>
-            <VTextField
+            <OfficialTemplateVariableField
               v-model="variableValues[variable.key]"
+              :variables="availableTags"
               :placeholder="variable.sample || t('template_variable_value')"
-              density="compact"
-              variant="outlined"
-              hide-details="auto"
             />
           </div>
         </template>
@@ -409,12 +394,10 @@ watch(
               hide-details
               @update:model-value="syncManualVariable(variableIndex)"
             />
-            <VTextField
+            <OfficialTemplateVariableField
               v-model="variableValues[variable.key]"
+              :variables="availableTags"
               :placeholder="t('template_variable_value')"
-              density="compact"
-              variant="outlined"
-              hide-details
             />
             <VBtn
               icon

@@ -111,6 +111,12 @@ const formatAudioTime = (seconds?: number | null): string => {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 };
 
+const getAudioUrl = (message: ListMessageResult): string | null =>
+  message.content?.audio?.url ?? null;
+
+const getAudioDuration = (message: ListMessageResult): number | null =>
+  normalizeTimeValue(message.content?.audio?.duration);
+
 const getOrCreateAudioPlayer = (
   messageId: string,
   url: string
@@ -153,7 +159,9 @@ const getOrCreateAudioPlayer = (
   return audio;
 };
 
-const toggleAudioPlay = (messageId: string, url: string) => {
+const toggleAudioPlay = (messageId: string, url?: string | null): void => {
+  if (!url) return;
+
   const audio = getOrCreateAudioPlayer(messageId, url);
   const isPlaying = audioPlayStates[messageId] || false;
 
@@ -193,7 +201,13 @@ const toggleAudioSpeed = (messageId: string) => {
   }
 };
 
-const seekAudio = (messageId: string, url: string, event: MouseEvent) => {
+const seekAudio = (
+  messageId: string,
+  url: string | null | undefined,
+  event: MouseEvent
+) => {
+  if (!url) return;
+
   const container = event.currentTarget as HTMLElement;
   if (!container) return;
 
@@ -534,6 +548,17 @@ const getOfficialMetadata = (
 const shouldShowOfficialDisplayCard = (message: ListMessageResult): boolean =>
   Boolean(getOfficialMetadata(message)?.display);
 
+const isOfficialTemplateOpeningMessage = (
+  message: ListMessageResult
+): boolean => {
+  if (message.content?.type === EMessageType.official_template) return true;
+  if (!message.content?.official_template) return false;
+  const official = message.content.official;
+  return (
+    official?.type === 'template' || official?.display?.kind === 'template'
+  );
+};
+
 const shouldShowButtonMessageCard = (message: ListMessageResult): boolean =>
   Boolean(message.content?.buttons?.buttons?.length);
 
@@ -615,7 +640,7 @@ const handleContactsGroupClick = (message: ListMessageResult) => {
 };
 
 const saveContactFromGroup = async (contact: {
-  contact_id: string | null;
+  contact_id?: string | null;
   name: string;
   last_name?: string | null;
   phone?: string | null;
@@ -800,45 +825,53 @@ const imageGalleryLookup = computed(() => {
   return buildImageGalleryLookup(visibleMessages.value);
 });
 
-const getImageGalleryMembership = (message: ListMessageResult) => {
+type MaybeListMessageResult = ListMessageResult | null | undefined;
+
+const getImageGalleryMembership = (message: MaybeListMessageResult) => {
+  if (!message) return null;
+
   return (
     imageGalleryLookup.value.membershipByMessageId[message.message_id] ?? null
   );
 };
 
-const getImageGalleryGroup = (message: ListMessageResult) => {
+const getImageGalleryGroup = (message: MaybeListMessageResult) => {
   const membership = getImageGalleryMembership(message);
   if (!membership) return null;
   return imageGalleryLookup.value.groupsById[membership.groupId] ?? null;
 };
 
-const hasImageGallery = (message: ListMessageResult): boolean => {
+const hasImageGallery = (message: MaybeListMessageResult): boolean => {
   const membership = getImageGalleryMembership(message);
   if (!membership?.isHead) return false;
   return !!getImageGalleryGroup(message);
 };
 
-const shouldRenderMessage = (message: ListMessageResult): boolean => {
+const shouldRenderMessage = (message: MaybeListMessageResult): boolean => {
+  if (!message) return false;
+
   const membership = getImageGalleryMembership(message);
   if (!membership) return true;
   return membership.isHead;
 };
 
 const getImageGalleryPreviewItems = (
-  message: ListMessageResult
+  message: MaybeListMessageResult
 ): GalleryImageItem[] => {
   const group = getImageGalleryGroup(message);
   if (!group) return [];
   return group.items.slice(0, 4);
 };
 
-const getImageGalleryRemainingCount = (message: ListMessageResult): number => {
+const getImageGalleryRemainingCount = (
+  message: MaybeListMessageResult
+): number => {
   const group = getImageGalleryGroup(message);
   if (!group) return 0;
   return Math.max(0, group.items.length - 4);
 };
 
-const getImageGalleryGridClass = (message: ListMessageResult): string => {
+const getImageGalleryGridClass = (message: MaybeListMessageResult): string => {
   const previewCount = getImageGalleryPreviewItems(message).length;
   const normalizedCount = Math.max(1, Math.min(previewCount, 4));
   return `image-gallery-grid--${normalizedCount}`;
@@ -846,9 +879,9 @@ const getImageGalleryGridClass = (message: ListMessageResult): string => {
 
 type MessageWithSeparator = {
   type: 'message' | 'separator';
-  message?: ListMessageResult;
-  separatorDate?: string;
-  separatorLabel?: string;
+  message: ListMessageResult;
+  separatorDate: string | null;
+  separatorLabel: string | null;
 };
 
 const messagesWithSeparators = computed<MessageWithSeparator[]>(() => {
@@ -865,6 +898,7 @@ const messagesWithSeparators = computed<MessageWithSeparator[]>(() => {
     if (!lastDate || !isSameDay(messageDate, lastDate)) {
       result.push({
         type: 'separator',
+        message,
         separatorDate: messageDate,
         separatorLabel: formatDateSeparator(messageDate),
       });
@@ -874,6 +908,8 @@ const messagesWithSeparators = computed<MessageWithSeparator[]>(() => {
     result.push({
       type: 'message',
       message,
+      separatorDate: null,
+      separatorLabel: null,
     });
   }
 
@@ -1526,7 +1562,7 @@ interface IReaction {
   emoji?: string | null;
 }
 
-type FeedbackIcon = { icon: string; color?: string };
+type FeedbackIcon = { icon: string; color?: string; label?: string };
 
 const isOutgoingMessage = (message: ListMessageResult): boolean => {
   if (message.message_key?.from_me === true) return true;
@@ -1562,8 +1598,27 @@ const resolveFeedbackIcon = (
   if (message.content?.type === EMessageType.annotation)
     return { icon: 'tabler-file', color: undefined };
 
-  if (message.summary?.is_sent_to_internal === false)
-    return { icon: 'tabler-alert-triangle', color: 'error' };
+  if (message.delivery_status === 'ambiguous') {
+    return {
+      icon: 'tabler-help-hexagon',
+      color: 'warning',
+      label: t('chat_message_send_confirmation_pending'),
+    };
+  }
+
+  if (message.summary?.is_sent_to_internal === false) {
+    const errorCode = message.provider_error_code;
+    return {
+      icon: 'tabler-alert-triangle',
+      color: 'error',
+      label:
+        errorCode === 132000
+          ? t('chat_message_send_failed_template_parameters')
+          : typeof errorCode === 'number'
+            ? t('chat_message_send_failed_provider', { code: errorCode })
+            : t('chat_message_send_failed'),
+    };
+  }
 
   if (message.summary?.is_seen)
     return { icon: 'tabler-checks', color: 'primary' };
@@ -1622,7 +1677,9 @@ const emitOpenMedia = (items: ViewerMediaItem[], initialIndex = 0) => {
   });
 };
 
-const handleOpenImageGallery = (message: ListMessageResult, index = 0) => {
+const handleOpenImageGallery = (message: MaybeListMessageResult, index = 0) => {
+  if (!message) return;
+
   const group = getImageGalleryGroup(message);
   if (!group) return;
 
@@ -1735,7 +1792,7 @@ const handleContactClick = (message: ListMessageResult) => {
         :key="
           item.type === 'separator'
             ? `separator-${item.separatorDate}`
-            : `msg-${item.message?.message_id}`
+            : `msg-${item.message.message_id}`
         "
       >
         <div
@@ -1778,1425 +1835,1307 @@ const handleContactClick = (message: ListMessageResult) => {
             "
           ></div>
         </div>
-        <div
-          v-else-if="
-            item.type === 'message' &&
-            item.message &&
-            shouldRenderMessage(item.message)
-          "
-          :id="`msg-${item.message.message_id}`"
-          class="chat-group d-flex align-start position-relative"
-          :class="[
-            {
-              'flex-row-reverse':
-                !isTypeUser(item.message) &&
-                item.message.content?.type !== EMessageType.system,
-              'justify-center':
-                item.message.content?.type === EMessageType.system,
-              'mb-6':
-                index < messagesWithSeparators.length - 1 &&
-                messagesWithSeparators[index + 1]?.type === 'message',
-            },
-          ]"
-        >
+        <template v-else-if="item.type === 'message'">
           <div
-            v-if="item.message.content?.type !== EMessageType.system"
-            class="chat-avatar"
-            :class="!isTypeUser(item.message) ? 'ms-4' : 'me-4'"
-          >
-            <VTooltip
-              v-if="!isTypeUser(item.message) && item.message.user?.name"
-              location="top"
-              :text="item.message.user.name"
-            >
-              <template #activator="{ props }">
-                <VAvatar
-                  v-bind="props"
-                  size="32"
-                  :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
-                >
-                  <VImg :src="resolvePhoto(item.message)" />
-                </VAvatar>
-              </template>
-            </VTooltip>
-            <VAvatar
-              v-else
-              size="32"
-              :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
-            >
-              <VImg :src="resolvePhoto(item.message)" />
-            </VAvatar>
-          </div>
-
-          <div
-            class="chat-body d-inline-flex flex-column position-relative"
+            v-if="shouldRenderMessage(item.message)"
+            :id="`msg-${item.message.message_id}`"
+            class="chat-group d-flex align-start position-relative"
             :class="[
-              item.message.content?.type === EMessageType.system
-                ? 'align-center'
-                : !isTypeUser(item.message)
-                  ? 'align-end'
-                  : 'align-start',
               {
-                'chat-body--official-display': shouldShowOfficialDisplayCard(
-                  item.message
-                ),
+                'flex-row-reverse':
+                  !isTypeUser(item.message) &&
+                  item.message.content?.type !== EMessageType.system,
+                'justify-center':
+                  item.message.content?.type === EMessageType.system,
+                'mb-6':
+                  index < messagesWithSeparators.length - 1 &&
+                  messagesWithSeparators[index + 1]?.type === 'message',
               },
             ]"
           >
             <div
-              class="chat-content-wrapper"
-              :class="
-                !isTypeUser(item.message)
-                  ? 'wrapper-operator'
-                  : 'wrapper-client'
-              "
+              v-if="item.message.content?.type !== EMessageType.system"
+              class="chat-avatar"
+              :class="!isTypeUser(item.message) ? 'ms-4' : 'me-4'"
+            >
+              <VTooltip
+                v-if="!isTypeUser(item.message) && item.message.user?.name"
+                location="top"
+                :text="item.message.user.name"
+              >
+                <template #activator="{ props }">
+                  <VAvatar
+                    v-bind="props"
+                    size="32"
+                    :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
+                  >
+                    <VImg :src="resolvePhoto(item.message)" />
+                  </VAvatar>
+                </template>
+              </VTooltip>
+              <VAvatar
+                v-else
+                size="32"
+                :variant="!isPhotoExist(item.message) ? 'tonal' : undefined"
+              >
+                <VImg :src="resolvePhoto(item.message)" />
+              </VAvatar>
+            </div>
+
+            <div
+              class="chat-body d-inline-flex flex-column position-relative"
+              :class="[
+                item.message.content?.type === EMessageType.system
+                  ? 'align-center'
+                  : !isTypeUser(item.message)
+                    ? 'align-end'
+                    : 'align-start',
+                {
+                  'chat-body--official-display': shouldShowOfficialDisplayCard(
+                    item.message
+                  ),
+                },
+              ]"
             >
               <div
-                class="chat-content py-2 px-2 elevation-2"
-                :class="[
-                  item.message.content?.type === EMessageType.system
-                    ? 'chat-center'
-                    : isTypeUser(item.message)
-                      ? 'chat-left'
-                      : 'chat-right',
-                  {
-                    'is-deleted': item.message.deleted,
-                    'has-actions': !item.message.deleted,
-                    'has-contact-card':
-                      item.message.content?.type ===
-                        EMessageType.contact_card ||
-                      item.message.content?.type === EMessageType.contacts,
-                    'has-official-display':
-                      shouldShowOfficialDisplayCard(item.message) ||
-                      shouldShowButtonMessageCard(item.message),
-                    'has-reactions':
-                      item.message.content?.reactions &&
-                      item.message.content.reactions.length > 0 &&
-                      item.message.content?.type !== EMessageType.annotation,
-                    'has-edit-history':
-                      hasMessageVersions(item.message) && !item.message.deleted,
-                    'is-closure-reason-annotation': isClosureReasonAnnotation(
-                      item.message
-                    ),
-                    'is-closure-audit-annotation': isClosureAuditAnnotation(
-                      item.message
-                    ),
-                  },
-                ]"
-                @click.stop="
-                  hasMessageVersions(item.message) && !item.message.deleted
-                    ? onViewEditHistory(item.message)
-                    : null
+                class="chat-content-wrapper"
+                :class="
+                  !isTypeUser(item.message)
+                    ? 'wrapper-operator'
+                    : 'wrapper-client'
                 "
-                :style="{
-                  backgroundColor:
-                    item.message.content?.type === EMessageType.annotation
-                      ? 'rgb(255, 243, 205)'
-                      : item.message.content?.type === EMessageType.system
-                        ? systemMessageBackground
-                        : isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-surface))'
-                          : 'rgb(217, 253, 211)',
-                }"
               >
-                <div class="message-block">
-                  <div
-                    v-if="item.message.content?.context_info?.is_forwarded"
-                    class="forwarded-indicator"
-                    :class="{
-                      'forwarded-indicator--left': isTypeUser(item.message),
-                      'forwarded-indicator--right': !isTypeUser(item.message),
-                    }"
-                  >
-                    <VIcon size="14" class="forwarded-icon">
-                      tabler-corner-up-right
-                    </VIcon>
-                    <span class="forwarded-text">{{ t('forwarded') }}</span>
-                  </div>
-                  <div
-                    v-if="showQuoted(item.message)"
-                    class="quoted-block"
-                    :class="{
-                      'is-right': !isTypeUser(item.message),
-                      'is-button-reply': isButtonReplyMessage(item.message),
-                      'is-clickable': !item.message.deleted,
-                    }"
-                  >
+                <div
+                  class="chat-content py-2 px-2 elevation-2"
+                  :class="[
+                    item.message.content?.type === EMessageType.system
+                      ? 'chat-center'
+                      : isTypeUser(item.message)
+                        ? 'chat-left'
+                        : 'chat-right',
+                    {
+                      'is-deleted': item.message.deleted,
+                      'has-actions': !item.message.deleted,
+                      'has-contact-card':
+                        item.message.content?.type ===
+                          EMessageType.contact_card ||
+                        item.message.content?.type === EMessageType.contacts,
+                      'has-official-display':
+                        shouldShowOfficialDisplayCard(item.message) ||
+                        shouldShowButtonMessageCard(item.message),
+                      'has-reactions':
+                        item.message.content?.reactions &&
+                        item.message.content.reactions.length > 0 &&
+                        !isOfficialTemplateOpeningMessage(item.message) &&
+                        item.message.content?.type !== EMessageType.annotation,
+                      'has-edit-history':
+                        hasMessageVersions(item.message) &&
+                        !item.message.deleted,
+                      'is-closure-reason-annotation': isClosureReasonAnnotation(
+                        item.message
+                      ),
+                      'is-closure-audit-annotation': isClosureAuditAnnotation(
+                        item.message
+                      ),
+                    },
+                  ]"
+                  @click.stop="
+                    hasMessageVersions(item.message) && !item.message.deleted
+                      ? onViewEditHistory(item.message)
+                      : null
+                  "
+                  :style="{
+                    backgroundColor:
+                      item.message.content?.type === EMessageType.annotation
+                        ? 'rgb(255, 243, 205)'
+                        : item.message.content?.type === EMessageType.system
+                          ? systemMessageBackground
+                          : isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-surface))'
+                            : 'rgb(217, 253, 211)',
+                  }"
+                >
+                  <div class="message-block">
                     <div
-                      v-if="!isButtonReplyMessage(item.message)"
-                      class="quoted-name"
+                      v-if="item.message.content?.context_info?.is_forwarded"
+                      class="forwarded-indicator"
+                      :class="{
+                        'forwarded-indicator--left': isTypeUser(item.message),
+                        'forwarded-indicator--right': !isTypeUser(item.message),
+                      }"
                     >
-                      {{ resolveQuotedName(item.message) }}
+                      <VIcon size="14" class="forwarded-icon">
+                        tabler-corner-up-right
+                      </VIcon>
+                      <span class="forwarded-text">{{ t('forwarded') }}</span>
                     </div>
-
-                    <div class="quoted-content">
+                    <div
+                      v-if="showQuoted(item.message)"
+                      class="quoted-block"
+                      :class="{
+                        'is-right': !isTypeUser(item.message),
+                        'is-button-reply': isButtonReplyMessage(item.message),
+                        'is-clickable': !item.message.deleted,
+                      }"
+                    >
                       <div
-                        v-if="hasQuotedImage(item.message)"
-                        class="quoted-media quoted-media--image"
+                        v-if="!isButtonReplyMessage(item.message)"
+                        class="quoted-name"
                       >
-                        <VImg
-                          :src="resolveQuotedImageSrc(item.message)"
-                          width="44"
-                          height="44"
-                          cover
-                        />
+                        {{ resolveQuotedName(item.message) }}
                       </div>
 
-                      <div
-                        v-if="hasQuotedLocation(item.message)"
-                        class="quoted-location"
-                      >
-                        <VIcon size="22" color="primary">tabler-map-pin</VIcon>
-                        <div class="quoted-location-info">
-                          <span class="quoted-location-name">
-                            {{ t('location_label') }}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div
-                        v-if="hasQuotedDocument(item.message)"
-                        class="quoted-document"
-                      >
-                        <VIcon
-                          :icon="resolveQuotedDocumentIcon(item.message)"
-                          size="26"
-                          color="primary"
-                        />
-                        <div class="quoted-document-info">
-                          <span class="quoted-document-name">
-                            {{ resolveQuotedDocumentName(item.message) }}
-                          </span>
-                          <span class="quoted-document-meta">
-                            {{ resolveQuotedDocumentMeta(item.message) }}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div
-                        v-if="hasQuotedSticker(item.message)"
-                        class="quoted-sticker"
-                      >
+                      <div class="quoted-content">
                         <div
-                          v-if="resolveQuotedStickerSrc(item.message)"
+                          v-if="hasQuotedImage(item.message)"
                           class="quoted-media quoted-media--image"
                         >
-                          <img
-                            :src="resolveQuotedStickerSrc(item.message)"
-                            alt="Sticker"
-                            style="
-                              width: 44px;
-                              height: 44px;
-                              object-fit: contain;
-                            "
-                          />
-                        </div>
-                        <div v-else class="quoted-sticker-icon">
-                          <VIcon size="20">tabler-file-description</VIcon>
-                        </div>
-                      </div>
-
-                      <div
-                        v-if="hasQuotedVideo(item.message)"
-                        class="quoted-media quoted-media--video"
-                      >
-                        <template v-if="resolveQuotedVideoUrl(item.message)">
-                          <video
-                            :src="resolveQuotedVideoUrl(item.message)"
-                            :poster="
-                              resolveQuotedVideoPoster(item.message) ||
-                              undefined
-                            "
-                            class="quoted-video-thumb"
-                            preload="metadata"
-                            muted
-                            playsinline
-                          >
-                            <track kind="captions" />
-                          </video>
-                          <div class="quoted-video-overlay">
-                            <VIcon size="16">tabler-player-play</VIcon>
-                          </div>
-                        </template>
-                        <div
-                          v-if="!resolveQuotedVideoUrl(item.message)"
-                          class="quoted-video-placeholder"
-                        >
-                          <VIcon size="20">tabler-player-play</VIcon>
-                        </div>
-                      </div>
-
-                      <div
-                        v-if="hasQuotedVideo(item.message)"
-                        class="quoted-video-info"
-                      >
-                        <span class="quoted-video-name">
-                          {{ resolveQuotedVideoName(item.message) }}
-                        </span>
-                        <span
-                          v-if="resolveQuotedVideoMeta(item.message)"
-                          class="quoted-video-meta"
-                        >
-                          {{ resolveQuotedVideoMeta(item.message) }}
-                        </span>
-                      </div>
-
-                      <div
-                        v-if="hasQuotedAudio(item.message)"
-                        class="quoted-audio"
-                      >
-                        <VIcon size="22" color="primary"
-                          >tabler-microphone</VIcon
-                        >
-                        <div class="quoted-audio-info">
-                          <span class="quoted-audio-name">
-                            {{ resolveQuotedAudioName(item.message) }}
-                          </span>
-                          <span
-                            v-if="resolveQuotedAudioMeta(item.message)"
-                            class="quoted-audio-meta"
-                          >
-                            {{ resolveQuotedAudioMeta(item.message) }}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div
-                        v-if="hasQuotedContact(item.message)"
-                        class="quoted-contact"
-                      >
-                        <VAvatar
-                          v-if="resolveQuotedContactPhoto(item.message)"
-                          size="22"
-                          class="quoted-contact-avatar"
-                        >
                           <VImg
-                            :src="resolveQuotedContactPhoto(item.message) || ''"
-                            :alt="resolveQuotedContactName(item.message)"
+                            :src="resolveQuotedImageSrc(item.message)"
+                            width="44"
+                            height="44"
+                            cover
                           />
-                        </VAvatar>
-                        <div
-                          v-else-if="isQuotedContactGroup(item.message)"
-                          class="quoted-contact-group-icon"
-                        >
-                          <svg
-                            width="22"
-                            height="22"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path
-                              d="M16 11c1.66 0 3-1.34 3-3S17.66 5 16 5s-3 1.34-3 3s1.34 3 3 3Zm-8 0c1.66 0 3-1.34 3-3S9.66 5 8 5S5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V20h14v-3.5C15 14.17 10.33 13 8 13Zm8 0c-.29 0-.62.02-.97.05c1.16.84 1.97 1.96 1.97 3.45V20h7v-3.5c0-2.33-4.67-3.5-7-3.5Z"
-                              fill="currentColor"
-                            />
-                          </svg>
                         </div>
-                        <VIcon
-                          v-else
-                          size="22"
-                          color="primary"
-                          icon="tabler-user"
-                        ></VIcon>
-                        <div class="quoted-contact-info">
-                          <span class="quoted-contact-name">
-                            {{
-                              resolveQuotedContactName(item.message) ||
-                              t('contact_label')
-                            }}
+
+                        <div
+                          v-if="hasQuotedLocation(item.message)"
+                          class="quoted-location"
+                        >
+                          <VIcon size="22" color="primary"
+                            >tabler-map-pin</VIcon
+                          >
+                          <div class="quoted-location-info">
+                            <span class="quoted-location-name">
+                              {{ t('location_label') }}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div
+                          v-if="hasQuotedDocument(item.message)"
+                          class="quoted-document"
+                        >
+                          <VIcon
+                            :icon="resolveQuotedDocumentIcon(item.message)"
+                            size="26"
+                            color="primary"
+                          />
+                          <div class="quoted-document-info">
+                            <span class="quoted-document-name">
+                              {{ resolveQuotedDocumentName(item.message) }}
+                            </span>
+                            <span class="quoted-document-meta">
+                              {{ resolveQuotedDocumentMeta(item.message) }}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div
+                          v-if="hasQuotedSticker(item.message)"
+                          class="quoted-sticker"
+                        >
+                          <div
+                            v-if="resolveQuotedStickerSrc(item.message)"
+                            class="quoted-media quoted-media--image"
+                          >
+                            <img
+                              :src="resolveQuotedStickerSrc(item.message)"
+                              alt="Sticker"
+                              style="
+                                width: 44px;
+                                height: 44px;
+                                object-fit: contain;
+                              "
+                            />
+                          </div>
+                          <div v-else class="quoted-sticker-icon">
+                            <VIcon size="20">tabler-file-description</VIcon>
+                          </div>
+                        </div>
+
+                        <div
+                          v-if="hasQuotedVideo(item.message)"
+                          class="quoted-media quoted-media--video"
+                        >
+                          <template v-if="resolveQuotedVideoUrl(item.message)">
+                            <video
+                              :src="resolveQuotedVideoUrl(item.message)"
+                              :poster="
+                                resolveQuotedVideoPoster(item.message) ||
+                                undefined
+                              "
+                              class="quoted-video-thumb"
+                              preload="metadata"
+                              muted
+                              playsinline
+                            >
+                              <track kind="captions" />
+                            </video>
+                            <div class="quoted-video-overlay">
+                              <VIcon size="16">tabler-player-play</VIcon>
+                            </div>
+                          </template>
+                          <div
+                            v-if="!resolveQuotedVideoUrl(item.message)"
+                            class="quoted-video-placeholder"
+                          >
+                            <VIcon size="20">tabler-player-play</VIcon>
+                          </div>
+                        </div>
+
+                        <div
+                          v-if="hasQuotedVideo(item.message)"
+                          class="quoted-video-info"
+                        >
+                          <span class="quoted-video-name">
+                            {{ resolveQuotedVideoName(item.message) }}
                           </span>
                           <span
-                            v-if="item.message.content?.quoted?.message"
-                            class="quoted-contact-message"
+                            v-if="resolveQuotedVideoMeta(item.message)"
+                            class="quoted-video-meta"
+                          >
+                            {{ resolveQuotedVideoMeta(item.message) }}
+                          </span>
+                        </div>
+
+                        <div
+                          v-if="hasQuotedAudio(item.message)"
+                          class="quoted-audio"
+                        >
+                          <VIcon size="22" color="primary"
+                            >tabler-microphone</VIcon
+                          >
+                          <div class="quoted-audio-info">
+                            <span class="quoted-audio-name">
+                              {{ resolveQuotedAudioName(item.message) }}
+                            </span>
+                            <span
+                              v-if="resolveQuotedAudioMeta(item.message)"
+                              class="quoted-audio-meta"
+                            >
+                              {{ resolveQuotedAudioMeta(item.message) }}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div
+                          v-if="hasQuotedContact(item.message)"
+                          class="quoted-contact"
+                        >
+                          <VAvatar
+                            v-if="resolveQuotedContactPhoto(item.message)"
+                            size="22"
+                            class="quoted-contact-avatar"
+                          >
+                            <VImg
+                              :src="
+                                resolveQuotedContactPhoto(item.message) || ''
+                              "
+                              :alt="resolveQuotedContactName(item.message)"
+                            />
+                          </VAvatar>
+                          <div
+                            v-else-if="isQuotedContactGroup(item.message)"
+                            class="quoted-contact-group-icon"
+                          >
+                            <svg
+                              width="22"
+                              height="22"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M16 11c1.66 0 3-1.34 3-3S17.66 5 16 5s-3 1.34-3 3s1.34 3 3 3Zm-8 0c1.66 0 3-1.34 3-3S9.66 5 8 5S5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V20h14v-3.5C15 14.17 10.33 13 8 13Zm8 0c-.29 0-.62.02-.97.05c1.16.84 1.97 1.96 1.97 3.45V20h7v-3.5c0-2.33-4.67-3.5-7-3.5Z"
+                                fill="currentColor"
+                              />
+                            </svg>
+                          </div>
+                          <VIcon
+                            v-else
+                            size="22"
+                            color="primary"
+                            icon="tabler-user"
+                          ></VIcon>
+                          <div class="quoted-contact-info">
+                            <span class="quoted-contact-name">
+                              {{
+                                resolveQuotedContactName(item.message) ||
+                                t('contact_label')
+                              }}
+                            </span>
+                            <span
+                              v-if="item.message.content?.quoted?.message"
+                              class="quoted-contact-message"
+                              v-html="
+                                formatWhatsAppText(
+                                  item.message.content.quoted.message
+                                )
+                              "
+                            ></span>
+                          </div>
+                        </div>
+
+                        <div
+                          v-if="hasQuotedImage(item.message)"
+                          class="quoted-image-info"
+                        >
+                          <span class="quoted-image-name">
+                            {{ resolveQuotedImageName(item.message) }}
+                          </span>
+                          <span
+                            v-if="resolveQuotedImageMeta(item.message)"
+                            class="quoted-image-meta"
+                          >
+                            {{ resolveQuotedImageMeta(item.message) }}
+                          </span>
+                        </div>
+
+                        <div
+                          v-if="
+                            resolveQuotedText(item.message) &&
+                            item.message.content?.quoted?.type !==
+                              EMessageType.video_note &&
+                            item.message.content?.quoted?.type !==
+                              EMessageType.video &&
+                            item.message.content?.quoted?.type !==
+                              EMessageType.image &&
+                            item.message.content?.quoted?.type !==
+                              EMessageType.audio &&
+                            item.message.content?.quoted?.type !==
+                              EMessageType.sticker &&
+                            item.message.content?.quoted?.type !==
+                              EMessageType.location &&
+                            item.message.content?.quoted?.type !==
+                              EMessageType.contact_card &&
+                            item.message.content?.quoted?.type !==
+                              EMessageType.contacts
+                          "
+                          class="quoted-text"
+                          :style="{
+                            color: isTypeUser(item.message)
+                              ? 'rgb(var(--v-theme-on-surface))'
+                              : 'rgb(var(--v-theme-title))',
+                          }"
+                        >
+                          <span
+                            v-if="
+                              item.message.content?.quoted?.type ===
+                                EMessageType.text ||
+                              item.message.content?.quoted?.type ===
+                                EMessageType.system ||
+                              item.message.content?.quoted?.type ===
+                                EMessageType.annotation
+                            "
                             v-html="
                               formatWhatsAppText(
-                                item.message.content.quoted.message
+                                resolveQuotedText(item.message)
                               )
                             "
                           ></span>
-                        </div>
-                      </div>
-
-                      <div
-                        v-if="hasQuotedImage(item.message)"
-                        class="quoted-image-info"
-                      >
-                        <span class="quoted-image-name">
-                          {{ resolveQuotedImageName(item.message) }}
-                        </span>
-                        <span
-                          v-if="resolveQuotedImageMeta(item.message)"
-                          class="quoted-image-meta"
-                        >
-                          {{ resolveQuotedImageMeta(item.message) }}
-                        </span>
-                      </div>
-
-                      <div
-                        v-if="
-                          resolveQuotedText(item.message) &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.video_note &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.video &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.image &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.audio &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.sticker &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.location &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.contact_card &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.contacts
-                        "
-                        class="quoted-text"
-                        :style="{
-                          color: isTypeUser(item.message)
-                            ? 'rgb(var(--v-theme-on-surface))'
-                            : 'rgb(var(--v-theme-title))',
-                        }"
-                      >
-                        <span
-                          v-if="
-                            item.message.content?.quoted?.type ===
-                              EMessageType.text ||
-                            item.message.content?.quoted?.type ===
-                              EMessageType.system ||
-                            item.message.content?.quoted?.type ===
-                              EMessageType.annotation
-                          "
-                          v-html="
-                            formatWhatsAppText(resolveQuotedText(item.message))
-                          "
-                        ></span>
-                        <span v-else>{{
-                          resolveQuotedText(item.message)
-                        }}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="item.message.content?.link_preview?.title"
-                    class="link-preview rounded"
-                    :class="
-                      !isTypeUser(item.message)
-                        ? 'link-preview--right'
-                        : 'link-preview--left'
-                    "
-                    :style="{
-                      backgroundColor: isTypeUser(item.message)
-                        ? 'rgb(var(--v-theme-grey-200))'
-                        : 'rgb(214, 243, 207)',
-                      color: isTypeUser(item.message)
-                        ? 'rgb(var(--v-theme-on-grey))'
-                        : 'rgb(var(--v-theme-title))',
-                    }"
-                  >
-                    <div class="lp-main d-flex">
-                      <div
-                        v-if="resolveMessagePreviewImage(item.message.content)"
-                      >
-                        <div class="lp-thumb me-3">
-                          <img
-                            :src="
-                              resolveMessagePreviewImage(item.message.content)
-                            "
-                            alt=""
-                          />
-                        </div>
-                      </div>
-
-                      <div class="lp-text">
-                        <div class="lp-domain text-xs mb-1">
-                          {{
-                            domainFromUrl(
-                              item.message.content.link_preview?.[
-                                'canonical-url'
-                              ] ||
-                                item.message.content.link_preview?.[
-                                  'matched-text'
-                                ] ||
-                                ''
-                            )
-                          }}
-                        </div>
-
-                        <div class="lp-title text-sm mb-1">
-                          {{ item.message.content.link_preview.title }}
-                        </div>
-
-                        <div class="lp-desc text-xs">
-                          {{ item.message.content.link_preview.description }}
+                          <span v-else>{{
+                            resolveQuotedText(item.message)
+                          }}</span>
                         </div>
                       </div>
                     </div>
 
-                    <a
-                      v-if="
-                        resolvePreviewUrl(item.message.content.link_preview)
+                    <div
+                      v-if="item.message.content?.link_preview?.title"
+                      class="link-preview rounded"
+                      :class="
+                        !isTypeUser(item.message)
+                          ? 'link-preview--right'
+                          : 'link-preview--left'
                       "
-                      class="lp-url d-block mt-2 text-sm"
-                      :href="
-                        resolvePreviewUrl(item.message.content.link_preview)
-                      "
-                      target="_blank"
-                      rel="noopener"
-                    >
-                      {{ resolvePreviewUrl(item.message.content.link_preview) }}
-                    </a>
-                  </div>
-
-                  <div
-                    v-if="
-                      item.message.content?.context_info?.external_ad_reply &&
-                      !item.message.content?.link_preview?.title
-                    "
-                    class="context-info-ad rounded mt-2"
-                    :class="
-                      !isTypeUser(item.message)
-                        ? 'context-info-ad--right'
-                        : 'context-info-ad--left'
-                    "
-                    :style="{
-                      backgroundColor: isTypeUser(item.message)
-                        ? 'rgb(var(--v-theme-grey-200))'
-                        : 'rgb(214, 243, 207)',
-                      color: isTypeUser(item.message)
-                        ? 'rgb(var(--v-theme-on-grey))'
-                        : 'rgb(var(--v-theme-title))',
-                    }"
-                  >
-                    <div class="d-flex">
-                      <div
-                        v-if="
-                          resolveExternalAdImage(
-                            item.message.content.context_info.external_ad_reply
-                              .thumbnail_url ||
-                              item.message.content.context_info
-                                .external_ad_reply.original_image_url
-                          )
-                        "
-                        class="me-3"
-                      >
-                        <div class="context-ad-thumb">
-                          <img
-                            :src="
-                              resolveExternalAdImage(
-                                item.message.content.context_info
-                                  .external_ad_reply.thumbnail_url ||
-                                  item.message.content.context_info
-                                    .external_ad_reply.original_image_url
-                              )
-                            "
-                            alt=""
-                            style="
-                              width: 60px;
-                              height: 60px;
-                              object-fit: cover;
-                              border-radius: 4px;
-                            "
-                          />
-                        </div>
-                      </div>
-
-                      <div class="flex-grow-1">
-                        <div
-                          v-if="
-                            item.message.content.context_info.external_ad_reply
-                              .source_app
-                          "
-                          class="text-xs mb-1 opacity-75"
-                        >
-                          {{
-                            item.message.content.context_info.external_ad_reply
-                              .source_app === 'instagram'
-                              ? 'Instagram'
-                              : item.message.content.context_info
-                                    .external_ad_reply.source_app === 'facebook'
-                                ? 'Facebook'
-                                : item.message.content.context_info
-                                    .external_ad_reply.source_app
-                          }}
-                        </div>
-
-                        <div
-                          v-if="
-                            item.message.content.context_info.external_ad_reply
-                              .title
-                          "
-                          class="text-sm font-weight-medium mb-1"
-                        >
-                          {{
-                            item.message.content.context_info.external_ad_reply
-                              .title
-                          }}
-                        </div>
-
-                        <div
-                          v-if="
-                            item.message.content.context_info.external_ad_reply
-                              .greeting_message_body
-                          "
-                          class="text-xs opacity-75"
-                        >
-                          {{
-                            item.message.content.context_info.external_ad_reply
-                              .greeting_message_body
-                          }}
-                        </div>
-                      </div>
-                    </div>
-
-                    <a
-                      v-if="
-                        item.message.content.context_info.external_ad_reply
-                          .source_url
-                      "
-                      class="d-block mt-2 text-sm"
-                      :href="
-                        item.message.content.context_info.external_ad_reply
-                          .source_url
-                      "
-                      target="_blank"
-                      rel="noopener"
                       :style="{
+                        backgroundColor: isTypeUser(item.message)
+                          ? 'rgb(var(--v-theme-grey-200))'
+                          : 'rgb(214, 243, 207)',
                         color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-primary))'
-                          : 'rgb(var(--v-theme-primary))',
-                      }"
-                    >
-                      {{
-                        domainFromUrl(
-                          item.message.content.context_info.external_ad_reply
-                            .source_url || ''
-                        )
-                      }}
-                    </a>
-                  </div>
-
-                  <ChatOfficialMessageCard
-                    v-if="shouldShowOfficialDisplayCard(item.message)"
-                    :message="item.message"
-                    :is-outgoing="!isTypeUser(item.message)"
-                  />
-
-                  <ChatButtonMessageCard
-                    v-if="shouldShowButtonMessageCard(item.message)"
-                    :buttons="item.message.content?.buttons ?? null"
-                    :is-outgoing="!isTypeUser(item.message)"
-                  />
-
-                  <div
-                    v-if="item.message.content?.type === EMessageType.view_once"
-                    class="view-once-message"
-                  >
-                    <VIcon size="20" class="mr-2">tabler-eye-off</VIcon>
-                    <p
-                      class="mb-0 text-sm"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
+                          ? 'rgb(var(--v-theme-on-grey))'
                           : 'rgb(var(--v-theme-title))',
                       }"
                     >
-                      {{ t('view_once_message') }}
-                    </p>
-                  </div>
-
-                  <div
-                    v-if="hasImageGallery(item.message)"
-                    :class="[
-                      'image-gallery-bubble',
-                      !isTypeUser(item.message)
-                        ? 'image-gallery-bubble--right'
-                        : 'image-gallery-bubble--left',
-                      { 'is-deleted': item.message.deleted },
-                    ]"
-                    @click="handleOpenImageGallery(item.message, 0)"
-                  >
-                    <div
-                      :class="[
-                        'image-gallery-grid',
-                        getImageGalleryGridClass(item.message),
-                      ]"
-                    >
-                      <div
-                        v-for="(
-                          galleryItem, galleryIndex
-                        ) in getImageGalleryPreviewItems(item.message)"
-                        :key="`${galleryItem.message.message_id}-${galleryIndex}`"
-                        class="image-gallery-tile"
-                        @click.stop="
-                          handleOpenImageGallery(item.message, galleryIndex)
-                        "
-                      >
-                        <VImg
-                          :src="galleryItem.src"
-                          class="image-gallery-thumb"
-                          cover
-                        />
+                      <div class="lp-main d-flex">
                         <div
                           v-if="
-                            galleryIndex === 3 &&
-                            getImageGalleryRemainingCount(item.message) > 0
+                            resolveMessagePreviewImage(item.message.content)
                           "
-                          class="image-gallery-more"
                         >
-                          +{{ getImageGalleryRemainingCount(item.message) }}
+                          <div class="lp-thumb me-3">
+                            <img
+                              :src="
+                                resolveMessagePreviewImage(item.message.content)
+                              "
+                              alt=""
+                            />
+                          </div>
+                        </div>
+
+                        <div class="lp-text">
+                          <div class="lp-domain text-xs mb-1">
+                            {{
+                              domainFromUrl(
+                                item.message.content.link_preview?.[
+                                  'canonical-url'
+                                ] ||
+                                  item.message.content.link_preview?.[
+                                    'matched-text'
+                                  ] ||
+                                  ''
+                              )
+                            }}
+                          </div>
+
+                          <div class="lp-title text-sm mb-1">
+                            {{ item.message.content.link_preview.title }}
+                          </div>
+
+                          <div class="lp-desc text-xs">
+                            {{ item.message.content.link_preview.description }}
+                          </div>
+                        </div>
+                      </div>
+
+                      <a
+                        v-if="
+                          resolvePreviewUrl(item.message.content.link_preview)
+                        "
+                        class="lp-url d-block mt-2 text-sm"
+                        :href="
+                          resolvePreviewUrl(item.message.content.link_preview)
+                        "
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        {{
+                          resolvePreviewUrl(item.message.content.link_preview)
+                        }}
+                      </a>
+                    </div>
+
+                    <div
+                      v-if="
+                        item.message.content?.context_info?.external_ad_reply &&
+                        !item.message.content?.link_preview?.title
+                      "
+                      class="context-info-ad rounded mt-2"
+                      :class="
+                        !isTypeUser(item.message)
+                          ? 'context-info-ad--right'
+                          : 'context-info-ad--left'
+                      "
+                      :style="{
+                        backgroundColor: isTypeUser(item.message)
+                          ? 'rgb(var(--v-theme-grey-200))'
+                          : 'rgb(214, 243, 207)',
+                        color: isTypeUser(item.message)
+                          ? 'rgb(var(--v-theme-on-grey))'
+                          : 'rgb(var(--v-theme-title))',
+                      }"
+                    >
+                      <div class="d-flex">
+                        <div
+                          v-if="
+                            resolveExternalAdImage(
+                              item.message.content.context_info
+                                .external_ad_reply.thumbnail_url ||
+                                item.message.content.context_info
+                                  .external_ad_reply.original_image_url
+                            )
+                          "
+                          class="me-3"
+                        >
+                          <div class="context-ad-thumb">
+                            <img
+                              :src="
+                                resolveExternalAdImage(
+                                  item.message.content.context_info
+                                    .external_ad_reply.thumbnail_url ||
+                                    item.message.content.context_info
+                                      .external_ad_reply.original_image_url
+                                )
+                              "
+                              alt=""
+                              style="
+                                width: 60px;
+                                height: 60px;
+                                object-fit: cover;
+                                border-radius: 4px;
+                              "
+                            />
+                          </div>
+                        </div>
+
+                        <div class="flex-grow-1">
+                          <div
+                            v-if="
+                              item.message.content.context_info
+                                .external_ad_reply.source_app
+                            "
+                            class="text-xs mb-1 opacity-75"
+                          >
+                            {{
+                              item.message.content.context_info
+                                .external_ad_reply.source_app === 'instagram'
+                                ? 'Instagram'
+                                : item.message.content.context_info
+                                      .external_ad_reply.source_app ===
+                                    'facebook'
+                                  ? 'Facebook'
+                                  : item.message.content.context_info
+                                      .external_ad_reply.source_app
+                            }}
+                          </div>
+
+                          <div
+                            v-if="
+                              item.message.content.context_info
+                                .external_ad_reply.title
+                            "
+                            class="text-sm font-weight-medium mb-1"
+                          >
+                            {{
+                              item.message.content.context_info
+                                .external_ad_reply.title
+                            }}
+                          </div>
+
+                          <div
+                            v-if="
+                              item.message.content.context_info
+                                .external_ad_reply.greeting_message_body
+                            "
+                            class="text-xs opacity-75"
+                          >
+                            {{
+                              item.message.content.context_info
+                                .external_ad_reply.greeting_message_body
+                            }}
+                          </div>
+                        </div>
+                      </div>
+
+                      <a
+                        v-if="
+                          item.message.content.context_info.external_ad_reply
+                            .source_url
+                        "
+                        class="d-block mt-2 text-sm"
+                        :href="
+                          item.message.content.context_info.external_ad_reply
+                            .source_url
+                        "
+                        target="_blank"
+                        rel="noopener"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-primary))'
+                            : 'rgb(var(--v-theme-primary))',
+                        }"
+                      >
+                        {{
+                          domainFromUrl(
+                            item.message.content.context_info.external_ad_reply
+                              .source_url || ''
+                          )
+                        }}
+                      </a>
+                    </div>
+
+                    <ChatOfficialMessageCard
+                      v-if="shouldShowOfficialDisplayCard(item.message)"
+                      :message="item.message"
+                      :is-outgoing="!isTypeUser(item.message)"
+                    />
+
+                    <ChatButtonMessageCard
+                      v-if="shouldShowButtonMessageCard(item.message)"
+                      :buttons="item.message.content?.buttons ?? null"
+                      :is-outgoing="!isTypeUser(item.message)"
+                    />
+
+                    <div
+                      v-if="
+                        item.message.content?.type === EMessageType.view_once
+                      "
+                      class="view-once-message"
+                    >
+                      <VIcon size="20" class="mr-2">tabler-eye-off</VIcon>
+                      <p
+                        class="mb-0 text-sm"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        {{ t('view_once_message') }}
+                      </p>
+                    </div>
+
+                    <div
+                      v-if="hasImageGallery(item.message)"
+                      :class="[
+                        'image-gallery-bubble',
+                        !isTypeUser(item.message)
+                          ? 'image-gallery-bubble--right'
+                          : 'image-gallery-bubble--left',
+                        { 'is-deleted': item.message.deleted },
+                      ]"
+                      @click="handleOpenImageGallery(item.message, 0)"
+                    >
+                      <div
+                        :class="[
+                          'image-gallery-grid',
+                          getImageGalleryGridClass(item.message),
+                        ]"
+                      >
+                        <div
+                          v-for="(
+                            galleryItem, galleryIndex
+                          ) in getImageGalleryPreviewItems(item.message)"
+                          :key="`${galleryItem.message.message_id}-${galleryIndex}`"
+                          class="image-gallery-tile"
+                          @click.stop="
+                            handleOpenImageGallery(item.message, galleryIndex)
+                          "
+                        >
+                          <VImg
+                            :src="galleryItem.src"
+                            class="image-gallery-thumb"
+                            cover
+                          />
+                          <div
+                            v-if="
+                              galleryIndex === 3 &&
+                              getImageGalleryRemainingCount(item.message) > 0
+                            "
+                            class="image-gallery-more"
+                          >
+                            +{{ getImageGalleryRemainingCount(item.message) }}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-
-                  <div
-                    v-else-if="
-                      item.message.content?.type === EMessageType.image &&
-                      item.message.content?.image?.url
-                    "
-                    :class="[
-                      'image-bubble',
-                      !isTypeUser(item.message)
-                        ? 'image-bubble--right'
-                        : 'image-bubble--left',
-                      { 'is-deleted': item.message.deleted },
-                    ]"
-                    @click="handleOpenImage(item.message)"
-                  >
-                    <VImg
-                      :src="item.message.content.image.url"
-                      :aspect-ratio="
-                        item.message.content.image.width &&
-                        item.message.content.image.height
-                          ? item.message.content.image.width /
-                            item.message.content.image.height
-                          : undefined
-                      "
-                      class="image-thumb"
-                      width="120"
-                      cover
-                    />
 
                     <div
-                      v-if="
-                        item.message.content.image.caption ||
-                        item.message.content?.pin
-                      "
-                      class="d-flex align-center mt-2"
-                    >
-                      <p
-                        v-if="item.message.content.image.caption"
-                        class="image-caption mb-0"
-                        :class="{
-                          'mr-2': item.message.content?.pin,
-                        }"
-                        :style="{
-                          color: isTypeUser(item.message)
-                            ? 'rgb(var(--v-theme-on-surface))'
-                            : 'rgb(var(--v-theme-title))',
-                        }"
-                      >
-                        <span
-                          v-html="
-                            formatWhatsAppText(
-                              item.message.content.image.caption
-                            )
-                          "
-                        ></span>
-                      </p>
-                      <VIcon
-                        v-if="item.message.content?.pin"
-                        size="16"
-                        color="grey-600"
-                        class="pin-icon"
-                      >
-                        tabler-pin
-                      </VIcon>
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="
-                      item.message.content?.type === EMessageType.video &&
-                      item.message.content?.video?.url &&
-                      !isVideoNoteMessage(item.message)
-                    "
-                    :class="[
-                      'video-bubble',
-                      !isTypeUser(item.message)
-                        ? 'video-bubble--right'
-                        : 'video-bubble--left',
-                      { 'is-deleted': item.message.deleted },
-                    ]"
-                    @click="handleOpenVideo(item.message)"
-                  >
-                    <div class="video-thumb-wrapper">
-                      <video
-                        :src="item.message.content.video.url"
-                        class="video-thumb"
-                        preload="metadata"
-                        muted
-                        playsinline
-                      >
-                        <track kind="captions" />
-                      </video>
-                      <div class="video-play-overlay">
-                        <VIcon size="28">tabler-player-play</VIcon>
-                      </div>
-                    </div>
-                    <div class="video-details">
-                      <span class="video-meta text-caption text-disabled">
-                        {{ resolveVideoMeta(item.message.content.video) }}
-                      </span>
-                    </div>
-                    <div
-                      v-if="
-                        item.message.content.video.caption ||
-                        item.message.content?.pin
-                      "
-                      class="d-flex align-center mt-2"
-                    >
-                      <p
-                        v-if="item.message.content.video.caption"
-                        class="video-caption mb-0"
-                        :class="{
-                          'mr-2': item.message.content?.pin,
-                        }"
-                        :style="{
-                          color: isTypeUser(item.message)
-                            ? 'rgb(var(--v-theme-on-surface))'
-                            : 'rgb(var(--v-theme-title))',
-                        }"
-                      >
-                        <span
-                          v-html="
-                            formatWhatsAppText(
-                              item.message.content.video.caption
-                            )
-                          "
-                        ></span>
-                      </p>
-                      <VIcon
-                        v-if="item.message.content?.pin"
-                        size="16"
-                        color="grey-600"
-                        class="pin-icon"
-                      >
-                        tabler-pin
-                      </VIcon>
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="
-                      item.message.content?.video?.url &&
-                      isVideoNoteMessage(item.message)
-                    "
-                    :class="[
-                      'video-note-bubble',
-                      !isTypeUser(item.message)
-                        ? 'video-note-bubble--right'
-                        : 'video-note-bubble--left',
-                      { 'is-deleted': item.message.deleted },
-                    ]"
-                    @click="handleOpenVideo(item.message)"
-                  >
-                    <div class="video-note-thumb-wrapper">
-                      <video
-                        :src="item.message.content.video.url"
-                        class="video-note-thumb"
-                        preload="metadata"
-                        muted
-                        playsinline
-                      >
-                        <track kind="captions" />
-                      </video>
-                      <div class="video-play-overlay video-note-play-overlay">
-                        <VIcon size="28">tabler-player-play</VIcon>
-                      </div>
-                    </div>
-                    <div class="video-note-details">
-                      <span class="video-meta text-caption text-disabled">
-                        {{ resolveVideoNoteMeta(item.message.content.video) }}
-                      </span>
-                    </div>
-                    <div
-                      v-if="
-                        item.message.content.video.caption ||
-                        item.message.content?.pin
-                      "
-                      class="d-flex align-center mt-2"
-                    >
-                      <p
-                        v-if="item.message.content.video.caption"
-                        class="video-caption mb-0"
-                        :class="{
-                          'mr-2': item.message.content?.pin,
-                        }"
-                        :style="{
-                          color: isTypeUser(item.message)
-                            ? 'rgb(var(--v-theme-on-surface))'
-                            : 'rgb(var(--v-theme-title))',
-                        }"
-                      >
-                        <span
-                          v-html="
-                            formatWhatsAppText(
-                              item.message.content.video.caption
-                            )
-                          "
-                        ></span>
-                      </p>
-                      <VIcon
-                        v-if="item.message.content?.pin"
-                        size="16"
-                        color="grey-600"
-                        class="pin-icon"
-                      >
-                        tabler-pin
-                      </VIcon>
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="
-                      item.message.content?.type === EMessageType.sticker &&
-                      item.message.content?.sticker?.url
-                    "
-                    :class="[
-                      'sticker-bubble',
-                      !isTypeUser(item.message)
-                        ? 'sticker-bubble--right'
-                        : 'sticker-bubble--left',
-                      { 'is-deleted': item.message.deleted },
-                    ]"
-                    @click="handleOpenImage(item.message)"
-                  >
-                    <LottieSticker
-                      v-if="isLottieSticker(item.message.content.sticker)"
-                      :src="item.message.content.sticker.url"
-                      class="sticker-lottie"
-                    />
-                    <img
                       v-else-if="
-                        isRenderableSticker(item.message.content.sticker)
-                      "
-                      :src="item.message.content.sticker.url"
-                      :alt="
-                        item.message.content.sticker.is_animated
-                          ? 'Sticker animado'
-                          : 'Sticker'
+                        item.message.content?.type === EMessageType.image &&
+                        item.message.content?.image?.url
                       "
                       :class="[
-                        'sticker-thumb',
-                        item.message.content.sticker.is_animated
-                          ? 'sticker-thumb--animated'
-                          : '',
+                        'image-bubble',
+                        !isTypeUser(item.message)
+                          ? 'image-bubble--right'
+                          : 'image-bubble--left',
+                        { 'is-deleted': item.message.deleted },
                       ]"
-                      style="
-                        max-width: 100px;
-                        max-height: 100px;
-                        object-fit: contain;
-                      "
-                    />
-                    <div v-else class="sticker-fallback">
-                      <VIcon size="22">tabler-file-description</VIcon>
-                      <span>{{ t('sticker_label') }}</span>
-                    </div>
-                  </div>
+                      @click="handleOpenImage(item.message)"
+                    >
+                      <VImg
+                        :src="item.message.content.image.url"
+                        :aspect-ratio="
+                          item.message.content.image.width &&
+                          item.message.content.image.height
+                            ? item.message.content.image.width /
+                              item.message.content.image.height
+                            : undefined
+                        "
+                        class="image-thumb"
+                        width="120"
+                        cover
+                      />
 
-                  <div
-                    v-if="
-                      item.message.content?.type === EMessageType.location &&
-                      item.message.content?.location?.latitude &&
-                      item.message.content?.location?.longitude
-                    "
-                    :class="[
-                      'location-bubble',
-                      !isTypeUser(item.message)
-                        ? 'location-bubble--right'
-                        : 'location-bubble--left',
-                      { 'is-deleted': item.message.deleted },
-                    ]"
-                    @click="handleOpenLocation(item.message)"
-                  >
-                    <div class="location-map-preview">
                       <div
                         v-if="
-                          !webGLSupported || mapErrors[item.message.message_id]
+                          item.message.content.image.caption ||
+                          item.message.content?.pin
                         "
-                        class="location-map-fallback"
+                        class="d-flex align-center mt-2"
                       >
-                        <VIcon size="32" color="primary">tabler-map-pin</VIcon>
-                        <span class="text-caption mt-2">
-                          {{
-                            t('location_map_unavailable', 'Mapa indisponível')
-                          }}
+                        <p
+                          v-if="item.message.content.image.caption"
+                          class="image-caption mb-0"
+                          :class="{
+                            'mr-2': item.message.content?.pin,
+                          }"
+                          :style="{
+                            color: isTypeUser(item.message)
+                              ? 'rgb(var(--v-theme-on-surface))'
+                              : 'rgb(var(--v-theme-title))',
+                          }"
+                        >
+                          <span
+                            v-html="
+                              formatWhatsAppText(
+                                item.message.content.image.caption
+                              )
+                            "
+                          ></span>
+                        </p>
+                        <VIcon
+                          v-if="item.message.content?.pin"
+                          size="16"
+                          color="grey-600"
+                          class="pin-icon"
+                        >
+                          tabler-pin
+                        </VIcon>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="
+                        item.message.content?.type === EMessageType.video &&
+                        item.message.content?.video?.url &&
+                        !isVideoNoteMessage(item.message)
+                      "
+                      :class="[
+                        'video-bubble',
+                        !isTypeUser(item.message)
+                          ? 'video-bubble--right'
+                          : 'video-bubble--left',
+                        { 'is-deleted': item.message.deleted },
+                      ]"
+                      @click="handleOpenVideo(item.message)"
+                    >
+                      <div class="video-thumb-wrapper">
+                        <video
+                          :src="item.message.content.video.url"
+                          class="video-thumb"
+                          preload="metadata"
+                          muted
+                          playsinline
+                        >
+                          <track kind="captions" />
+                        </video>
+                        <div class="video-play-overlay">
+                          <VIcon size="28">tabler-player-play</VIcon>
+                        </div>
+                      </div>
+                      <div class="video-details">
+                        <span class="video-meta text-caption text-disabled">
+                          {{ resolveVideoMeta(item.message.content.video) }}
                         </span>
                       </div>
-                      <MglMap
-                        v-else
-                        :key="`map-${item.message.message_id}`"
-                        :map-style="mapStyle"
-                        :center="[
-                          item.message.content.location.longitude,
-                          item.message.content.location.latitude,
-                        ]"
-                        :zoom="15"
-                        :interactive="false"
-                        :attribution-control="false"
-                        :navigation-control="false"
-                        class="location-map-preview-map"
-                        :style="{ width: '100%', height: '112px' }"
+                      <div
+                        v-if="
+                          item.message.content.video.caption ||
+                          item.message.content?.pin
+                        "
+                        class="d-flex align-center mt-2"
                       >
-                        <MglMarker
-                          :coordinates="[
+                        <p
+                          v-if="item.message.content.video.caption"
+                          class="video-caption mb-0"
+                          :class="{
+                            'mr-2': item.message.content?.pin,
+                          }"
+                          :style="{
+                            color: isTypeUser(item.message)
+                              ? 'rgb(var(--v-theme-on-surface))'
+                              : 'rgb(var(--v-theme-title))',
+                          }"
+                        >
+                          <span
+                            v-html="
+                              formatWhatsAppText(
+                                item.message.content.video.caption
+                              )
+                            "
+                          ></span>
+                        </p>
+                        <VIcon
+                          v-if="item.message.content?.pin"
+                          size="16"
+                          color="grey-600"
+                          class="pin-icon"
+                        >
+                          tabler-pin
+                        </VIcon>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="
+                        item.message.content?.video?.url &&
+                        isVideoNoteMessage(item.message)
+                      "
+                      :class="[
+                        'video-note-bubble',
+                        !isTypeUser(item.message)
+                          ? 'video-note-bubble--right'
+                          : 'video-note-bubble--left',
+                        { 'is-deleted': item.message.deleted },
+                      ]"
+                      @click="handleOpenVideo(item.message)"
+                    >
+                      <div class="video-note-thumb-wrapper">
+                        <video
+                          :src="item.message.content.video.url"
+                          class="video-note-thumb"
+                          preload="metadata"
+                          muted
+                          playsinline
+                        >
+                          <track kind="captions" />
+                        </video>
+                        <div class="video-play-overlay video-note-play-overlay">
+                          <VIcon size="28">tabler-player-play</VIcon>
+                        </div>
+                      </div>
+                      <div class="video-note-details">
+                        <span class="video-meta text-caption text-disabled">
+                          {{ resolveVideoNoteMeta(item.message.content.video) }}
+                        </span>
+                      </div>
+                      <div
+                        v-if="
+                          item.message.content.video.caption ||
+                          item.message.content?.pin
+                        "
+                        class="d-flex align-center mt-2"
+                      >
+                        <p
+                          v-if="item.message.content.video.caption"
+                          class="video-caption mb-0"
+                          :class="{
+                            'mr-2': item.message.content?.pin,
+                          }"
+                          :style="{
+                            color: isTypeUser(item.message)
+                              ? 'rgb(var(--v-theme-on-surface))'
+                              : 'rgb(var(--v-theme-title))',
+                          }"
+                        >
+                          <span
+                            v-html="
+                              formatWhatsAppText(
+                                item.message.content.video.caption
+                              )
+                            "
+                          ></span>
+                        </p>
+                        <VIcon
+                          v-if="item.message.content?.pin"
+                          size="16"
+                          color="grey-600"
+                          class="pin-icon"
+                        >
+                          tabler-pin
+                        </VIcon>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="
+                        item.message.content?.type === EMessageType.sticker &&
+                        item.message.content?.sticker?.url
+                      "
+                      :class="[
+                        'sticker-bubble',
+                        !isTypeUser(item.message)
+                          ? 'sticker-bubble--right'
+                          : 'sticker-bubble--left',
+                        { 'is-deleted': item.message.deleted },
+                      ]"
+                      @click="handleOpenImage(item.message)"
+                    >
+                      <LottieSticker
+                        v-if="isLottieSticker(item.message.content.sticker)"
+                        :src="item.message.content.sticker.url"
+                        class="sticker-lottie"
+                      />
+                      <img
+                        v-else-if="
+                          isRenderableSticker(item.message.content.sticker)
+                        "
+                        :src="item.message.content.sticker.url"
+                        :alt="
+                          item.message.content.sticker.is_animated
+                            ? 'Sticker animado'
+                            : 'Sticker'
+                        "
+                        :class="[
+                          'sticker-thumb',
+                          item.message.content.sticker.is_animated
+                            ? 'sticker-thumb--animated'
+                            : '',
+                        ]"
+                        style="
+                          max-width: 100px;
+                          max-height: 100px;
+                          object-fit: contain;
+                        "
+                      />
+                      <div v-else class="sticker-fallback">
+                        <VIcon size="22">tabler-file-description</VIcon>
+                        <span>{{ t('sticker_label') }}</span>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="
+                        item.message.content?.type === EMessageType.location &&
+                        item.message.content?.location?.latitude &&
+                        item.message.content?.location?.longitude
+                      "
+                      :class="[
+                        'location-bubble',
+                        !isTypeUser(item.message)
+                          ? 'location-bubble--right'
+                          : 'location-bubble--left',
+                        { 'is-deleted': item.message.deleted },
+                      ]"
+                      @click="handleOpenLocation(item.message)"
+                    >
+                      <div class="location-map-preview">
+                        <div
+                          v-if="
+                            !webGLSupported ||
+                            mapErrors[item.message.message_id]
+                          "
+                          class="location-map-fallback"
+                        >
+                          <VIcon size="32" color="primary"
+                            >tabler-map-pin</VIcon
+                          >
+                          <span class="text-caption mt-2">
+                            {{
+                              t('location_map_unavailable', 'Mapa indisponível')
+                            }}
+                          </span>
+                        </div>
+                        <MglMap
+                          v-else
+                          :key="`map-${item.message.message_id}`"
+                          :map-style="mapStyle"
+                          :center="[
                             item.message.content.location.longitude,
                             item.message.content.location.latitude,
                           ]"
-                          color="#ef4444"
-                        />
-                      </MglMap>
-                    </div>
-                    <div class="location-info">
-                      <div
-                        v-if="item.message.content.location.name"
-                        class="location-name"
-                        :style="{
-                          color: isTypeUser(item.message)
-                            ? 'rgb(var(--v-theme-on-surface))'
-                            : 'rgb(var(--v-theme-title))',
-                        }"
-                      >
-                        {{ item.message.content.location.name }}
-                      </div>
-                      <div
-                        v-if="item.message.content.location.address"
-                        class="location-address text-caption"
-                        :style="{
-                          color: isTypeUser(item.message)
-                            ? 'rgba(var(--v-theme-on-surface), 0.7)'
-                            : 'rgba(var(--v-theme-title), 0.7)',
-                        }"
-                      >
-                        {{ item.message.content.location.address }}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="
-                      item.message.content?.type ===
-                        EMessageType.contact_card &&
-                      item.message.content?.contact
-                    "
-                    :class="[
-                      'contact-bubble',
-                      !isTypeUser(item.message)
-                        ? 'contact-bubble--right'
-                        : 'contact-bubble--left',
-                      { 'is-deleted': item.message.deleted },
-                    ]"
-                  >
-                    <GroupContactMessageCard
-                      :title="item.message.content.contact.name || ''"
-                      :subtitle="
-                        formatContactCardSubtitle(item.message.content.contact)
-                      "
-                      :time="
-                        formatDate(item.message.date, {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                          hour12: false,
-                        })
-                      "
-                      :seen="!!item.message.summary?.is_seen"
-                      :align="isTypeUser(item.message) ? 'left' : 'right'"
-                      :is-group="false"
-                      :photo="item.message.content.contact.photo"
-                      @toggle="handleContactClick(item.message)"
-                      @view-all="handleContactClick(item.message)"
-                    />
-                  </div>
-
-                  <div
-                    v-if="
-                      item.message.content?.type === EMessageType.contacts &&
-                      item.message.content?.contacts &&
-                      item.message.content.contacts.length > 0
-                    "
-                    :class="[
-                      'contact-bubble',
-                      !isTypeUser(item.message)
-                        ? 'contact-bubble--right'
-                        : 'contact-bubble--left',
-                      { 'is-deleted': item.message.deleted },
-                    ]"
-                  >
-                    <GroupContactMessageCard
-                      :title="`${item.message.content.contacts[0].name}${
-                        item.message.content.contacts.length > 1
-                          ? ` e ${item.message.content.contacts.length - 1}`
-                          : ''
-                      }${
-                        item.message.content.contacts.length > 1
-                          ? ' outro contato'
-                          : ''
-                      }`"
-                      :time="
-                        formatDate(item.message.date, {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                          hour12: false,
-                        })
-                      "
-                      :seen="!!item.message.summary?.is_seen"
-                      :align="isTypeUser(item.message) ? 'left' : 'right'"
-                      :is-group="true"
-                      @toggle="handleContactsGroupClick(item.message)"
-                      @view-all="handleContactsGroupClick(item.message)"
-                    />
-                  </div>
-
-                  <div
-                    v-if="
-                      getLatestMessageText(item.message) &&
-                      !shouldSuppressOfficialTextMessage(item.message) &&
-                      !shouldShowButtonMessageCard(item.message) &&
-                      item.message.content?.type !== EMessageType.image &&
-                      (item.message.content?.type !== EMessageType.video_note ||
-                        !item.message.content?.video?.url) &&
-                      (item.message.content?.type !== EMessageType.video ||
-                        !item.message.content?.video?.url) &&
-                      item.message.content?.type !== EMessageType.document &&
-                      item.message.content?.type !==
-                        EMessageType.contact_card &&
-                      item.message.content?.type !== EMessageType.contacts &&
-                      item.message.content?.type !== EMessageType.audio &&
-                      !item.message.message_key?.is_view_once
-                    "
-                    :class="
-                      item.message.content?.ephemeral ||
-                      isClosureReasonAnnotation(item.message) ||
-                      isClosureAuditAnnotation(item.message)
-                        ? 'd-flex flex-column'
-                        : 'd-flex align-center'
-                    "
-                  >
-                    <div
-                      v-if="isClosureReasonAnnotation(item.message)"
-                      class="closure-reason-label"
-                    >
-                      {{ t('closure_reason_message_label') }}
-                    </div>
-                    <div
-                      v-if="isClosureAuditAnnotation(item.message)"
-                      class="closure-audit-label"
-                    >
-                      {{ t('closure_audit_message_label') }}
-                    </div>
-                    <div class="d-flex align-center">
-                      <VIcon
-                        v-if="item.message.content?.ephemeral"
-                        size="20"
-                        color="grey-600"
-                        class="mr-2"
-                      >
-                        tabler-clock
-                      </VIcon>
-                      <p
-                        v-if="shouldFormatMessage(item.message)"
-                        class="mr-6 text-base message-text mb-0"
-                        :class="{
-                          'button-reply-message-text': isButtonReplyMessage(
-                            item.message
-                          ),
-                          'mb-2':
-                            !item.message.content?.ephemeral &&
-                            !hasMessageVersions(item.message) &&
-                            !item.message.deleted,
-                          'mb-6':
-                            !item.message.content?.ephemeral &&
-                            (hasMessageVersions(item.message) ||
-                              item.message.deleted),
-                          'mr-2': item.message.content?.pin,
-                        }"
-                        :style="{
-                          color: isTypeUser(item.message)
-                            ? 'rgb(var(--v-theme-on-surface))'
-                            : 'rgb(var(--v-theme-title))',
-                        }"
-                        v-html="
-                          formatWhatsAppText(getLatestMessageText(item.message))
-                        "
-                      ></p>
-                      <p
-                        v-else
-                        class="mr-6 text-base message-text mb-0"
-                        :class="{
-                          'button-reply-message-text': isButtonReplyMessage(
-                            item.message
-                          ),
-                          'mb-2':
-                            !item.message.content?.ephemeral &&
-                            !hasMessageVersions(item.message) &&
-                            !item.message.deleted,
-                          'mb-6':
-                            !item.message.content?.ephemeral &&
-                            (hasMessageVersions(item.message) ||
-                              item.message.deleted),
-                          'mr-2': item.message.content?.pin,
-                        }"
-                        :style="{
-                          color: isTypeUser(item.message)
-                            ? 'rgb(var(--v-theme-on-surface))'
-                            : 'rgb(var(--v-theme-title))',
-                        }"
-                      >
-                        {{ getLatestMessageText(item.message) }}
-                      </p>
-                      <VIcon
-                        v-if="
-                          item.message.content?.pin &&
-                          !item.message.content?.ephemeral &&
-                          item.message.content?.message?.trim()
-                        "
-                        size="16"
-                        color="grey-600"
-                        class="pin-icon"
-                      >
-                        tabler-pin
-                      </VIcon>
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="
-                      item.message.content?.type === EMessageType.document &&
-                      item.message.content?.document?.url
-                    "
-                    :class="[
-                      'document-bubble',
-                      !isTypeUser(item.message)
-                        ? 'document-bubble--right'
-                        : 'document-bubble--left',
-                      { 'is-deleted': item.message.deleted },
-                    ]"
-                  >
-                    <div class="document-icon">
-                      <VIcon
-                        :icon="
-                          resolveDocumentIcon(item.message.content?.document)
-                        "
-                        size="30"
-                        color="primary"
-                      />
-                    </div>
-                    <div class="document-details">
-                      <VTooltip location="bottom">
-                        <template #activator="{ props }">
-                          <a
-                            v-bind="props"
-                            class="document-name"
-                            :href="item.message.content.document.url"
-                            :download="
-                              documentDownloadName(
-                                item.message.content.document
-                              )
-                            "
-                            target="_blank"
-                            rel="noopener"
-                          >
-                            {{
-                              truncateDocumentName(
-                                item.message.content.document.name
-                              )
-                            }}
-                          </a>
-                        </template>
-                        <span>{{ item.message.content.document.name }}</span>
-                      </VTooltip>
-
-                      <span class="document-meta text-caption text-disabled">
-                        {{ resolveDocumentMeta(item.message.content.document) }}
-                      </span>
-                    </div>
-                    <a
-                      class="document-download"
-                      :href="item.message.content.document.url"
-                      :download="
-                        documentDownloadName(item.message.content.document)
-                      "
-                      target="_blank"
-                      rel="noopener"
-                    >
-                      <VIcon size="22">tabler-download</VIcon>
-                    </a>
-                  </div>
-
-                  <div
-                    v-if="
-                      item.message.content?.type === EMessageType.document &&
-                      (item.message.content?.message ||
-                        item.message.content?.pin)
-                    "
-                    class="d-flex align-center mt-2"
-                  >
-                    <p
-                      v-if="item.message.content?.message"
-                      class="chat-text mb-0"
-                      :class="{
-                        'mr-2': item.message.content?.pin,
-                      }"
-                      v-html="formatWhatsAppText(item.message.content.message)"
-                    />
-                    <VIcon
-                      v-if="item.message.content?.pin"
-                      size="16"
-                      color="grey-600"
-                      class="pin-icon"
-                    >
-                      tabler-pin
-                    </VIcon>
-                  </div>
-
-                  <div
-                    v-if="
-                      item.message.content?.type === EMessageType.audio &&
-                      item.message.content?.audio?.url
-                    "
-                    :class="[
-                      'audio-bubble',
-                      !isTypeUser(item.message)
-                        ? 'audio-bubble--right'
-                        : 'audio-bubble--left',
-                      { 'is-deleted': item.message.deleted },
-                    ]"
-                  >
-                    <div class="audio-player-container">
-                      <button
-                        class="audio-speed-btn"
-                        @click.stop="toggleAudioSpeed(item.message.message_id)"
-                      >
-                        {{ getAudioSpeedLabel(item.message.message_id) }}
-                      </button>
-                      <VBtn
-                        icon
-                        size="36"
-                        variant="text"
-                        class="audio-play-btn"
-                        @click="
-                          toggleAudioPlay(
-                            item.message.message_id,
-                            item.message.content.audio.url
-                          )
-                        "
-                      >
-                        <VIcon size="18">
-                          {{
-                            isAudioPlaying(item.message.message_id)
-                              ? 'tabler-player-pause'
-                              : 'tabler-player-play'
-                          }}
-                        </VIcon>
-                      </VBtn>
-
-                      <div
-                        class="audio-waveform-container"
-                        @click="
-                          seekAudio(
-                            item.message.message_id,
-                            item.message.content.audio.url,
-                            $event
-                          )
-                        "
-                      >
-                        <template
-                          v-if="
-                            (() => {
-                              const waveform =
-                                audioWaveforms[item.message.message_id];
-                              return (
-                                waveform &&
-                                Array.isArray(waveform) &&
-                                waveform.length > 0
-                              );
-                            })()
-                          "
+                          :zoom="15"
+                          :interactive="false"
+                          :attribution-control="false"
+                          :navigation-control="false"
+                          class="location-map-preview-map"
+                          :style="{ width: '100%', height: '112px' }"
                         >
-                          <div class="audio-waveform">
-                            <div
-                              v-for="(barValue, index) in audioWaveforms[
-                                item.message.message_id
-                              ]"
-                              :key="`${item.message.message_id}-${index}`"
-                              class="audio-waveform-bar"
-                              :class="{
-                                'audio-waveform-bar--active':
-                                  getAudioProgress(item.message.message_id) >
-                                  (index /
-                                    (audioWaveforms[item.message.message_id]
-                                      ?.length || 80)) *
-                                    100,
-                              }"
-                              :style="{
-                                height: `${Math.max(2, barValue * 100)}%`,
-                              }"
-                            ></div>
-                          </div>
-                          <div
-                            class="audio-progress-indicator"
-                            :style="{
-                              left: `${getAudioProgress(item.message.message_id)}%`,
-                            }"
-                          ></div>
-                        </template>
-                        <div v-else class="audio-waveform-placeholder">
-                          <div
-                            v-for="i in 80"
-                            :key="`placeholder-${item.message.message_id}-${i}`"
-                            class="audio-waveform-bar-placeholder"
-                          ></div>
+                          <MglMarker
+                            :coordinates="[
+                              item.message.content.location.longitude,
+                              item.message.content.location.latitude,
+                            ]"
+                            color="#ef4444"
+                          />
+                        </MglMap>
+                      </div>
+                      <div class="location-info">
+                        <div
+                          v-if="item.message.content.location.name"
+                          class="location-name"
+                          :style="{
+                            color: isTypeUser(item.message)
+                              ? 'rgb(var(--v-theme-on-surface))'
+                              : 'rgb(var(--v-theme-title))',
+                          }"
+                        >
+                          {{ item.message.content.location.name }}
+                        </div>
+                        <div
+                          v-if="item.message.content.location.address"
+                          class="location-address text-caption"
+                          :style="{
+                            color: isTypeUser(item.message)
+                              ? 'rgba(var(--v-theme-on-surface), 0.7)'
+                              : 'rgba(var(--v-theme-title), 0.7)',
+                          }"
+                        >
+                          {{ item.message.content.location.address }}
                         </div>
                       </div>
                     </div>
 
                     <div
                       v-if="
-                        item.message.content?.message ||
-                        item.message.content?.pin
+                        item.message.content?.type ===
+                          EMessageType.contact_card &&
+                        item.message.content?.contact
                       "
-                      class="d-flex align-center mt-2"
+                      :class="[
+                        'contact-bubble',
+                        !isTypeUser(item.message)
+                          ? 'contact-bubble--right'
+                          : 'contact-bubble--left',
+                        { 'is-deleted': item.message.deleted },
+                      ]"
                     >
-                      <p
-                        v-if="item.message.content?.message"
-                        class="audio-caption mb-0"
-                        :class="{
-                          'mr-2': item.message.content?.pin,
-                        }"
-                        :style="{
-                          color: isTypeUser(item.message)
-                            ? 'rgb(var(--v-theme-on-surface))'
-                            : 'rgb(var(--v-theme-title))',
-                        }"
+                      <GroupContactMessageCard
+                        :title="item.message.content.contact.name || ''"
+                        :subtitle="
+                          formatContactCardSubtitle(
+                            item.message.content.contact
+                          )
+                        "
+                        :time="
+                          formatDate(item.message.date, {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false,
+                          })
+                        "
+                        :seen="!!item.message.summary?.is_seen"
+                        :align="isTypeUser(item.message) ? 'left' : 'right'"
+                        :is-group="false"
+                        :photo="item.message.content.contact.photo"
+                        @toggle="handleContactClick(item.message)"
+                        @view-all="handleContactClick(item.message)"
+                      />
+                    </div>
+
+                    <div
+                      v-if="
+                        item.message.content?.type === EMessageType.contacts &&
+                        item.message.content?.contacts &&
+                        item.message.content.contacts.length > 0
+                      "
+                      :class="[
+                        'contact-bubble',
+                        !isTypeUser(item.message)
+                          ? 'contact-bubble--right'
+                          : 'contact-bubble--left',
+                        { 'is-deleted': item.message.deleted },
+                      ]"
+                    >
+                      <GroupContactMessageCard
+                        :title="`${item.message.content.contacts[0].name}${
+                          item.message.content.contacts.length > 1
+                            ? ` e ${item.message.content.contacts.length - 1}`
+                            : ''
+                        }${
+                          item.message.content.contacts.length > 1
+                            ? ' outro contato'
+                            : ''
+                        }`"
+                        :time="
+                          formatDate(item.message.date, {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false,
+                          })
+                        "
+                        :seen="!!item.message.summary?.is_seen"
+                        :align="isTypeUser(item.message) ? 'left' : 'right'"
+                        :is-group="true"
+                        @toggle="handleContactsGroupClick(item.message)"
+                        @view-all="handleContactsGroupClick(item.message)"
+                      />
+                    </div>
+
+                    <div
+                      v-if="
+                        getLatestMessageText(item.message) &&
+                        !shouldSuppressOfficialTextMessage(item.message) &&
+                        !shouldShowButtonMessageCard(item.message) &&
+                        item.message.content?.type !== EMessageType.image &&
+                        (item.message.content?.type !==
+                          EMessageType.video_note ||
+                          !item.message.content?.video?.url) &&
+                        (item.message.content?.type !== EMessageType.video ||
+                          !item.message.content?.video?.url) &&
+                        item.message.content?.type !== EMessageType.document &&
+                        item.message.content?.type !==
+                          EMessageType.contact_card &&
+                        item.message.content?.type !== EMessageType.contacts &&
+                        item.message.content?.type !== EMessageType.audio &&
+                        !item.message.message_key?.is_view_once
+                      "
+                      :class="
+                        item.message.content?.ephemeral ||
+                        isClosureReasonAnnotation(item.message) ||
+                        isClosureAuditAnnotation(item.message)
+                          ? 'd-flex flex-column'
+                          : 'd-flex align-center'
+                      "
+                    >
+                      <div
+                        v-if="isClosureReasonAnnotation(item.message)"
+                        class="closure-reason-label"
                       >
-                        <span
+                        {{ t('closure_reason_message_label') }}
+                      </div>
+                      <div
+                        v-if="isClosureAuditAnnotation(item.message)"
+                        class="closure-audit-label"
+                      >
+                        {{ t('closure_audit_message_label') }}
+                      </div>
+                      <div class="d-flex align-center">
+                        <VIcon
+                          v-if="item.message.content?.ephemeral"
+                          size="20"
+                          color="grey-600"
+                          class="mr-2"
+                        >
+                          tabler-clock
+                        </VIcon>
+                        <p
                           v-if="shouldFormatMessage(item.message)"
+                          class="mr-6 text-base message-text mb-0"
+                          :class="{
+                            'button-reply-message-text': isButtonReplyMessage(
+                              item.message
+                            ),
+                            'mb-2':
+                              !item.message.content?.ephemeral &&
+                              !hasMessageVersions(item.message) &&
+                              !item.message.deleted,
+                            'mb-6':
+                              !item.message.content?.ephemeral &&
+                              (hasMessageVersions(item.message) ||
+                                item.message.deleted),
+                            'mr-2': item.message.content?.pin,
+                          }"
+                          :style="{
+                            color: isTypeUser(item.message)
+                              ? 'rgb(var(--v-theme-on-surface))'
+                              : 'rgb(var(--v-theme-title))',
+                          }"
                           v-html="
                             formatWhatsAppText(
                               getLatestMessageText(item.message)
                             )
                           "
-                        ></span>
-                        <span v-else>{{
-                          getLatestMessageText(item.message)
-                        }}</span>
-                      </p>
+                        ></p>
+                        <p
+                          v-else
+                          class="mr-6 text-base message-text mb-0"
+                          :class="{
+                            'button-reply-message-text': isButtonReplyMessage(
+                              item.message
+                            ),
+                            'mb-2':
+                              !item.message.content?.ephemeral &&
+                              !hasMessageVersions(item.message) &&
+                              !item.message.deleted,
+                            'mb-6':
+                              !item.message.content?.ephemeral &&
+                              (hasMessageVersions(item.message) ||
+                                item.message.deleted),
+                            'mr-2': item.message.content?.pin,
+                          }"
+                          :style="{
+                            color: isTypeUser(item.message)
+                              ? 'rgb(var(--v-theme-on-surface))'
+                              : 'rgb(var(--v-theme-title))',
+                          }"
+                        >
+                          {{ getLatestMessageText(item.message) }}
+                        </p>
+                        <VIcon
+                          v-if="
+                            item.message.content?.pin &&
+                            !item.message.content?.ephemeral &&
+                            item.message.content?.message?.trim()
+                          "
+                          size="16"
+                          color="grey-600"
+                          class="pin-icon"
+                        >
+                          tabler-pin
+                        </VIcon>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="
+                        item.message.content?.type === EMessageType.document &&
+                        item.message.content?.document?.url
+                      "
+                      :class="[
+                        'document-bubble',
+                        !isTypeUser(item.message)
+                          ? 'document-bubble--right'
+                          : 'document-bubble--left',
+                        { 'is-deleted': item.message.deleted },
+                      ]"
+                    >
+                      <div class="document-icon">
+                        <VIcon
+                          :icon="
+                            resolveDocumentIcon(item.message.content?.document)
+                          "
+                          size="30"
+                          color="primary"
+                        />
+                      </div>
+                      <div class="document-details">
+                        <VTooltip location="bottom">
+                          <template #activator="{ props }">
+                            <a
+                              v-bind="props"
+                              class="document-name"
+                              :href="item.message.content.document.url"
+                              :download="
+                                documentDownloadName(
+                                  item.message.content.document
+                                )
+                              "
+                              target="_blank"
+                              rel="noopener"
+                            >
+                              {{
+                                truncateDocumentName(
+                                  item.message.content.document.name
+                                )
+                              }}
+                            </a>
+                          </template>
+                          <span>{{ item.message.content.document.name }}</span>
+                        </VTooltip>
+
+                        <span class="document-meta text-caption text-disabled">
+                          {{
+                            resolveDocumentMeta(item.message.content.document)
+                          }}
+                        </span>
+                      </div>
+                      <a
+                        class="document-download"
+                        :href="item.message.content.document.url"
+                        :download="
+                          documentDownloadName(item.message.content.document)
+                        "
+                        target="_blank"
+                        rel="noopener"
+                      >
+                        <VIcon size="22">tabler-download</VIcon>
+                      </a>
+                    </div>
+
+                    <div
+                      v-if="
+                        item.message.content?.type === EMessageType.document &&
+                        (item.message.content?.message ||
+                          item.message.content?.pin)
+                      "
+                      class="d-flex align-center mt-2"
+                    >
+                      <p
+                        v-if="item.message.content?.message"
+                        class="chat-text mb-0"
+                        :class="{
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        v-html="
+                          formatWhatsAppText(item.message.content.message)
+                        "
+                      />
                       <VIcon
                         v-if="item.message.content?.pin"
                         size="16"
@@ -3206,109 +3145,260 @@ const handleContactClick = (message: ListMessageResult) => {
                         tabler-pin
                       </VIcon>
                     </div>
-                  </div>
 
-                  <div
-                    v-if="
-                      item.message.content?.reactions &&
-                      item.message.content.reactions.length > 0 &&
-                      item.message.content?.type !== EMessageType.annotation
-                    "
-                    :class="[
-                      'reactions-summary',
-                      item.message.content?.type === EMessageType.system
-                        ? 'reactions-summary--center'
-                        : !isTypeUser(item.message)
-                          ? 'reactions-summary--right'
-                          : 'reactions-summary--left',
-                      {
-                        'reactions-summary--contact':
-                          item.message.content?.type ===
-                            EMessageType.contact_card ||
-                          item.message.content?.type === EMessageType.contacts,
-                      },
-                    ]"
-                  >
-                    <div class="reaction-summary-bubble">
-                      <div
-                        v-for="(reaction, idx) in getReactionsSummary(
-                          item.message.content.reactions
-                        )"
-                        :key="idx"
-                        class="reaction-summary-item"
-                      >
-                        <span class="reaction-summary-emoji">
-                          {{ reaction.emoji }}
-                        </span>
-                        <span class="reaction-summary-count">
-                          {{ reaction.count }}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="
-                      item.message.content?.type !==
-                        EMessageType.contact_card &&
-                      item.message.content?.type !== EMessageType.contacts
-                    "
-                    :class="[
-                      'message-meta',
-                      {
-                        'message-meta--audio':
-                          item.message.content?.type === EMessageType.audio &&
-                          item.message.content?.audio?.url,
-                      },
-                    ]"
-                  >
-                    <span
+                    <div
                       v-if="
                         item.message.content?.type === EMessageType.audio &&
-                        item.message.content?.audio?.url
+                        getAudioUrl(item.message)
                       "
-                      class="message-audio-duration"
+                      :class="[
+                        'audio-bubble',
+                        !isTypeUser(item.message)
+                          ? 'audio-bubble--right'
+                          : 'audio-bubble--left',
+                        { 'is-deleted': item.message.deleted },
+                      ]"
                     >
-                      {{
-                        getDisplayTime(
-                          item.message.message_id,
-                          item.message.content.audio.duration
-                        )
-                      }}
-                    </span>
-                    <div class="message-meta-content">
-                      <span
-                        v-if="item.message.deleted"
-                        class="message-deleted-badge"
-                        :title="t('chat_deleted_message_label')"
-                      >
-                        {{ t('chat_deleted_message_label') }}
-                      </span>
-                      <span
-                        v-else-if="hasMessageVersions(item.message)"
-                        class="message-edited-badge"
-                        :title="t('chat_edited')"
-                      >
-                        {{ t('chat_edited') }}
-                      </span>
-                      <div class="message-meta-row">
-                        <span class="message-time">
-                          {{
-                            formatDate(item.message.date, {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                              hour12: false,
-                            })
-                          }}
-                        </span>
-                        <VIcon
-                          v-if="resolveFeedbackIcon(item.message)"
-                          size="16"
-                          :color="resolveFeedbackIcon(item.message)?.color"
+                      <div class="audio-player-container">
+                        <button
+                          class="audio-speed-btn"
+                          @click.stop="
+                            toggleAudioSpeed(item.message.message_id)
+                          "
                         >
-                          {{ resolveFeedbackIcon(item.message)?.icon }}
+                          {{ getAudioSpeedLabel(item.message.message_id) }}
+                        </button>
+                        <VBtn
+                          icon
+                          size="36"
+                          variant="text"
+                          class="audio-play-btn"
+                          @click="
+                            toggleAudioPlay(
+                              item.message.message_id,
+                              getAudioUrl(item.message)
+                            )
+                          "
+                        >
+                          <VIcon size="18">
+                            {{
+                              isAudioPlaying(item.message.message_id)
+                                ? 'tabler-player-pause'
+                                : 'tabler-player-play'
+                            }}
+                          </VIcon>
+                        </VBtn>
+
+                        <div
+                          class="audio-waveform-container"
+                          @click="
+                            seekAudio(
+                              item.message.message_id,
+                              getAudioUrl(item.message),
+                              $event
+                            )
+                          "
+                        >
+                          <template
+                            v-if="
+                              (() => {
+                                const waveform =
+                                  audioWaveforms[item.message.message_id];
+                                return (
+                                  waveform &&
+                                  Array.isArray(waveform) &&
+                                  waveform.length > 0
+                                );
+                              })()
+                            "
+                          >
+                            <div class="audio-waveform">
+                              <div
+                                v-for="(barValue, index) in audioWaveforms[
+                                  item.message.message_id
+                                ]"
+                                :key="`${item.message.message_id}-${index}`"
+                                class="audio-waveform-bar"
+                                :class="{
+                                  'audio-waveform-bar--active':
+                                    getAudioProgress(item.message.message_id) >
+                                    (index /
+                                      (audioWaveforms[item.message.message_id]
+                                        ?.length || 80)) *
+                                      100,
+                                }"
+                                :style="{
+                                  height: `${Math.max(2, barValue * 100)}%`,
+                                }"
+                              ></div>
+                            </div>
+                            <div
+                              class="audio-progress-indicator"
+                              :style="{
+                                left: `${getAudioProgress(item.message.message_id)}%`,
+                              }"
+                            ></div>
+                          </template>
+                          <div v-else class="audio-waveform-placeholder">
+                            <div
+                              v-for="i in 80"
+                              :key="`placeholder-${item.message.message_id}-${i}`"
+                              class="audio-waveform-bar-placeholder"
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        v-if="
+                          item.message.content?.message ||
+                          item.message.content?.pin
+                        "
+                        class="d-flex align-center mt-2"
+                      >
+                        <p
+                          v-if="item.message.content?.message"
+                          class="audio-caption mb-0"
+                          :class="{
+                            'mr-2': item.message.content?.pin,
+                          }"
+                          :style="{
+                            color: isTypeUser(item.message)
+                              ? 'rgb(var(--v-theme-on-surface))'
+                              : 'rgb(var(--v-theme-title))',
+                          }"
+                        >
+                          <span
+                            v-if="shouldFormatMessage(item.message)"
+                            v-html="
+                              formatWhatsAppText(
+                                getLatestMessageText(item.message)
+                              )
+                            "
+                          ></span>
+                          <span v-else>{{
+                            getLatestMessageText(item.message)
+                          }}</span>
+                        </p>
+                        <VIcon
+                          v-if="item.message.content?.pin"
+                          size="16"
+                          color="grey-600"
+                          class="pin-icon"
+                        >
+                          tabler-pin
                         </VIcon>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="
+                        item.message.content?.reactions &&
+                        item.message.content.reactions.length > 0 &&
+                        !isOfficialTemplateOpeningMessage(item.message) &&
+                        item.message.content?.type !== EMessageType.annotation
+                      "
+                      :class="[
+                        'reactions-summary',
+                        item.message.content?.type === EMessageType.system
+                          ? 'reactions-summary--center'
+                          : !isTypeUser(item.message)
+                            ? 'reactions-summary--right'
+                            : 'reactions-summary--left',
+                        {
+                          'reactions-summary--contact':
+                            item.message.content?.type ===
+                              EMessageType.contact_card ||
+                            item.message.content?.type ===
+                              EMessageType.contacts,
+                        },
+                      ]"
+                    >
+                      <div class="reaction-summary-bubble">
+                        <div
+                          v-for="(reaction, idx) in getReactionsSummary(
+                            item.message.content.reactions
+                          )"
+                          :key="idx"
+                          class="reaction-summary-item"
+                        >
+                          <span class="reaction-summary-emoji">
+                            {{ reaction.emoji }}
+                          </span>
+                          <span class="reaction-summary-count">
+                            {{ reaction.count }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      v-if="
+                        item.message.content?.type !==
+                          EMessageType.contact_card &&
+                        item.message.content?.type !== EMessageType.contacts
+                      "
+                      :class="[
+                        'message-meta',
+                        {
+                          'message-meta--audio':
+                            item.message.content?.type === EMessageType.audio &&
+                            item.message.content?.audio?.url,
+                        },
+                      ]"
+                    >
+                      <span
+                        v-if="
+                          item.message.content?.type === EMessageType.audio &&
+                          getAudioUrl(item.message)
+                        "
+                        class="message-audio-duration"
+                      >
+                        {{
+                          getDisplayTime(
+                            item.message.message_id,
+                            getAudioDuration(item.message)
+                          )
+                        }}
+                      </span>
+                      <div class="message-meta-content">
+                        <span
+                          v-if="item.message.deleted"
+                          class="message-deleted-badge"
+                          :title="t('chat_deleted_message_label')"
+                        >
+                          {{ t('chat_deleted_message_label') }}
+                        </span>
+                        <span
+                          v-else-if="hasMessageVersions(item.message)"
+                          class="message-edited-badge"
+                          :title="t('chat_edited')"
+                        >
+                          {{ t('chat_edited') }}
+                        </span>
+                        <div class="message-meta-row">
+                          <span class="message-time">
+                            {{
+                              formatDate(item.message.date, {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                                hour12: false,
+                              })
+                            }}
+                          </span>
+                          <VIcon
+                            v-if="resolveFeedbackIcon(item.message)"
+                            size="16"
+                            :color="resolveFeedbackIcon(item.message)?.color"
+                            :title="resolveFeedbackIcon(item.message)?.label"
+                            :aria-label="
+                              resolveFeedbackIcon(item.message)?.label
+                            "
+                          >
+                            {{ resolveFeedbackIcon(item.message)?.icon }}
+                          </VIcon>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3316,7 +3406,7 @@ const handleContactClick = (message: ListMessageResult) => {
               </div>
             </div>
           </div>
-        </div>
+        </template>
       </template>
     </div>
   </div>
@@ -3765,7 +3855,6 @@ const handleContactClick = (message: ListMessageResult) => {
   }
 
   .button-reply-message-text {
-    color: #111b21 !important;
     font-size: 0.9rem;
     font-weight: 650;
     line-height: 1.28;

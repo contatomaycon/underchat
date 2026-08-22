@@ -8,7 +8,10 @@ import { IServerBuildDefaultImages } from '@core/common/interfaces/IServerBuildD
 import { IServerBuildJobWithItems } from '@core/common/interfaces/IServerBuildJobWithItems';
 import { ServerBuildRepository } from '@core/repositories/server/ServerBuild.repository';
 import { ServerBuildDefaultResponse } from '@core/schema/server/setServerBuildDefault/response.schema';
-import { ServerBuildViewResponse } from '@core/schema/server/viewServerBuild/response.schema';
+import {
+  ServerBuildVersion,
+  ServerBuildViewResponse,
+} from '@core/schema/server/viewServerBuild/response.schema';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { inject, injectable } from 'tsyringe';
 
@@ -211,6 +214,24 @@ export class ServerBuildService {
     status: EServerBuildJobStatus;
   } | null> => {
     return this.serverBuildRepository.getBuildJobSummaryById(serverBuildJobId);
+  };
+
+  getBuildVersionById = async (
+    serverBuildVersionId: string
+  ): Promise<ServerBuildVersion | null> => {
+    return this.serverBuildRepository.getBuildVersionById(serverBuildVersionId);
+  };
+
+  hasActiveBuildJobForVersion = async (version: string): Promise<boolean> => {
+    return this.serverBuildRepository.hasActiveBuildJobForVersion(version);
+  };
+
+  hardDeleteBuildVersionById = async (
+    serverBuildVersionId: string
+  ): Promise<boolean> => {
+    return this.serverBuildRepository.hardDeleteBuildVersionById(
+      serverBuildVersionId
+    );
   };
 
   isBuildVersionDefault = async (version: string): Promise<boolean> => {

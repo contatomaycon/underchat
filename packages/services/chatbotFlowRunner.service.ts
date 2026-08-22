@@ -1,9 +1,10 @@
 import { injectable, inject } from 'tsyringe';
 import { createHash } from 'crypto';
-import { v7 as uuidv7 } from 'uuid';
+import { v5 as uuidv5, v7 as uuidv7 } from 'uuid';
 import Redis from 'ioredis';
 import { ChatbotService } from './chatbot.service';
 import { ChatService } from './chat.service';
+import { ChatLifecycleService } from './chatLifecycle.service';
 import { ChatMessageService } from './chatMessage.service';
 import { ContactService } from './contact.service';
 import { LabelTemplateViewerRepository } from '@core/repositories/labelTemplate/LabelTemplateViewer.repository';
@@ -36,6 +37,8 @@ import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import {
   createChatbotFlowCacheKey,
+  createChatbotFlowContextCacheKey,
+  createChatbotOfficialResponsePendingCacheKey,
   createChatbotInactivityCacheKey,
   createChatbotFailedAttemptsCacheKey,
   createAiResponseHistoryCacheKey,
@@ -89,10 +92,115 @@ import {
   toChatbotWorkingHoursMinutes,
 } from '@core/common/functions/chatbotWorkingHours';
 import { HolidayService } from './holiday.service';
-import { isOfficialChatbotNodeType } from '@core/common/functions/chatbotOfficialNodes';
+import {
+  isOfficialChatbotNodeType,
+  isOfficialWaitForResponseNodeType,
+} from '@core/common/functions/chatbotOfficialNodes';
 import { buildOfficialWhatsappDisplayFromTemplate } from '@core/common/functions/officialWhatsappDisplay';
 import { withLock } from '@core/common/functions/withLock';
 import { CHATBOT_STATUSES } from '@core/common/functions/chatStatus';
+import { hasProtocolTag } from '@core/common/functions/hasProtocolTag';
+import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
+import {
+  ChatbotFlowRuntimeContextService,
+  type ChatbotApiResponseMetadata,
+  type ChatbotNodeRuntimeCapture,
+  type ChatbotFlowRuntimeContext,
+} from './chatbotFlowRuntimeContext.service';
+import {
+  normalizeCnpj,
+  validateCnpj,
+} from '@core/common/functions/validateCnpj';
+import { resolveChatbotTemplate } from '@core/common/functions/chatbotApiVariables';
+import { normalizeOfficialTemplateVariableValue } from '@core/common/functions/normalizeOfficialTemplateVariableValue';
+import { OfficialWhatsappTemplateService } from './officialWhatsappTemplate.service';
+import { ChatbotApiRequestExecutorService } from './chatbotApiRequestExecutor.service';
+import { PasswordEncryptorService } from './passwordEncryptor.service';
+import type {
+  ApiRequestConfig,
+  UnderchatLookupConfig,
+} from '@core/schema/chatbot/chatbotFlow.schema';
+import { ChatbotMediaMaterializerService } from './chatbotMediaMaterializer.service';
+import { ChatbotUnderchatUserLookupService } from './chatbotUnderchatUserLookup.service';
+import { decryptApiRequestSecrets } from '@core/common/functions/chatbotApiRequestSecurity';
+import { executeSafeOutboundHttp } from '@core/common/functions/safeOutboundHttp';
+import { getChatbotApiOutboundHttpPolicy } from '@core/common/functions/chatbotApiOutboundHttpPolicy';
+import {
+  getKafkaDispatchGuard,
+  runWithoutKafkaDispatchGuard,
+  runWithKafkaDispatchGuard,
+  type KafkaDispatchGuard,
+} from '@core/common/functions/kafkaDispatchFenceContext';
+import { assertOfficialWhatsappInteractivePayload } from '@core/common/functions/officialWhatsappInteractiveValidation';
+import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialCapabilities';
+import { AiProviderError, aiProviderClient } from './aiProviderClient.service';
+import { ChatbotTransferService } from './chatbotTransfer.service';
+import { OfficialWhatsappConversationWindowService } from './officialWhatsappConversationWindow.service';
+
+interface IChatbotPendingFinishEffect {
+  accountId: string;
+  workerId: string;
+  chatId: string;
+  source: 'chatbot' | 'outside_hours';
+  phase: 'transition_pending' | 'effects_pending';
+  statusEventId?: string;
+  expectedStatus?: EChatStatus;
+  expectedStatusEventId?: string;
+  expectedStatusEpoch?: number;
+  expectedStartedAt?: string | null;
+  expectedLastMessageId?: string | null;
+  customMessage?: string;
+  messageEnabled: boolean;
+  retryCount: number;
+}
+
+interface IChatbotInactivityRedirectEffect {
+  accountId: string;
+  chatId: string;
+  sourceWorkerId: string;
+  sourceChatbotId: string;
+  targetWorkerId: string;
+  targetChatbotId: string;
+  operationId: string;
+  eventEpochMillis: number;
+  phase: 'transition_pending' | 'bootstrap_pending';
+  expectedStatus: EChatStatus;
+  expectedStatusEventId?: string | null;
+  expectedStatusEpoch?: number | null;
+  expectedAssignmentEventId?: string | null;
+  expectedAssignmentEpoch?: number | null;
+  expectedLastMessageId?: string | null;
+  expectedSummaryRevision?: number | null;
+  postTransitionLastMessageId?: string | null;
+  retryCount: number;
+}
+
+interface IChatbotOfficialResponsePending {
+  templateNodeId: string;
+  nextFlowId: string;
+}
+
+interface IAiAgentDebouncePayload {
+  expiresAt: number;
+  messages: string[];
+  flowId: string;
+  chatbotId: string;
+  selectedAiAgentId: string;
+  lastMessageType?: EMessageType;
+  customMessages?: IChatbotCustomMessages;
+  trackingId: string;
+  retryCount: number;
+}
+
+type TOutsideHoursFinishOutcome = 'completed' | 'queued' | 'not_owned';
+
+interface IChatbotFlowExecutionOptions {
+  requireHandled?: boolean;
+  executionId?: string;
+  assertActive?: KafkaDispatchGuard;
+  expectedAssignmentEventId?: string;
+  expectedLastMessageId?: string | null;
+}
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -105,7 +213,14 @@ export class ChatbotFlowRunnerService {
   private readonly CONVERSATION_SUMMARY_UPDATE_INTERVAL = 5;
   private readonly AI_AGENT_API_RETRY_ATTEMPTS = 3;
   private readonly AI_AGENT_API_RETRY_BASE_DELAY_MS = 500;
+  private readonly AI_AGENT_DEBOUNCE_PAYLOAD_TTL_SECONDS = 604800;
+  private readonly AI_AGENT_DEBOUNCE_MAX_RETRIES = 5;
+  private readonly AI_AGENT_DEBOUNCE_RETRY_BASE_DELAY_MS = 5000;
+  private readonly AI_AGENT_DEBOUNCE_RETRY_MAX_DELAY_MS = 300000;
   private readonly RANDOM_MESSAGE_CYCLE_TTL_SECONDS = 28800;
+  private readonly INACTIVITY_RETRY_BASE_DELAY_MS = 30000;
+  private readonly INACTIVITY_RETRY_MAX_DELAY_MS = 300000;
+  private hasReconciledInactivitySchedule = false;
   private readonly WEEKDAY_OPTION_IDS = new Set([
     'sunday',
     'monday',
@@ -118,12 +233,40 @@ export class ChatbotFlowRunnerService {
   private readonly HOURS_OUTSIDE_OPTION_ID = 'outside-hours';
   private readonly HOLIDAY_IS_OPTION_ID = 'is-holiday';
   private readonly HOLIDAY_NOT_OPTION_ID = 'not-holiday';
+  private readonly HUMAN_TEMPLATE_FIELDS = new Set([
+    'message',
+    'text',
+    'firstName',
+    'lastName',
+    'email',
+    'cpf',
+    'cnpj',
+    'holidayMessage',
+    'annotation',
+    'attachmentFileName',
+    'attachmentMimetype',
+  ]);
   private readonly AUTOMATION_CHAT_STATUSES: ReadonlySet<EChatStatus> =
     new Set<EChatStatus>(CHATBOT_STATUSES);
   private readonly securityKeyScopesByChatId = new Map<
     string,
     TSecurityKeyScope[]
   >();
+  private readonly synchronousEffectsByChatId = new Set<string>();
+  private readonly executionMessageContextByChatId = new Map<
+    string,
+    { executionId: string; nextMessageIndex: number }
+  >();
+  private readonly automaticExecutionBudgetByChatId = new Map<
+    string,
+    { transitions: number; apiNodes: number; httpAttempts: number }
+  >();
+  private readonly apiRequestSecretEncryptor = new PasswordEncryptorService();
+  private readonly apiRequestExecutor = new ChatbotApiRequestExecutorService({
+    secretDecryptor: this.apiRequestSecretEncryptor,
+  });
+  private readonly officialWhatsappTemplateService =
+    new OfficialWhatsappTemplateService();
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -131,6 +274,8 @@ export class ChatbotFlowRunnerService {
     private readonly chatbotService: ChatbotService,
     @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(ChatLifecycleService)
+    private readonly chatLifecycleService: ChatLifecycleService,
     @inject(ChatMessageService)
     private readonly chatMessageService: ChatMessageService,
     @inject(ContactService)
@@ -170,7 +315,17 @@ export class ChatbotFlowRunnerService {
     @inject(PromptDocumentExtractorService)
     private readonly promptDocumentExtractorService: PromptDocumentExtractorService,
     @inject(HolidayService)
-    private readonly holidayService: HolidayService
+    private readonly holidayService: HolidayService,
+    @inject(ChatbotFlowRuntimeContextService)
+    private readonly flowRuntimeContextService?: ChatbotFlowRuntimeContextService,
+    @inject(ChatbotMediaMaterializerService)
+    private readonly chatbotMediaMaterializerService?: ChatbotMediaMaterializerService,
+    @inject(ChatbotUnderchatUserLookupService)
+    private readonly underchatUserLookupService?: ChatbotUnderchatUserLookupService,
+    @inject(ChatbotTransferService)
+    private readonly chatbotTransferService?: ChatbotTransferService,
+    @inject(OfficialWhatsappConversationWindowService)
+    private readonly officialWhatsappConversationWindowService?: OfficialWhatsappConversationWindowService
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -179,6 +334,18 @@ export class ChatbotFlowRunnerService {
     chatId: string
   ): string {
     return createChatbotFlowCacheKey(accountId, workerId, chatId);
+  }
+
+  private getOfficialResponsePendingCacheKey(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): string {
+    return createChatbotOfficialResponsePendingCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
   }
 
   private getInactivityCacheKey(
@@ -191,6 +358,662 @@ export class ChatbotFlowRunnerService {
 
   private getInactivityScheduleKey(): string {
     return 'underchat:chatbot-inactivity-schedule';
+  }
+
+  private isOfficialWhatsappChat(chat: IChat): boolean {
+    return (
+      chat.official_window?.is_official === true ||
+      chat.worker?.is_official === true ||
+      isOfficialWhatsappWorker(chat.worker?.type_id)
+    );
+  }
+
+  private async shouldSuspendInactivityForOfficialChat(
+    chat: IChat,
+    options?: { ignoreFlowResponsePending?: boolean }
+  ): Promise<boolean> {
+    if (!this.isOfficialWhatsappChat(chat)) {
+      return false;
+    }
+
+    if (options?.ignoreFlowResponsePending !== true) {
+      const pendingCacheKey = this.getOfficialResponsePendingCacheKey(
+        chat.account.id,
+        chat.worker.id,
+        chat.chat_id
+      );
+      if (await this.redis.get(pendingCacheKey)) {
+        return true;
+      }
+    }
+
+    if (!this.officialWhatsappConversationWindowService) {
+      throw new Error('official WhatsApp conversation window is unavailable');
+    }
+
+    const officialWindow =
+      await this.officialWhatsappConversationWindowService.resolveAuthoritativeForChat(
+        chat
+      );
+
+    return officialWindow.can_send_freeform !== true;
+  }
+
+  private getPendingFinishEffectKey(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): string {
+    return `underchat:chatbot-finish:${accountId}:${workerId}:${chatId}`;
+  }
+
+  private getPendingFinishScheduleKey(): string {
+    return 'underchat:chatbot-finish-schedule';
+  }
+
+  private getInactivityRedirectEffectKey(
+    accountId: string,
+    chatId: string
+  ): string {
+    return `underchat:chatbot-inactivity-redirect:${accountId}:${chatId}`;
+  }
+
+  private getInactivityRedirectScheduleKey(): string {
+    return 'underchat:chatbot-inactivity-redirect-schedule';
+  }
+
+  private parseInactivityRedirectEffectKey(cacheKey: string): {
+    accountId: string;
+    chatId: string;
+  } | null {
+    const [namespace, kind, accountId, chatId, ...extra] = cacheKey.split(':');
+    if (
+      namespace !== 'underchat' ||
+      kind !== 'chatbot-inactivity-redirect' ||
+      !accountId ||
+      !chatId ||
+      extra.length > 0
+    ) {
+      return null;
+    }
+    return { accountId, chatId };
+  }
+
+  private parsePendingFinishEffectKey(cacheKey: string): {
+    accountId: string;
+    workerId: string;
+    chatId: string;
+  } | null {
+    const [namespace, kind, accountId, workerId, chatId, ...extra] =
+      cacheKey.split(':');
+    if (
+      namespace !== 'underchat' ||
+      kind !== 'chatbot-finish' ||
+      !accountId ||
+      !workerId ||
+      !chatId ||
+      extra.length > 0
+    ) {
+      return null;
+    }
+
+    return { accountId, workerId, chatId };
+  }
+
+  private assertRedisTransaction(
+    results: Array<[Error | null, unknown]> | null,
+    operation: string
+  ): void {
+    if (!results) {
+      throw new Error(`${operation} transaction was aborted`);
+    }
+
+    const failedResult = results.find(([error]) => error !== null);
+    if (failedResult?.[0]) {
+      throw failedResult[0];
+    }
+  }
+
+  private async persistInactivitySchedule(
+    inactivityCacheKey: string,
+    inactivityData: IInactivityData,
+    nextCheckTime: number
+  ): Promise<void> {
+    const results = await this.redis
+      .multi()
+      .set(inactivityCacheKey, JSON.stringify(inactivityData))
+      .zadd(this.getInactivityScheduleKey(), nextCheckTime, inactivityCacheKey)
+      .exec();
+
+    this.assertRedisTransaction(results, 'persist chatbot inactivity');
+  }
+
+  private async removeInactivitySchedule(
+    inactivityCacheKey: string
+  ): Promise<void> {
+    const results = await this.redis
+      .multi()
+      .del(inactivityCacheKey)
+      .zrem(this.getInactivityScheduleKey(), inactivityCacheKey)
+      .exec();
+
+    this.assertRedisTransaction(results, 'remove chatbot inactivity');
+  }
+
+  private async persistPendingFinishEffect(
+    effect: IChatbotPendingFinishEffect,
+    nextAttemptAt = Date.now()
+  ): Promise<void> {
+    const cacheKey = this.getPendingFinishEffectKey(
+      effect.accountId,
+      effect.workerId,
+      effect.chatId
+    );
+    const results = await this.redis
+      .multi()
+      .set(cacheKey, JSON.stringify(effect))
+      .zadd(this.getPendingFinishScheduleKey(), nextAttemptAt, cacheKey)
+      .exec();
+
+    this.assertRedisTransaction(results, 'persist chatbot finish effect');
+  }
+
+  private async persistInactivityRedirectEffect(
+    effect: IChatbotInactivityRedirectEffect,
+    nextAttemptAt = Date.now()
+  ): Promise<void> {
+    const cacheKey = this.getInactivityRedirectEffectKey(
+      effect.accountId,
+      effect.chatId
+    );
+    const results = await this.redis
+      .multi()
+      .set(cacheKey, JSON.stringify(effect))
+      .zadd(this.getInactivityRedirectScheduleKey(), nextAttemptAt, cacheKey)
+      .exec();
+    this.assertRedisTransaction(results, 'persist chatbot redirect effect');
+  }
+
+  private async removeInactivityRedirectEffectByCacheKey(
+    cacheKey: string
+  ): Promise<void> {
+    const results = await this.redis
+      .multi()
+      .del(cacheKey)
+      .zrem(this.getInactivityRedirectScheduleKey(), cacheKey)
+      .exec();
+    this.assertRedisTransaction(results, 'remove chatbot redirect effect');
+  }
+
+  private async removePendingFinishEffect(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): Promise<void> {
+    const cacheKey = this.getPendingFinishEffectKey(
+      accountId,
+      workerId,
+      chatId
+    );
+
+    await this.removePendingFinishEffectByCacheKey(cacheKey);
+  }
+
+  private async removePendingFinishEffectByCacheKey(
+    cacheKey: string
+  ): Promise<void> {
+    const results = await this.redis
+      .multi()
+      .del(cacheKey)
+      .zrem(this.getPendingFinishScheduleKey(), cacheKey)
+      .exec();
+
+    this.assertRedisTransaction(results, 'remove chatbot finish effect');
+  }
+
+  private getInactivityRetryDelayMs(retryCount: number): number {
+    return Math.min(
+      this.INACTIVITY_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, retryCount - 1),
+      this.INACTIVITY_RETRY_MAX_DELAY_MS
+    );
+  }
+
+  private async requeueInactivityAfterFailure(
+    inactivityCacheKey: string,
+    failedData: IInactivityData
+  ): Promise<IInactivityData | null> {
+    const ids = this.parseInactivityCacheKey(inactivityCacheKey);
+    if (!ids) {
+      return null;
+    }
+
+    return withLock(
+      this.redis,
+      this.getAutomationLockKey(ids.accountId, ids.chatId),
+      async () => {
+        const [currentPayload, currentScore] = await Promise.all([
+          this.redis.get(inactivityCacheKey),
+          this.redis.zscore(
+            this.getInactivityScheduleKey(),
+            inactivityCacheKey
+          ),
+        ]);
+        if (!currentPayload || currentScore === null) {
+          return null;
+        }
+
+        const currentData = JSON.parse(currentPayload) as IInactivityData;
+        if (!this.isSameInactivityAttempt(currentData, failedData)) {
+          return null;
+        }
+
+        const retryCount = (currentData.retryCount ?? 0) + 1;
+        const updatedData: IInactivityData = {
+          ...currentData,
+          retryCount,
+        };
+
+        await this.persistInactivitySchedule(
+          inactivityCacheKey,
+          updatedData,
+          Date.now() + this.getInactivityRetryDelayMs(retryCount)
+        );
+
+        return updatedData;
+      },
+      {
+        ttlMs: 30000,
+        retryMs: 100,
+        maxWaitMs: 45000,
+      }
+    );
+  }
+
+  private isSameInactivityAttempt(
+    current: IInactivityData,
+    expected: IInactivityData
+  ): boolean {
+    return (
+      current.trackingId === expected.trackingId &&
+      (current.retryCount ?? 0) === (expected.retryCount ?? 0) &&
+      current.stage === expected.stage &&
+      current.alertCount === expected.alertCount &&
+      current.lastInteraction === expected.lastInteraction &&
+      current.lastAlertTime === expected.lastAlertTime
+    );
+  }
+
+  private async removeInactivityScheduleIfUnchanged(
+    inactivityCacheKey: string,
+    expectedData: IInactivityData | null
+  ): Promise<void> {
+    const ids = this.parseInactivityCacheKey(inactivityCacheKey);
+    if (!ids) {
+      await this.removeInactivitySchedule(inactivityCacheKey);
+      return;
+    }
+
+    await withLock(
+      this.redis,
+      this.getAutomationLockKey(ids.accountId, ids.chatId),
+      async () => {
+        const [currentPayload, currentScore] = await Promise.all([
+          this.redis.get(inactivityCacheKey),
+          this.redis.zscore(
+            this.getInactivityScheduleKey(),
+            inactivityCacheKey
+          ),
+        ]);
+        if (currentScore === null) {
+          return;
+        }
+
+        if (!currentPayload) {
+          await this.removeInactivitySchedule(inactivityCacheKey);
+          return;
+        }
+
+        let currentData: IInactivityData;
+        try {
+          currentData = JSON.parse(currentPayload) as IInactivityData;
+        } catch {
+          if (!expectedData) {
+            await this.removeInactivitySchedule(inactivityCacheKey);
+          }
+          return;
+        }
+
+        if (
+          expectedData &&
+          this.isSameInactivityAttempt(currentData, expectedData)
+        ) {
+          await this.removeInactivitySchedule(inactivityCacheKey);
+        }
+      },
+      {
+        ttlMs: 30000,
+        retryMs: 100,
+        maxWaitMs: 45000,
+      }
+    );
+  }
+
+  private parseInactivityCacheKey(cacheKey: string): {
+    accountId: string;
+    workerId: string;
+    chatId: string;
+  } | null {
+    const [namespace, kind, accountId, workerId, chatId, ...extra] =
+      cacheKey.split(':');
+
+    if (
+      namespace !== 'underchat' ||
+      kind !== 'chatbot-inactivity' ||
+      !accountId ||
+      !workerId ||
+      !chatId ||
+      extra.length > 0
+    ) {
+      return null;
+    }
+
+    return { accountId, workerId, chatId };
+  }
+
+  private async recoverMissingInactivityPayload(
+    inactivityCacheKey: string
+  ): Promise<boolean> {
+    const ids = this.parseInactivityCacheKey(inactivityCacheKey);
+    if (!ids) {
+      await this.removeInactivitySchedule(inactivityCacheKey);
+      return false;
+    }
+
+    return withLock(
+      this.redis,
+      this.getAutomationLockKey(ids.accountId, ids.chatId),
+      async () => {
+        const recovered = await this.recoverMissingInactivityPayloadWithLock(
+          inactivityCacheKey,
+          ids
+        );
+        if (!recovered) {
+          await this.removeInactivitySchedule(inactivityCacheKey);
+        }
+        return recovered;
+      },
+      {
+        ttlMs: 30000,
+        retryMs: 100,
+        maxWaitMs: 45000,
+      }
+    );
+  }
+
+  private async recoverMissingInactivityPayloadWithLock(
+    inactivityCacheKey: string,
+    ids: { accountId: string; workerId: string; chatId: string }
+  ): Promise<boolean> {
+    if (await this.redis.get(inactivityCacheKey)) {
+      return true;
+    }
+
+    const chat = await this.chatService.findChatByChatId(
+      ids.accountId,
+      ids.chatId
+    );
+    if (!chat || !this.isAutomationChatStatus(chat.status)) {
+      return false;
+    }
+
+    if (await this.shouldSuspendInactivityForOfficialChat(chat)) {
+      return false;
+    }
+
+    const chatbotConfig =
+      await this.workerConfigViewerRepository.fetchChatbotsValue(ids.workerId);
+    const chatbotId =
+      chat.status === EChatStatus.ura_output
+        ? chatbotConfig.outputChatbotId
+        : chat.status === EChatStatus.ura_schedule
+          ? chat.chatbot_schedule_id
+          : chat.status === EChatStatus.ura_webhook
+            ? chat.chatbot_webhook_id
+            : chat.chatbot_transfer_id || chatbotConfig.inputChatbotId;
+    if (!chatbotId) {
+      return false;
+    }
+
+    const configurations =
+      await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+        ids.accountId,
+        chatbotId
+      );
+    const inactivityAlert = configurations?.configurations?.inactivity_alert;
+    if (inactivityAlert?.status !== 'active') {
+      return false;
+    }
+
+    const timeMinutes = Math.max(1, Math.floor(inactivityAlert.time ?? 5));
+    const now = Date.now();
+    await this.persistInactivitySchedule(
+      inactivityCacheKey,
+      {
+        lastInteraction: now,
+        alertCount: 0,
+        lastAlertTime: null,
+        chatbotId,
+        accountId: ids.accountId,
+        workerId: ids.workerId,
+        chatId: ids.chatId,
+        trackingId: uuidv7(),
+        retryCount: 0,
+        stage: 'waiting',
+      },
+      now + timeMinutes * 60 * 1000
+    );
+
+    console.info('[ChatbotFlow] recovered orphaned inactivity schedule', {
+      account_id: ids.accountId,
+      worker_id: ids.workerId,
+      chat_id: ids.chatId,
+      chatbot_id: chatbotId,
+    });
+    return true;
+  }
+
+  private async reconcileInactivitySchedule(): Promise<void> {
+    if (this.hasReconciledInactivitySchedule) {
+      return;
+    }
+
+    const scheduleKey = this.getInactivityScheduleKey();
+    let cursor = '0';
+
+    do {
+      const [nextCursor, entries] = await this.redis.zscan(
+        scheduleKey,
+        cursor,
+        'COUNT',
+        200
+      );
+      cursor = nextCursor;
+      const cacheKeys = entries.filter((_, index) => index % 2 === 0);
+
+      if (cacheKeys.length === 0) {
+        continue;
+      }
+
+      const pipeline = this.redis.pipeline();
+      for (const cacheKey of cacheKeys) {
+        pipeline.exists(cacheKey);
+        pipeline.persist(cacheKey);
+      }
+      const results = await pipeline.exec();
+      const orphanedKeys: string[] = [];
+
+      for (let index = 0; index < cacheKeys.length; index += 1) {
+        const existsResult = results?.[index * 2];
+        if (existsResult?.[0]) {
+          throw existsResult[0];
+        }
+        if (Number(existsResult?.[1] ?? 0) === 0) {
+          orphanedKeys.push(cacheKeys[index]);
+        }
+      }
+
+      if (orphanedKeys.length > 0) {
+        const unrecoverableKeys: string[] = [];
+        for (const orphanedKey of orphanedKeys) {
+          if (!(await this.recoverMissingInactivityPayload(orphanedKey))) {
+            unrecoverableKeys.push(orphanedKey);
+          }
+        }
+
+        if (unrecoverableKeys.length > 0) {
+          console.warn('[ChatbotFlow] removed orphaned inactivity schedules', {
+            count: unrecoverableKeys.length,
+          });
+        }
+      }
+    } while (cursor !== '0');
+
+    await this.reconcileUnscheduledInactivityPayloads();
+
+    this.hasReconciledInactivitySchedule = true;
+  }
+
+  private async reconcileUnscheduledInactivityPayload(
+    cacheKey: string
+  ): Promise<void> {
+    const ids = this.parseInactivityCacheKey(cacheKey);
+    if (!ids) {
+      await this.removeInactivitySchedule(cacheKey);
+      return;
+    }
+
+    await withLock(
+      this.redis,
+      this.getAutomationLockKey(ids.accountId, ids.chatId),
+      async () => {
+        const existingScore = await this.redis.zscore(
+          this.getInactivityScheduleKey(),
+          cacheKey
+        );
+        if (existingScore !== null) {
+          await this.redis.persist(cacheKey);
+          return;
+        }
+
+        const payload = await this.redis.get(cacheKey);
+        if (!payload) {
+          return;
+        }
+
+        let data: IInactivityData;
+        try {
+          data = JSON.parse(payload) as IInactivityData;
+        } catch (error) {
+          await this.removeInactivitySchedule(cacheKey);
+          console.error('[ChatbotFlow] invalid inactivity payload removed', {
+            inactivity_cache_key: cacheKey,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+
+        if (
+          data.accountId !== ids.accountId ||
+          data.workerId !== ids.workerId ||
+          data.chatId !== ids.chatId ||
+          !data.chatbotId
+        ) {
+          await this.removeInactivitySchedule(cacheKey);
+          return;
+        }
+
+        const [chat, configurations] = await Promise.all([
+          this.chatService.findChatByChatId(data.accountId, data.chatId),
+          this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+            data.accountId,
+            data.chatbotId
+          ),
+        ]);
+        const inactivityAlert =
+          configurations?.configurations?.inactivity_alert;
+        if (
+          !chat ||
+          !this.isAutomationChatStatus(chat.status) ||
+          inactivityAlert?.status !== 'active'
+        ) {
+          await this.removeInactivitySchedule(cacheKey);
+          return;
+        }
+
+        if (await this.shouldSuspendInactivityForOfficialChat(chat)) {
+          await this.removeInactivitySchedule(cacheKey);
+          return;
+        }
+
+        const now = Date.now();
+        const timeMinutes = Math.max(1, Math.floor(inactivityAlert.time ?? 5));
+        await this.persistInactivitySchedule(
+          cacheKey,
+          {
+            ...data,
+            lastInteraction: now,
+            alertCount: 0,
+            lastAlertTime: null,
+            trackingId: uuidv7(),
+            retryCount: 0,
+            stage: 'waiting',
+          },
+          now + timeMinutes * 60 * 1000
+        );
+      },
+      {
+        ttlMs: 30000,
+        retryMs: 100,
+        maxWaitMs: 45000,
+      }
+    );
+  }
+
+  private async reconcileUnscheduledInactivityPayloads(): Promise<void> {
+    let cursor = '0';
+    let failures = 0;
+
+    do {
+      const [nextCursor, cacheKeys] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        'underchat:chatbot-inactivity:*',
+        'COUNT',
+        200
+      );
+      cursor = nextCursor;
+
+      for (const cacheKey of cacheKeys) {
+        try {
+          await this.reconcileUnscheduledInactivityPayload(cacheKey);
+        } catch (error) {
+          failures += 1;
+          console.error(
+            '[ChatbotFlow] inactivity payload reconciliation failed',
+            {
+              inactivity_cache_key: cacheKey,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+        }
+      }
+    } while (cursor !== '0');
+
+    if (failures > 0) {
+      throw new Error(
+        `chatbot inactivity reconciliation failed for ${failures} item(s)`
+      );
+    }
   }
 
   private getFailedAttemptsCacheKey(
@@ -215,6 +1038,37 @@ export class ChatbotFlowRunnerService {
     chatId: string
   ): string {
     return `chatbot:ai-agent:debounce:${accountId}:${workerId}:${chatId}`;
+  }
+
+  private getAiAgentDebounceScheduleKey(): string {
+    return 'underchat:chatbot-ai-agent-debounce-schedule';
+  }
+
+  private getAiAgentDebounceDeadLetterKey(): string {
+    return 'underchat:chatbot-ai-agent-debounce-dead-letter';
+  }
+
+  private parseAiAgentDebounceCacheKey(cacheKey: string): {
+    accountId: string;
+    workerId: string;
+    chatId: string;
+  } | null {
+    const [namespace, kind, subtype, accountId, workerId, chatId, ...extra] =
+      cacheKey.split(':');
+
+    if (
+      namespace !== 'chatbot' ||
+      kind !== 'ai-agent' ||
+      subtype !== 'debounce' ||
+      !accountId ||
+      !workerId ||
+      !chatId ||
+      extra.length > 0
+    ) {
+      return null;
+    }
+
+    return { accountId, workerId, chatId };
   }
 
   private getSectorSelectionCacheKey(
@@ -280,6 +1134,13 @@ export class ChatbotFlowRunnerService {
       workerId,
       chatId
     );
+    const flowContextCacheKey = createChatbotFlowContextCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const officialResponsePendingCacheKey =
+      this.getOfficialResponsePendingCacheKey(accountId, workerId, chatId);
     const inactivityCacheKey = this.getInactivityCacheKey(
       accountId,
       workerId,
@@ -311,11 +1172,12 @@ export class ChatbotFlowRunnerService {
       chatId
     );
     const scheduleKey = this.getInactivityScheduleKey();
-
-    await this.redis
+    const results = await this.redis
       .multi()
       .del(
         flowCacheKey,
+        flowContextCacheKey,
+        officialResponsePendingCacheKey,
         inactivityCacheKey,
         failedAttemptsCacheKey,
         menuDebounceCacheKey,
@@ -324,7 +1186,11 @@ export class ChatbotFlowRunnerService {
         userSelectionCacheKey
       )
       .zrem(scheduleKey, inactivityCacheKey)
+      .zrem(this.getAiAgentDebounceScheduleKey(), aiAgentDebounceCacheKey)
+      .zrem(this.getAiAgentDebounceDeadLetterKey(), aiAgentDebounceCacheKey)
       .exec();
+
+    this.assertRedisTransaction(results, 'clear chatbot runtime');
   }
 
   private async getAutomationChatIfAllowed(
@@ -334,10 +1200,6 @@ export class ChatbotFlowRunnerService {
     const currentChat = await this.loadCurrentChatState(createChat);
 
     if (!currentChat) {
-      if (this.isAutomationChatStatus(createChat.status)) {
-        return createChat;
-      }
-
       await this.clearChatbotRuntimeStateByIds(
         createChat.account.id,
         createChat.worker.id,
@@ -373,24 +1235,154 @@ export class ChatbotFlowRunnerService {
   private async sendMessageWithStatusGuard(
     t: TFunction<'translation', undefined>,
     options: SendMessageOptions,
-    guardOptions?: { allowClosedStatus?: boolean }
+    guardOptions?: {
+      allowClosedStatus?: boolean;
+      expectedStatusEventId?: string;
+    }
   ): Promise<boolean> {
+    const assertActive = options.assertActive ?? getKafkaDispatchGuard();
+    await assertActive?.();
+    const executionMessageId = this.consumeNextExecutionMessageId(
+      options.chat.chat_id
+    );
     const guardedChat = await this.getAutomationChatIfAllowed(options.chat, {
       allowClosedStatus: guardOptions?.allowClosedStatus,
     });
+    await assertActive?.();
 
     if (!guardedChat) {
       return false;
     }
 
-    return this.chatMessageService.sendMessage(t, {
+    if (
+      guardOptions?.expectedStatusEventId &&
+      guardedChat.meta?.status_event_id !== guardOptions.expectedStatusEventId
+    ) {
+      return false;
+    }
+
+    const messageSent = await this.chatMessageService.sendMessage(t, {
       ...options,
       chat: guardedChat,
       accountId: guardedChat.account.id,
+      messageId: options.messageId ?? executionMessageId,
       securityKeyScopes:
         options.securityKeyScopes ??
         this.getSecurityKeyScopesForChat(guardedChat.chat_id),
+      ...(assertActive ? { assertActive } : {}),
     });
+    if (
+      !messageSent &&
+      this.synchronousEffectsByChatId.has(guardedChat.chat_id)
+    ) {
+      throw new Error('chatbot bootstrap message was not confirmed');
+    }
+
+    return messageSent;
+  }
+
+  private async publishPreparedMessageWithAssignmentGuard(
+    message: IChatMessage
+  ): Promise<boolean> {
+    const assertActive = getKafkaDispatchGuard();
+    await assertActive?.();
+
+    if (!assertActive) {
+      return this.chatMessageService.publishPreparedMessage(message);
+    }
+
+    return this.chatMessageService.publishPreparedMessage(
+      message,
+      undefined,
+      assertActive
+    );
+  }
+
+  private async publishSubWithAssignmentGuard(
+    channel: string,
+    data: unknown
+  ): Promise<unknown> {
+    const assertActive = getKafkaDispatchGuard();
+    await assertActive?.();
+
+    if (!assertActive) {
+      return this.centrifugoService.publishSub(channel, data);
+    }
+
+    return this.centrifugoService.publishSub(channel, data, assertActive);
+  }
+
+  private consumeNextExecutionMessageId(chatId: string): string | undefined {
+    const executionContext = this.executionMessageContextByChatId.get(chatId);
+    if (!executionContext) {
+      return undefined;
+    }
+
+    const messageIndex = executionContext.nextMessageIndex++;
+    return uuidv5(
+      `chatbot-execution:${executionContext.executionId}:message:${messageIndex}`,
+      uuidv5.URL
+    );
+  }
+
+  private getOutboundWebhookMutationOccurrenceId(
+    chatId: string,
+    data?: IUpsertMessage
+  ): string | null {
+    const executionId =
+      this.executionMessageContextByChatId.get(chatId)?.executionId;
+    if (executionId) {
+      return `execution:${executionId}`;
+    }
+
+    const providerMessageId = data?.message?.key?.id?.trim();
+    if (providerMessageId) {
+      return `message:${providerMessageId}`;
+    }
+
+    const providerTimestamp = Number(data?.message?.messageTimestamp);
+    const remoteAddress =
+      data?.message?.key?.remoteJid?.trim() ??
+      data?.message?.key?.remoteJidAlt?.trim();
+    if (!Number.isFinite(providerTimestamp) || !remoteAddress) {
+      return null;
+    }
+
+    const legacyOccurrence = createHash('sha256')
+      .update(
+        [
+          data?.source_provider ?? 'unknown',
+          remoteAddress,
+          String(providerTimestamp),
+        ].join('\u001f')
+      )
+      .digest('hex');
+    return `legacy:${legacyOccurrence}`;
+  }
+
+  private scopeOutboundWebhookMutationKey(
+    baseKey: string,
+    chatId: string,
+    data?: IUpsertMessage
+  ): string {
+    const occurrenceId = this.getOutboundWebhookMutationOccurrenceId(
+      chatId,
+      data
+    );
+    return occurrenceId ? `${baseKey}:${occurrenceId}` : baseKey;
+  }
+
+  private buildSatisfactionWebhookIdempotencyKey(
+    chatId: string,
+    currentFlowId: string,
+    selectedOptionId: string,
+    data: IUpsertMessage
+  ): string {
+    return this.scopeOutboundWebhookMutationKey(
+      `chat-satisfaction:${chatId}:${currentFlowId}:${selectedOptionId}`,
+      chatId,
+      data
+    );
   }
 
   private getSecurityKeyScopesForChat(chatId: string): TSecurityKeyScope[] {
@@ -569,13 +1561,7 @@ export class ChatbotFlowRunnerService {
 
   private async setAiAgentDebounce(
     createChat: IChat,
-    payload: {
-      expiresAt: number;
-      messages: string[];
-      flowId: string;
-      selectedAiAgentId: string;
-      lastMessageType?: EMessageType;
-    }
+    payload: IAiAgentDebouncePayload
   ): Promise<void> {
     const key = this.getAiAgentDebounceCacheKey(
       createChat.account.id,
@@ -583,21 +1569,24 @@ export class ChatbotFlowRunnerService {
       createChat.chat_id
     );
 
-    await this.redis.set(
-      key,
-      JSON.stringify(payload),
-      'EX',
-      this.AI_AGENT_DEBOUNCE_SECONDS + 2
-    );
+    const results = await this.redis
+      .multi()
+      .set(
+        key,
+        JSON.stringify(payload),
+        'EX',
+        this.AI_AGENT_DEBOUNCE_PAYLOAD_TTL_SECONDS
+      )
+      .zadd(this.getAiAgentDebounceScheduleKey(), payload.expiresAt, key)
+      .zrem(this.getAiAgentDebounceDeadLetterKey(), key)
+      .exec();
+
+    this.assertRedisTransaction(results, 'persist AI Agent debounce');
   }
 
-  private async getAiAgentDebounce(createChat: IChat): Promise<{
-    expiresAt: number;
-    messages: string[];
-    flowId: string;
-    selectedAiAgentId: string;
-    lastMessageType?: EMessageType;
-  } | null> {
+  private async getAiAgentDebounce(
+    createChat: IChat
+  ): Promise<IAiAgentDebouncePayload | null> {
     const key = this.getAiAgentDebounceCacheKey(
       createChat.account.id,
       createChat.worker.id,
@@ -607,83 +1596,342 @@ export class ChatbotFlowRunnerService {
     const data = await this.redis.get(key);
     if (!data) return null;
 
-    return JSON.parse(data);
+    return JSON.parse(data) as IAiAgentDebouncePayload;
   }
 
-  private async deleteAiAgentDebounce(createChat: IChat): Promise<void> {
-    const key = this.getAiAgentDebounceCacheKey(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id
-    );
+  private async deleteAiAgentDebounceByCacheKey(
+    cacheKey: string
+  ): Promise<void> {
+    const results = await this.redis
+      .multi()
+      .del(cacheKey)
+      .zrem(this.getAiAgentDebounceScheduleKey(), cacheKey)
+      .zrem(this.getAiAgentDebounceDeadLetterKey(), cacheKey)
+      .exec();
 
-    await this.redis.del(key);
+    this.assertRedisTransaction(results, 'remove AI Agent debounce');
+  }
+
+  private getAiAgentDebounceRetryDelayMs(retryCount: number): number {
+    return Math.min(
+      this.AI_AGENT_DEBOUNCE_RETRY_BASE_DELAY_MS *
+        2 ** Math.max(0, retryCount - 1),
+      this.AI_AGENT_DEBOUNCE_RETRY_MAX_DELAY_MS
+    );
+  }
+
+  private async requeueAiAgentDebounceAfterFailure(
+    cacheKey: string,
+    failedPayload: IAiAgentDebouncePayload,
+    error: unknown
+  ): Promise<void> {
+    const currentRaw = await this.redis.get(cacheKey);
+    if (!currentRaw) {
+      await this.redis.zrem(this.getAiAgentDebounceScheduleKey(), cacheKey);
+      return;
+    }
+
+    let currentPayload: IAiAgentDebouncePayload;
+    try {
+      currentPayload = JSON.parse(currentRaw) as IAiAgentDebouncePayload;
+    } catch {
+      await this.deleteAiAgentDebounceByCacheKey(cacheKey);
+      return;
+    }
+
+    if (currentPayload.trackingId !== failedPayload.trackingId) {
+      return;
+    }
+
+    const retryCount = (currentPayload.retryCount ?? 0) + 1;
+    const updatedPayload: IAiAgentDebouncePayload = {
+      ...currentPayload,
+      retryCount,
+    };
+
+    const transaction = this.redis
+      .multi()
+      .set(
+        cacheKey,
+        JSON.stringify(updatedPayload),
+        'EX',
+        this.AI_AGENT_DEBOUNCE_PAYLOAD_TTL_SECONDS
+      );
+
+    if (retryCount <= this.AI_AGENT_DEBOUNCE_MAX_RETRIES) {
+      transaction.zadd(
+        this.getAiAgentDebounceScheduleKey(),
+        Date.now() + this.getAiAgentDebounceRetryDelayMs(retryCount),
+        cacheKey
+      );
+    } else {
+      transaction
+        .zrem(this.getAiAgentDebounceScheduleKey(), cacheKey)
+        .zadd(this.getAiAgentDebounceDeadLetterKey(), Date.now(), cacheKey);
+    }
+
+    const results = await transaction.exec();
+    this.assertRedisTransaction(results, 'requeue AI Agent debounce');
+
+    console.error('[ChatbotFlow] AI Agent debounce processing failed', {
+      account_id: this.parseAiAgentDebounceCacheKey(cacheKey)?.accountId,
+      chat_id: this.parseAiAgentDebounceCacheKey(cacheKey)?.chatId,
+      ai_agent_id: currentPayload.selectedAiAgentId,
+      retry_count: retryCount,
+      dead_letter: retryCount > this.AI_AGENT_DEBOUNCE_MAX_RETRIES,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  private combineAiAgentDebouncedMessages(messages: string[]): string {
+    const lines: string[] = [];
+    for (const message of messages) {
+      const trimmed = message.trim();
+      if (trimmed) {
+        lines.push(trimmed);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  private buildMenuMessage(
+    baseMessage: string,
+    options: Array<{ text: string }>
+  ): string {
+    const lines = options.map((option, index) => {
+      const number = index + 1;
+      return `*${number}.* ${option.text}`;
+    });
+
+    return [baseMessage, '', ...lines].join('\n');
   }
 
   private scheduleAiAgentDebouncedResponse(
     t: TFunction<'translation', undefined>,
-    createChat: IChat,
-    currentNode: ListChatbotFlowResponse['nodes'][number],
-    aiAgent: ViewAiAgentResponse,
-    currentFlowId: string,
-    bootstrapSummaryKey: string,
-    conversationSummaryKey: string,
-    chatbotFlow: ListChatbotFlowResponse,
-    customMessages?: IChatbotCustomMessages
+    createChat: IChat
   ): void {
-    setTimeout(
-      async () => {
-        try {
-          await this.withAutomationLock(createChat, async () => {
-            const debounceData = await this.getAiAgentDebounce(createChat);
-
-            if (!debounceData) {
-              return;
-            }
-
-            const now = Date.now();
-            if (now < debounceData.expiresAt) {
-              return;
-            }
-
-            if (!(await this.canRunAutomation(createChat))) {
-              return;
-            }
-
-            await this.deleteAiAgentDebounce(createChat);
-
-            const combinedText = debounceData.messages
-              .map((msg) => msg.trim())
-              .filter(Boolean)
-              .join('\n');
-
-            if (!combinedText) {
-              return;
-            }
-
-            await this.processAiAgentUserText(
-              t,
-              createChat,
-              currentNode,
-              aiAgent,
-              debounceData.flowId || currentFlowId,
-              combinedText,
-              bootstrapSummaryKey,
-              conversationSummaryKey,
-              chatbotFlow,
-              customMessages,
-              debounceData.lastMessageType
+    runWithoutKafkaDispatchGuard(() => {
+      setTimeout(
+        async () => {
+          try {
+            const cacheKey = this.getAiAgentDebounceCacheKey(
+              createChat.account.id,
+              createChat.worker.id,
+              createChat.chat_id
             );
-          });
+            await this.processAiAgentDebounceByCacheKey(t, cacheKey);
+          } catch (error) {
+            console.error(
+              '[ChatbotFlow] local AI Agent debounce trigger failed',
+              error instanceof Error ? error.message : String(error)
+            );
+          }
+        },
+        (this.AI_AGENT_DEBOUNCE_SECONDS + 0.5) * 1000
+      );
+    });
+  }
+
+  private async processAiAgentDebounceByCacheKey(
+    t: TFunction<'translation', undefined>,
+    cacheKey: string
+  ): Promise<void> {
+    const ids = this.parseAiAgentDebounceCacheKey(cacheKey);
+    if (!ids) {
+      await this.redis.zrem(this.getAiAgentDebounceScheduleKey(), cacheKey);
+      return;
+    }
+
+    await withLock(
+      this.redis,
+      this.getAutomationLockKey(ids.accountId, ids.chatId),
+      async () => {
+        let debounceData: IAiAgentDebouncePayload | null = null;
+
+        try {
+          const [rawPayload, scheduledScore] = await Promise.all([
+            this.redis.get(cacheKey),
+            this.redis.zscore(this.getAiAgentDebounceScheduleKey(), cacheKey),
+          ]);
+
+          if (scheduledScore === null) {
+            return;
+          }
+          if (!rawPayload) {
+            await this.redis.zrem(
+              this.getAiAgentDebounceScheduleKey(),
+              cacheKey
+            );
+            return;
+          }
+          if (Number(scheduledScore) > Date.now()) {
+            return;
+          }
+
+          debounceData = JSON.parse(rawPayload) as IAiAgentDebouncePayload;
+          if (
+            !debounceData.trackingId ||
+            !debounceData.chatbotId ||
+            !debounceData.flowId ||
+            !debounceData.selectedAiAgentId ||
+            !Array.isArray(debounceData.messages)
+          ) {
+            throw new InvalidConfigurationError(
+              'Payload pendente do Agente de IA está inválido.'
+            );
+          }
+
+          const createChat = await this.chatService.findChatByChatId(
+            ids.accountId,
+            ids.chatId
+          );
+          if (!createChat) {
+            await this.deleteAiAgentDebounceByCacheKey(cacheKey);
+            return;
+          }
+
+          const activeChat = await this.getAutomationChatIfAllowed(createChat);
+          if (!activeChat) {
+            await this.deleteAiAgentDebounceByCacheKey(cacheKey);
+            return;
+          }
+
+          const [chatbotFlow, aiAgent] = await Promise.all([
+            this.chatbotService.findChatbotFlowByChatbotId(
+              ids.accountId,
+              debounceData.chatbotId
+            ),
+            this.aiAgentService.viewAiAgent(
+              debounceData.selectedAiAgentId,
+              ids.accountId
+            ),
+          ]);
+
+          if (!chatbotFlow) {
+            throw new InvalidConfigurationError(
+              'Fluxo do Agente de IA não foi encontrado.'
+            );
+          }
+          if (!aiAgent || aiAgent.status !== EAiAgentStatus.active) {
+            throw new InvalidConfigurationError(
+              'Agente de IA pendente não está ativo.'
+            );
+          }
+
+          const currentNode = this.getFlowNodeById(
+            chatbotFlow,
+            debounceData.flowId
+          );
+          if (
+            !currentNode ||
+            currentNode.data?.selectedAiAgent !== debounceData.selectedAiAgentId
+          ) {
+            throw new InvalidConfigurationError(
+              'Nó pendente do Agente de IA não corresponde ao fluxo atual.'
+            );
+          }
+
+          const combinedText = this.combineAiAgentDebouncedMessages(
+            debounceData.messages
+          );
+          if (!combinedText) {
+            await this.deleteAiAgentDebounceByCacheKey(cacheKey);
+            return;
+          }
+
+          const flowCacheKey = this.getChatbotFlowCacheKey(
+            activeChat.account.id,
+            activeChat.worker.id,
+            activeChat.chat_id
+          );
+          const processed = await this.processAiAgentUserText(
+            t,
+            activeChat,
+            currentNode,
+            aiAgent,
+            debounceData.flowId,
+            combinedText,
+            `${flowCacheKey}:bootstrap-summary`,
+            `${flowCacheKey}:conversation-summary`,
+            chatbotFlow,
+            debounceData.customMessages,
+            debounceData.lastMessageType,
+            debounceData.trackingId
+          );
+
+          if (!processed) {
+            throw new Error(
+              'Processamento pendente do Agente de IA não foi concluído.'
+            );
+          }
+
+          const latestRawPayload = await this.redis.get(cacheKey);
+          if (!latestRawPayload) {
+            await this.redis.zrem(
+              this.getAiAgentDebounceScheduleKey(),
+              cacheKey
+            );
+            return;
+          }
+          const latestPayload = JSON.parse(
+            latestRawPayload
+          ) as IAiAgentDebouncePayload;
+          if (latestPayload.trackingId === debounceData.trackingId) {
+            await this.deleteAiAgentDebounceByCacheKey(cacheKey);
+          }
         } catch (error) {
-          console.error(
-            '[ChatbotFlow] processAiAgentUserText debounce failed',
+          if (!debounceData) {
+            await this.deleteAiAgentDebounceByCacheKey(cacheKey);
+            console.error(
+              '[ChatbotFlow] invalid AI Agent debounce payload removed',
+              {
+                account_id: ids.accountId,
+                chat_id: ids.chatId,
+                error: error instanceof Error ? error.message : String(error),
+              }
+            );
+            return;
+          }
+
+          await this.requeueAiAgentDebounceAfterFailure(
+            cacheKey,
+            debounceData,
             error
           );
         }
       },
-      (this.AI_AGENT_DEBOUNCE_SECONDS + 0.5) * 1000
+      {
+        ttlMs: 120000,
+        retryMs: 100,
+        maxWaitMs: 135000,
+      }
     );
+  }
+
+  private async processScheduledAiAgentDebounces(
+    t: TFunction<'translation', undefined>
+  ): Promise<void> {
+    const scheduleKey = this.getAiAgentDebounceScheduleKey();
+    const dueKeys = await this.redis.zrangebyscore(
+      scheduleKey,
+      0,
+      Date.now(),
+      'LIMIT',
+      0,
+      100
+    );
+
+    for (const cacheKey of dueKeys) {
+      try {
+        await this.processAiAgentDebounceByCacheKey(t, cacheKey);
+      } catch (error) {
+        console.error('[ChatbotFlow] scheduled AI Agent debounce failed', {
+          debounce_cache_key: cacheKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   private scheduleMenuSend(
@@ -691,59 +1939,57 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     nodeData: { message: string; options: { id: string; text: string }[] }
   ): void {
-    setTimeout(
-      async () => {
-        try {
-          await this.withAutomationLock(createChat, async () => {
-            const debounceData = await this.getMenuDebounce(createChat);
+    runWithoutKafkaDispatchGuard(() => {
+      setTimeout(
+        async () => {
+          try {
+            await this.withAutomationLock(createChat, async () => {
+              const debounceData = await this.getMenuDebounce(createChat);
 
-            if (!debounceData) {
-              return;
-            }
-
-            const now = Date.now();
-            if (now < debounceData.expiresAt) {
-              return;
-            }
-
-            if (!(await this.canRunAutomation(createChat))) {
-              return;
-            }
-
-            await this.deleteMenuDebounce(createChat);
-
-            const rawBaseMessage = nodeData.message;
-            const baseMessage = await this.replaceVariables(
-              t,
-              rawBaseMessage,
-              createChat,
-              createChat.user,
-              createChat.sector
-            );
-
-            const lines = nodeData.options.map(
-              (option: { text: string }, index: number) => {
-                const number = index + 1;
-                return `*${number}.* ${option.text}`;
+              if (!debounceData) {
+                return;
               }
-            );
 
-            const menuMessage = [baseMessage, '', ...lines].join('\n');
+              const now = Date.now();
+              if (now < debounceData.expiresAt) {
+                return;
+              }
 
-            await this.sendMessageWithStatusGuard(t, {
-              chat: createChat,
-              accountId: createChat.account.id,
-              type: EMessageType.text,
-              message: menuMessage,
-              typeUser: ETypeUserChat.bot,
+              if (!(await this.canRunAutomation(createChat))) {
+                return;
+              }
+
+              await this.deleteMenuDebounce(createChat);
+
+              const rawBaseMessage = nodeData.message;
+              const baseMessage = await this.replaceVariables(
+                t,
+                rawBaseMessage,
+                createChat,
+                createChat.user,
+                createChat.sector
+              );
+
+              const menuMessage = this.buildMenuMessage(
+                baseMessage,
+                nodeData.options
+              );
+
+              await this.sendMessageWithStatusGuard(t, {
+                chat: createChat,
+                accountId: createChat.account.id,
+                type: EMessageType.text,
+                message: menuMessage,
+                typeUser: ETypeUserChat.bot,
+              });
             });
-          });
-        } catch (error) {
-          console.error('[ChatbotFlow] scheduleMenuSend failed', error);
-        }
-      },
-      (this.MENU_DEBOUNCE_SECONDS + 0.5) * 1000
-    );
+          } catch (error) {
+            console.error('[ChatbotFlow] scheduleMenuSend failed', error);
+          }
+        },
+        (this.MENU_DEBOUNCE_SECONDS + 0.5) * 1000
+      );
+    });
   }
 
   private getFlowNodeById(
@@ -761,6 +2007,32 @@ export class ChatbotFlowRunnerService {
       (currentEdge) => currentEdge.source === currentFlowId
     );
 
+    return edge?.target ?? null;
+  }
+
+  private getNextFlowIdByApiOutcome(
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    outcome: 'success' | 'failure'
+  ): string | null {
+    const edge = chatbotFlow.edges.find(
+      (currentEdge) =>
+        currentEdge.source === currentFlowId &&
+        currentEdge.sourceHandle === outcome
+    );
+    return edge?.target ?? null;
+  }
+
+  private getNextFlowIdByUnderchatOutcome(
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    outcome: 'found' | 'not_found'
+  ): string | null {
+    const edge = chatbotFlow.edges.find(
+      (currentEdge) =>
+        currentEdge.source === currentFlowId &&
+        currentEdge.sourceHandle === outcome
+    );
     return edge?.target ?? null;
   }
 
@@ -1143,6 +2415,10 @@ export class ChatbotFlowRunnerService {
       return false;
     }
 
+    if (error instanceof AiProviderError) {
+      return true;
+    }
+
     const normalizedMessage = this.getErrorMessage(error).trim().toLowerCase();
     if (!normalizedMessage) {
       return false;
@@ -1371,7 +2647,60 @@ export class ChatbotFlowRunnerService {
       return messageContent.imageMessage.caption;
     }
 
+    if (messageContent.videoMessage?.caption) {
+      return messageContent.videoMessage.caption;
+    }
+
     return null;
+  }
+
+  private getMessageResponseCapture(
+    data: IUpsertMessage
+  ): ChatbotNodeRuntimeCapture | null {
+    const type = data.type;
+    if (
+      type !== EMessageType.text &&
+      type !== EMessageType.image &&
+      type !== EMessageType.video &&
+      type !== EMessageType.audio &&
+      type !== EMessageType.document
+    ) {
+      return null;
+    }
+
+    const sourceMedia =
+      type === EMessageType.image
+        ? data.content?.image
+        : type === EMessageType.video
+          ? data.content?.video
+          : type === EMessageType.audio
+            ? data.content?.audio
+            : type === EMessageType.document
+              ? data.content?.document
+              : null;
+    const media = sourceMedia as Record<string, unknown> | null | undefined;
+    const nullableString = (value: unknown): string | null =>
+      typeof value === 'string' ? value : null;
+    const nullableNumber = (value: unknown): number | null =>
+      typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+    return {
+      text: this.getTextFromUpsertMessage(data) ?? '',
+      type,
+      media:
+        type === EMessageType.text
+          ? null
+          : {
+              url: nullableString(media?.url),
+              name: nullableString(media?.name),
+              mimetype: nullableString(media?.mimetype),
+              extension: nullableString(media?.extension),
+              size: nullableNumber(media?.size),
+              duration: nullableNumber(media?.duration),
+              width: nullableNumber(media?.width),
+              height: nullableNumber(media?.height),
+            },
+    };
   }
 
   private parseStructuredSelection(
@@ -1495,24 +2824,40 @@ export class ChatbotFlowRunnerService {
     }
 
     try {
-      const response = await fetch(audioUrl);
-      if (!response.ok) {
+      const response = await executeSafeOutboundHttp({
+        url: audioUrl,
+        method: 'GET',
+        ...getChatbotApiOutboundHttpPolicy(),
+      });
+      if (
+        response.kind !== 'response' ||
+        response.statusCode < 200 ||
+        response.statusCode >= 300
+      ) {
+        console.error('[ChatbotFlow] AI audio download failed', {
+          account_id: createChat.account.id,
+          chat_id: createChat.chat_id,
+          failure:
+            response.kind === 'failure'
+              ? response.code
+              : `HTTP_${response.statusCode}`,
+        });
         return null;
       }
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+
       const mimetype = data.content?.audio?.mimetype?.trim() || 'audio/mpeg';
       const result = await this.voiceIaIntegrationService.transcribe(
-        buffer,
+        response.body,
         voiceIaConfig,
         mimetype
       );
       return result?.text?.trim() ?? null;
     } catch (error) {
-      console.error(
-        '[ChatbotFlow] transcribeAudioMessage transcription failed',
-        error
-      );
+      console.error('[ChatbotFlow] AI audio transcription failed', {
+        account_id: createChat.account.id,
+        chat_id: createChat.chat_id,
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
       return null;
     }
   }
@@ -1837,6 +3182,22 @@ export class ChatbotFlowRunnerService {
       );
     }
 
+    if (/\{\{\s*api_[1-9]\d*(?:[.\s}])/u.test(replacedMessage)) {
+      const context = await this.flowRuntimeContextService?.load({
+        accountId: createChat.account.id,
+        workerId: createChat.worker.id,
+        chatId: createChat.chat_id,
+      });
+      if (context && this.flowRuntimeContextService) {
+        const scope = this.flowRuntimeContextService.toVariableScope(context);
+        const resolved = resolveChatbotTemplate(replacedMessage, scope, {
+          missingValue: 'error',
+          arrayFormat: 'human',
+        });
+        replacedMessage = this.formatResolvedHumanValue(resolved);
+      }
+    }
+
     return replacedMessage;
   }
 
@@ -1882,44 +3243,6 @@ export class ChatbotFlowRunnerService {
     remainder = (sum * 10) % 11;
     if (remainder === 10 || remainder === 11) remainder = 0;
     if (remainder !== Number.parseInt(digits.charAt(10))) return false;
-
-    return true;
-  }
-
-  private isValidCNPJ(cnpj: string): boolean {
-    const digits = this.onlyDigits(cnpj);
-
-    if (digits.length !== 14) return false;
-
-    if (/^(\d)\1{13}$/.test(digits)) return false;
-
-    let length = digits.length - 2;
-    let numbers = digits.substring(0, length);
-    const multipliers = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-    let sum = 0;
-
-    for (let i = 0; i < length; i++) {
-      sum += Number.parseInt(numbers.charAt(i)) * multipliers[i];
-    }
-
-    let remainder = sum % 11;
-    let digit = remainder < 2 ? 0 : 11 - remainder;
-
-    if (digit !== Number.parseInt(digits.charAt(length))) return false;
-
-    length = length + 1;
-    numbers = digits.substring(0, length);
-    const multipliers2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-    sum = 0;
-
-    for (let i = 0; i < length; i++) {
-      sum += Number.parseInt(numbers.charAt(i)) * multipliers2[i];
-    }
-
-    remainder = sum % 11;
-    digit = remainder < 2 ? 0 : 11 - remainder;
-
-    if (digit !== Number.parseInt(digits.charAt(length))) return false;
 
     return true;
   }
@@ -2198,7 +3521,6 @@ export class ChatbotFlowRunnerService {
     interactive: Record<string, unknown>
   ): Record<string, unknown> {
     const headerText = this.getNodeTextValue(node, 'header', '').trim();
-    const footerText = this.getNodeTextValue(node, 'footer', '').trim();
 
     if (headerText) {
       interactive.header = {
@@ -2206,6 +3528,15 @@ export class ChatbotFlowRunnerService {
         text: headerText,
       };
     }
+
+    return this.withOfficialFooter(node, interactive);
+  }
+
+  private withOfficialFooter(
+    node: ListChatbotFlowResponse['nodes'][number],
+    interactive: Record<string, unknown>
+  ): Record<string, unknown> {
+    const footerText = this.getNodeTextValue(node, 'footer', '').trim();
 
     if (footerText) {
       interactive.footer = {
@@ -2219,16 +3550,25 @@ export class ChatbotFlowRunnerService {
   private resolveOfficialOptions(
     node: ListChatbotFlowResponse['nodes'][number]
   ): Array<{ id: string; text: string; description?: string | null }> {
-    const options = Array.isArray(node.data?.options) ? node.data.options : [];
+    const rawOptions = this.getNodeDataValue<unknown[]>(node, 'options');
+    const options = Array.isArray(rawOptions) ? rawOptions : [];
     return options
-      .map((option, index) => ({
-        id: String(option?.id ?? `option-${index + 1}`).trim(),
-        text: String(option?.text ?? `Opção ${index + 1}`).trim(),
-        description:
-          typeof (option as { description?: unknown })?.description === 'string'
-            ? String((option as { description?: unknown }).description)
-            : null,
-      }))
+      .map((rawOption, index) => {
+        const option =
+          rawOption &&
+          typeof rawOption === 'object' &&
+          !Array.isArray(rawOption)
+            ? (rawOption as Record<string, unknown>)
+            : {};
+        return {
+          id: String(option.id ?? `option-${index + 1}`).trim(),
+          text: String(option.text ?? `Opção ${index + 1}`).trim(),
+          description:
+            typeof option.description === 'string'
+              ? String(option.description)
+              : null,
+        };
+      })
       .filter((option) => option.id && option.text);
   }
 
@@ -2322,28 +3662,9 @@ export class ChatbotFlowRunnerService {
     const sourceSections: Array<Record<string, unknown>> =
       normalizedSections.length > 0 ? normalizedSections : fallbackSections;
 
-    let rowsCount = 0;
-    return sourceSections
-      .map((section): Record<string, unknown> | null => {
-        const rows = Array.isArray(section.rows) ? section.rows : [];
-        const remaining = 10 - rowsCount;
-        if (remaining <= 0) {
-          return null;
-        }
-
-        const limitedRows = rows.slice(0, remaining);
-        rowsCount += limitedRows.length;
-
-        return limitedRows.length > 0
-          ? {
-              ...section,
-              rows: limitedRows,
-            }
-          : null;
-      })
-      .filter(
-        (section): section is Record<string, unknown> => section !== null
-      );
+    return sourceSections.filter(
+      (section) => Array.isArray(section.rows) && section.rows.length > 0
+    );
   }
 
   private async buildOfficialInteractivePayload(
@@ -2363,15 +3684,13 @@ export class ChatbotFlowRunnerService {
     );
 
     if (node.type === 'officialReplyButtons') {
-      const buttons = this.resolveOfficialOptions(node)
-        .slice(0, 3)
-        .map((option) => ({
-          type: 'reply',
-          reply: {
-            id: option.id,
-            title: option.text,
-          },
-        }));
+      const buttons = this.resolveOfficialOptions(node).map((option) => ({
+        type: 'reply',
+        reply: {
+          id: option.id,
+          title: option.text,
+        },
+      }));
 
       return this.withOfficialHeaderFooter(node, {
         type: 'button',
@@ -2381,16 +3700,19 @@ export class ChatbotFlowRunnerService {
     }
 
     if (node.type === 'officialList') {
+      const configuredSections = this.getNodeDataValue<unknown[]>(
+        node,
+        'sections'
+      );
       const explicitSections =
-        this.getNodeDataValue<unknown[]>(node, 'sections') ??
-        this.getNodeDataValue<unknown[]>(node, 'listSections');
-      const rows = this.resolveOfficialOptions(node)
-        .slice(0, 10)
-        .map((option) => ({
-          id: option.id,
-          title: option.text,
-          ...(option.description ? { description: option.description } : {}),
-        }));
+        Array.isArray(configuredSections) && configuredSections.length > 0
+          ? configuredSections
+          : this.getNodeDataValue<unknown[]>(node, 'listSections');
+      const rows = this.resolveOfficialOptions(node).map((option) => ({
+        id: option.id,
+        title: option.text,
+        ...(option.description ? { description: option.description } : {}),
+      }));
       const sections = this.normalizeOfficialListSections(
         explicitSections,
         rows,
@@ -2412,14 +3734,29 @@ export class ChatbotFlowRunnerService {
     }
 
     if (node.type === 'officialCtaUrl') {
+      const displayText = await this.replaceVariables(
+        t,
+        this.getNodeTextValue(node, 'buttonText', 'Abrir'),
+        createChat,
+        createChat.user,
+        createChat.sector
+      );
+      const url = await this.replaceVariables(
+        t,
+        this.getNodeTextValue(node, 'url'),
+        createChat,
+        createChat.user,
+        createChat.sector
+      );
+
       return this.withOfficialHeaderFooter(node, {
         type: 'cta_url',
         body: { text: message },
         action: {
           name: 'cta_url',
           parameters: {
-            display_text: this.getNodeTextValue(node, 'buttonText', 'Abrir'),
-            url: this.getNodeTextValue(node, 'url'),
+            display_text: displayText.trim(),
+            url: url.trim(),
           },
         },
       });
@@ -2467,7 +3804,7 @@ export class ChatbotFlowRunnerService {
     }
 
     if (node.type === 'officialSingleProduct') {
-      return this.withOfficialHeaderFooter(node, {
+      return this.withOfficialFooter(node, {
         type: 'product',
         body: message ? { text: message } : undefined,
         action: {
@@ -2551,6 +3888,10 @@ export class ChatbotFlowRunnerService {
       return false;
     }
 
+    // Variables are resolved while the payload is built. Validate the final
+    // value so dynamic content cannot exceed Meta's limits at send time.
+    assertOfficialWhatsappInteractivePayload(interactive);
+
     const summary =
       this.getNodeTextValue(node, 'message') ||
       this.getNodeTextValue(node, 'text') ||
@@ -2613,9 +3954,16 @@ export class ChatbotFlowRunnerService {
       type === EMessageType.react
         ? this.resolveLastMetaMessageId(createChat)
         : null;
+    const executionMessageId = this.consumeNextExecutionMessageId(
+      createChat.chat_id
+    );
+    const messageId = executionMessageId ?? uuidv7();
+    const messageHash = executionMessageId
+      ? uuidv5(`chatbot-execution-message-hash:${messageId}`, uuidv5.URL)
+      : uuidv7();
 
     return {
-      message_id: uuidv7(),
+      message_id: messageId,
       chat_id: createChat.chat_id,
       message_key: {
         remote_jid: createChat.message_key?.remote_jid ?? null,
@@ -2642,7 +3990,7 @@ export class ChatbotFlowRunnerService {
         ...content,
       },
       date: new Date().toISOString(),
-      hash: uuidv7(),
+      hash: messageHash,
     };
   }
 
@@ -2665,17 +4013,48 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     node: ListChatbotFlowResponse['nodes'][number]
   ): Promise<boolean> {
+    const guardedChat = await this.getAutomationChatIfAllowed(createChat);
+    if (!guardedChat) {
+      return false;
+    }
+
     if (node.type === 'officialTemplate') {
+      const rawVariables =
+        this.getNodeDataValue<IOfficialWhatsappTemplateMessage['variables']>(
+          node,
+          'templateVariables'
+        ) ?? [];
+      const variableScope = await this.buildOfficialTemplateVariableScope(
+        t,
+        guardedChat
+      );
+      const resolvedVariables = rawVariables.map((variable) => {
+        const resolvedValue =
+          typeof variable.value === 'string'
+            ? resolveChatbotTemplate(variable.value, variableScope, {
+                missingValue: 'error',
+                arrayFormat: 'human',
+              })
+            : variable.value;
+        return {
+          ...variable,
+          value: normalizeOfficialTemplateVariableValue(resolvedValue),
+        };
+      });
       const template: IOfficialWhatsappTemplateMessage = {
-        name: this.getNodeTextValue(node, 'templateName'),
-        language: this.getNodeTextValue(node, 'templateLanguage', 'pt_BR'),
-        variables:
-          this.getNodeDataValue<IOfficialWhatsappTemplateMessage['variables']>(
-            node,
-            'templateVariables'
-          ) ?? [],
+        name: this.getNodeTextValue(node, 'templateName').trim(),
+        language: this.getNodeTextValue(
+          node,
+          'templateLanguage',
+          'pt_BR'
+        ).trim(),
+        variables: resolvedVariables,
       };
       const templateCategory = this.getNodeTextValue(node, 'templateCategory');
+      const templateParameterFormat = this.getNodeTextValue(
+        node,
+        'templateParameterFormat'
+      ).toUpperCase();
       const templateComponents = this.getNodeDataValue<
         IOfficialWhatsappTemplateMessage['components']
       >(node, 'templateComponents');
@@ -2686,6 +4065,12 @@ export class ChatbotFlowRunnerService {
       if (templateCategory) {
         template.category = templateCategory;
       }
+      if (
+        templateParameterFormat === 'POSITIONAL' ||
+        templateParameterFormat === 'NAMED'
+      ) {
+        template.parameter_format = templateParameterFormat;
+      }
       if (Array.isArray(templateComponents) && templateComponents.length > 0) {
         template.components = templateComponents;
       }
@@ -2693,11 +4078,32 @@ export class ChatbotFlowRunnerService {
         template.preview = templatePreview;
       }
 
-      return this.chatMessageService.publishPreparedMessage(
+      const previewText = this.officialWhatsappTemplateService.buildPreviewText(
+        {
+          id: null,
+          name: template.name,
+          language: template.language,
+          status: 'APPROVED',
+          parameter_format: template.parameter_format,
+          category: template.category ?? null,
+          components: template.components ?? [],
+          variables:
+            template.components?.flatMap((component) => [
+              ...(component.variables ?? []),
+              ...(component.buttons?.flatMap(
+                (button) => button.variables ?? []
+              ) ?? []),
+            ]) ?? [],
+          preview: template.preview ?? {},
+        },
+        resolvedVariables
+      );
+
+      return this.publishPreparedMessageWithAssignmentGuard(
         this.buildPreparedOfficialMessage(
-          createChat,
+          guardedChat,
           EMessageType.official_template,
-          template.name,
+          previewText,
           {
             official_template: template,
             official: {
@@ -2705,7 +4111,7 @@ export class ChatbotFlowRunnerService {
               type: 'template',
               display: buildOfficialWhatsappDisplayFromTemplate(
                 template,
-                template.name
+                previewText
               ),
             },
           }
@@ -2717,9 +4123,9 @@ export class ChatbotFlowRunnerService {
       const contacts =
         this.getNodeDataValue<IContactMessage[]>(node, 'contacts') ?? [];
 
-      return this.chatMessageService.publishPreparedMessage(
+      return this.publishPreparedMessageWithAssignmentGuard(
         this.buildPreparedOfficialMessage(
-          createChat,
+          guardedChat,
           contacts.length > 1
             ? EMessageType.contacts
             : EMessageType.contact_card,
@@ -2740,9 +4146,9 @@ export class ChatbotFlowRunnerService {
         'image/webp'
       );
 
-      return this.chatMessageService.publishPreparedMessage(
+      return this.publishPreparedMessageWithAssignmentGuard(
         this.buildPreparedOfficialMessage(
-          createChat,
+          guardedChat,
           EMessageType.sticker,
           '[Figurinha]',
           {
@@ -2760,9 +4166,9 @@ export class ChatbotFlowRunnerService {
     if (node.type === 'officialReaction') {
       const emoji = this.getNodeTextValue(node, 'emoji', '👍');
 
-      return this.chatMessageService.publishPreparedMessage(
+      return this.publishPreparedMessageWithAssignmentGuard(
         this.buildPreparedOfficialMessage(
-          createChat,
+          guardedChat,
           EMessageType.react,
           emoji,
           {}
@@ -2820,7 +4226,10 @@ export class ChatbotFlowRunnerService {
   }
 
   private isOfficialOptionNode(nodeType: string): boolean {
-    return nodeType === 'officialReplyButtons' || nodeType === 'officialList';
+    return (
+      isOfficialWaitForResponseNodeType(nodeType) &&
+      (nodeType === 'officialReplyButtons' || nodeType === 'officialList')
+    );
   }
 
   private isOfficialContinuationNode(nodeType: string): boolean {
@@ -2830,7 +4239,6 @@ export class ChatbotFlowRunnerService {
       nodeType === 'officialMultiProduct' ||
       nodeType === 'officialCatalog' ||
       nodeType === 'officialMediaCarousel' ||
-      nodeType === 'officialTemplate' ||
       nodeType === 'officialLocation' ||
       nodeType === 'officialContacts' ||
       nodeType === 'officialSticker' ||
@@ -3024,19 +4432,46 @@ export class ChatbotFlowRunnerService {
     customMessages?: IChatbotCustomMessages,
     data?: IUpsertMessage
   ): Promise<boolean> {
-    await this.sendOfficialNode(t, createChat, currentNode);
+    const messageSent = await this.sendOfficialNode(t, createChat, currentNode);
+    if (!messageSent) {
+      return false;
+    }
+
+    if (currentNode.type === 'officialTemplate') {
+      await this.cancelInactivityCheck(createChat);
+    }
 
     if (this.isOfficialOptionNode(currentNode.type)) {
       return true;
     }
 
+    if (isOfficialWaitForResponseNodeType(currentNode.type)) {
+      if (currentNode.type === 'officialTemplate') {
+        const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+        if (nextFlowId) {
+          await this.persistOfficialTemplateResponsePending(
+            createChat,
+            currentNode.id,
+            nextFlowId
+          );
+        }
+      }
+
+      return true;
+    }
+
     const continueType = currentNode.data?.continueType;
     const shouldContinueAutomatically =
+      // CTA URL buttons open a browser and do not produce a WhatsApp reply
+      // webhook. Older saved flows may carry `after_response`; honoring it
+      // leaves the execution parked forever after the CTA is sent.
+      currentNode.type === 'officialCtaUrl' ||
       continueType === 'automatic' ||
       (!continueType && this.isOfficialContinuationNode(currentNode.type));
     const shouldContinueAfterResponse =
-      continueType === 'after_response' ||
-      (!continueType && this.isOfficialAfterResponseNode(currentNode.type));
+      currentNode.type !== 'officialCtaUrl' &&
+      (continueType === 'after_response' ||
+        (!continueType && this.isOfficialAfterResponseNode(currentNode.type)));
 
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
 
@@ -3081,11 +4516,48 @@ export class ChatbotFlowRunnerService {
       createChat.user,
       createChat.sector
     );
-    const attachmentUrl = node.data?.attachmentUrl;
-    const attachmentMimetype = node.data?.attachmentMimetype;
+    let attachmentUrl = node.data?.attachmentUrl;
+    let attachmentMimetype = node.data?.attachmentMimetype;
     const attachmentDuration = node.data?.attachmentDuration;
     const attachmentWidth = node.data?.attachmentWidth;
     const attachmentHeight = node.data?.attachmentHeight;
+
+    if (
+      node.data?.attachmentSource === 'variable' &&
+      node.data.attachmentVariable &&
+      ['image', 'video', 'audio', 'document'].includes(messageType)
+    ) {
+      const context = await this.flowRuntimeContextService?.load({
+        accountId: createChat.account.id,
+        workerId: createChat.worker.id,
+        chatId: createChat.chat_id,
+      });
+      if (!context || !this.flowRuntimeContextService) {
+        throw new Error('chatbot API attachment context is unavailable');
+      }
+      if (!this.chatbotMediaMaterializerService) {
+        throw new Error('chatbot API media materializer is unavailable');
+      }
+      const expression = node.data.attachmentVariable.includes('{{')
+        ? node.data.attachmentVariable
+        : `{{ ${node.data.attachmentVariable} }}`;
+      const value = resolveChatbotTemplate(
+        expression,
+        this.flowRuntimeContextService.toVariableScope(context),
+        { missingValue: 'error' }
+      );
+      const materialized =
+        await this.chatbotMediaMaterializerService.materialize(value, {
+          accountId: createChat.account.id,
+          kind: messageType as 'image' | 'video' | 'audio' | 'document',
+          fileName: node.data.attachmentFileName,
+          mimetype: attachmentMimetype,
+          isProduction: getChatbotApiOutboundHttpPolicy().isProduction,
+          allowLocalhostHttp: false,
+        });
+      attachmentUrl = materialized.url;
+      attachmentMimetype = materialized.mimetype;
+    }
 
     if (messageType === 'image' && attachmentUrl) {
       return this.sendMessageWithStatusGuard(t, {
@@ -3279,7 +4751,14 @@ export class ChatbotFlowRunnerService {
       );
     }
 
-    await this.sendRandomMessageItem(t, createChat, randomMessageItem);
+    const messageSent = await this.sendRandomMessageItem(
+      t,
+      createChat,
+      randomMessageItem
+    );
+    if (!messageSent) {
+      return false;
+    }
 
     if (continueType === 'after_response') {
       if (nextFlowId) {
@@ -3333,12 +4812,7 @@ export class ChatbotFlowRunnerService {
     );
     const options = node.data?.options ?? [];
 
-    const lines = options.map((option, index) => {
-      const number = index + 1;
-      return `*${number}.* ${option.text}`;
-    });
-
-    const menuMessage = [baseMessage, '', ...lines].join('\n');
+    const menuMessage = this.buildMenuMessage(baseMessage, options);
 
     return this.sendMessageWithStatusGuard(t, {
       chat: createChat,
@@ -3349,96 +4823,397 @@ export class ChatbotFlowRunnerService {
     });
   }
 
+  public async finishOutsideHoursChat(
+    t: TFunction<'translation', undefined>,
+    chat: IChat,
+    message: string
+  ): Promise<boolean> {
+    const currentChat = await this.chatService.findChatByChatId(
+      chat.account.id,
+      chat.chat_id
+    );
+    if (!currentChat) {
+      return false;
+    }
+
+    const outcome = await this.sendOutsideHoursFinishMessage(
+      t,
+      currentChat,
+      message
+    );
+
+    const messageAllowed =
+      currentChat.contact?.ignore !== EContactIgnore.ignore_automation &&
+      currentChat.contact?.ignore !== EContactIgnore.ignore_totally;
+
+    return outcome === 'not_owned' || messageAllowed;
+  }
+
+  private async sendOutsideHoursFinishMessage(
+    t: TFunction<'translation', undefined>,
+    activeChat: IChat,
+    message: string
+  ): Promise<TOutsideHoursFinishOutcome> {
+    const pendingEffectKey = this.getPendingFinishEffectKey(
+      activeChat.account.id,
+      activeChat.worker.id,
+      activeChat.chat_id
+    );
+    let existingTransition: IChatbotPendingFinishEffect | null = null;
+    try {
+      const existingPayload = await this.redis.get(pendingEffectKey);
+      if (existingPayload) {
+        existingTransition = JSON.parse(
+          existingPayload
+        ) as IChatbotPendingFinishEffect;
+      }
+    } catch {
+      existingTransition = null;
+    }
+
+    const canReuseExistingTransition = Boolean(
+      existingTransition?.source === 'outside_hours' &&
+      existingTransition.phase === 'transition_pending' &&
+      (this.isPendingTransitionOwnedByChat(existingTransition, activeChat) ||
+        (activeChat.status === EChatStatus.closed &&
+          existingTransition.statusEventId ===
+            activeChat.meta?.status_event_id))
+    );
+    const statusEventId =
+      (activeChat.status === EChatStatus.closed &&
+      activeChat.meta?.status_source === 'outside_hours'
+        ? activeChat.meta.status_event_id
+        : undefined) ||
+      (canReuseExistingTransition
+        ? existingTransition?.statusEventId
+        : undefined) ||
+      uuidv7();
+    const transitionEffect: IChatbotPendingFinishEffect = {
+      accountId: activeChat.account.id,
+      workerId: activeChat.worker.id,
+      chatId: activeChat.chat_id,
+      source: 'outside_hours',
+      phase: 'transition_pending',
+      statusEventId,
+      expectedStatus: activeChat.status,
+      expectedStatusEventId: activeChat.meta?.status_event_id ?? undefined,
+      expectedStatusEpoch: activeChat.meta?.status_epoch ?? undefined,
+      expectedStartedAt: activeChat.started_at ?? null,
+      expectedLastMessageId: activeChat.summary?.last_message_id ?? null,
+      customMessage: message,
+      messageEnabled:
+        activeChat.contact?.ignore !== EContactIgnore.ignore_automation &&
+        activeChat.contact?.ignore !== EContactIgnore.ignore_totally,
+      retryCount: canReuseExistingTransition
+        ? (existingTransition?.retryCount ?? 0)
+        : 0,
+    };
+    await this.persistPendingFinishEffect(transitionEffect);
+
+    const lifecycleResult = await this.chatLifecycleService.finishChat({
+      chat: activeChat,
+      source: 'outside_hours',
+      expectedStatuses: [activeChat.status],
+      respectOutputChatbot: false,
+      statusEventId,
+    });
+    if (lifecycleResult.outcome === 'retryable_failure') {
+      return 'queued';
+    }
+
+    if (
+      lifecycleResult.outcome === 'status_mismatch' ||
+      lifecycleResult.targetStatus !== EChatStatus.closed
+    ) {
+      await this.removePendingFinishEffectByCacheKey(pendingEffectKey);
+      return 'not_owned';
+    }
+
+    const ownsStatusEvent =
+      lifecycleResult.outcome === 'applied' || lifecycleResult.ownedBySource;
+    if (!ownsStatusEvent || !lifecycleResult.statusEventId) {
+      await this.removePendingFinishEffectByCacheKey(pendingEffectKey);
+      return 'not_owned';
+    }
+
+    const closedChat = lifecycleResult.chat;
+    const effect: IChatbotPendingFinishEffect = {
+      accountId: closedChat.account.id,
+      workerId: closedChat.worker.id,
+      chatId: closedChat.chat_id,
+      source: 'outside_hours',
+      phase: 'effects_pending',
+      statusEventId: lifecycleResult.statusEventId,
+      customMessage: transitionEffect.customMessage,
+      messageEnabled: transitionEffect.messageEnabled,
+      retryCount: 0,
+    };
+    await this.persistPendingFinishEffect(effect);
+    await this.acknowledgeMigratedFinishEffect(pendingEffectKey, closedChat);
+
+    try {
+      await this.executePendingFinishEffect(t, effect, {
+        accountId: effect.accountId,
+        workerId: effect.workerId,
+        chatId: effect.chatId,
+      });
+    } catch (error) {
+      console.warn('[ChatbotFlow] outside-hours message queued for retry', {
+        account_id: effect.accountId,
+        chat_id: effect.chatId,
+        status_event_id: effect.statusEventId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return 'queued';
+    }
+
+    return 'completed';
+  }
+
   private async sendFinishMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     customMessage?: string,
-    enabled?: boolean
+    enabled?: boolean,
+    validatedRetrySnapshot?: IChat
   ): Promise<boolean> {
-    const activeChat = await this.getAutomationChatIfAllowed(createChat);
+    const activeChat =
+      validatedRetrySnapshot ??
+      (await this.getAutomationChatIfAllowed(createChat, {
+        allowClosedStatus: true,
+      }));
     if (!activeChat) {
       return false;
     }
 
-    const closedAt = new Date().toISOString();
-
-    if (enabled !== false) {
-      const rawMessage = customMessage || t('chatbot_service_finished');
-      const message = await this.replaceVariables(
-        t,
-        rawMessage,
-        activeChat,
-        activeChat.user,
-        activeChat.sector
-      );
-
-      await this.sendMessageWithStatusGuard(
-        t,
-        {
-          chat: activeChat,
-          accountId: activeChat.account.id,
-          type: EMessageType.system,
-          message,
-          typeUser: ETypeUserChat.bot,
-        },
-        { allowClosedStatus: true }
-      );
-    }
-
-    const statusUpdated = await this.chatService.updateChatStatus(
-      activeChat.chat_id,
-      EChatStatus.closed,
-      null,
-      null,
-      closedAt
-    );
-
-    if (!statusUpdated) {
+    if (
+      validatedRetrySnapshot &&
+      activeChat.status !== EChatStatus.closed &&
+      !this.isAutomationChatStatus(activeChat.status)
+    ) {
       return false;
     }
 
-    const persistedChatSnapshot = await this.loadCurrentChatState(activeChat);
-    const closedChat: IChat = {
-      ...(persistedChatSnapshot ?? activeChat),
-      status: EChatStatus.closed,
-      closed_at: closedAt,
+    const pendingEffectKey = this.getPendingFinishEffectKey(
+      activeChat.account.id,
+      activeChat.worker.id,
+      activeChat.chat_id
+    );
+    let existingTransition: IChatbotPendingFinishEffect | null = null;
+    try {
+      const existingPayload = await this.redis.get(pendingEffectKey);
+      if (existingPayload) {
+        existingTransition = JSON.parse(
+          existingPayload
+        ) as IChatbotPendingFinishEffect;
+      }
+    } catch {
+      existingTransition = null;
+    }
+
+    const canReuseExistingTransition = Boolean(
+      existingTransition?.source === 'chatbot' &&
+      existingTransition.phase === 'transition_pending' &&
+      (this.isPendingTransitionOwnedByChat(existingTransition, activeChat) ||
+        (activeChat.status === EChatStatus.closed &&
+          existingTransition.statusEventId ===
+            activeChat.meta?.status_event_id))
+    );
+    const statusEventId =
+      (activeChat.status === EChatStatus.closed &&
+      activeChat.meta?.status_source === 'chatbot'
+        ? activeChat.meta.status_event_id
+        : undefined) ||
+      (canReuseExistingTransition
+        ? existingTransition?.statusEventId
+        : undefined) ||
+      uuidv7();
+
+    const transitionEffect: IChatbotPendingFinishEffect = {
+      accountId: activeChat.account.id,
+      workerId: activeChat.worker.id,
+      chatId: activeChat.chat_id,
+      source: 'chatbot',
+      phase: 'transition_pending',
+      statusEventId,
+      expectedStatus: activeChat.status,
+      expectedStatusEventId: activeChat.meta?.status_event_id ?? undefined,
+      expectedStatusEpoch: activeChat.meta?.status_epoch ?? undefined,
+      expectedStartedAt: activeChat.started_at ?? null,
+      expectedLastMessageId: activeChat.summary?.last_message_id ?? null,
+      customMessage,
+      messageEnabled: enabled !== false,
+      retryCount: canReuseExistingTransition
+        ? (existingTransition?.retryCount ?? 0)
+        : 0,
     };
+    await this.persistPendingFinishEffect(transitionEffect);
 
-    const channelAccountId = closedChat.account?.id ?? activeChat.account.id;
+    const lifecycleResult = await this.chatLifecycleService.finishChat({
+      chat: activeChat,
+      source: 'chatbot',
+      expectedStatuses: Array.from(this.AUTOMATION_CHAT_STATUSES),
+      respectOutputChatbot: false,
+      statusEventId,
+    });
 
-    const publishResults = await Promise.allSettled([
-      this.centrifugoService.publishSubImmediate(
-        chatAccountCentrifugo(channelAccountId),
-        closedChat
-      ),
-      this.centrifugoService.publishSubImmediate(
-        chatQueueAccountCentrifugo(channelAccountId),
-        closedChat
-      ),
-    ]);
+    console.info('[ChatbotFlow] automatic finish transition', {
+      account_id: activeChat.account.id,
+      chat_id: activeChat.chat_id,
+      source: 'chatbot',
+      current_status: activeChat.status,
+      target_status: lifecycleResult.targetStatus,
+      outcome: lifecycleResult.outcome,
+      status_event_id: lifecycleResult.statusEventId,
+    });
 
-    if (publishResults.some((result) => result.status === 'rejected')) {
-      console.error('[ChatbotFlow] failed to publish closed chat update', {
+    if (lifecycleResult.outcome === 'retryable_failure') {
+      return false;
+    }
+
+    if (
+      lifecycleResult.outcome === 'status_mismatch' ||
+      lifecycleResult.targetStatus !== EChatStatus.closed
+    ) {
+      await this.removePendingFinishEffectByCacheKey(pendingEffectKey);
+      return false;
+    }
+
+    const closedChat = lifecycleResult.chat;
+    const shouldRunOwnedEffects =
+      lifecycleResult.outcome === 'applied' || lifecycleResult.ownedBySource;
+    if (!shouldRunOwnedEffects) {
+      await this.removePendingFinishEffectByCacheKey(pendingEffectKey);
+      await this.clearChatbotRuntimeStateByIds(
+        closedChat.account.id,
+        closedChat.worker.id,
+        closedChat.chat_id
+      );
+      return true;
+    }
+    if (!lifecycleResult.statusEventId) {
+      return false;
+    }
+
+    let messageSent = enabled === false;
+    const pendingEffect: IChatbotPendingFinishEffect = {
+      accountId: closedChat.account.id,
+      workerId: closedChat.worker.id,
+      chatId: closedChat.chat_id,
+      source: 'chatbot',
+      phase: 'effects_pending',
+      statusEventId: lifecycleResult.statusEventId,
+      customMessage,
+      messageEnabled: enabled !== false,
+      retryCount: 0,
+    };
+    await this.persistPendingFinishEffect(pendingEffect);
+    await this.acknowledgeMigratedFinishEffect(pendingEffectKey, closedChat);
+
+    if (enabled !== false) {
+      try {
+        const rawMessage = customMessage || t('chatbot_service_finished');
+        const message = await this.replaceVariables(
+          t,
+          rawMessage,
+          closedChat,
+          closedChat.user,
+          closedChat.sector
+        );
+
+        messageSent = await this.sendMessageWithStatusGuard(
+          t,
+          {
+            chat: closedChat,
+            accountId: closedChat.account.id,
+            messageId: lifecycleResult.statusEventId,
+            type: EMessageType.system,
+            message,
+            typeUser: ETypeUserChat.bot,
+          },
+          {
+            allowClosedStatus: true,
+            expectedStatusEventId: lifecycleResult.statusEventId,
+          }
+        );
+      } catch (error) {
+        console.error('[ChatbotFlow] immediate finish message failed', {
+          account_id: closedChat.account.id,
+          chat_id: closedChat.chat_id,
+          status_event_id: lifecycleResult.statusEventId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        messageSent = false;
+      }
+    }
+
+    try {
+      await this.clearChatbotRuntimeStateByIds(
+        closedChat.account.id,
+        closedChat.worker.id,
+        closedChat.chat_id
+      );
+    } catch (error) {
+      console.error('[ChatbotFlow] finish runtime cleanup failed', {
+        account_id: closedChat.account.id,
         chat_id: closedChat.chat_id,
-        account_id: channelAccountId,
+        status_event_id: lifecycleResult.statusEventId,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
 
-    await Promise.all([
-      this.clearChatbotRuntimeStateByIds(
-        activeChat.account.id,
-        activeChat.worker.id,
-        activeChat.chat_id
-      ),
-      this.chatService.invalidateChatCache(activeChat),
-    ]);
+    if (messageSent) {
+      try {
+        await this.removePendingFinishEffect(
+          closedChat.account.id,
+          closedChat.worker.id,
+          closedChat.chat_id
+        );
+      } catch (error) {
+        console.error('[ChatbotFlow] finish effect acknowledgement failed', {
+          account_id: closedChat.account.id,
+          chat_id: closedChat.chat_id,
+          status_event_id: lifecycleResult.statusEventId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (enabled !== false && !messageSent) {
+      console.warn('[ChatbotFlow] finish message queued for retry', {
+        account_id: closedChat.account.id,
+        chat_id: closedChat.chat_id,
+        status_event_id: lifecycleResult.statusEventId,
+      });
+    }
+
+    return true;
+  }
+
+  private async finishFlowOrThrow(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    customMessage?: string,
+    enabled?: boolean
+  ): Promise<true> {
+    const finished = await this.sendFinishMessage(
+      t,
+      createChat,
+      customMessage,
+      enabled
+    );
+    if (!finished) {
+      throw new Error('chatbot automatic finish was not confirmed');
+    }
 
     return true;
   }
 
   private async cacheFirstChatbotFlowNodeIfNeeded(
     chatbotFlow: ListChatbotFlowResponse,
-    createChat: IChat
+    createChat: IChat,
+    runtimeContext?: ChatbotFlowRuntimeContext
   ): Promise<string | null> {
     const cacheKey = this.getChatbotFlowCacheKey(
       createChat.account.id,
@@ -3448,6 +5223,15 @@ export class ChatbotFlowRunnerService {
 
     const alreadyCached = await this.redis.get(cacheKey);
     if (alreadyCached) {
+      if (runtimeContext && this.flowRuntimeContextService) {
+        await this.flowRuntimeContextService.persistTransition({
+          accountId: createChat.account.id,
+          workerId: createChat.worker.id,
+          chatId: createChat.chat_id,
+          nextNodeId: alreadyCached,
+          context: runtimeContext,
+        });
+      }
       return alreadyCached;
     }
 
@@ -3456,14 +5240,80 @@ export class ChatbotFlowRunnerService {
       return null;
     }
 
-    await this.redis.set(
-      cacheKey,
-      startNode.id,
-      'EX',
-      this.CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS
-    );
+    if (runtimeContext && this.flowRuntimeContextService) {
+      await this.flowRuntimeContextService.persistTransition({
+        accountId: createChat.account.id,
+        workerId: createChat.worker.id,
+        chatId: createChat.chat_id,
+        nextNodeId: startNode.id,
+        context: runtimeContext,
+      });
+    } else {
+      await this.redis.set(
+        cacheKey,
+        startNode.id,
+        'EX',
+        this.CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS
+      );
+    }
 
     return startNode.id;
+  }
+
+  private async loadPinnedChatbotFlow(
+    createChat: IChat,
+    chatbotId: string
+  ): Promise<{
+    chatbotFlow: ListChatbotFlowResponse | null;
+    runtimeContext?: ChatbotFlowRuntimeContext;
+  }> {
+    if (!this.flowRuntimeContextService) {
+      return {
+        chatbotFlow: await this.chatbotService.findChatbotFlowByChatbotId(
+          createChat.account.id,
+          chatbotId
+        ),
+      };
+    }
+
+    const persistedContext = await this.flowRuntimeContextService.load({
+      accountId: createChat.account.id,
+      workerId: createChat.worker.id,
+      chatId: createChat.chat_id,
+    });
+
+    if (persistedContext?.chatbotId === chatbotId) {
+      const pinnedFlow = await this.chatbotService.findChatbotFlowById(
+        createChat.account.id,
+        chatbotId,
+        persistedContext.flowId
+      );
+      if (pinnedFlow) {
+        return { chatbotFlow: pinnedFlow, runtimeContext: persistedContext };
+      }
+
+      await this.clearChatbotRuntimeStateByIds(
+        createChat.account.id,
+        createChat.worker.id,
+        createChat.chat_id
+      );
+    }
+
+    const latestFlow = await this.chatbotService.findChatbotFlowByChatbotId(
+      createChat.account.id,
+      chatbotId
+    );
+    if (!latestFlow) {
+      return { chatbotFlow: null };
+    }
+
+    return {
+      chatbotFlow: latestFlow,
+      runtimeContext: this.flowRuntimeContextService.create(
+        chatbotId,
+        latestFlow.chatbot_flow_id
+      ),
+    };
   }
 
   private async updateCache(
@@ -3483,12 +5333,937 @@ export class ChatbotFlowRunnerService {
     );
   }
 
+  private getNodeCaptureOutputKey(
+    chatbotFlow: ListChatbotFlowResponse,
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): string | null {
+    const captureType =
+      node.type === 'data'
+        ? 'data'
+        : node.type === 'message' &&
+            node.data?.continueType === 'after_response'
+          ? 'message'
+          : null;
+    if (!captureType) return null;
+
+    const configuredKey = node.data?.outputKey;
+    if (
+      typeof configuredKey === 'string' &&
+      new RegExp(`^${captureType}_[1-9]\\d*$`, 'u').test(configuredKey)
+    ) {
+      return configuredKey;
+    }
+
+    const legacyIndex = chatbotFlow.nodes
+      .filter((candidate) => candidate.type === captureType)
+      .findIndex((candidate) => candidate.id === node.id);
+    return legacyIndex >= 0 ? `${captureType}_${legacyIndex + 1}` : null;
+  }
+
+  private async persistRuntimeTransition(
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    nextNodeId: string,
+    capturedOutput?: {
+      outputKey: string;
+      value: ChatbotNodeRuntimeCapture;
+    }
+  ): Promise<void> {
+    const contextService = this.flowRuntimeContextService;
+    if (!contextService) {
+      await this.updateCache(createChat, nextNodeId);
+      return;
+    }
+
+    let context =
+      (await contextService.load({
+        accountId: createChat.account.id,
+        workerId: createChat.worker.id,
+        chatId: createChat.chat_id,
+      })) ??
+      contextService.create(
+        chatbotFlow.chatbot_id,
+        chatbotFlow.chatbot_flow_id
+      );
+    if (capturedOutput) {
+      context = contextService.withCapture(
+        context,
+        capturedOutput.outputKey,
+        capturedOutput.value
+      );
+    }
+    await contextService.persistTransition({
+      accountId: createChat.account.id,
+      workerId: createChat.worker.id,
+      chatId: createChat.chat_id,
+      nextNodeId,
+      context,
+    });
+  }
+
+  private consumeAutomaticExecutionBudget(
+    chatId: string,
+    kind: 'transition' | 'api',
+    amount = 1
+  ): void {
+    const budget = this.automaticExecutionBudgetByChatId.get(chatId) ?? {
+      transitions: 0,
+      apiNodes: 0,
+      httpAttempts: 0,
+    };
+    if (kind === 'transition') budget.transitions += amount;
+    if (kind === 'api') budget.apiNodes += amount;
+    if (budget.transitions > 50) {
+      throw new Error('chatbot automatic transition limit exceeded');
+    }
+    if (budget.apiNodes > 10) {
+      throw new Error('chatbot API node limit exceeded');
+    }
+    this.automaticExecutionBudgetByChatId.set(chatId, budget);
+  }
+
+  private consumeHttpAttemptBudget(chatId: string, attempts: number): void {
+    const budget = this.automaticExecutionBudgetByChatId.get(chatId) ?? {
+      transitions: 0,
+      apiNodes: 0,
+      httpAttempts: 0,
+    };
+    budget.httpAttempts += Math.max(0, attempts);
+    if (budget.httpAttempts > 30) {
+      throw new Error('chatbot HTTP attempt limit exceeded');
+    }
+    this.automaticExecutionBudgetByChatId.set(chatId, budget);
+  }
+
+  private remainingHttpAttemptBudget(chatId: string): number {
+    const used =
+      this.automaticExecutionBudgetByChatId.get(chatId)?.httpAttempts ?? 0;
+    return Math.max(0, 30 - used);
+  }
+
+  private async buildApiRuntimeVariableScope(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    context: ChatbotFlowRuntimeContext,
+    data?: IUpsertMessage
+  ): Promise<Record<string, unknown>> {
+    const builtIns = await this.buildChatbotBuiltInVariableScope(
+      t,
+      createChat,
+      data
+    );
+    return (
+      this.flowRuntimeContextService?.toVariableScope(context, builtIns) ??
+      builtIns
+    );
+  }
+
+  private async buildOfficialTemplateVariableScope(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    data?: IUpsertMessage
+  ): Promise<Record<string, unknown>> {
+    const builtIns = await this.buildChatbotBuiltInVariableScope(
+      t,
+      createChat,
+      data
+    );
+    if (
+      !this.flowRuntimeContextService ||
+      typeof this.flowRuntimeContextService.load !== 'function' ||
+      typeof this.flowRuntimeContextService.toVariableScope !== 'function'
+    ) {
+      return builtIns;
+    }
+
+    const context = await this.flowRuntimeContextService.load({
+      accountId: createChat.account.id,
+      workerId: createChat.worker.id,
+      chatId: createChat.chat_id,
+    });
+    return context
+      ? this.flowRuntimeContextService.toVariableScope(context, builtIns)
+      : builtIns;
+  }
+
+  private async buildChatbotBuiltInVariableScope(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    data?: IUpsertMessage
+  ): Promise<Record<string, unknown>> {
+    const contactName = await this.getContactName(createChat);
+    const name = contactName || createChat.name || '';
+    const builtIns: Record<string, unknown> = {
+      greeting: this.getGreeting(t),
+      name,
+      contact_name: name,
+      protocol: generateProtocol(),
+      sector: createChat.sector?.name ?? '',
+      user: createChat.user?.name ?? '',
+      account_name: createChat.account?.name ?? '',
+      phone: createChat.phone ?? '',
+      channel_name: createChat.worker?.name ?? '',
+      date: new Date().toLocaleDateString('pt-BR'),
+      time: new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      message: data ? (this.getTextFromUpsertMessage(data) ?? '') : '',
+    };
+    return builtIns;
+  }
+
+  private protectHolidayRuntimePlaceholders(template: string): {
+    template: string;
+    restore: (value: unknown) => unknown;
+  } {
+    let tokenPrefix = '\uE000underchat-holiday-placeholder-';
+    while (template.includes(tokenPrefix)) {
+      tokenPrefix += '_';
+    }
+
+    const placeholders: Array<{ token: string; value: string }> = [];
+    const protectedTemplate = template.replace(
+      /\{\{\s*holiday_(?:names|tags)\s*\}\}/giu,
+      (value) => {
+        const token = `${tokenPrefix}${placeholders.length}\uE001`;
+        placeholders.push({ token, value });
+        return token;
+      }
+    );
+
+    return {
+      template: protectedTemplate,
+      restore: (value: unknown): unknown => {
+        if (typeof value !== 'string') return value;
+        return placeholders.reduce(
+          (restored, placeholder) =>
+            restored.replaceAll(placeholder.token, placeholder.value),
+          value
+        );
+      },
+    };
+  }
+
+  private async resolveCompatibleNodeVariables(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    node: ListChatbotFlowResponse['nodes'][number],
+    data?: IUpsertMessage
+  ): Promise<void> {
+    if (!this.flowRuntimeContextService) return;
+    const context = await this.flowRuntimeContextService.load({
+      accountId: createChat.account.id,
+      workerId: createChat.worker.id,
+      chatId: createChat.chat_id,
+    });
+    if (
+      !context ||
+      (Object.keys(context.outputs).length === 0 &&
+        Object.keys(context.captures ?? {}).length === 0 &&
+        Object.keys(context.lookups ?? {}).length === 0)
+    ) {
+      return;
+    }
+    const scope = await this.buildApiRuntimeVariableScope(
+      t,
+      createChat,
+      context,
+      data
+    );
+    const resolveValue = (value: unknown, key?: string): unknown => {
+      if (
+        key === 'apiRequest' ||
+        key === 'underchatLookup' ||
+        key === 'attachmentVariable' ||
+        key === 'conditionalVariable' ||
+        key === 'id' ||
+        key === 'ciphertext' ||
+        key === 'proof'
+      ) {
+        return value;
+      }
+      if (typeof value === 'string' && value.includes('{{')) {
+        const protectedHolidayTemplate =
+          node.type === 'holiday' && key === 'holidayMessage'
+            ? this.protectHolidayRuntimePlaceholders(value)
+            : null;
+        const resolved = resolveChatbotTemplate(
+          protectedHolidayTemplate?.template ?? value,
+          scope,
+          {
+            missingValue: 'error',
+            arrayFormat:
+              key && this.HUMAN_TEMPLATE_FIELDS.has(key) ? 'human' : 'json',
+          }
+        );
+        const formatted =
+          key && this.HUMAN_TEMPLATE_FIELDS.has(key)
+            ? this.formatResolvedHumanValue(resolved)
+            : resolved;
+        return protectedHolidayTemplate?.restore(formatted) ?? formatted;
+      }
+      if (Array.isArray(value)) {
+        return value.map((entry) => resolveValue(entry));
+      }
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([entryKey, entry]) => [
+            entryKey,
+            resolveValue(entry, entryKey),
+          ])
+        );
+      }
+      return value;
+    };
+    node.data = resolveValue(node.data) as typeof node.data;
+  }
+
+  private formatResolvedHumanValue(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) =>
+          entry && typeof entry === 'object'
+            ? JSON.stringify(entry)
+            : String(entry ?? '')
+        )
+        .join(', ');
+    }
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  }
+
+  private safeApiRequestOrigin(url: string): string {
+    try {
+      const parsed = new URL(url.replaceAll(/\{\{[^{}]+\}\}/gu, 'value'));
+      return `${parsed.protocol}//${parsed.host}`;
+    } catch {
+      return 'invalid-origin';
+    }
+  }
+
+  private async materializeApiBinaryOutput(
+    createChat: IChat,
+    body: unknown,
+    response: {
+      contentType: string | null;
+      headers: Readonly<Record<string, string | readonly string[]>>;
+    }
+  ): Promise<unknown> {
+    if (!Buffer.isBuffer(body) && !(body instanceof Uint8Array)) return body;
+    if (!this.chatbotMediaMaterializerService) {
+      throw new Error('chatbot API media materializer is unavailable');
+    }
+    const disposition = response.headers['content-disposition'];
+    const dispositionValue =
+      typeof disposition === 'string' ? disposition : disposition?.[0];
+    const fileName = /filename\s*=\s*"([^"]+)"/iu.exec(
+      dispositionValue ?? ''
+    )?.[1];
+    return this.chatbotMediaMaterializerService.materialize(body, {
+      accountId: createChat.account.id,
+      kind: 'document',
+      fileName,
+      mimetype: response.contentType ?? undefined,
+      ...getChatbotApiOutboundHttpPolicy(),
+    });
+  }
+
+  private async hydrateMultipartFileUrls(
+    config: ApiRequestConfig,
+    variables: Readonly<Record<string, unknown>>,
+    createChat: IChat
+  ): Promise<ApiRequestConfig> {
+    if (config.body.type !== 'multipart') return config;
+    const next = decryptApiRequestSecrets(
+      config,
+      this.apiRequestSecretEncryptor
+    );
+    for (const part of next.body.multipart) {
+      if (!part.enabled || part.type !== 'file') continue;
+      const resolved = resolveChatbotTemplate(part.value ?? '', variables, {
+        missingValue: 'error',
+      });
+      const url =
+        typeof resolved === 'string' && /^https?:\/\//iu.test(resolved.trim())
+          ? resolved.trim()
+          : resolved &&
+              typeof resolved === 'object' &&
+              typeof (resolved as Record<string, unknown>).url === 'string'
+            ? String((resolved as Record<string, unknown>).url)
+            : null;
+      if (!url) continue;
+      if (this.remainingHttpAttemptBudget(createChat.chat_id) < 1) {
+        part.value = '{{ __multipart_file_attempt_budget_exhausted__ }}';
+        continue;
+      }
+      const response = await executeSafeOutboundHttp({
+        url,
+        method: 'GET',
+        ...getChatbotApiOutboundHttpPolicy(),
+      });
+      this.consumeHttpAttemptBudget(createChat.chat_id, 1);
+      if (
+        response.kind !== 'response' ||
+        response.statusCode < 200 ||
+        response.statusCode >= 300
+      ) {
+        part.value = '{{ __multipart_file_download_failed__ }}';
+        continue;
+      }
+      const contentType = response.headers['content-type'];
+      const mimetype = (
+        typeof contentType === 'string' ? contentType : contentType?.[0]
+      )?.split(';')[0];
+      part.value = `data:${mimetype || 'application/octet-stream'};base64,${response.body.toString('base64')}`;
+      part.hasValue = true;
+      part.sensitive = false;
+      if (!part.contentType && mimetype) part.contentType = mimetype;
+      const disposition = response.headers['content-disposition'];
+      const dispositionValue =
+        typeof disposition === 'string' ? disposition : disposition?.[0];
+      const responseFileName = /filename\s*=\s*"([^"]+)"/iu.exec(
+        dispositionValue ?? ''
+      )?.[1];
+      if (!part.fileName && responseFileName) part.fileName = responseFileName;
+    }
+    return next;
+  }
+
+  private async processApiRequestNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    node: ListChatbotFlowResponse['nodes'][number],
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
+  ): Promise<boolean> {
+    const config = node.data.apiRequest;
+    const contextService = this.flowRuntimeContextService;
+    if (!config || !contextService) return false;
+
+    this.consumeAutomaticExecutionBudget(createChat.chat_id, 'api');
+    let context =
+      (await contextService.load({
+        accountId: createChat.account.id,
+        workerId: createChat.worker.id,
+        chatId: createChat.chat_id,
+      })) ??
+      contextService.create(
+        chatbotFlow.chatbot_id,
+        chatbotFlow.chatbot_flow_id
+      );
+
+    const previousInvocation = context.invocations[node.id];
+    if (previousInvocation?.status === 'started') {
+      context = contextService.withInvocation(context, node.id, {
+        ...previousInvocation,
+        status: 'indeterminate',
+        completedAt: new Date().toISOString(),
+      });
+      const failureNodeId = this.getNextFlowIdByApiOutcome(
+        chatbotFlow,
+        node.id,
+        'failure'
+      );
+      if (!failureNodeId) return false;
+      await contextService.persistTransition({
+        accountId: createChat.account.id,
+        workerId: createChat.worker.id,
+        chatId: createChat.chat_id,
+        nextNodeId: failureNodeId,
+        context,
+      });
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        failureNodeId,
+        customMessages,
+        data
+      );
+    }
+
+    const invocationId = uuidv7();
+    const startedAt = new Date().toISOString();
+    context = contextService.withInvocation(context, node.id, {
+      invocationId,
+      status: 'started',
+      startedAt,
+    });
+    await contextService.persistTransition({
+      accountId: createChat.account.id,
+      workerId: createChat.worker.id,
+      chatId: createChat.chat_id,
+      nextNodeId: node.id,
+      context,
+    });
+
+    const variables = await this.buildApiRuntimeVariableScope(
+      t,
+      createChat,
+      context,
+      data
+    );
+    const idempotentConfig: ApiRequestConfig =
+      (config.method === 'POST' || config.method === 'PATCH') &&
+      config.execution.retry.maxAttempts > 1 &&
+      !config.execution.idempotencyKey
+        ? {
+            ...config,
+            execution: {
+              ...config.execution,
+              idempotencyKey: invocationId,
+            },
+          }
+        : config;
+    const executionConfig = await this.hydrateMultipartFileUrls(
+      idempotentConfig,
+      variables,
+      createChat
+    );
+    const result = await this.apiRequestExecutor.execute({
+      config: executionConfig,
+      variables,
+      ...getChatbotApiOutboundHttpPolicy(),
+      maxHttpAttempts: this.remainingHttpAttemptBudget(createChat.chat_id),
+    });
+    const attempts = result.items.reduce(
+      (total, item) => total + item.response.attempts,
+      0
+    );
+    this.consumeHttpAttemptBudget(createChat.chat_id, attempts);
+
+    const runtimeBody =
+      result.mode === 'once'
+        ? await this.materializeApiBinaryOutput(
+            createChat,
+            result.body,
+            result.response
+          )
+        : await Promise.all(
+            result.items.map((item) =>
+              this.materializeApiBinaryOutput(
+                createChat,
+                item.body,
+                item.response
+              )
+            )
+          );
+
+    context = contextService.withInvocation(context, node.id, {
+      invocationId,
+      status: 'completed',
+      startedAt,
+      completedAt: new Date().toISOString(),
+    });
+    let runtimeOk = result.ok;
+    let runtimeResponse:
+      ChatbotApiResponseMetadata | readonly ChatbotApiResponseMetadata[] =
+      result.response;
+    let completedContext = contextService.withOutput(
+      context,
+      result.outputKey,
+      {
+        body: runtimeBody,
+        response: runtimeResponse,
+      }
+    );
+    try {
+      contextService.serialize(completedContext);
+    } catch {
+      runtimeOk = false;
+      const compactFailure = (
+        metadata: ChatbotApiResponseMetadata
+      ): ChatbotApiResponseMetadata => ({
+        ...metadata,
+        ok: false,
+        error: {
+          code: 'context_too_large',
+          message: 'API response exceeds the chatbot context limit',
+          retryable: false,
+        },
+      });
+      runtimeResponse =
+        result.mode === 'forEach'
+          ? result.response.map(compactFailure)
+          : compactFailure(result.response);
+      completedContext = contextService.withOutput(context, result.outputKey, {
+        body: null,
+        response: runtimeResponse,
+      });
+    }
+    context = completedContext;
+    const outcome = runtimeOk ? 'success' : 'failure';
+    const nextNodeId = this.getNextFlowIdByApiOutcome(
+      chatbotFlow,
+      node.id,
+      outcome
+    );
+    if (!nextNodeId) return false;
+
+    const metadata = Array.isArray(result.response)
+      ? result.response[result.response.length - 1]
+      : result.response;
+    console.info('[ChatbotApiRequest]', {
+      account_id: createChat.account.id,
+      chatbot_id: chatbotFlow.chatbot_id,
+      node_id: node.id,
+      origin: this.safeApiRequestOrigin(config.url),
+      status: metadata?.status ?? null,
+      duration_ms: result.durationMs,
+      attempts,
+      bytes: result.items.reduce(
+        (total, item) => total + item.response.sizeBytes,
+        0
+      ),
+      code: metadata?.error?.code ?? null,
+    });
+    await contextService.persistTransition({
+      accountId: createChat.account.id,
+      workerId: createChat.worker.id,
+      chatId: createChat.chat_id,
+      nextNodeId,
+      context,
+    });
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextNodeId,
+      customMessages,
+      data
+    );
+  }
+
+  private async processUnderchatNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    node: ListChatbotFlowResponse['nodes'][number],
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
+  ): Promise<boolean> {
+    const config = node.data.underchatLookup as
+      UnderchatLookupConfig | undefined;
+    const outputKey = node.data.outputKey;
+    const contextService = this.flowRuntimeContextService;
+    const lookupService = this.underchatUserLookupService;
+    if (
+      config?.version !== 1 ||
+      (config.lookupType !== 'email' && config.lookupType !== 'document') ||
+      typeof config.lookupExpression !== 'string' ||
+      typeof outputKey !== 'string' ||
+      !/^underchat_[1-9]\d*$/u.test(outputKey)
+    ) {
+      throw new Error('Underchat lookup node configuration is invalid');
+    }
+    if (!contextService || !lookupService) {
+      throw new Error('Underchat lookup runtime is unavailable');
+    }
+
+    let context =
+      (await contextService.load({
+        accountId: createChat.account.id,
+        workerId: createChat.worker.id,
+        chatId: createChat.chat_id,
+      })) ??
+      contextService.create(
+        chatbotFlow.chatbot_id,
+        chatbotFlow.chatbot_flow_id
+      );
+    const variables = await this.buildApiRuntimeVariableScope(
+      t,
+      createChat,
+      context,
+      data
+    );
+    const resolvedValue = resolveChatbotTemplate(
+      config.lookupExpression,
+      variables,
+      { missingValue: 'error' }
+    );
+    if (
+      resolvedValue !== null &&
+      resolvedValue !== undefined &&
+      typeof resolvedValue !== 'string'
+    ) {
+      throw new Error('Underchat lookup expression must resolve to text');
+    }
+
+    const output = await lookupService.lookup({
+      lookupType: config.lookupType,
+      value: resolvedValue?.trim() ?? '',
+    });
+    context = contextService.withLookup(context, outputKey, output);
+
+    const outcome = output.found ? 'found' : 'not_found';
+    const nextNodeId = this.getNextFlowIdByUnderchatOutcome(
+      chatbotFlow,
+      node.id,
+      outcome
+    );
+    if (!nextNodeId) {
+      throw new Error(`Underchat lookup branch "${outcome}" is not connected`);
+    }
+
+    await contextService.persistTransition({
+      accountId: createChat.account.id,
+      workerId: createChat.worker.id,
+      chatId: createChat.chat_id,
+      nextNodeId,
+      context,
+    });
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextNodeId,
+      customMessages,
+      data
+    );
+  }
+
+  private async persistOfficialTemplateResponsePending(
+    createChat: IChat,
+    templateNodeId: string,
+    nextFlowId: string
+  ): Promise<void> {
+    const flowCacheKey = this.getChatbotFlowCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+    const pendingCacheKey = this.getOfficialResponsePendingCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+    const pending: IChatbotOfficialResponsePending = {
+      templateNodeId,
+      nextFlowId,
+    };
+    const results = await this.redis
+      .multi()
+      .set(
+        flowCacheKey,
+        nextFlowId,
+        'EX',
+        this.CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS
+      )
+      .set(
+        pendingCacheKey,
+        JSON.stringify(pending),
+        'EX',
+        this.CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS
+      )
+      .exec();
+
+    this.assertRedisTransaction(
+      results,
+      'persist official template response pending'
+    );
+  }
+
+  private parseOfficialTemplateResponsePending(
+    value: string | null
+  ): IChatbotOfficialResponsePending | null {
+    if (!value) {
+      return null;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
+      }
+
+      const { templateNodeId, nextFlowId } = parsed as Record<string, unknown>;
+      if (
+        typeof templateNodeId !== 'string' ||
+        templateNodeId.trim().length === 0 ||
+        typeof nextFlowId !== 'string' ||
+        nextFlowId.trim().length === 0
+      ) {
+        return null;
+      }
+
+      return { templateNodeId, nextFlowId };
+    } catch {
+      return null;
+    }
+  }
+
+  private isOfficialTemplateResponsePendingValid(
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    pending: IChatbotOfficialResponsePending
+  ): boolean {
+    if (currentFlowId !== pending.nextFlowId) {
+      return false;
+    }
+
+    const templateNode = this.getFlowNodeById(
+      chatbotFlow,
+      pending.templateNodeId
+    );
+    if (templateNode?.type !== 'officialTemplate') {
+      return false;
+    }
+
+    if (!this.getFlowNodeById(chatbotFlow, pending.nextFlowId)) {
+      return false;
+    }
+
+    return (
+      this.getNextFlowId(chatbotFlow, pending.templateNodeId) ===
+      pending.nextFlowId
+    );
+  }
+
+  private async resumeOfficialTemplateResponsePendingIfNeeded(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: IChatbotCustomMessages
+  ): Promise<boolean | null> {
+    const pendingCacheKey = this.getOfficialResponsePendingCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+    const cachedPending = await this.redis.get(pendingCacheKey);
+    const pending = this.parseOfficialTemplateResponsePending(cachedPending);
+
+    if (
+      !pending ||
+      !this.isOfficialTemplateResponsePendingValid(
+        chatbotFlow,
+        currentFlowId,
+        pending
+      )
+    ) {
+      if (cachedPending) {
+        await this.redis.del(pendingCacheKey);
+      }
+
+      return null;
+    }
+
+    const processed = await this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      pending.nextFlowId,
+      customMessages
+    );
+    if (
+      processed &&
+      (await this.redis.get(pendingCacheKey)) === cachedPending
+    ) {
+      await this.redis.del(pendingCacheKey);
+    }
+
+    return processed;
+  }
+
   async clearFlowCacheForChat(
     accountId: string,
     workerId: string,
     chatId: string
   ): Promise<void> {
     await this.clearChatbotRuntimeStateByIds(accountId, workerId, chatId);
+  }
+
+  async bootstrapTransferredChatbot(
+    t: TFunction<'translation', undefined>,
+    chat: IChat,
+    chatbotId: string,
+    operationId: string,
+    sourceWorkerIds: string[] = [],
+    runtimeAlreadyCleared = false,
+    executionGuard?: {
+      expectedAssignmentEventId: string;
+      expectedLastMessageId: string | null;
+    }
+  ): Promise<void> {
+    const bootstrapKey = [
+      'underchat',
+      'chatbot-transfer-bootstrap',
+      chat.account.id,
+      chat.chat_id,
+      operationId,
+    ].join(':');
+    const bootstrapState = await this.redis.get(bootstrapKey);
+    if (bootstrapState === 'completed') {
+      return;
+    }
+
+    if (!bootstrapState) {
+      if (runtimeAlreadyCleared) {
+        const currentFlowId = await this.redis.get(
+          this.getChatbotFlowCacheKey(
+            chat.account.id,
+            chat.worker.id,
+            chat.chat_id
+          )
+        );
+        if (currentFlowId) {
+          await this.redis.set(bootstrapKey, 'completed', 'EX', 604_800);
+          return;
+        }
+      } else {
+        const workerIds = new Set([...sourceWorkerIds, chat.worker.id]);
+        await Promise.all(
+          Array.from(workerIds).map((workerId) =>
+            this.clearChatbotRuntimeStateByIds(
+              chat.account.id,
+              workerId,
+              chat.chat_id
+            )
+          )
+        );
+      }
+      await this.redis.set(bootstrapKey, 'started', 'EX', 604_800);
+    }
+
+    const now = Date.now();
+    const result = await this.execute(
+      t,
+      {
+        account_id: chat.account.id,
+        worker_id: chat.worker.id,
+        type: EMessageType.text,
+        message: {
+          key: {
+            id: `chatbot_transfer_bootstrap_${operationId}`,
+            remoteJid: chat.message_key?.remote_jid ?? undefined,
+            remoteJidAlt: chat.message_key?.remote_jid_alt ?? undefined,
+            fromMe: true,
+          },
+          message: { conversation: '' },
+          messageTimestamp: Math.floor(now / 1000),
+        },
+        has_quoted: false,
+        is_call_event: false,
+      },
+      chat,
+      chatbotId,
+      undefined,
+      {
+        requireHandled: true,
+        executionId: operationId,
+        ...executionGuard,
+      }
+    );
+    if (!result) {
+      throw new Error('chatbot bootstrap effect was not confirmed');
+    }
+
+    await this.redis.set(bootstrapKey, 'completed', 'EX', 604_800);
   }
 
   private getQuestionTextForDataType(
@@ -3523,11 +6298,11 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     node: ListChatbotFlowResponse['nodes'][number]
-  ): Promise<void> {
+  ): Promise<boolean> {
     const questionText = this.getQuestionTextForDataType(node);
 
     if (questionText) {
-      await this.sendMessageWithStatusGuard(t, {
+      return this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
@@ -3535,6 +6310,8 @@ export class ChatbotFlowRunnerService {
         typeUser: ETypeUserChat.bot,
       });
     }
+
+    return true;
   }
 
   private async processNextNode(
@@ -3548,12 +6325,20 @@ export class ChatbotFlowRunnerService {
     if (!(await this.canRunAutomation(createChat))) {
       return false;
     }
+    this.consumeAutomaticExecutionBudget(createChat.chat_id, 'transition');
 
     const nextFlowNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
 
     if (!nextFlowNode) {
       return false;
     }
+
+    await this.resolveCompatibleNodeVariables(
+      t,
+      createChat,
+      nextFlowNode,
+      data
+    );
 
     if (nextFlowNode.type === 'aiAgent') {
       const cacheKey = this.getChatbotFlowCacheKey(
@@ -3579,7 +6364,11 @@ export class ChatbotFlowRunnerService {
             createChat.account.id
           );
 
-          if (hasUserMessage && aiAgent && data) {
+          if (!aiAgent || aiAgent.status !== EAiAgentStatus.active) {
+            throw new Error(t('ai_agent_not_found'));
+          }
+
+          if (hasUserMessage && data) {
             const bootstrapSummaryKey = `${cacheKey}:bootstrap-summary`;
             await this.generateBootstrapSummaryForChat(
               createChat,
@@ -3607,16 +6396,13 @@ export class ChatbotFlowRunnerService {
             );
           }
 
-          if (aiAgent) {
-            await this.generateAndSendAiWelcomeMessage(t, createChat, aiAgent);
-          } else {
-            await this.sendMessageWithStatusGuard(t, {
-              chat: createChat,
-              accountId: createChat.account.id,
-              type: EMessageType.text,
-              message: t('ai_agent_default_question'),
-              typeUser: ETypeUserChat.bot,
-            });
+          const welcomeSent = await this.generateAndSendAiWelcomeMessage(
+            t,
+            createChat,
+            aiAgent
+          );
+          if (!welcomeSent) {
+            return false;
           }
           await this.scheduleChatHistoryEmbedding(
             createChat,
@@ -3626,13 +6412,39 @@ export class ChatbotFlowRunnerService {
       }
 
       await this.updateCache(createChat, nextFlowId);
-      return true;
     }
 
     await this.updateCache(createChat, nextFlowId);
 
+    if (nextFlowNode.type === 'apiRequest') {
+      return this.processApiRequestNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowNode,
+        customMessages,
+        data
+      );
+    }
+
+    if (nextFlowNode.type === 'underchat') {
+      return this.processUnderchatNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowNode,
+        customMessages,
+        data
+      );
+    }
+
     if (nextFlowNode.type === 'menu' || nextFlowNode.type === 'satisfaction') {
-      return this.sendBuildMenuMessage(t, createChat, nextFlowNode, true);
+      return this.sendBuildMenuMessage(
+        t,
+        createChat,
+        nextFlowNode,
+        !this.synchronousEffectsByChatId.has(createChat.chat_id)
+      );
     }
 
     if (isOfficialChatbotNodeType(nextFlowNode.type)) {
@@ -3746,8 +6558,7 @@ export class ChatbotFlowRunnerService {
     }
 
     if (nextFlowNode.type === 'data') {
-      await this.processDataNodeQuestion(t, createChat, nextFlowNode);
-      return true;
+      return this.processDataNodeQuestion(t, createChat, nextFlowNode);
     }
 
     if (nextFlowNode.type === 'annotation') {
@@ -3763,29 +6574,23 @@ export class ChatbotFlowRunnerService {
 
     if (nextFlowNode.type === 'conditional') {
       await this.updateCache(createChat, nextFlowId);
-
-      if (data) {
-        return this.processConditionalNode(
-          t,
-          data,
-          createChat,
-          chatbotFlow,
-          nextFlowId,
-          customMessages
-        );
-      }
-
-      return true;
+      return this.processConditionalNode(
+        t,
+        data,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
     }
 
     if (nextFlowNode.type === 'finish') {
-      await this.sendFinishMessage(
+      return this.finishFlowOrThrow(
         t,
         createChat,
         customMessages?.service_finished_message,
         customMessages?.service_finished_message_enabled
       );
-      return true;
     }
 
     return true;
@@ -3802,7 +6607,10 @@ export class ChatbotFlowRunnerService {
     const continueType = node.data?.continueType;
 
     if (continueType === 'automatic') {
-      await this.sendMessage(t, createChat, node);
+      const messageSent = await this.sendMessage(t, createChat, node);
+      if (!messageSent) {
+        return false;
+      }
 
       const nextFlowId = this.getNextFlowId(chatbotFlow, node.id);
       if (nextFlowId) {
@@ -3821,12 +6629,12 @@ export class ChatbotFlowRunnerService {
     }
 
     if (continueType === 'after_response') {
-      await this.sendMessage(t, createChat, node);
-
-      const nextFlowId = this.getNextFlowId(chatbotFlow, node.id);
-      if (nextFlowId) {
-        await this.updateCache(createChat, nextFlowId);
+      const messageSent = await this.sendMessage(t, createChat, node);
+      if (!messageSent) {
+        return false;
       }
+
+      await this.persistRuntimeTransition(createChat, chatbotFlow, node.id);
 
       return true;
     }
@@ -3840,12 +6648,16 @@ export class ChatbotFlowRunnerService {
     chatbotFlow: ListChatbotFlowResponse,
     currentNode: ListChatbotFlowResponse['nodes'][number],
     currentFlowId: string,
-    customMessages?: IChatbotCustomMessages
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
   ): Promise<boolean> {
     const continueType = currentNode.data?.continueType;
 
     if (continueType === 'automatic') {
-      await this.sendMessage(t, createChat, currentNode);
+      const messageSent = await this.sendMessage(t, createChat, currentNode);
+      if (!messageSent) {
+        return false;
+      }
 
       const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
       if (nextFlowId) {
@@ -3863,18 +6675,45 @@ export class ChatbotFlowRunnerService {
     }
 
     if (continueType === 'after_response') {
-      await this.sendMessage(t, createChat, currentNode);
+      if (!data || data.message?.key?.fromMe === true) {
+        return true;
+      }
+      const responseCapture = this.getMessageResponseCapture(data);
+      if (!responseCapture) {
+        return false;
+      }
 
       const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      const outputKey = this.getNodeCaptureOutputKey(chatbotFlow, currentNode);
+      if (!outputKey) {
+        return false;
+      }
+      await this.persistRuntimeTransition(
+        createChat,
+        chatbotFlow,
+        nextFlowId ?? currentFlowId,
+        {
+          outputKey,
+          value: responseCapture,
+        }
+      );
+
       if (nextFlowId) {
-        await this.updateCache(createChat, nextFlowId);
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages,
+          data
+        );
       }
 
       return true;
     }
 
     if (!continueType) {
-      await this.sendMessage(t, createChat, currentNode);
+      return this.sendMessage(t, createChat, currentNode);
     }
 
     return false;
@@ -3905,31 +6744,63 @@ export class ChatbotFlowRunnerService {
       color: labelTemplate.color,
     }));
 
+    if (JSON.stringify(createChat.label ?? null) === JSON.stringify(label)) {
+      return;
+    }
+
+    const labelsEpoch = createChat.meta?.labels_epoch ?? 0;
+    const labelsRevision =
+      createChat.meta?.labels_event_id ??
+      createChat.meta?.outbound_webhook_event_ids?.at(-1) ??
+      createChat.started_at ??
+      createChat.date;
+    const canonicalLabels = JSON.stringify(
+      [...label].sort((left, right) =>
+        left.label_template_id.localeCompare(right.label_template_id)
+      )
+    );
+    const labelsEventId = uuidv5(
+      `chatbot-labels:${createChat.chat_id}:${labelsEpoch}:${labelsRevision}:${canonicalLabels}`,
+      uuidv5.URL
+    );
+
     const updated = await this.chatService.updateChatLabel(
       createChat.chat_id,
-      label
+      label,
+      labelsEpoch + 1,
+      labelsEventId,
+      {
+        eventTypes: ['chat.labels.changed'],
+        idempotencyKey: `chatbot-labels:${createChat.chat_id}:${labelsEventId}`,
+        source: 'chatbot_flow',
+        previousChat: createChat,
+        actor: { type: 'automation' },
+        changes: { labels: label },
+      }
     );
 
     if (!updated) {
       throw new Error(t('chat_label_update_failed'));
     }
 
-    const updatedChat = (await this.chatService.findChatByChatId(
+    const updatedChat = await this.chatService.findChatByChatId(
       createChat.account.id,
       createChat.chat_id
-    )) ?? {
-      ...createChat,
-      label,
-    };
+    );
+    if (!updatedChat) {
+      throw new Error(t('chat_label_update_failed'));
+    }
+
+    Object.assign(createChat, updatedChat);
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
     await Promise.all([
-      this.centrifugoService.publishSub(
+      this.publishSubWithAssignmentGuard(
         chatAccountCentrifugo(channelAccountId),
         updatedChat
       ),
-      this.centrifugoService.publishSub(
+      this.publishSubWithAssignmentGuard(
         chatQueueAccountCentrifugo(channelAccountId),
         updatedChat
       ),
@@ -3939,7 +6810,9 @@ export class ChatbotFlowRunnerService {
   private async updateContactTag(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    labelTemplateIds: string[]
+    labelTemplateIds: string[],
+    currentFlowId: string,
+    data?: IUpsertMessage
   ): Promise<void> {
     if (!createChat.contact?.id) {
       throw new Error(t('contact_not_found'));
@@ -3957,7 +6830,18 @@ export class ChatbotFlowRunnerService {
       const added =
         await this.contactService.addContactLabelTemplateIfNotExists(
           createChat.contact.id,
-          labelTemplateId
+          labelTemplateId,
+          createChat.account.id,
+          {
+            source: 'chatbot_flow',
+            idempotencyKey: this.scopeOutboundWebhookMutationKey(
+              `contact-chatbot-label:${createChat.contact.id}:${currentFlowId}:${labelTemplateId}`,
+              createChat.chat_id,
+              data
+            ),
+            actor: { type: 'automation' },
+            changes: { added_label_template_id: labelTemplateId },
+          }
         );
 
       if (!added) {
@@ -3997,9 +6881,18 @@ export class ChatbotFlowRunnerService {
 
     if (tagType === 'contact') {
       try {
-        await this.updateContactTag(t, createChat, selectedTag);
+        await this.updateContactTag(
+          t,
+          createChat,
+          selectedTag,
+          currentFlowId,
+          data
+        );
       } catch (error) {
         console.error('[ChatbotFlow] updateContactTag failed', error);
+        if (this.synchronousEffectsByChatId.has(createChat.chat_id)) {
+          throw error;
+        }
       }
     }
 
@@ -4060,13 +6953,16 @@ export class ChatbotFlowRunnerService {
       createChat.sector
     );
 
-    await this.sendMessageWithStatusGuard(t, {
+    const annotationSent = await this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.annotation,
       message,
       typeUser: ETypeUserChat.system,
     });
+    if (!annotationSent) {
+      return false;
+    }
 
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
     if (!nextFlowId) {
@@ -4192,7 +7088,7 @@ export class ChatbotFlowRunnerService {
         return currentChat;
       }
 
-      return createChat;
+      throw new Error(t('chat_update_failed'));
     }
 
     const targetWorker = worker ?? activeChat.worker;
@@ -4204,6 +7100,25 @@ export class ChatbotFlowRunnerService {
       user: user ?? null,
       sector: sector ?? null,
       secondaryUsers: [],
+      outboundWebhook: {
+        eventTypes: [
+          'chat.automation.finished',
+          'chat.queued',
+          ...(targetWorker.id !== activeChat.worker.id || user || sector
+            ? (['chat.transferred'] as const)
+            : []),
+        ],
+        idempotencyKey: `chatbot-handoff:${activeChat.chat_id}:${activeChat.meta?.status_event_id ?? activeChat.date}`,
+        source: 'chatbot_flow',
+        previousChat: activeChat,
+        actor: { type: 'automation' },
+        changes: {
+          target_worker_id: targetWorker.id,
+          target_user_id: user?.id ?? null,
+          target_sector_id: sector?.id ?? null,
+          status: EChatStatus.queue,
+        },
+      },
     });
 
     if (!handoff.chat) {
@@ -4218,6 +7133,25 @@ export class ChatbotFlowRunnerService {
       targetWorker.id,
       updatedChat.worker.id,
     ]);
+
+    if (!handoff.applied) {
+      if (!handoff.alreadyHuman) {
+        throw new Error(t('chat_update_failed'));
+      }
+
+      await Promise.all([
+        ...Array.from(workerIdsToClear).map((workerId) =>
+          this.clearChatbotRuntimeStateByIds(
+            updatedChat.account.id,
+            workerId,
+            updatedChat.chat_id
+          )
+        ),
+        this.chatService.invalidateChatCache(activeChat),
+      ]);
+      return updatedChat;
+    }
+
     const shouldInvalidateTargetWorkerCache =
       activeChat.worker.id !== updatedChat.worker.id;
 
@@ -4245,11 +7179,11 @@ export class ChatbotFlowRunnerService {
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
     await Promise.all([
-      this.centrifugoService.publishSub(
+      this.publishSubWithAssignmentGuard(
         chatAccountCentrifugo(channelAccountId),
         updatedChat
       ),
-      this.centrifugoService.publishSub(
+      this.publishSubWithAssignmentGuard(
         chatQueueAccountCentrifugo(channelAccountId),
         updatedChat
       ),
@@ -4313,13 +7247,16 @@ export class ChatbotFlowRunnerService {
           user,
           undefined
         );
-        await this.sendMessageWithStatusGuard(t, {
+        const messageSent = await this.sendMessageWithStatusGuard(t, {
           chat: createChat,
           accountId: createChat.account.id,
           type: EMessageType.system,
           message: transferMessage,
           typeUser: ETypeUserChat.bot,
         });
+        if (!messageSent) {
+          return false;
+        }
       }
 
       await this.updateAndPublishChat(
@@ -4400,13 +7337,16 @@ export class ChatbotFlowRunnerService {
         user,
         sector
       );
-      await this.sendMessageWithStatusGuard(t, {
+      const messageSent = await this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.system,
         message: transferMessage,
         typeUser: ETypeUserChat.bot,
       });
+      if (!messageSent) {
+        return false;
+      }
     }
 
     await this.updateAndPublishChat(t, createChat, user, sector, targetWorker);
@@ -4419,17 +7359,33 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: IChatbotCustomMessages
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage,
+    capturedValue?: ChatbotNodeRuntimeCapture
   ): Promise<boolean> {
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
-    if (nextFlowId) {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+    const outputKey = currentNode
+      ? this.getNodeCaptureOutputKey(chatbotFlow, currentNode)
+      : null;
+    if (capturedValue && outputKey) {
+      await this.persistRuntimeTransition(
+        createChat,
+        chatbotFlow,
+        nextFlowId ?? currentFlowId,
+        { outputKey, value: capturedValue }
+      );
+    } else if (nextFlowId) {
       await this.updateCache(createChat, nextFlowId);
+    }
+    if (nextFlowId) {
       return this.processNextNode(
         t,
         createChat,
         chatbotFlow,
         nextFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
     return true;
@@ -4437,7 +7393,9 @@ export class ChatbotFlowRunnerService {
 
   private async updateContactData(
     createChat: IChat,
-    updateData: UpdateContactRequest
+    updateData: UpdateContactRequest,
+    currentFlowId: string,
+    data?: IUpsertMessage
   ): Promise<void> {
     if (!createChat.contact?.id) {
       return;
@@ -4446,7 +7404,21 @@ export class ChatbotFlowRunnerService {
     await this.contactService.updateContactById(
       updateData,
       createChat.contact.id,
-      createChat.account.id
+      createChat.account.id,
+      {
+        source: 'chatbot_flow',
+        idempotencyKey: this.scopeOutboundWebhookMutationKey(
+          `contact-chatbot-data:${createChat.contact.id}:${currentFlowId}:${createHash(
+            'sha256'
+          )
+            .update(JSON.stringify(updateData))
+            .digest('hex')}`,
+          createChat.chat_id,
+          data
+        ),
+        actor: { type: 'customer' },
+        changes: updateData as Record<string, unknown>,
+      }
     );
   }
 
@@ -4459,12 +7431,17 @@ export class ChatbotFlowRunnerService {
     customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
+    const normalizedName = userText
+      ? (truncateContactName(userText) ?? userText)
+      : null;
 
-    if (userText && createChat.contact?.id) {
-      const truncatedName = truncateContactName(userText) ?? userText;
-      await this.updateContactData(createChat, {
-        name: truncatedName,
-      });
+    if (normalizedName && createChat.contact?.id) {
+      await this.updateContactData(
+        createChat,
+        { name: normalizedName },
+        currentFlowId,
+        data
+      );
     }
 
     return this.processNextNodeAfterValidation(
@@ -4472,7 +7449,11 @@ export class ChatbotFlowRunnerService {
       createChat,
       chatbotFlow,
       currentFlowId,
-      customMessages
+      customMessages,
+      data,
+      normalizedName
+        ? { value: normalizedName, name: normalizedName }
+        : undefined
     );
   }
 
@@ -4485,12 +7466,17 @@ export class ChatbotFlowRunnerService {
     customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
+    const normalizedLastName = userText
+      ? (truncateContactName(userText) ?? userText)
+      : null;
 
-    if (userText && createChat.contact?.id) {
-      const truncatedLastName = truncateContactName(userText) ?? userText;
-      await this.updateContactData(createChat, {
-        last_name: truncatedLastName,
-      });
+    if (normalizedLastName && createChat.contact?.id) {
+      await this.updateContactData(
+        createChat,
+        { last_name: normalizedLastName },
+        currentFlowId,
+        data
+      );
     }
 
     return this.processNextNodeAfterValidation(
@@ -4498,12 +7484,17 @@ export class ChatbotFlowRunnerService {
       createChat,
       chatbotFlow,
       currentFlowId,
-      customMessages
+      customMessages,
+      data,
+      normalizedLastName
+        ? { value: normalizedLastName, lastname: normalizedLastName }
+        : undefined
     );
   }
 
   private async processEmailDataNode(
     t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
@@ -4524,9 +7515,12 @@ export class ChatbotFlowRunnerService {
     }
 
     if (createChat.contact?.id) {
-      await this.updateContactData(createChat, {
-        email: userText,
-      });
+      await this.updateContactData(
+        createChat,
+        { email: userText },
+        currentFlowId,
+        data
+      );
     }
 
     return this.processNextNodeAfterValidation(
@@ -4534,12 +7528,15 @@ export class ChatbotFlowRunnerService {
       createChat,
       chatbotFlow,
       currentFlowId,
-      customMessages
+      customMessages,
+      data,
+      { value: userText, email: userText }
     );
   }
 
   private async processCpfDataNode(
     t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
@@ -4562,10 +7559,15 @@ export class ChatbotFlowRunnerService {
     const cpfDigits = userText.replaceAll(/\D/g, '');
 
     if (createChat.contact?.id) {
-      await this.updateContactData(createChat, {
-        contact_document_type_id: EContactDocumentType.cpf,
-        document: cpfDigits,
-      });
+      await this.updateContactData(
+        createChat,
+        {
+          contact_document_type_id: EContactDocumentType.cpf,
+          document: cpfDigits,
+        },
+        currentFlowId,
+        data
+      );
     }
 
     return this.processNextNodeAfterValidation(
@@ -4573,12 +7575,15 @@ export class ChatbotFlowRunnerService {
       createChat,
       chatbotFlow,
       currentFlowId,
-      customMessages
+      customMessages,
+      data,
+      { value: cpfDigits, cpf: cpfDigits }
     );
   }
 
   private async processCnpjDataNode(
     t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
@@ -4587,7 +7592,7 @@ export class ChatbotFlowRunnerService {
     customMessage?: string,
     customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
-    if (!this.isValidCNPJ(userText)) {
+    if (!validateCnpj(userText)) {
       await this.sendInvalidCnpjMessage(
         t,
         createChat,
@@ -4598,13 +7603,18 @@ export class ChatbotFlowRunnerService {
       return false;
     }
 
-    const cnpjDigits = userText.replaceAll(/\D/g, '');
+    const cnpj = normalizeCnpj(userText);
 
     if (createChat.contact?.id) {
-      await this.updateContactData(createChat, {
-        contact_document_type_id: EContactDocumentType.cnpj,
-        document: cnpjDigits,
-      });
+      await this.updateContactData(
+        createChat,
+        {
+          contact_document_type_id: EContactDocumentType.cnpj,
+          document: cnpj,
+        },
+        currentFlowId,
+        data
+      );
     }
 
     return this.processNextNodeAfterValidation(
@@ -4612,7 +7622,9 @@ export class ChatbotFlowRunnerService {
       createChat,
       chatbotFlow,
       currentFlowId,
-      customMessages
+      customMessages,
+      data,
+      { value: cnpj, cnpj }
     );
   }
 
@@ -4662,6 +7674,7 @@ export class ChatbotFlowRunnerService {
     if (dataType === 'email') {
       return this.processEmailDataNode(
         t,
+        data,
         createChat,
         chatbotFlow,
         currentFlowId,
@@ -4675,6 +7688,7 @@ export class ChatbotFlowRunnerService {
     if (dataType === 'cpf') {
       return this.processCpfDataNode(
         t,
+        data,
         createChat,
         chatbotFlow,
         currentFlowId,
@@ -4688,6 +7702,7 @@ export class ChatbotFlowRunnerService {
     if (dataType === 'cnpj') {
       return this.processCnpjDataNode(
         t,
+        data,
         createChat,
         chatbotFlow,
         currentFlowId,
@@ -4750,14 +7765,7 @@ export class ChatbotFlowRunnerService {
         createChat.sector
       );
 
-      const lines = nodeData.options.map(
-        (option: { text: string }, index: number) => {
-          const number = index + 1;
-          return `*${number}.* ${option.text}`;
-        }
-      );
-
-      const menuMessage = [baseMessage, '', ...lines].join('\n');
+      const menuMessage = this.buildMenuMessage(baseMessage, nodeData.options);
 
       await this.sendMessageWithStatusGuard(t, {
         chat: createChat,
@@ -4837,7 +7845,20 @@ export class ChatbotFlowRunnerService {
       };
       await this.chatService.updateChatSatisfactionResponse(
         createChat.chat_id,
-        satisfactionData
+        satisfactionData,
+        {
+          eventTypes: ['chat.satisfaction.updated'],
+          idempotencyKey: this.buildSatisfactionWebhookIdempotencyKey(
+            createChat.chat_id,
+            currentFlowId,
+            selectedOption.id,
+            data
+          ),
+          source: 'chatbot_flow',
+          previousChat: createChat,
+          actor: { type: 'customer' },
+          changes: { satisfaction: satisfactionData },
+        }
       );
     }
 
@@ -4848,7 +7869,8 @@ export class ChatbotFlowRunnerService {
       createChat,
       chatbotFlow,
       nextFlowId,
-      options?.customMessages
+      options?.customMessages,
+      data
     );
   }
 
@@ -5062,7 +8084,6 @@ export class ChatbotFlowRunnerService {
       createChat.worker.id,
       createChat.chat_id
     );
-    const scheduleKey = this.getInactivityScheduleKey();
     const now = Date.now();
     const checkTime = now + timeMinutes * 60 * 1000;
 
@@ -5081,20 +8102,16 @@ export class ChatbotFlowRunnerService {
 
     data.lastInteraction = now;
     data.alertCount = 0;
+    data.lastAlertTime = null;
     data.chatbotId = chatbotId;
     data.accountId = createChat.account.id;
     data.workerId = createChat.worker.id;
     data.chatId = createChat.chat_id;
+    data.trackingId = uuidv7();
+    data.retryCount = 0;
+    data.stage = 'waiting';
 
-    await Promise.all([
-      this.redis.set(
-        inactivityCacheKey,
-        JSON.stringify(data),
-        'EX',
-        this.INACTIVITY_CACHE_TTL_SECONDS
-      ),
-      this.redis.zadd(scheduleKey, checkTime, inactivityCacheKey),
-    ]);
+    await this.persistInactivitySchedule(inactivityCacheKey, data, checkTime);
   }
 
   private async cancelInactivityCheck(createChat: IChat): Promise<void> {
@@ -5103,12 +8120,7 @@ export class ChatbotFlowRunnerService {
       createChat.worker.id,
       createChat.chat_id
     );
-    const scheduleKey = this.getInactivityScheduleKey();
-
-    await Promise.all([
-      this.redis.del(inactivityCacheKey),
-      this.redis.zrem(scheduleKey, inactivityCacheKey),
-    ]);
+    await this.removeInactivitySchedule(inactivityCacheKey);
   }
 
   private async sendInactivityAlertMessage(
@@ -5133,25 +8145,23 @@ export class ChatbotFlowRunnerService {
     }
 
     if (enabled === false) {
-      const scheduleKey = this.getInactivityScheduleKey();
       const now = Date.now();
       const updatedData = {
         ...inactivityData,
         alertCount: newAlertCount,
         lastAlertTime: now,
+        trackingId: inactivityData.trackingId ?? uuidv7(),
+        retryCount: 0,
+        stage: 'waiting' as const,
       };
 
       const nextCheckTime = now + timeMinutes * 60 * 1000;
 
-      await Promise.all([
-        this.redis.set(
-          inactivityCacheKey,
-          JSON.stringify(updatedData),
-          'EX',
-          this.INACTIVITY_CACHE_TTL_SECONDS
-        ),
-        this.redis.zadd(scheduleKey, nextCheckTime, inactivityCacheKey),
-      ]);
+      await this.persistInactivitySchedule(
+        inactivityCacheKey,
+        updatedData,
+        nextCheckTime
+      );
 
       return;
     }
@@ -5165,43 +8175,54 @@ export class ChatbotFlowRunnerService {
       createChat.user,
       createChat.sector
     );
-    await this.sendMessageWithStatusGuard(t, {
+    const trackingId = inactivityData.trackingId ?? uuidv7();
+    const alertMessageId = uuidv5(
+      `chatbot-inactivity:${trackingId}:alert:${newAlertCount}`,
+      uuidv5.URL
+    );
+    const messageSent = await this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
+      messageId: alertMessageId,
       type: EMessageType.system,
       message: inactivityMessage,
       typeUser: ETypeUserChat.bot,
     });
 
-    const scheduleKey = this.getInactivityScheduleKey();
+    if (!messageSent) {
+      throw new Error('chatbot inactivity alert was not sent');
+    }
+
     const now = Date.now();
     const updatedData = {
       ...inactivityData,
       alertCount: newAlertCount,
       lastAlertTime: now,
+      trackingId,
+      retryCount: 0,
+      stage: 'waiting' as const,
     };
 
     const nextCheckTime = now + timeMinutes * 60 * 1000;
 
-    await Promise.all([
-      this.redis.set(
-        inactivityCacheKey,
-        JSON.stringify(updatedData),
-        'EX',
-        this.INACTIVITY_CACHE_TTL_SECONDS
-      ),
-      this.redis.zadd(scheduleKey, nextCheckTime, inactivityCacheKey),
-    ]);
+    await this.persistInactivitySchedule(
+      inactivityCacheKey,
+      updatedData,
+      nextCheckTime
+    );
   }
 
   private async processInactivityRedirect(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
+    inactivityData: IInactivityData,
     inactivityAlert: {
       redirect_type?: string;
       selected_user?: string;
       selected_sector?: string;
       selected_sector_user?: string;
+      selected_channel?: string;
+      selected_chatbot?: string;
     },
     customMessages?: IChatbotCustomMessages,
     enabledFlags?: {
@@ -5233,7 +8254,70 @@ export class ChatbotFlowRunnerService {
       );
     }
 
+    if (redirectType === 'chatbot') {
+      return this.queueInactivityChatbotRedirect(
+        t,
+        createChat,
+        inactivityData,
+        inactivityAlert.selected_channel,
+        inactivityAlert.selected_chatbot
+      );
+    }
+
     return false;
+  }
+
+  private async queueInactivityChatbotRedirect(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    inactivityData: IInactivityData,
+    selectedChannel?: string,
+    selectedChatbot?: string
+  ): Promise<boolean> {
+    if (!selectedChannel || !selectedChatbot || !this.chatbotTransferService) {
+      return false;
+    }
+
+    await this.chatbotTransferService.resolveTarget(
+      t,
+      createChat.account.id,
+      selectedChannel,
+      selectedChatbot
+    );
+
+    const cacheKey = this.getInactivityRedirectEffectKey(
+      createChat.account.id,
+      createChat.chat_id
+    );
+    if (await this.redis.get(cacheKey)) {
+      return true;
+    }
+
+    const trackingId = inactivityData.trackingId ?? uuidv7();
+    const operationId = uuidv5(
+      `chatbot-inactivity-redirect:${trackingId}`,
+      uuidv5.URL
+    );
+    await this.persistInactivityRedirectEffect({
+      accountId: createChat.account.id,
+      chatId: createChat.chat_id,
+      sourceWorkerId: createChat.worker.id,
+      sourceChatbotId: inactivityData.chatbotId,
+      targetWorkerId: selectedChannel,
+      targetChatbotId: selectedChatbot,
+      operationId,
+      eventEpochMillis: Date.now(),
+      phase: 'transition_pending',
+      expectedStatus: createChat.status,
+      expectedStatusEventId: createChat.meta?.status_event_id ?? null,
+      expectedStatusEpoch: createChat.meta?.status_epoch ?? null,
+      expectedAssignmentEventId: createChat.meta?.assignment_event_id ?? null,
+      expectedAssignmentEpoch: createChat.meta?.assignment_epoch ?? null,
+      expectedLastMessageId: createChat.summary?.last_message_id ?? null,
+      expectedSummaryRevision: createChat.summary?.revision ?? 0,
+      retryCount: 0,
+    });
+    return true;
   }
 
   private async processInactivityUserRedirect(
@@ -5327,6 +8411,8 @@ export class ChatbotFlowRunnerService {
       selected_user?: string;
       selected_sector?: string;
       selected_sector_user?: string;
+      selected_channel?: string;
+      selected_chatbot?: string;
     },
     createChat: IChat,
     customInactivityMessage?: string,
@@ -5356,19 +8442,110 @@ export class ChatbotFlowRunnerService {
     );
 
     if (shouldSendAlert) {
-      return false;
+      return true;
     }
 
-    await this.cancelInactivityCheck(createChat);
-    return this.executeInactivityAction(
+    if (action === 'finish') {
+      const finishingData: IInactivityData = {
+        ...inactivityData,
+        trackingId: inactivityData.trackingId ?? uuidv7(),
+        retryCount: 0,
+        stage: 'finishing',
+        expectedLastMessageId:
+          inactivityData.stage === 'finishing' &&
+          inactivityData.expectedLastMessageId !== undefined
+            ? inactivityData.expectedLastMessageId
+            : (createChat.summary?.last_message_id ?? null),
+      };
+      Object.assign(inactivityData, finishingData);
+      await this.persistInactivitySchedule(
+        inactivityCacheKey,
+        finishingData,
+        Date.now()
+      );
+    }
+
+    const actionCompleted = await this.executeInactivityAction(
       t,
       createChat,
       action,
       inactivityAlert,
+      inactivityData,
       customServiceFinishedMessage,
       customMessages,
       enabledFlags
     );
+    const finishTransitionQueued =
+      !actionCompleted &&
+      action === 'finish' &&
+      (await this.hasPendingFinishTransition(createChat));
+    const actionHandled = actionCompleted || finishTransitionQueued;
+
+    if (actionHandled) {
+      await this.cancelInactivityCheck(createChat);
+    }
+
+    return actionHandled;
+  }
+
+  private async hasPendingFinishTransition(chat: IChat): Promise<boolean> {
+    const cacheKey = this.getPendingFinishEffectKey(
+      chat.account.id,
+      chat.worker.id,
+      chat.chat_id
+    );
+    const payload = await this.redis.get(cacheKey);
+    if (!payload) {
+      return false;
+    }
+
+    try {
+      const effect = JSON.parse(payload) as IChatbotPendingFinishEffect;
+      return (
+        effect.phase === 'transition_pending' &&
+        effect.accountId === chat.account.id &&
+        effect.workerId === chat.worker.id &&
+        effect.chatId === chat.chat_id
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private async restartFinishingInactivityAfterNewActivity(
+    inactivityCacheKey: string,
+    inactivityData: IInactivityData,
+    chat: IChat,
+    timeMinutes: number
+  ): Promise<boolean> {
+    if (
+      inactivityData.stage !== 'finishing' ||
+      chat.status === EChatStatus.closed ||
+      inactivityData.expectedLastMessageId === undefined ||
+      inactivityData.expectedLastMessageId ===
+        (chat.summary?.last_message_id ?? null)
+    ) {
+      return false;
+    }
+
+    const now = Date.now();
+    const resetData: IInactivityData = {
+      ...inactivityData,
+      lastInteraction: now,
+      alertCount: 0,
+      lastAlertTime: null,
+      trackingId: uuidv7(),
+      retryCount: 0,
+      stage: 'waiting',
+      expectedLastMessageId: undefined,
+    };
+    Object.assign(inactivityData, resetData);
+    await this.persistInactivitySchedule(
+      inactivityCacheKey,
+      resetData,
+      now + Math.max(1, Math.floor(timeMinutes)) * 60 * 1000
+    );
+    return true;
   }
 
   private async shouldSendInactivityAlert(
@@ -5414,7 +8591,10 @@ export class ChatbotFlowRunnerService {
       selected_user?: string;
       selected_sector?: string;
       selected_sector_user?: string;
+      selected_channel?: string;
+      selected_chatbot?: string;
     },
+    inactivityData: IInactivityData,
     customServiceFinishedMessage?: string,
     customMessages?: IChatbotCustomMessages,
     enabledFlags?: {
@@ -5425,19 +8605,19 @@ export class ChatbotFlowRunnerService {
     }
   ): Promise<boolean> {
     if (action === 'finish') {
-      await this.sendFinishMessage(
+      return this.sendFinishMessage(
         t,
         createChat,
         customServiceFinishedMessage,
         enabledFlags?.service_finished_message_enabled
       );
-      return true;
     }
 
     if (action === 'redirect') {
       return this.processInactivityRedirect(
         t,
         createChat,
+        inactivityData,
         inactivityAlert,
         customMessages,
         enabledFlags
@@ -5711,7 +8891,6 @@ export class ChatbotFlowRunnerService {
   }
 
   private readonly FAILED_ATTEMPTS_CACHE_TTL_SECONDS = 86400;
-  private readonly INACTIVITY_CACHE_TTL_SECONDS = 86400;
 
   private async incrementFailedAttempts(createChat: IChat): Promise<number> {
     const key = this.getFailedAttemptsCacheKey(
@@ -5736,16 +8915,679 @@ export class ChatbotFlowRunnerService {
     await this.redis.del(key);
   }
 
+  private async executePendingFinishEffect(
+    t: TFunction<'translation', undefined>,
+    effect: IChatbotPendingFinishEffect,
+    ids: { accountId: string; workerId: string; chatId: string },
+    sourceCacheKey = this.getPendingFinishEffectKey(
+      ids.accountId,
+      ids.workerId,
+      ids.chatId
+    )
+  ): Promise<void> {
+    if (
+      effect.accountId !== ids.accountId ||
+      effect.workerId !== ids.workerId ||
+      effect.chatId !== ids.chatId ||
+      (effect.source !== 'chatbot' && effect.source !== 'outside_hours') ||
+      (effect.phase !== 'transition_pending' &&
+        effect.phase !== 'effects_pending')
+    ) {
+      await this.removePendingFinishEffect(
+        ids.accountId,
+        ids.workerId,
+        ids.chatId
+      );
+      return;
+    }
+
+    const chat = await this.chatService.findChatByChatId(
+      effect.accountId,
+      effect.chatId
+    );
+    if (
+      effect.source === 'chatbot' &&
+      effect.phase === 'transition_pending' &&
+      chat &&
+      (await this.shouldSuspendInactivityForOfficialChat(chat))
+    ) {
+      await this.removePendingFinishEffect(
+        effect.accountId,
+        effect.workerId,
+        effect.chatId
+      );
+      return;
+    }
+
+    if (effect.phase === 'transition_pending') {
+      const ownsCurrentState =
+        chat?.status === EChatStatus.closed
+          ? Boolean(
+              effect.statusEventId &&
+              chat.meta?.status_event_id === effect.statusEventId &&
+              chat.meta.status_source === effect.source
+            )
+          : Boolean(
+              chat &&
+              (effect.source === 'outside_hours' ||
+                this.isAutomationChatStatus(chat.status)) &&
+              this.isPendingTransitionOwnedByChat(effect, chat)
+            );
+      if (!chat || !ownsCurrentState) {
+        await this.removePendingFinishEffect(
+          effect.accountId,
+          effect.workerId,
+          effect.chatId
+        );
+        return;
+      }
+
+      if (effect.source === 'outside_hours') {
+        const outcome = await this.sendOutsideHoursFinishMessage(
+          t,
+          chat,
+          effect.customMessage ?? ''
+        );
+        const migrated = await this.acknowledgeMigratedFinishEffect(
+          sourceCacheKey,
+          chat
+        );
+        if (outcome === 'queued') {
+          if (migrated) {
+            return;
+          }
+          throw new Error('outside-hours finish transition remains queued');
+        }
+        return;
+      }
+
+      const transitioned = await this.sendFinishMessage(
+        t,
+        chat,
+        effect.customMessage,
+        effect.messageEnabled,
+        chat
+      );
+      const migrated = await this.acknowledgeMigratedFinishEffect(
+        sourceCacheKey,
+        chat
+      );
+      if (!transitioned) {
+        if (migrated) {
+          return;
+        }
+        throw new Error('chatbot finish transition was not confirmed');
+      }
+      return;
+    }
+
+    if (
+      !effect.statusEventId ||
+      !chat ||
+      chat.status !== EChatStatus.closed ||
+      chat.meta?.status_source !== effect.source ||
+      chat.meta.status_event_id !== effect.statusEventId
+    ) {
+      await this.removePendingFinishEffect(
+        effect.accountId,
+        effect.workerId,
+        effect.chatId
+      );
+      return;
+    }
+
+    if (!effect.messageEnabled) {
+      await this.removePendingFinishEffect(
+        effect.accountId,
+        effect.workerId,
+        effect.chatId
+      );
+      return;
+    }
+
+    const message = await this.resolvePendingFinishMessage(t, effect, chat);
+    const messageSent = await this.sendMessageWithStatusGuard(
+      t,
+      {
+        chat,
+        accountId: chat.account.id,
+        messageId: effect.statusEventId,
+        type:
+          effect.source === 'outside_hours'
+            ? EMessageType.text
+            : EMessageType.system,
+        message,
+        typeUser:
+          effect.source === 'outside_hours'
+            ? ETypeUserChat.system
+            : ETypeUserChat.bot,
+        securityKeyScopes: effect.source === 'outside_hours' ? [] : undefined,
+      },
+      {
+        allowClosedStatus: true,
+        expectedStatusEventId: effect.statusEventId,
+      }
+    );
+    if (!messageSent) {
+      throw new Error('chatbot finish message was not persisted');
+    }
+
+    await this.removePendingFinishEffect(
+      effect.accountId,
+      effect.workerId,
+      effect.chatId
+    );
+  }
+
+  private async resolvePendingFinishMessage(
+    t: TFunction<'translation', undefined>,
+    effect: IChatbotPendingFinishEffect,
+    chat: IChat
+  ): Promise<string> {
+    if (effect.source === 'chatbot') {
+      return this.replaceVariables(
+        t,
+        effect.customMessage || t('chatbot_service_finished'),
+        chat,
+        chat.user,
+        chat.sector
+      );
+    }
+
+    let protocol: string | null = null;
+    const rawMessage = effect.customMessage ?? '';
+    if (hasProtocolTag(rawMessage)) {
+      protocol =
+        (await this.chatService.getOrCreateChatProtocol(
+          chat.account.id,
+          chat.chat_id,
+          'protocol_start'
+        )) || this.chatService.getLatestProtocolByType(chat, 'protocol_start');
+    }
+
+    return replaceMessageTags({
+      message: rawMessage,
+      chat,
+      t,
+      protocol,
+    }).trim();
+  }
+
+  private isPendingTransitionOwnedByChat(
+    effect: IChatbotPendingFinishEffect,
+    chat: IChat
+  ): boolean {
+    if (effect.expectedStatus !== chat.status) {
+      return false;
+    }
+
+    if (
+      effect.expectedLastMessageId !== undefined &&
+      effect.expectedLastMessageId !== (chat.summary?.last_message_id ?? null)
+    ) {
+      return false;
+    }
+
+    if (effect.expectedStatusEventId) {
+      return chat.meta?.status_event_id === effect.expectedStatusEventId;
+    }
+
+    if (chat.meta?.status_event_id) {
+      return false;
+    }
+
+    if (effect.expectedStatusEpoch !== undefined) {
+      return chat.meta?.status_epoch === effect.expectedStatusEpoch;
+    }
+
+    return (chat.started_at ?? null) === (effect.expectedStartedAt ?? null);
+  }
+
+  private async acknowledgeMigratedFinishEffect(
+    sourceCacheKey: string,
+    chat: IChat
+  ): Promise<boolean> {
+    const currentCacheKey = this.getPendingFinishEffectKey(
+      chat.account.id,
+      chat.worker.id,
+      chat.chat_id
+    );
+    if (currentCacheKey === sourceCacheKey) {
+      return false;
+    }
+
+    await this.removePendingFinishEffectByCacheKey(sourceCacheKey);
+    return true;
+  }
+
+  private async requeuePendingFinishEffectAfterFailure(
+    cacheKey: string,
+    failedEffect: IChatbotPendingFinishEffect
+  ): Promise<void> {
+    const latestPayload = await this.redis.get(cacheKey);
+    if (!latestPayload) {
+      return;
+    }
+
+    const latest = JSON.parse(latestPayload) as IChatbotPendingFinishEffect;
+    if (
+      latest.phase !== failedEffect.phase ||
+      latest.statusEventId !== failedEffect.statusEventId ||
+      latest.retryCount !== failedEffect.retryCount
+    ) {
+      return;
+    }
+
+    const retryCount = failedEffect.retryCount + 1;
+    await this.persistPendingFinishEffect(
+      { ...failedEffect, retryCount },
+      Date.now() + this.getInactivityRetryDelayMs(retryCount)
+    );
+  }
+
+  private async processPendingFinishEffectWithLock(
+    t: TFunction<'translation', undefined>,
+    cacheKey: string,
+    ids: { accountId: string; workerId: string; chatId: string }
+  ): Promise<void> {
+    const scheduledScore = await this.redis.zscore(
+      this.getPendingFinishScheduleKey(),
+      cacheKey
+    );
+    if (scheduledScore === null || Number(scheduledScore) > Date.now()) {
+      return;
+    }
+
+    const payload = await this.redis.get(cacheKey);
+    if (!payload) {
+      await this.removePendingFinishEffectByCacheKey(cacheKey);
+      return;
+    }
+
+    let effect: IChatbotPendingFinishEffect;
+    try {
+      effect = JSON.parse(payload) as IChatbotPendingFinishEffect;
+    } catch (error) {
+      await this.removePendingFinishEffect(
+        ids.accountId,
+        ids.workerId,
+        ids.chatId
+      );
+      console.error('[ChatbotFlow] invalid finish effect removed', {
+        account_id: ids.accountId,
+        chat_id: ids.chatId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    try {
+      await this.executePendingFinishEffect(t, effect, ids, cacheKey);
+    } catch (error) {
+      try {
+        await this.requeuePendingFinishEffectAfterFailure(cacheKey, effect);
+      } catch (requeueError) {
+        console.error('[ChatbotFlow] finish effect requeue failed', {
+          account_id: effect.accountId,
+          chat_id: effect.chatId,
+          status_event_id: effect.statusEventId,
+          error:
+            requeueError instanceof Error
+              ? requeueError.message
+              : String(requeueError),
+        });
+      }
+
+      console.error('[ChatbotFlow] finish effect failed', {
+        account_id: effect.accountId,
+        chat_id: effect.chatId,
+        status_event_id: effect.statusEventId ?? null,
+        retry_count: effect.retryCount,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async processScheduledFinishEffects(
+    t: TFunction<'translation', undefined>
+  ): Promise<void> {
+    const scheduleKey = this.getPendingFinishScheduleKey();
+    const dueKeys = await this.redis.zrangebyscore(
+      scheduleKey,
+      0,
+      Date.now(),
+      'LIMIT',
+      0,
+      100
+    );
+
+    for (const cacheKey of dueKeys) {
+      const ids = this.parsePendingFinishEffectKey(cacheKey);
+      if (!ids) {
+        await this.removePendingFinishEffectByCacheKey(cacheKey);
+        continue;
+      }
+
+      try {
+        await withLock(
+          this.redis,
+          this.getAutomationLockKey(ids.accountId, ids.chatId),
+          () => this.processPendingFinishEffectWithLock(t, cacheKey, ids),
+          {
+            ttlMs: 30000,
+            retryMs: 100,
+            maxWaitMs: 45000,
+          }
+        );
+      } catch (error) {
+        console.error('[ChatbotFlow] finish effect lock failed', {
+          account_id: ids.accountId,
+          chat_id: ids.chatId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  private isInactivityRedirectSourceOwned(
+    effect: IChatbotInactivityRedirectEffect,
+    chat: IChat
+  ): boolean {
+    return (
+      this.isAutomationChatStatus(chat.status) &&
+      chat.worker.id === effect.sourceWorkerId &&
+      chat.status === effect.expectedStatus &&
+      (chat.meta?.status_event_id ?? null) ===
+        (effect.expectedStatusEventId ?? null) &&
+      (chat.meta?.status_epoch ?? null) ===
+        (effect.expectedStatusEpoch ?? null) &&
+      (chat.meta?.assignment_event_id ?? null) ===
+        (effect.expectedAssignmentEventId ?? null) &&
+      (chat.meta?.assignment_epoch ?? null) ===
+        (effect.expectedAssignmentEpoch ?? null) &&
+      (chat.summary?.last_message_id ?? null) ===
+        (effect.expectedLastMessageId ?? null) &&
+      (chat.summary?.revision ?? 0) === (effect.expectedSummaryRevision ?? 0)
+    );
+  }
+
+  private async executeInactivityRedirectEffect(
+    t: TFunction<'translation', undefined>,
+    cacheKey: string,
+    effect: IChatbotInactivityRedirectEffect,
+    ids: { accountId: string; chatId: string }
+  ): Promise<void> {
+    if (
+      effect.accountId !== ids.accountId ||
+      effect.chatId !== ids.chatId ||
+      !effect.sourceWorkerId ||
+      !effect.sourceChatbotId ||
+      !effect.targetWorkerId ||
+      !effect.targetChatbotId ||
+      !effect.operationId ||
+      (effect.phase !== 'transition_pending' &&
+        effect.phase !== 'bootstrap_pending')
+    ) {
+      await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+      return;
+    }
+    const chat = await this.chatService.findChatByChatId(
+      effect.accountId,
+      effect.chatId
+    );
+    if (!chat) {
+      await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+      return;
+    }
+
+    if (effect.phase === 'transition_pending') {
+      if (await this.shouldSuspendInactivityForOfficialChat(chat)) {
+        await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+        return;
+      }
+
+      if (!this.chatbotTransferService) {
+        throw new Error('chatbot transfer service is unavailable');
+      }
+
+      const transitionAlreadyApplied =
+        chat.meta?.assignment_event_id === effect.operationId;
+      if (!transitionAlreadyApplied) {
+        if (!this.isInactivityRedirectSourceOwned(effect, chat)) {
+          await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+          return;
+        }
+      } else {
+        const currentLastMessageId = chat.summary?.last_message_id ?? null;
+        const hasConcurrentActivity =
+          currentLastMessageId !== null &&
+          currentLastMessageId !== (effect.expectedLastMessageId ?? null);
+        if (hasConcurrentActivity) {
+          await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+          return;
+        }
+      }
+
+      const result = await this.chatbotTransferService.transfer({
+        t,
+        accountId: effect.accountId,
+        chat,
+        targetWorkerId: effect.targetWorkerId,
+        targetChatbotId: effect.targetChatbotId,
+        operationId: effect.operationId,
+        eventEpochMillis: effect.eventEpochMillis,
+        source: 'chatbot_inactivity',
+        actor: { type: 'automation', id: effect.sourceChatbotId },
+        expectedLastMessageId: effect.expectedLastMessageId ?? null,
+        expectedSummaryRevision: effect.expectedSummaryRevision ?? 0,
+      });
+
+      if (result.concurrentActivity) {
+        await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+        return;
+      }
+
+      await Promise.all(
+        Array.from(new Set([effect.sourceWorkerId, effect.targetWorkerId])).map(
+          (workerId) =>
+            this.clearChatbotRuntimeStateByIds(
+              effect.accountId,
+              workerId,
+              effect.chatId
+            )
+        )
+      );
+
+      await this.persistInactivityRedirectEffect({
+        ...effect,
+        phase: 'bootstrap_pending',
+        expectedStatus: result.chat.status,
+        expectedStatusEventId: result.chat.meta?.status_event_id ?? null,
+        expectedStatusEpoch: result.chat.meta?.status_epoch ?? null,
+        expectedAssignmentEventId: effect.operationId,
+        expectedAssignmentEpoch:
+          result.chat.meta?.assignment_epoch ?? effect.eventEpochMillis,
+        postTransitionLastMessageId:
+          result.chat.summary?.last_message_id ?? null,
+        retryCount: 0,
+      });
+      return;
+    }
+
+    if (!this.chatbotTransferService) {
+      throw new Error('chatbot transfer service is unavailable');
+    }
+
+    await this.chatbotTransferService.resolveTarget(
+      t,
+      effect.accountId,
+      effect.targetWorkerId,
+      effect.targetChatbotId
+    );
+    if (
+      chat.worker.id !== effect.targetWorkerId ||
+      chat.status !== effect.expectedStatus ||
+      chat.meta?.assignment_event_id !== effect.operationId ||
+      (chat.summary?.last_message_id ?? null) !==
+        (effect.postTransitionLastMessageId ?? null)
+    ) {
+      await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+      return;
+    }
+
+    await this.bootstrapTransferredChatbot(
+      t,
+      chat,
+      effect.targetChatbotId,
+      effect.operationId,
+      [effect.sourceWorkerId],
+      true,
+      {
+        expectedAssignmentEventId: effect.operationId,
+        expectedLastMessageId: effect.postTransitionLastMessageId ?? null,
+      }
+    );
+    await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+  }
+
+  private async requeueInactivityRedirectEffectAfterFailure(
+    cacheKey: string,
+    failedEffect: IChatbotInactivityRedirectEffect
+  ): Promise<void> {
+    const latestPayload = await this.redis.get(cacheKey);
+    if (!latestPayload) return;
+
+    const latest = JSON.parse(
+      latestPayload
+    ) as IChatbotInactivityRedirectEffect;
+    if (
+      latest.operationId !== failedEffect.operationId ||
+      latest.phase !== failedEffect.phase ||
+      latest.retryCount !== failedEffect.retryCount
+    ) {
+      return;
+    }
+
+    const retryCount = failedEffect.retryCount + 1;
+    await this.persistInactivityRedirectEffect(
+      { ...failedEffect, retryCount },
+      Date.now() + this.getInactivityRetryDelayMs(retryCount)
+    );
+  }
+
+  private async processInactivityRedirectEffectByKey(
+    t: TFunction<'translation', undefined>,
+    cacheKey: string
+  ): Promise<void> {
+    const ids = this.parseInactivityRedirectEffectKey(cacheKey);
+    if (!ids) {
+      await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+      return;
+    }
+    const score = await this.redis.zscore(
+      this.getInactivityRedirectScheduleKey(),
+      cacheKey
+    );
+    if (score === null || Number(score) > Date.now()) return;
+
+    const payload = await this.redis.get(cacheKey);
+    if (!payload) {
+      await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+      return;
+    }
+
+    let effect: IChatbotInactivityRedirectEffect;
+    try {
+      effect = JSON.parse(payload) as IChatbotInactivityRedirectEffect;
+    } catch {
+      await this.removeInactivityRedirectEffectByCacheKey(cacheKey);
+      return;
+    }
+
+    try {
+      if (effect.phase === 'transition_pending') {
+        await withLock(
+          this.redis,
+          this.getAutomationLockKey(ids.accountId, ids.chatId),
+          () => this.executeInactivityRedirectEffect(t, cacheKey, effect, ids),
+          { ttlMs: 60_000, retryMs: 100, maxWaitMs: 90_000 }
+        );
+      } else {
+        await this.executeInactivityRedirectEffect(t, cacheKey, effect, ids);
+      }
+    } catch (error) {
+      await this.requeueInactivityRedirectEffectAfterFailure(
+        cacheKey,
+        effect
+      ).catch(() => undefined);
+      console.error('[ChatbotFlow] inactivity redirect effect failed', {
+        account_id: effect.accountId,
+        chat_id: effect.chatId,
+        operation_id: effect.operationId,
+        phase: effect.phase,
+        retry_count: effect.retryCount,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async processScheduledInactivityRedirectEffects(
+    t: TFunction<'translation', undefined>
+  ): Promise<void> {
+    const dueKeys = await this.redis.zrangebyscore(
+      this.getInactivityRedirectScheduleKey(),
+      0,
+      Date.now(),
+      'LIMIT',
+      0,
+      100
+    );
+    for (const cacheKey of dueKeys) {
+      await this.processInactivityRedirectEffectByKey(t, cacheKey);
+    }
+  }
+
   async processScheduledInactivityChecks(
     t: TFunction<'translation', undefined>
   ): Promise<void> {
+    try {
+      await this.processScheduledAiAgentDebounces(t);
+    } catch (error) {
+      console.error('[ChatbotFlow] AI Agent debounce scheduler failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    try {
+      await this.processScheduledFinishEffects(t);
+    } catch (error) {
+      console.error('[ChatbotFlow] pending finish scheduler failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    try {
+      await this.processScheduledInactivityRedirectEffects(t);
+    } catch (error) {
+      console.error('[ChatbotFlow] pending redirect scheduler failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     const scheduleKey = this.getInactivityScheduleKey();
-    const now = Date.now();
+
+    try {
+      await this.reconcileInactivitySchedule();
+    } catch (error) {
+      console.error('[ChatbotFlow] inactivity reconciliation failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     const keysToCheck = await this.redis.zrangebyscore(
       scheduleKey,
       0,
-      now,
+      Date.now(),
       'LIMIT',
       0,
       100
@@ -5756,358 +9598,198 @@ export class ChatbotFlowRunnerService {
     }
 
     for (const inactivityCacheKey of keysToCheck) {
-      await this.redis.zrem(scheduleKey, inactivityCacheKey);
-
-      const inactivityDataStr = await this.redis.get(inactivityCacheKey);
-
-      if (!inactivityDataStr) {
-        continue;
-      }
-
-      const inactivityData = JSON.parse(inactivityDataStr) as IInactivityData;
-      const timeSinceLastInteraction =
-        (now - inactivityData.lastInteraction) / 1000 / 60;
-
-      if (timeSinceLastInteraction < 0) {
-        continue;
-      }
-
-      const chatbotFlow = await this.chatbotService.findChatbotFlowByChatbotId(
-        inactivityData.accountId,
-        inactivityData.chatbotId
-      );
-
-      if (!chatbotFlow) {
-        await this.cancelInactivityCheck({
-          account: { id: inactivityData.accountId },
-          worker: { id: inactivityData.workerId },
-          chat_id: inactivityData.chatId,
-        } as IChat);
-        continue;
-      }
-
-      const configurations =
-        await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
-          inactivityData.accountId,
-          inactivityData.chatbotId
-        );
-
-      const inactivityAlert = configurations?.configurations?.inactivity_alert;
-
-      if (inactivityAlert?.status !== 'active') {
-        await this.cancelInactivityCheck({
-          account: { id: inactivityData.accountId },
-          worker: { id: inactivityData.workerId },
-          chat_id: inactivityData.chatId,
-        } as IChat);
-        continue;
-      }
-
-      const createChat = await this.chatService.findChatByChatId(
-        inactivityData.accountId,
-        inactivityData.chatId
-      );
-
-      if (!createChat) {
-        await this.cancelInactivityCheck({
-          account: { id: inactivityData.accountId },
-          worker: { id: inactivityData.workerId },
-          chat_id: inactivityData.chatId,
-        } as IChat);
-        continue;
-      }
-
-      const customInactivityMessage =
-        configurations?.configurations?.messages?.inactivity_message;
-      const customServiceFinishedMessage =
-        configurations?.configurations?.messages?.service_finished_message;
-      const customMessages = configurations?.configurations?.messages
-        ? {
-            transfer_message_user:
-              configurations.configurations.messages.transfer_message_user,
-            transfer_message_sector:
-              configurations.configurations.messages.transfer_message_sector,
-            transfer_message_sector_user:
-              configurations.configurations.messages
-                .transfer_message_sector_user,
-          }
-        : undefined;
-
-      const inactivityMessageEnabled =
-        configurations?.configurations?.messages?.inactivity_message_enabled !==
-        false;
-      const serviceFinishedMessageEnabled =
-        configurations?.configurations?.messages
-          ?.service_finished_message_enabled !== false;
-      const transferMessageUserEnabled =
-        configurations?.configurations?.messages
-          ?.transfer_message_user_enabled !== false;
-      const transferMessageSectorEnabled =
-        configurations?.configurations?.messages
-          ?.transfer_message_sector_enabled !== false;
-      const transferMessageSectorUserEnabled =
-        configurations?.configurations?.messages
-          ?.transfer_message_sector_user_enabled !== false;
+      let inactivityData: IInactivityData | null = null;
 
       try {
+        const inactivityDataStr = await this.redis.get(inactivityCacheKey);
+        if (!inactivityDataStr) {
+          await this.recoverMissingInactivityPayload(inactivityCacheKey);
+          continue;
+        }
+
+        try {
+          inactivityData = JSON.parse(inactivityDataStr) as IInactivityData;
+        } catch {
+          await this.removeInactivityScheduleIfUnchanged(
+            inactivityCacheKey,
+            null
+          );
+          console.error('[ChatbotFlow] invalid inactivity payload removed', {
+            inactivity_cache_key: inactivityCacheKey,
+          });
+          continue;
+        }
+
+        if (Date.now() < inactivityData.lastInteraction) {
+          throw new Error('chatbot inactivity timestamp is in the future');
+        }
+
+        const chatbotFlow =
+          await this.chatbotService.findChatbotFlowByChatbotId(
+            inactivityData.accountId,
+            inactivityData.chatbotId
+          );
+
+        if (!chatbotFlow) {
+          await this.removeInactivityScheduleIfUnchanged(
+            inactivityCacheKey,
+            inactivityData
+          );
+          continue;
+        }
+
+        const configurations =
+          await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+            inactivityData.accountId,
+            inactivityData.chatbotId
+          );
+
+        const inactivityAlert =
+          configurations?.configurations?.inactivity_alert;
+
+        if (inactivityAlert?.status !== 'active') {
+          await this.removeInactivityScheduleIfUnchanged(
+            inactivityCacheKey,
+            inactivityData
+          );
+          continue;
+        }
+
+        const createChat = await this.chatService.findChatByChatId(
+          inactivityData.accountId,
+          inactivityData.chatId
+        );
+
+        if (!createChat) {
+          await this.removeInactivityScheduleIfUnchanged(
+            inactivityCacheKey,
+            inactivityData
+          );
+          continue;
+        }
+
+        const messages = configurations?.configurations?.messages;
+        const customMessages = messages
+          ? {
+              transfer_message_user: messages.transfer_message_user,
+              transfer_message_sector: messages.transfer_message_sector,
+              transfer_message_sector_user:
+                messages.transfer_message_sector_user,
+            }
+          : undefined;
+
         await this.withAutomationLock(createChat, async () => {
-          const activeChat = await this.getAutomationChatIfAllowed(createChat);
-          if (!activeChat) {
-            await this.cancelInactivityCheck(createChat);
+          const scheduledScore = await this.redis.zscore(
+            scheduleKey,
+            inactivityCacheKey
+          );
+          if (scheduledScore === null || Number(scheduledScore) > Date.now()) {
             return;
           }
 
-          await this.processInactivityAlert(
+          const lockedPayload = await this.redis.get(inactivityCacheKey);
+          if (!lockedPayload) {
+            throw new Error('chatbot inactivity payload disappeared');
+          }
+          inactivityData = JSON.parse(lockedPayload) as IInactivityData;
+
+          const isFinishingRetry =
+            inactivityData.stage === 'finishing' &&
+            inactivityAlert.action === 'finish';
+          const activeChat = await this.getAutomationChatIfAllowed(createChat, {
+            allowClosedStatus: isFinishingRetry,
+          });
+          if (!activeChat) {
+            await this.removeInactivitySchedule(inactivityCacheKey);
+            return;
+          }
+
+          if (await this.shouldSuspendInactivityForOfficialChat(activeChat)) {
+            await this.removeInactivitySchedule(inactivityCacheKey);
+            return;
+          }
+
+          if (
+            await this.restartFinishingInactivityAfterNewActivity(
+              inactivityCacheKey,
+              inactivityData,
+              activeChat,
+              inactivityAlert.time ?? 5
+            )
+          ) {
+            return;
+          }
+
+          const processed = await this.processInactivityAlert(
             t,
             inactivityCacheKey,
             inactivityData,
             inactivityAlert,
             activeChat,
-            customInactivityMessage,
-            customServiceFinishedMessage,
+            messages?.inactivity_message,
+            messages?.service_finished_message,
             customMessages,
             {
-              inactivity_message_enabled: inactivityMessageEnabled,
-              service_finished_message_enabled: serviceFinishedMessageEnabled,
-              transfer_message_user_enabled: transferMessageUserEnabled,
-              transfer_message_sector_enabled: transferMessageSectorEnabled,
+              inactivity_message_enabled:
+                messages?.inactivity_message_enabled !== false,
+              service_finished_message_enabled:
+                messages?.service_finished_message_enabled !== false,
+              transfer_message_user_enabled:
+                messages?.transfer_message_user_enabled !== false,
+              transfer_message_sector_enabled:
+                messages?.transfer_message_sector_enabled !== false,
               transfer_message_sector_user_enabled:
-                transferMessageSectorUserEnabled,
+                messages?.transfer_message_sector_user_enabled !== false,
             }
           );
+
+          if (!processed) {
+            throw new Error('chatbot inactivity action was not completed');
+          }
         });
       } catch (error) {
+        if (inactivityData) {
+          try {
+            inactivityData = await this.requeueInactivityAfterFailure(
+              inactivityCacheKey,
+              inactivityData
+            );
+          } catch (requeueError) {
+            console.error('[ChatbotFlow] inactivity requeue failed', {
+              error:
+                requeueError instanceof Error
+                  ? requeueError.message
+                  : String(requeueError),
+              inactivity_cache_key: inactivityCacheKey,
+            });
+          }
+        }
+
         console.error('[ChatbotFlow] processScheduledInactivityChecks failed', {
           error: error instanceof Error ? error.message : String(error),
-          accountId: inactivityData.accountId,
-          workerId: inactivityData.workerId,
-          chatId: inactivityData.chatId,
+          accountId: inactivityData?.accountId,
+          workerId: inactivityData?.workerId,
+          chatId: inactivityData?.chatId,
+          retryCount: inactivityData?.retryCount,
         });
       }
     }
-  }
-
-  private async callGeminiChatApi(
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-    prompt: string,
-    userQuery: string,
-    history?: Array<{ role: 'user' | 'assistant'; content: string }>
-  ): Promise<{
-    text: string;
-    usage?: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      total_tokens?: number;
-    };
-    latency_ms?: number;
-  }> {
-    const startMs = Date.now();
-    const url = `${baseUrl.replace('/v1', '/v1beta')}/models/${encodeURIComponent(
-      model
-    )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-    const contents = this.buildGeminiContents(history, userQuery);
-    const requestBody = this.buildGeminiRequestBody(contents, prompt);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const latency_ms = Date.now() - startMs;
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`AI Agent API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = (await response.json()) as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{
-            text?: string;
-          }>;
-        };
-      }>;
-      usageMetadata?: {
-        promptTokenCount?: number;
-        candidatesTokenCount?: number;
-        totalTokenCount?: number;
-      };
-    };
-
-    const text =
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      'Desculpe, não consegui processar sua solicitação.';
-
-    const usage = data.usageMetadata
-      ? {
-          prompt_tokens: data.usageMetadata.promptTokenCount,
-          completion_tokens: data.usageMetadata.candidatesTokenCount,
-          total_tokens: data.usageMetadata.totalTokenCount,
-        }
-      : undefined;
-
-    return { text, usage, latency_ms };
-  }
-
-  private buildGeminiContents(
-    history: Array<{ role: 'user' | 'assistant'; content: string }> | undefined,
-    userQuery: string
-  ): Array<{
-    role: 'user' | 'model';
-    parts: Array<{ text: string }>;
-  }> {
-    const contents: Array<{
-      role: 'user' | 'model';
-      parts: Array<{ text: string }>;
-    }> = [];
-
-    if (history && history.length > 0) {
-      for (const msg of history) {
-        contents.push({
-          role: msg.role === 'user' ? 'user' : 'model',
-          parts: [{ text: msg.content }],
-        });
-      }
-    }
-
-    contents.push({
-      role: 'user',
-      parts: [{ text: userQuery }],
-    });
-
-    return contents;
-  }
-
-  private buildGeminiRequestBody(
-    contents: Array<{
-      role: 'user' | 'model';
-      parts: Array<{ text: string }>;
-    }>,
-    prompt: string
-  ): {
-    contents: Array<{
-      role: 'user' | 'model';
-      parts: Array<{ text: string }>;
-    }>;
-    system_instruction?: {
-      parts: Array<{
-        text: string;
-      }>;
-    };
-  } {
-    return {
-      contents,
-      system_instruction: prompt
-        ? {
-            parts: [
-              {
-                text: prompt,
-              },
-            ],
-          }
-        : undefined,
-    };
-  }
-
-  private async callOpenAiChatApi(
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-    prompt: string,
-    userQuery: string,
-    history?: Array<{ role: 'user' | 'assistant'; content: string }>
-  ): Promise<{
-    text: string;
-    usage?: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-      total_tokens?: number;
-    };
-    latency_ms?: number;
-  }> {
-    const startMs = Date.now();
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: prompt,
-          },
-          ...(history || []).map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-          })),
-          {
-            role: 'user',
-            content: userQuery,
-          },
-        ],
-      }),
-    });
-
-    const latency_ms = Date.now() - startMs;
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`AI Agent API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = (await response.json()) as {
-      choices?: Array<{
-        message?: {
-          content?: string;
-        };
-      }>;
-      usage?: {
-        prompt_tokens?: number;
-        completion_tokens?: number;
-        total_tokens?: number;
-      };
-    };
-
-    const text =
-      data.choices?.[0]?.message?.content ||
-      'Desculpe, não consegui processar sua solicitação.';
-
-    const usage = data.usage
-      ? {
-          prompt_tokens: data.usage.prompt_tokens,
-          completion_tokens: data.usage.completion_tokens,
-          total_tokens: data.usage.total_tokens,
-        }
-      : undefined;
-
-    return { text, usage, latency_ms };
   }
 
   private async generateAndSendAiWelcomeMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     aiAgent: ViewAiAgentResponse
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
       const fallback = t('ai_agent_default_question');
-      await this.sendMessageWithStatusGuard(t, {
+      return this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
         message: fallback,
         typeUser: ETypeUserChat.bot,
       });
-      return;
     }
 
     const contactName = await this.getContactName(createChat);
@@ -6156,14 +9838,17 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
       finalMessage
     );
 
-    if (!voiceSent) {
-      await this.sendMessageWithStatusGuard(t, {
-        chat: createChat,
-        accountId: createChat.account.id,
-        type: EMessageType.text,
-        message: finalMessage,
-        typeUser: ETypeUserChat.bot,
-      });
+    const messageSent = voiceSent
+      ? true
+      : await this.sendMessageWithStatusGuard(t, {
+          chat: createChat,
+          accountId: createChat.account.id,
+          type: EMessageType.text,
+          message: finalMessage,
+          typeUser: ETypeUserChat.bot,
+        });
+    if (!messageSent) {
+      return false;
     }
 
     await this.pushToConversationHistory(
@@ -6174,6 +9859,7 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
       'assistant',
       finalMessage
     );
+    return true;
   }
 
   private buildFallbackWelcomeMessage(name: string, greeting: string): string {
@@ -6218,7 +9904,7 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
         return false;
       }
 
-      await this.sendMessageWithStatusGuard(t, {
+      return this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.audio,
@@ -6227,8 +9913,6 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
         audioPtt: true,
         typeUser: ETypeUserChat.bot,
       });
-
-      return true;
     } catch (error) {
       console.error('[ChatbotFlow] trySendAsVoiceMessage failed', error);
       return false;
@@ -6901,14 +10585,10 @@ Regras de saída:
       )
       .join('\n');
 
-    const useAssistantsApi =
-      aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
-      !!aiAgent.openai_assistant_id;
     const useFileSearchResponsesApi =
       aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
-      !aiAgent.openai_assistant_id &&
       !!aiAgent.openai_vector_store_id;
-    const skipFilePrompts = useAssistantsApi || useFileSearchResponsesApi;
+    const skipFilePrompts = useFileSearchResponsesApi;
 
     const allPrompts = await this.ragService.getAllAgentPromptsDetailed(
       createChat.account.id,
@@ -6916,7 +10596,7 @@ Regras de saída:
     );
 
     const systemPrompt = this.buildComprehensiveSystemPrompt(
-      useAssistantsApi ? null : aiAgent.system_prompt,
+      aiAgent.system_prompt,
       allPrompts,
       skipFilePrompts
     );
@@ -6929,15 +10609,6 @@ Regras de saída:
       users
     );
 
-    const assistantsOptions =
-      useAssistantsApi && aiAgent.openai_assistant_id
-        ? {
-            accountId: createChat.account.id,
-            chatId: createChat.chat_id,
-            aiAgentId: aiAgent.ai_agent_id,
-            openaiAssistantId: aiAgent.openai_assistant_id,
-          }
-        : undefined;
     const responsesApiFileSearchOptions =
       useFileSearchResponsesApi && aiAgent.openai_vector_store_id
         ? { vectorStoreId: aiAgent.openai_vector_store_id }
@@ -6952,7 +10623,7 @@ Regras de saída:
         decisionPrompt,
         userText,
         undefined,
-        assistantsOptions,
+        undefined,
         responsesApiFileSearchOptions,
         {
           accountId: createChat.account.id,
@@ -7873,6 +11544,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       account_id: createChat.account.id,
       ai_agent_id: aiAgentId,
       phone: createChat.phone,
+      exclude_chat_id: createChat.chat_id,
     };
 
     const topic = this.kafkaServiceQueueService.chatHistoryEmbedding();
@@ -7901,28 +11573,29 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     prompt: string,
     userQuery: string,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>,
-    assistantsOptions?: {
+    _assistantsOptions?: {
       accountId: string;
       chatId: string;
       aiAgentId: string;
       openaiAssistantId: string;
     },
-    responsesApiFileSearchOptions?: { vectorStoreId: string },
+    responsesApiFileSearchOptions?: {
+      vectorStoreId: string;
+      idempotencyKey?: string;
+    },
     usageContext?: { accountId: string; chatId: string; aiAgentId: string }
   ): Promise<string> {
-    return this.retryOperation(() =>
-      this.callAiAgentChatApi(
-        baseUrl,
-        apiKey,
-        model,
-        aiAgentTypeId,
-        prompt,
-        userQuery,
-        history,
-        assistantsOptions,
-        responsesApiFileSearchOptions,
-        usageContext
-      )
+    return this.callAiAgentChatApi(
+      baseUrl,
+      apiKey,
+      model,
+      aiAgentTypeId,
+      prompt,
+      userQuery,
+      history,
+      _assistantsOptions,
+      responsesApiFileSearchOptions,
+      usageContext
     );
   }
 
@@ -7934,13 +11607,16 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     prompt: string,
     userQuery: string,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>,
-    assistantsOptions?: {
+    _assistantsOptions?: {
       accountId: string;
       chatId: string;
       aiAgentId: string;
       openaiAssistantId: string;
     },
-    responsesApiFileSearchOptions?: { vectorStoreId: string },
+    responsesApiFileSearchOptions?: {
+      vectorStoreId: string;
+      idempotencyKey?: string;
+    },
     usageContext?: { accountId: string; chatId: string; aiAgentId: string }
   ): Promise<string> {
     if (!baseUrl || !apiKey || !model) {
@@ -7949,162 +11625,109 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       );
     }
 
-    const saveContext = assistantsOptions ?? usageContext;
-
-    if (
-      aiAgentTypeId === EAiAgentType.gpt &&
-      assistantsOptions?.openaiAssistantId
-    ) {
-      const result = await this.callOpenAiAssistantsApi(
-        baseUrl,
-        apiKey,
-        assistantsOptions.accountId,
-        assistantsOptions.chatId,
-        assistantsOptions.aiAgentId,
-        assistantsOptions.openaiAssistantId,
-        prompt,
-        userQuery
-      );
-      if (saveContext) {
-        await this.saveAiAgentUsage({
-          ai_agent_id: saveContext.aiAgentId,
-          account_id: saveContext.accountId,
-          chat_id: saveContext.chatId,
-          prompt_tokens: result.usage?.prompt_tokens ?? null,
-          completion_tokens: result.usage?.completion_tokens ?? null,
-          total_tokens: result.usage?.total_tokens ?? null,
-          model: model ?? null,
-          latency_ms: result.latency_ms ?? null,
-          success: true,
-          request_type: 'assistant_run',
-        });
-      }
-      return result.text;
-    }
+    const saveContext = usageContext;
 
     if (
       aiAgentTypeId === EAiAgentType.gpt &&
       responsesApiFileSearchOptions?.vectorStoreId
     ) {
-      const result =
-        await this.openAIAssistantService.createResponseWithFileSearch(
-          apiKey,
-          baseUrl,
-          model,
-          prompt,
-          userQuery,
-          responsesApiFileSearchOptions.vectorStoreId,
-          history
-        );
-      if (saveContext) {
-        await this.saveAiAgentUsage({
-          ai_agent_id: saveContext.aiAgentId,
-          account_id: saveContext.accountId,
-          chat_id: saveContext.chatId,
-          prompt_tokens: result.usage?.prompt_tokens ?? null,
-          completion_tokens: result.usage?.completion_tokens ?? null,
-          total_tokens: result.usage?.total_tokens ?? null,
-          model: model ?? null,
-          latency_ms: result.latency_ms ?? null,
-          success: true,
-          request_type: 'responses_file_search',
-        });
+      try {
+        const result =
+          await this.openAIAssistantService.createResponseWithFileSearch(
+            apiKey,
+            baseUrl,
+            model,
+            prompt,
+            userQuery,
+            responsesApiFileSearchOptions.vectorStoreId,
+            history,
+            responsesApiFileSearchOptions.idempotencyKey,
+            saveContext
+              ? {
+                  accountId: saveContext.accountId,
+                  aiAgentId: saveContext.aiAgentId,
+                }
+              : undefined
+          );
+        if (saveContext) {
+          await this.saveAiAgentUsage({
+            ai_agent_id: saveContext.aiAgentId,
+            account_id: saveContext.accountId,
+            chat_id: saveContext.chatId,
+            prompt_tokens: result.usage?.prompt_tokens ?? null,
+            completion_tokens: result.usage?.completion_tokens ?? null,
+            total_tokens: result.usage?.total_tokens ?? null,
+            model: model ?? null,
+            latency_ms: result.latency_ms ?? null,
+            success: true,
+            request_type: 'responses_file_search',
+          });
+        }
+        return result.text;
+      } catch (error) {
+        if (saveContext) {
+          await this.saveAiAgentUsage({
+            ai_agent_id: saveContext.aiAgentId,
+            account_id: saveContext.accountId,
+            chat_id: saveContext.chatId,
+            prompt_tokens: null,
+            completion_tokens: null,
+            total_tokens: null,
+            model: model ?? null,
+            latency_ms: null,
+            success: false,
+            request_type: 'responses_file_search',
+          });
+        }
+        throw error;
       }
-      return result.text;
     }
 
-    if (aiAgentTypeId === EAiAgentType.gemini) {
-      const result = await this.callGeminiChatApi(
-        baseUrl,
-        apiKey,
-        model,
-        prompt,
-        userQuery,
-        history
-      );
+    const startedAt = Date.now();
+    try {
+      const result = await aiProviderClient.generateChat({
+        configuration: {
+          provider: aiAgentTypeId,
+          baseUrl,
+          apiKey,
+          model,
+        },
+        systemPrompt: prompt,
+        question: userQuery,
+        history,
+      });
       if (saveContext) {
         await this.saveAiAgentUsage({
           ai_agent_id: saveContext.aiAgentId,
           account_id: saveContext.accountId,
           chat_id: saveContext.chatId,
-          prompt_tokens: result.usage?.prompt_tokens ?? null,
-          completion_tokens: result.usage?.completion_tokens ?? null,
-          total_tokens: result.usage?.total_tokens ?? null,
+          prompt_tokens: result.usage.inputTokens,
+          completion_tokens: result.usage.outputTokens,
+          total_tokens: result.usage.totalTokens,
           model: model ?? null,
-          latency_ms: result.latency_ms ?? null,
+          latency_ms: Date.now() - startedAt,
           success: true,
           request_type: 'chat',
         });
       }
-      return result.text;
+      return result.content;
+    } catch (error) {
+      if (saveContext) {
+        await this.saveAiAgentUsage({
+          ai_agent_id: saveContext.aiAgentId,
+          account_id: saveContext.accountId,
+          chat_id: saveContext.chatId,
+          prompt_tokens: null,
+          completion_tokens: null,
+          total_tokens: null,
+          model: model ?? null,
+          latency_ms: Date.now() - startedAt,
+          success: false,
+          request_type: 'chat',
+        });
+      }
+      throw error;
     }
-
-    const result = await this.callOpenAiChatApi(
-      baseUrl,
-      apiKey,
-      model,
-      prompt,
-      userQuery,
-      history
-    );
-    if (saveContext) {
-      await this.saveAiAgentUsage({
-        ai_agent_id: saveContext.aiAgentId,
-        account_id: saveContext.accountId,
-        chat_id: saveContext.chatId,
-        prompt_tokens: result.usage?.prompt_tokens ?? null,
-        completion_tokens: result.usage?.completion_tokens ?? null,
-        total_tokens: result.usage?.total_tokens ?? null,
-        model: model ?? null,
-        latency_ms: result.latency_ms ?? null,
-        success: true,
-        request_type: 'chat',
-      });
-    }
-    return result.text;
-  }
-
-  private async callOpenAiAssistantsApi(
-    baseUrl: string,
-    apiKey: string,
-    accountId: string,
-    chatId: string,
-    aiAgentId: string,
-    assistantId: string,
-    additionalInstructions: string,
-    userQuery: string
-  ): Promise<{
-    text: string;
-    usage?: {
-      prompt_tokens: number;
-      completion_tokens: number;
-      total_tokens: number;
-    };
-    latency_ms?: number;
-  }> {
-    const threadId = await this.openAIAssistantService.getOrCreateThread(
-      accountId,
-      chatId,
-      aiAgentId,
-      apiKey,
-      baseUrl
-    );
-
-    await this.openAIAssistantService.addMessageToThread(
-      apiKey,
-      baseUrl,
-      threadId,
-      userQuery,
-      'user'
-    );
-
-    return this.openAIAssistantService.createRunAndWait(
-      apiKey,
-      baseUrl,
-      threadId,
-      assistantId,
-      additionalInstructions
-    );
   }
 
   private async processAiAgentNode(
@@ -8132,7 +11755,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       createChat.account.id
     );
 
-    if (!aiAgent) {
+    if (!aiAgent || aiAgent.status !== EAiAgentStatus.active) {
       throw new Error(t('ai_agent_not_found'));
     }
 
@@ -8153,7 +11776,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     const isFirstEntry = cachedFlowId !== currentFlowId;
 
     const bootstrapSummaryKey = `${cacheKey}:bootstrap-summary`;
-    const conversationSummaryKey = `${cacheKey}:conversation-summary`;
 
     if (isFirstEntry) {
       return this.handleBootstrapEntry(
@@ -8217,21 +11839,15 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       expiresAt,
       messages: mergedMessages,
       flowId: currentFlowId,
+      chatbotId: chatbotFlow.chatbot_id,
       selectedAiAgentId,
       lastMessageType: data.type,
+      customMessages,
+      trackingId: uuidv7(),
+      retryCount: 0,
     });
 
-    this.scheduleAiAgentDebouncedResponse(
-      t,
-      createChat,
-      currentNode,
-      aiAgent,
-      currentFlowId,
-      bootstrapSummaryKey,
-      conversationSummaryKey,
-      chatbotFlow,
-      customMessages
-    );
+    this.scheduleAiAgentDebouncedResponse(t, createChat);
 
     return true;
   }
@@ -8249,7 +11865,14 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       bootstrapSummaryKey
     );
 
-    await this.generateAndSendAiWelcomeMessage(t, createChat, aiAgent);
+    const welcomeSent = await this.generateAndSendAiWelcomeMessage(
+      t,
+      createChat,
+      aiAgent
+    );
+    if (!welcomeSent) {
+      return false;
+    }
     await this.resetAiAgentInteractionsCount(
       createChat.account.id,
       createChat.worker.id,
@@ -8273,7 +11896,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     conversationSummaryKey: string,
     chatbotFlow: ListChatbotFlowResponse,
     customMessages?: IChatbotCustomMessages,
-    inputMessageType?: EMessageType
+    inputMessageType?: EMessageType,
+    deliveryMessageId?: string
   ): Promise<boolean> {
     const actionAfterInteractions =
       currentNode.data?.actionAfterInteractions === true;
@@ -8455,8 +12079,75 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       chatbotFlow,
       customMessages,
       { suppressTransferMention, transferMode },
-      inputMessageType
+      inputMessageType,
+      deliveryMessageId
     );
+  }
+
+  private async tryAdvanceAiAgentAfterInteractionLimit(input: {
+    t: TFunction<'translation', undefined>;
+    createChat: IChat;
+    currentNode: ListChatbotFlowResponse['nodes'][number];
+    currentFlowId: string;
+    chatbotFlow: ListChatbotFlowResponse;
+    customMessages?: IChatbotCustomMessages;
+  }): Promise<boolean> {
+    const actionAfterInteractions =
+      input.currentNode.data?.actionAfterInteractions === true;
+    const interactionsQuantity =
+      input.currentNode.data?.interactionsQuantity ?? 0;
+
+    if (!actionAfterInteractions || interactionsQuantity <= 0) {
+      return false;
+    }
+
+    const newCount = await this.incrementAiAgentInteractionsCount(
+      input.createChat.account.id,
+      input.createChat.worker.id,
+      input.createChat.chat_id,
+      input.currentFlowId
+    );
+
+    if (
+      !this.hasExceededInteractionLimitAfterIncrement(
+        newCount,
+        interactionsQuantity
+      )
+    ) {
+      return false;
+    }
+
+    const nextFlowId = this.getNextFlowIdByInteractionsHandle(
+      input.chatbotFlow,
+      input.currentFlowId
+    );
+
+    if (!nextFlowId) {
+      return false;
+    }
+
+    await this.resetAiAgentInteractionsCount(
+      input.createChat.account.id,
+      input.createChat.worker.id,
+      input.createChat.chat_id,
+      input.currentFlowId
+    );
+    await this.updateCache(input.createChat, nextFlowId);
+    const nextNodeProcessed = await this.processNextNode(
+      input.t,
+      input.createChat,
+      input.chatbotFlow,
+      nextFlowId,
+      input.customMessages
+    );
+
+    if (!nextNodeProcessed) {
+      throw new Error(
+        'Nó posterior à resposta do Agente de IA não foi concluído.'
+      );
+    }
+
+    return true;
   }
 
   private async processAiAgentResponse(
@@ -8474,7 +12165,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       suppressTransferMention?: boolean;
       transferMode?: HumanTransferMode;
     },
-    inputMessageType?: EMessageType
+    inputMessageType?: EMessageType,
+    deliveryMessageId?: string
   ): Promise<boolean> {
     if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
       throw new InvalidConfigurationError(
@@ -8494,12 +12186,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       20
     );
 
-    const useAssistantsApi =
-      aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
-      !!aiAgent.openai_assistant_id;
     const useFileSearchResponsesApi =
       aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
-      !aiAgent.openai_assistant_id &&
       !!aiAgent.openai_vector_store_id;
     const transferMode =
       transferOptions?.transferMode ?? this.resolveHumanTransferMode(aiAgent);
@@ -8547,18 +12235,13 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       );
     }
 
-    const assistantsOptions =
-      useAssistantsApi && aiAgent.openai_assistant_id
-        ? {
-            accountId: createChat.account.id,
-            chatId: createChat.chat_id,
-            aiAgentId: aiAgent.ai_agent_id,
-            openaiAssistantId: aiAgent.openai_assistant_id,
-          }
-        : undefined;
+    const assistantsOptions: undefined = undefined;
     const responsesApiFileSearchOptions =
       useFileSearchResponsesApi && aiAgent.openai_vector_store_id
-        ? { vectorStoreId: aiAgent.openai_vector_store_id }
+        ? {
+            vectorStoreId: aiAgent.openai_vector_store_id,
+            idempotencyKey: deliveryMessageId,
+          }
         : undefined;
 
     let aiResponse: string;
@@ -8663,45 +12346,13 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       }
     }
 
-    try {
-      await this.storeResponseInHistory(
-        createChat.account.id,
-        createChat.chat_id,
-        aiAgent.ai_agent_id,
-        userText,
-        aiResponse
-      );
-    } catch (storeError) {
-      console.error(
-        '[AI Agent] Erro ao registrar histórico de respostas:',
-        storeError
-      );
-    }
-
-    await this.pushToConversationHistory(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id,
-      aiAgent.ai_agent_id,
-      'user',
-      userText
-    );
-    await this.pushToConversationHistory(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id,
-      aiAgent.ai_agent_id,
-      'assistant',
-      aiResponse
-    );
-
     const recentMessagesForSummary = [
       ...recentMessages,
       { role: 'user' as const, content: userText },
       { role: 'assistant' as const, content: aiResponse },
     ];
 
-    await this.sendAiAgentResponse(
+    const messageSent = await this.sendAiAgentResponse(
       t,
       createChat,
       aiResponse,
@@ -8719,52 +12370,76 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       },
       shouldStoreLastAgentResponse,
       recentMessagesForSummary,
-      inputMessageType
+      inputMessageType,
+      deliveryMessageId
     );
+    if (!messageSent) {
+      throw new Error('Resposta do Agente de IA não teve entrega confirmada.');
+    }
 
-    const actionAfterInteractions =
-      currentNode.data?.actionAfterInteractions === true;
-    const interactionsQuantity = currentNode.data?.interactionsQuantity ?? 0;
-
-    if (actionAfterInteractions && interactionsQuantity > 0) {
-      const newCount = await this.incrementAiAgentInteractionsCount(
+    try {
+      await this.storeResponseInHistory(
+        createChat.account.id,
+        createChat.chat_id,
+        aiAgent.ai_agent_id,
+        userText,
+        aiResponse
+      );
+      await this.pushToConversationHistory(
         createChat.account.id,
         createChat.worker.id,
         createChat.chat_id,
-        currentFlowId
+        aiAgent.ai_agent_id,
+        'user',
+        userText
       );
-
-      if (
-        this.hasExceededInteractionLimitAfterIncrement(
-          newCount,
-          interactionsQuantity
-        )
-      ) {
-        const nextFlowId = this.getNextFlowIdByInteractionsHandle(
-          chatbotFlow,
-          currentFlowId
-        );
-
-        if (nextFlowId) {
-          await this.resetAiAgentInteractionsCount(
-            createChat.account.id,
-            createChat.worker.id,
-            createChat.chat_id,
-            currentFlowId
-          );
-          await this.updateCache(createChat, nextFlowId);
-          return this.processNextNode(
-            t,
-            createChat,
-            chatbotFlow,
-            nextFlowId,
-            customMessages
-          );
-        }
-      }
+      await this.pushToConversationHistory(
+        createChat.account.id,
+        createChat.worker.id,
+        createChat.chat_id,
+        aiAgent.ai_agent_id,
+        'assistant',
+        aiResponse
+      );
+    } catch (storeError) {
+      console.error('[AI Agent] post-delivery history write failed', {
+        account_id: createChat.account.id,
+        chat_id: createChat.chat_id,
+        ai_agent_id: aiAgent.ai_agent_id,
+        error:
+          storeError instanceof Error ? storeError.message : String(storeError),
+      });
     }
 
-    await this.updateCache(createChat, currentFlowId);
+    try {
+      const flowAdvanced = await this.tryAdvanceAiAgentAfterInteractionLimit({
+        t,
+        createChat,
+        currentNode,
+        currentFlowId,
+        chatbotFlow,
+        customMessages,
+      });
+      if (flowAdvanced) {
+        return true;
+      }
+
+      await this.updateCache(createChat, currentFlowId);
+    } catch (postDeliveryError) {
+      // The outbound message is already durably accepted. Re-throwing here
+      // would requeue the same AI turn and could send it twice.
+      console.error('[AI Agent] post-delivery flow update failed', {
+        account_id: createChat.account.id,
+        chat_id: createChat.chat_id,
+        ai_agent_id: aiAgent.ai_agent_id,
+        delivery_message_id: deliveryMessageId ?? null,
+        error:
+          postDeliveryError instanceof Error
+            ? postDeliveryError.message
+            : String(postDeliveryError),
+      });
+    }
+
     return true;
   }
 
@@ -8782,14 +12457,10 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     contextAllowed: boolean;
     contextHints: string[];
   }> {
-    const useAssistantsApi =
-      aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
-      !!aiAgent.openai_assistant_id;
     const useFileSearchResponsesApi =
       aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
-      !aiAgent.openai_assistant_id &&
       !!aiAgent.openai_vector_store_id;
-    const skipFilePrompts = useAssistantsApi || useFileSearchResponsesApi;
+    const skipFilePrompts = useFileSearchResponsesApi;
 
     const allPrompts = await this.ragService.getAllAgentPromptsDetailed(
       createChat.account.id,
@@ -8801,7 +12472,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     const allowExternalContext = skipFilePrompts;
 
     const systemPrompt = this.buildComprehensiveSystemPrompt(
-      useAssistantsApi ? null : aiAgent.system_prompt,
+      aiAgent.system_prompt,
       allPrompts,
       skipFilePrompts
     );
@@ -9933,7 +13604,8 @@ Retorne APENAS JSON válido (sem markdown):
           openaiAssistantId: string;
         }
       | undefined,
-    responsesApiFileSearchOptions: { vectorStoreId: string } | undefined
+    responsesApiFileSearchOptions:
+      { vectorStoreId: string; idempotencyKey?: string } | undefined
   ): Promise<string> {
     if (!this.supportsDiversificationRetry(assistantsOptions)) {
       return this.appendVariationAddendum(duplicateResponse, Date.now());
@@ -9958,7 +13630,14 @@ Retorne APENAS JSON válido (sem markdown):
         retryUserQuery,
         retryHistory,
         assistantsOptions,
-        responsesApiFileSearchOptions,
+        responsesApiFileSearchOptions
+          ? {
+              ...responsesApiFileSearchOptions,
+              idempotencyKey: responsesApiFileSearchOptions.idempotencyKey
+                ? `${responsesApiFileSearchOptions.idempotencyKey}:diversification`
+                : undefined,
+            }
+          : undefined,
         { accountId, chatId, aiAgentId }
       );
       const isRetryDuplicate =
@@ -10130,8 +13809,9 @@ Retorne APENAS JSON válido (sem markdown):
       role: 'user' | 'assistant';
       content: string;
     }>,
-    inputMessageType?: EMessageType
-  ): Promise<void> {
+    inputMessageType?: EMessageType,
+    deliveryMessageId?: string
+  ): Promise<boolean> {
     let messageSent = false;
 
     const outputMode =
@@ -10165,16 +13845,16 @@ Retorne APENAS JSON válido (sem markdown):
               : null;
 
           if (uploadResult) {
-            await this.sendMessageWithStatusGuard(t, {
+            messageSent = await this.sendMessageWithStatusGuard(t, {
               chat: createChat,
               accountId: createChat.account.id,
+              messageId: deliveryMessageId,
               type: EMessageType.audio,
               audioUrl: uploadResult.url,
               audioMimetype: uploadResult.mimetype,
               audioPtt: true,
               typeUser: ETypeUserChat.bot,
             });
-            messageSent = true;
           }
         }
       } catch (error) {
@@ -10186,60 +13866,78 @@ Retorne APENAS JSON válido (sem markdown):
       }
     }
     if (!messageSent) {
-      await this.sendMessageWithStatusGuard(t, {
+      messageSent = await this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
+        messageId: deliveryMessageId,
         type: EMessageType.text,
         message: aiResponse,
         typeUser: ETypeUserChat.bot,
       });
     }
 
-    if (shouldStoreLastAgentResponse) {
-      await this.storeLastAgentResponse(
-        createChat.account.id,
-        createChat.worker.id,
-        createChat.chat_id,
-        selectedAiAgentId,
-        aiResponse
-      );
+    if (!messageSent) {
+      return false;
     }
 
-    const nodeId = currentNode?.id ?? selectedAiAgentId;
-    const shouldUpdate = await this.shouldUpdateConversationSummary(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id,
-      nodeId
-    );
-
-    if (shouldUpdate) {
-      const conversationSummary = await this.redis.get(conversationSummaryKey);
-      let recentMessages: Array<{
-        role: 'user' | 'assistant';
-        content: string;
-      }>;
-      if (recentMessagesForSummary !== undefined) {
-        recentMessages = recentMessagesForSummary.slice(-20);
-      } else {
-        recentMessages = await this.getConversationHistory(
+    try {
+      if (shouldStoreLastAgentResponse) {
+        await this.storeLastAgentResponse(
           createChat.account.id,
           createChat.worker.id,
           createChat.chat_id,
           selectedAiAgentId,
-          20
+          aiResponse
         );
       }
 
-      await this.updateConversationSummaryAfterResponse(
-        conversationSummaryKey,
-        conversationSummary,
-        recentMessages,
-        userText,
-        aiResponse,
-        aiAgent
+      const nodeId = currentNode?.id ?? selectedAiAgentId;
+      const shouldUpdate = await this.shouldUpdateConversationSummary(
+        createChat.account.id,
+        createChat.worker.id,
+        createChat.chat_id,
+        nodeId
       );
+
+      if (shouldUpdate) {
+        const conversationSummary = await this.redis.get(
+          conversationSummaryKey
+        );
+        let recentMessages: Array<{
+          role: 'user' | 'assistant';
+          content: string;
+        }>;
+        if (recentMessagesForSummary !== undefined) {
+          recentMessages = recentMessagesForSummary.slice(-20);
+        } else {
+          recentMessages = await this.getConversationHistory(
+            createChat.account.id,
+            createChat.worker.id,
+            createChat.chat_id,
+            selectedAiAgentId,
+            20
+          );
+        }
+
+        await this.updateConversationSummaryAfterResponse(
+          conversationSummaryKey,
+          conversationSummary,
+          recentMessages,
+          userText,
+          aiResponse,
+          aiAgent
+        );
+      }
+    } catch (error) {
+      console.error('[ChatbotFlow] AI Agent post-delivery metadata failed', {
+        account_id: createChat.account.id,
+        chat_id: createChat.chat_id,
+        ai_agent_id: selectedAiAgentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
+
+    return true;
   }
 
   private async processStartNode(
@@ -10529,8 +14227,26 @@ Retorne APENAS JSON válido (sem markdown):
     const inactivityAlert = options?.inactivityAlert;
     const redirectFailedAttempts = options?.redirectFailedAttempts;
     const customMessages = options?.customMessages;
+    const isFromMe = data.message?.key?.fromMe === true;
+    const flowResponsePending =
+      isFromMe &&
+      Boolean(
+        await this.redis.get(
+          this.getOfficialResponsePendingCacheKey(
+            createChat.account.id,
+            createChat.worker.id,
+            createChat.chat_id
+          )
+        )
+      );
+    const shouldSuspendInactivity =
+      flowResponsePending ||
+      (await this.shouldSuspendInactivityForOfficialChat(createChat, {
+        ignoreFlowResponsePending: true,
+      }));
 
     if (
+      !shouldSuspendInactivity &&
       inactivityAlert?.status === 'active' &&
       (createChat.status === EChatStatus.ura ||
         createChat.status === EChatStatus.ura_output ||
@@ -10543,9 +14259,33 @@ Retorne APENAS JSON válido (sem markdown):
       await this.cancelInactivityCheck(createChat);
     }
 
+    if (flowResponsePending) {
+      return true;
+    }
+
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
     if (!currentNode) {
       throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    await this.resolveCompatibleNodeVariables(t, createChat, currentNode, data);
+
+    if (isFromMe && this.isOfficialOptionNode(currentNode.type)) {
+      return true;
+    }
+
+    if (!isFromMe) {
+      const resumedOfficialTemplate =
+        await this.resumeOfficialTemplateResponsePendingIfNeeded(
+          t,
+          createChat,
+          chatbotFlow,
+          currentFlowId,
+          customMessages
+        );
+      if (resumedOfficialTemplate !== null) {
+        return resumedOfficialTemplate;
+      }
     }
 
     if (currentNode.type === 'start') {
@@ -10554,6 +14294,28 @@ Retorne APENAS JSON válido (sem markdown):
         createChat,
         chatbotFlow,
         currentFlowId,
+        customMessages,
+        data
+      );
+    }
+
+    if (currentNode.type === 'apiRequest') {
+      return this.processApiRequestNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentNode,
+        customMessages,
+        data
+      );
+    }
+
+    if (currentNode.type === 'underchat') {
+      return this.processUnderchatNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentNode,
         customMessages,
         data
       );
@@ -10656,7 +14418,8 @@ Retorne APENAS JSON válido (sem markdown):
         chatbotFlow,
         currentNode,
         currentFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
 
@@ -10677,7 +14440,8 @@ Retorne APENAS JSON válido (sem markdown):
         createChat,
         chatbotFlow,
         currentFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
 
@@ -10745,13 +14509,12 @@ Retorne APENAS JSON válido (sem markdown):
     }
 
     if (currentNode.type === 'finish') {
-      await this.sendFinishMessage(
+      return this.finishFlowOrThrow(
         t,
         createChat,
         customMessages?.service_finished_message,
         customMessages?.service_finished_message_enabled
       );
-      return true;
     }
 
     return false;
@@ -10759,7 +14522,7 @@ Retorne APENAS JSON válido (sem markdown):
 
   private async processConditionalNode(
     t: TFunction<'translation', undefined>,
-    data: IUpsertMessage,
+    data: IUpsertMessage | undefined,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
@@ -10803,11 +14566,33 @@ Retorne APENAS JSON válido (sem markdown):
       return false;
     }
 
-    const userText = normalizeTextForConditionalComparison(
-      this.getTextFromUpsertMessage(data) ?? ''
-    );
+    let operand: unknown = data
+      ? (this.getTextFromUpsertMessage(data) ?? '')
+      : '';
+    let variableScope: Record<string, unknown> | null = null;
+    if (
+      currentNode.data.conditionalOperand === 'variable' &&
+      currentNode.data.conditionalVariable
+    ) {
+      const context = await this.flowRuntimeContextService?.load({
+        accountId: createChat.account.id,
+        workerId: createChat.worker.id,
+        chatId: createChat.chat_id,
+      });
+      if (context && this.flowRuntimeContextService) {
+        variableScope = this.flowRuntimeContextService.toVariableScope(context);
+        const expression = currentNode.data.conditionalVariable.includes('{{')
+          ? currentNode.data.conditionalVariable
+          : `{{ ${currentNode.data.conditionalVariable} }}`;
+        operand = resolveChatbotTemplate(expression, variableScope, {
+          missingValue: 'error',
+        });
+      }
+    }
 
-    if (!userText) {
+    const operandExists =
+      operand !== null && operand !== undefined && operand !== '';
+    if (!operandExists && currentNode.data.conditionalOperand !== 'variable') {
       const defaultFlowId = this.getNextFlowIdByDefaultHandle(
         chatbotFlow,
         currentFlowId
@@ -10841,32 +14626,82 @@ Retorne APENAS JSON válido (sem markdown):
       const conditionType = condition.conditionType;
       const conditionTerm = condition.conditionTerm;
 
-      if (!conditionType || !conditionTerm) {
+      if (!conditionType) {
         continue;
       }
 
-      const term = normalizeTextForConditionalComparison(conditionTerm);
-      if (!term) {
-        continue;
+      let expected: unknown = conditionTerm ?? '';
+      if (
+        typeof conditionTerm === 'string' &&
+        conditionTerm.includes('{{') &&
+        variableScope
+      ) {
+        expected = resolveChatbotTemplate(conditionTerm, variableScope, {
+          missingValue: 'error',
+        });
+      } else if (condition.valueType === 'number') {
+        expected = Number(conditionTerm);
+      } else if (condition.valueType === 'boolean') {
+        expected = String(conditionTerm).toLowerCase() === 'true';
       }
 
       let conditionMet = false;
+      const actualText = normalizeTextForConditionalComparison(
+        this.formatResolvedHumanValue(operand)
+      );
+      const expectedText = normalizeTextForConditionalComparison(
+        this.formatResolvedHumanValue(expected)
+      );
+      const actualNumber = Number(operand);
+      const expectedNumber = Number(expected);
 
       switch (conditionType) {
         case 'contains':
-          conditionMet = userText.includes(term);
+          conditionMet = Array.isArray(operand)
+            ? operand.some((entry) =>
+                normalizeTextForConditionalComparison(
+                  this.formatResolvedHumanValue(entry)
+                ).includes(expectedText)
+              )
+            : actualText.includes(expectedText);
           break;
         case 'equals':
-          conditionMet = userText === term;
+          conditionMet =
+            condition.valueType === 'number'
+              ? Number.isFinite(actualNumber) && actualNumber === expectedNumber
+              : condition.valueType === 'boolean'
+                ? Boolean(operand) === expected
+                : actualText === expectedText;
+          break;
+        case 'not_equals':
+          conditionMet = actualText !== expectedText;
           break;
         case 'not_contains':
-          conditionMet = !userText.includes(term);
+          conditionMet = !actualText.includes(expectedText);
           break;
         case 'starts_with':
-          conditionMet = userText.startsWith(term);
+          conditionMet = actualText.startsWith(expectedText);
           break;
         case 'ends_with':
-          conditionMet = userText.endsWith(term);
+          conditionMet = actualText.endsWith(expectedText);
+          break;
+        case 'exists':
+          conditionMet = operandExists;
+          break;
+        case 'not_exists':
+          conditionMet = !operandExists;
+          break;
+        case 'greater_than':
+          conditionMet = actualNumber > expectedNumber;
+          break;
+        case 'greater_or_equal':
+          conditionMet = actualNumber >= expectedNumber;
+          break;
+        case 'less_than':
+          conditionMet = actualNumber < expectedNumber;
+          break;
+        case 'less_or_equal':
+          conditionMet = actualNumber <= expectedNumber;
           break;
       }
 
@@ -11380,139 +15215,188 @@ Retorne APENAS JSON válido (sem markdown):
     data: IUpsertMessage,
     createChat: IChat,
     chatbotId: string,
-    securityKeyScopes?: TSecurityKeyScope[]
+    securityKeyScopes?: TSecurityKeyScope[],
+    executionOptions?: IChatbotFlowExecutionOptions
   ): Promise<string | null> => {
-    return this.withAutomationLock(createChat, async () => {
-      const activeChat = await this.getAutomationChatIfAllowed(createChat);
-      if (!activeChat) {
-        return null;
-      }
-
-      if (activeChat.contact?.ignore === EContactIgnore.ignore_automation) {
-        return null;
-      }
-
-      this.securityKeyScopesByChatId.set(
-        activeChat.chat_id,
-        this.normalizeSecurityKeyScopes(securityKeyScopes)
-      );
-
-      try {
-        const configurations =
-          await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
-            activeChat.account.id,
-            chatbotId
-          );
-
-        const canTrigger = await this.canTriggerChatbotEvent(
-          data,
-          activeChat.account.id,
-          chatbotId,
-          configurations
-        );
-        if (!canTrigger) {
+    const assertActive =
+      executionOptions?.assertActive ?? getKafkaDispatchGuard();
+    const executeFlow = () =>
+      this.withAutomationLock(createChat, async () => {
+        await assertActive?.();
+        const activeChat = await this.getAutomationChatIfAllowed(createChat);
+        await assertActive?.();
+        if (!activeChat) {
           return null;
         }
 
-        const userText = this.getTextFromUpsertMessage(data)?.trim();
+        if (
+          executionOptions?.expectedAssignmentEventId !== undefined &&
+          activeChat.meta?.assignment_event_id !==
+            executionOptions.expectedAssignmentEventId
+        ) {
+          return null;
+        }
+        if (
+          executionOptions?.expectedLastMessageId !== undefined &&
+          (activeChat.summary?.last_message_id ?? null) !==
+            executionOptions.expectedLastMessageId
+        ) {
+          return null;
+        }
 
-        if (userText) {
-          const finishTriggers =
-            configurations?.configurations?.finish_triggers || [];
-          const userTextLower = userText.toLowerCase();
-          const userWords = userTextLower.split(/\s+/);
+        if (activeChat.contact?.ignore === EContactIgnore.ignore_automation) {
+          return null;
+        }
 
-          const hasFinishTrigger = finishTriggers.some((trigger) => {
-            const triggerLower = trigger.toLowerCase();
-            return userWords.includes(triggerLower);
+        this.securityKeyScopesByChatId.set(
+          activeChat.chat_id,
+          this.normalizeSecurityKeyScopes(securityKeyScopes)
+        );
+        if (executionOptions?.requireHandled) {
+          this.synchronousEffectsByChatId.add(activeChat.chat_id);
+        }
+        if (executionOptions?.executionId) {
+          this.executionMessageContextByChatId.set(activeChat.chat_id, {
+            executionId: executionOptions.executionId,
+            nextMessageIndex: 0,
           });
+        }
+        this.automaticExecutionBudgetByChatId.set(activeChat.chat_id, {
+          transitions: 0,
+          apiNodes: 0,
+          httpAttempts: 0,
+        });
 
-          if (hasFinishTrigger) {
-            const customServiceFinishedMessage =
-              configurations?.configurations?.messages
-                ?.service_finished_message;
-            const serviceFinishedMessageEnabled =
-              configurations?.configurations?.messages
-                ?.service_finished_message_enabled !== false;
-
-            await this.sendFinishMessage(
-              t,
-              activeChat,
-              customServiceFinishedMessage,
-              serviceFinishedMessageEnabled
+        try {
+          const configurations =
+            await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+              activeChat.account.id,
+              chatbotId
             );
 
+          const canTrigger = await this.canTriggerChatbotEvent(
+            data,
+            activeChat.account.id,
+            chatbotId,
+            configurations
+          );
+          if (!canTrigger) {
             return null;
           }
-        }
 
-        const chatbotFlow =
-          await this.chatbotService.findChatbotFlowByChatbotId(
-            activeChat.account.id,
-            chatbotId
+          const userText = this.getTextFromUpsertMessage(data)?.trim();
+
+          if (userText) {
+            const finishTriggers =
+              configurations?.configurations?.finish_triggers || [];
+            const userTextLower = userText.toLowerCase();
+            const userWords = userTextLower.split(/\s+/);
+
+            const hasFinishTrigger = finishTriggers.some((trigger) => {
+              const triggerLower = trigger.toLowerCase();
+              return userWords.includes(triggerLower);
+            });
+
+            if (hasFinishTrigger) {
+              const customServiceFinishedMessage =
+                configurations?.configurations?.messages
+                  ?.service_finished_message;
+              const serviceFinishedMessageEnabled =
+                configurations?.configurations?.messages
+                  ?.service_finished_message_enabled !== false;
+
+              const finished = await this.sendFinishMessage(
+                t,
+                activeChat,
+                customServiceFinishedMessage,
+                serviceFinishedMessageEnabled
+              );
+
+              if (!finished) {
+                throw new Error('chatbot automatic finish was not confirmed');
+              }
+
+              return null;
+            }
+          }
+
+          const { chatbotFlow, runtimeContext } =
+            await this.loadPinnedChatbotFlow(activeChat, chatbotId);
+
+          if (!chatbotFlow) {
+            throw new Error(t('chatbot_flow_not_found'));
+          }
+
+          const messagesConfig = configurations?.configurations?.messages;
+          const customMessages = messagesConfig
+            ? {
+                ...messagesConfig,
+                invalid_menu_option_message_enabled:
+                  messagesConfig.invalid_menu_option_message_enabled !== false,
+                invalid_satisfaction_option_message_enabled:
+                  messagesConfig.invalid_satisfaction_option_message_enabled !==
+                  false,
+                invalid_email_message_enabled:
+                  messagesConfig.invalid_email_message_enabled !== false,
+                invalid_cpf_message_enabled:
+                  messagesConfig.invalid_cpf_message_enabled !== false,
+                invalid_cnpj_message_enabled:
+                  messagesConfig.invalid_cnpj_message_enabled !== false,
+                service_finished_message_enabled:
+                  messagesConfig.service_finished_message_enabled !== false,
+                transfer_message_user_enabled:
+                  messagesConfig.transfer_message_user_enabled !== false,
+                transfer_message_sector_enabled:
+                  messagesConfig.transfer_message_sector_enabled !== false,
+                transfer_message_sector_user_enabled:
+                  messagesConfig.transfer_message_sector_user_enabled !== false,
+              }
+            : undefined;
+          const inactivityAlert =
+            configurations?.configurations?.inactivity_alert;
+          const redirectFailedAttempts =
+            configurations?.configurations?.redirect_failed_attempts;
+
+          const currentFlowId = await this.cacheFirstChatbotFlowNodeIfNeeded(
+            chatbotFlow,
+            activeChat,
+            runtimeContext
           );
 
-        if (!chatbotFlow) {
-          throw new Error(t('chatbot_flow_not_found'));
-        }
-
-        const messagesConfig = configurations?.configurations?.messages;
-        const customMessages = messagesConfig
-          ? {
-              ...messagesConfig,
-              invalid_menu_option_message_enabled:
-                messagesConfig.invalid_menu_option_message_enabled !== false,
-              invalid_satisfaction_option_message_enabled:
-                messagesConfig.invalid_satisfaction_option_message_enabled !==
-                false,
-              invalid_email_message_enabled:
-                messagesConfig.invalid_email_message_enabled !== false,
-              invalid_cpf_message_enabled:
-                messagesConfig.invalid_cpf_message_enabled !== false,
-              invalid_cnpj_message_enabled:
-                messagesConfig.invalid_cnpj_message_enabled !== false,
-              service_finished_message_enabled:
-                messagesConfig.service_finished_message_enabled !== false,
-              transfer_message_user_enabled:
-                messagesConfig.transfer_message_user_enabled !== false,
-              transfer_message_sector_enabled:
-                messagesConfig.transfer_message_sector_enabled !== false,
-              transfer_message_sector_user_enabled:
-                messagesConfig.transfer_message_sector_user_enabled !== false,
-            }
-          : undefined;
-        const inactivityAlert =
-          configurations?.configurations?.inactivity_alert;
-        const redirectFailedAttempts =
-          configurations?.configurations?.redirect_failed_attempts;
-
-        const currentFlowId = await this.cacheFirstChatbotFlowNodeIfNeeded(
-          chatbotFlow,
-          activeChat
-        );
-
-        if (!currentFlowId) {
-          throw new Error(t('chatbot_flow_not_found'));
-        }
-
-        await this.processFlowNode(
-          t,
-          data,
-          activeChat,
-          chatbotFlow,
-          currentFlowId,
-          chatbotId,
-          {
-            inactivityAlert,
-            redirectFailedAttempts,
-            customMessages,
+          if (!currentFlowId) {
+            throw new Error(t('chatbot_flow_not_found'));
           }
-        );
 
-        return currentFlowId;
-      } finally {
-        this.securityKeyScopesByChatId.delete(activeChat.chat_id);
-      }
-    });
+          const processed = await this.processFlowNode(
+            t,
+            data,
+            activeChat,
+            chatbotFlow,
+            currentFlowId,
+            chatbotId,
+            {
+              inactivityAlert,
+              redirectFailedAttempts,
+              customMessages,
+            }
+          );
+          if (executionOptions?.requireHandled && !processed) {
+            throw new Error('chatbot bootstrap effect was not confirmed');
+          }
+
+          return currentFlowId;
+        } finally {
+          this.securityKeyScopesByChatId.delete(activeChat.chat_id);
+          this.synchronousEffectsByChatId.delete(activeChat.chat_id);
+          this.executionMessageContextByChatId.delete(activeChat.chat_id);
+          this.automaticExecutionBudgetByChatId.delete(activeChat.chat_id);
+        }
+      });
+
+    if (!assertActive) {
+      return executeFlow();
+    }
+
+    return runWithKafkaDispatchGuard(assertActive, executeFlow);
   };
 }

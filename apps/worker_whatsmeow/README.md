@@ -27,19 +27,12 @@ replace go.mau.fi/whatsmeow => ./forks/whatsmeow
 
 O container recebe as mesmas variaveis globais dos workers existentes via `WorkerService`, incluindo Kafka, Redis, S3, Centrifugo, balance gRPC e proxy.
 
-## Kafka
+## Mensageria
 
-Consumidores:
+Os comandos destinados ao worker sao consumidos exclusivamente pelo JetStream.
+O Kafka permanece apenas como barramento global de saida.
 
-- `worker.${WORKER_ID}.send.message`
-- `worker.${WORKER_ID}.schedule.send.message`
-- `worker.${WORKER_ID}.validate.phone`
-- `worker.${WORKER_ID}.notification.message`
-- `worker.${WORKER_ID}.webhook.integration`
-- `mark.message.read`
-- `worker.config.update`
-
-Publicadores:
+Topicos Kafka publicados:
 
 - `upsert.message`
 - `update.message`

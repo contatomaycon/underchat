@@ -20,7 +20,8 @@ export const viewContactGroup = async (
   try {
     const response = await contactGroupViewerUseCase.execute(
       t,
-      request.params.contact_group_id
+      request.params.contact_group_id,
+      request.tokenJwtData.account_id
     );
 
     if (response) {

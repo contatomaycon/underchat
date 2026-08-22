@@ -1,5 +1,6 @@
 import { EUserStatus } from '@core/common/enums/EUserStatus';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { EPermissionRoleStatus } from '@core/common/enums/EPermissionRoleStatus';
 import * as schema from '@core/models';
 import {
   user,
@@ -114,9 +115,12 @@ export class AuthRepository {
       )
       .innerJoin(
         permissionRole,
-        eq(
-          permissionRole.permission_role_id,
-          permissionAssignment.permission_role_id
+        and(
+          eq(
+            permissionRole.permission_role_id,
+            permissionAssignment.permission_role_id
+          ),
+          eq(permissionRole.status, EPermissionRoleStatus.active)
         )
       )
       .leftJoin(userDocument, eq(userDocument.user_id, user.user_id))
@@ -263,9 +267,12 @@ export class AuthRepository {
       )
       .innerJoin(
         permissionRole,
-        eq(
-          permissionRole.permission_role_id,
-          permissionAssignment.permission_role_id
+        and(
+          eq(
+            permissionRole.permission_role_id,
+            permissionAssignment.permission_role_id
+          ),
+          eq(permissionRole.status, EPermissionRoleStatus.active)
         )
       )
       .leftJoin(userDocument, eq(userDocument.user_id, user.user_id))
@@ -389,9 +396,12 @@ export class AuthRepository {
       )
       .innerJoin(
         permissionRole,
-        eq(
-          permissionRole.permission_role_id,
-          permissionAssignment.permission_role_id
+        and(
+          eq(
+            permissionRole.permission_role_id,
+            permissionAssignment.permission_role_id
+          ),
+          eq(permissionRole.status, EPermissionRoleStatus.active)
         )
       )
       .leftJoin(userDocument, eq(userDocument.user_id, user.user_id))

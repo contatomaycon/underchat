@@ -7,7 +7,12 @@ const pushDeliveryPlugin = async (fastify: FastifyInstance): Promise<void> => {
   const pushDeliveryQueueService = container.resolve(PushDeliveryQueueService);
 
   fastify.addHook('onListen', () => {
-    pushDeliveryQueueService.start();
+    pushDeliveryQueueService.start((error: unknown) => {
+      fastify.log.warn(
+        { err: error, type: 'push_delivery_queue_drain_failed' },
+        'Push delivery queue drain failed; the worker will retry'
+      );
+    });
     fastify.log.info('Push delivery queue worker started');
   });
 

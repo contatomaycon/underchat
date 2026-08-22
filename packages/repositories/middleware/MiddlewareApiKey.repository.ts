@@ -5,6 +5,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { IApiKeyGroupHierarchy } from '@core/common/interfaces/IApiKeyGroupHierarchy';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
+import { sql } from 'drizzle-orm';
 
 @injectable()
 export class MiddlewareApiKeyRepository {
@@ -17,20 +18,21 @@ export class MiddlewareApiKeyRepository {
     routeModule: string,
     module: ERouteModule
   ): Promise<IApiKeyGroupHierarchy[]> {
-    const query = `
+    const query = sql`
       SELECT DISTINCT
           ac.account_id,
           ak.api_key_id,
           ak.key AS api_key,
           ak.name,
-          '${module}' AS module_name
+          ${module}::text AS module_name
       FROM "api_key" ak
       JOIN "account" ac ON ac.account_id = ak.account_id 
         AND ac.deleted_at IS NULL 
-        AND ac.account_status_id = '${EAccountStatus.active}'
-      WHERE ak.key = '${keyApi}' 
+        AND ac.account_status_id <> ${EAccountStatus.blocked}
+      WHERE ak.key = ${keyApi}
+        AND ak.worker_id IS NOT NULL
         AND ak.deleted_at IS NULL 
-        AND ak.status = '${EStatusApiKey.active}';
+        AND ak.status = ${EStatusApiKey.active};
     `;
 
     const result = await this.dbRo.execute(query);

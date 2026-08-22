@@ -22,6 +22,8 @@ export function handleSecureConnectionError(
         EHTTPStatusCode.bad_request,
       [t('worker_secure_connection_provider_mismatch')]:
         EHTTPStatusCode.bad_request,
+      [t('worker_secure_connection_wwebjs_extension_unsupported')]:
+        EHTTPStatusCode.bad_request,
       [t('worker_secure_connection_checksum_invalid')]:
         EHTTPStatusCode.bad_request,
       [t('worker_secure_connection_session_already_uploaded')]:

@@ -57,6 +57,36 @@ export class MessageTemplateUpdaterUseCase {
     return [];
   }
 
+  private isExplicitEmptyChannelIdsValue(value: unknown): boolean {
+    if (value === null) {
+      return true;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+
+      return !normalized || normalized === 'null';
+    }
+
+    if (Array.isArray(value)) {
+      return (
+        value.length === 0 ||
+        value.every((item) => this.isExplicitEmptyChannelIdsValue(item))
+      );
+    }
+
+    if (typeof value === 'object') {
+      const asRecord = value as Record<string, unknown>;
+
+      return (
+        'value' in asRecord &&
+        this.isExplicitEmptyChannelIdsValue(asRecord.value)
+      );
+    }
+
+    return false;
+  }
+
   private normalizeChannelIdsForUpdate(value: unknown): string[] | undefined {
     if (value === undefined) {
       return undefined;
@@ -69,41 +99,38 @@ export class MessageTemplateUpdaterUseCase {
     const normalized = this.extractChannelIds(value);
 
     if (!normalized.length) {
-      if (typeof value === 'string' || value === null) {
-        return [];
-      }
-
-      if (typeof value === 'object' && value !== null) {
-        const hasNullValueField =
-          'value' in (value as Record<string, unknown>) &&
-          (value as Record<string, unknown>).value === null;
-
-        if (hasNullValueField) {
-          return [];
-        }
-      }
-
-      return undefined;
+      return this.isExplicitEmptyChannelIdsValue(value) ? [] : undefined;
     }
 
     return [...new Set(normalized)];
   }
 
-  private async validateChannels(
+  private async resolveActiveChannelsForUpdate(
     accountId: string,
     channelIds: string[],
+    currentChannelIds: readonly string[],
     t: TFunction<'translation', undefined>
-  ): Promise<void> {
+  ): Promise<string[]> {
+    const currentChannelIdSet = new Set(currentChannelIds);
+    const activeChannelIds: string[] = [];
+
     for (const channelId of channelIds) {
       const channelExists = await this.workerService.existsWorkerById(
         accountId,
         channelId
       );
 
-      if (!channelExists) {
+      if (channelExists) {
+        activeChannelIds.push(channelId);
+        continue;
+      }
+
+      if (!currentChannelIdSet.has(channelId)) {
         throw new Error(t('worker_not_found'));
       }
     }
+
+    return activeChannelIds;
   }
 
   private async validateAttachment(
@@ -155,14 +182,20 @@ export class MessageTemplateUpdaterUseCase {
   ): Promise<boolean> {
     const currentTemplate = await this.ensureMessageTemplateExists(
       t,
-      messageTemplateId
+      messageTemplateId,
+      accountId
     );
     await this.ensureMessageStatusIsValid(t, body);
 
-    const channelIds = this.normalizeChannelIdsForUpdate(body.channel_ids);
+    let channelIds = this.normalizeChannelIdsForUpdate(body.channel_ids);
 
     if (channelIds) {
-      await this.validateChannels(accountId, channelIds, t);
+      channelIds = await this.resolveActiveChannelsForUpdate(
+        accountId,
+        channelIds,
+        currentTemplate.channel_ids ?? [],
+        t
+      );
     }
 
     const effectiveMessageType = this.resolveMessageType(
@@ -240,14 +273,19 @@ export class MessageTemplateUpdaterUseCase {
 
   private async ensureMessageTemplateExists(
     t: TFunction<'translation', undefined>,
-    messageTemplateId: string
-  ): Promise<{ type: string }> {
+    messageTemplateId: string,
+    accountId: string
+  ): Promise<{
+    type: string;
+    channel_ids?: string[];
+    account: { account_id: string };
+  }> {
     const messageTemplate =
       await this.messageTemplateService.viewMessageTemplateById(
         messageTemplateId
       );
 
-    if (!messageTemplate) {
+    if (!messageTemplate || messageTemplate.account.account_id !== accountId) {
       throw new Error(t('message_template_not_found'));
     }
 

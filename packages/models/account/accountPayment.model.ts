@@ -54,6 +54,11 @@ export const accountPayment = pgTable(
       mode: 'string',
       withTimezone: true,
     }),
+    payment_status_observed_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }),
+    payment_status_event_id: varchar({ length: 255 }),
     billing_period_id: uuid().references(() => billingPeriod.billing_period_id),
     invoice_url: varchar({ length: 1000 }),
     recurring_payment: boolean().notNull().default(false),

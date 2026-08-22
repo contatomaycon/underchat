@@ -20,7 +20,9 @@ export const deleteContactGroup = async (
   try {
     const response = await contactGroupDeleterUseCase.execute(
       t,
-      request.params.contact_group_id
+      request.params.contact_group_id,
+      request.tokenJwtData.account_id,
+      request.tokenJwtData.user_id
     );
 
     if (response) {

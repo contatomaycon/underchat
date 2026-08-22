@@ -13,6 +13,11 @@ import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { serverSshCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { IServerBuildDefaultImages } from '@core/common/interfaces/IServerBuildDefaultImages';
+import {
+  parseServerInstallStageMarker,
+  type ServerInstallStageId,
+} from '@core/common/interfaces/IServerInstallEvent';
+import { escapeShellSingleQuotes } from '@core/common/functions/escapeShellSingleQuotes';
 
 export class SshCommandExecutionError extends Error {
   constructor(
@@ -30,6 +35,16 @@ export class SshCommandExecutionError extends Error {
 
     super(`SSH command failed (${suffix}): ${command}`);
     this.name = 'SshCommandExecutionError';
+  }
+}
+
+export class SshCommandTimeoutError extends Error {
+  constructor(
+    readonly command: string,
+    readonly timeoutMs: number
+  ) {
+    super(`SSH command timed out after ${timeoutMs}ms: ${command}`);
+    this.name = 'SshCommandTimeoutError';
   }
 }
 
@@ -91,6 +106,9 @@ export class SshService {
   private readonly aptLockRetryMaxAttempts = 18;
   private readonly aptLockRetryBaseDelayMs = 5000;
   private readonly aptLockRetryMaxDelayMs = 20000;
+  private readonly balanceRolloutFenceRetryMaxAttempts = 120;
+  private readonly balanceRolloutFenceRetryBaseDelayMs = 10_000;
+  private readonly balanceRolloutFenceRetryMaxDelayMs = 30_000;
   private readonly runningCommandsByServer = new Map<
     string,
     IRunningServerCommand
@@ -101,26 +119,40 @@ export class SshService {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  private connect(config: ConnectConfig): Promise<Client> {
-    return this.connectWithRetry(config, 0, this.connectRetryBaseDelayMs);
+  private connect(
+    config: ConnectConfig,
+    maxAttempts = this.connectMaxRetries
+  ): Promise<Client> {
+    return this.connectWithRetry(
+      config,
+      0,
+      this.connectRetryBaseDelayMs,
+      Math.max(1, Math.floor(maxAttempts))
+    );
   }
 
   private async connectWithRetry(
     config: ConnectConfig,
     attempt: number,
-    delayMs: number
+    delayMs: number,
+    maxAttempts: number
   ): Promise<Client> {
     try {
       return await this.connectOnce(config);
     } catch (err) {
-      const lastAttempt = attempt >= this.connectMaxRetries - 1;
+      const lastAttempt = attempt >= maxAttempts - 1;
       if (!this.isConnectErrorRetryable(err) || lastAttempt) {
         throw err;
       }
 
       const jitter = delayMs * 0.5 * Math.random();
       await this.sleep(delayMs + jitter);
-      return this.connectWithRetry(config, attempt + 1, delayMs * 2);
+      return this.connectWithRetry(
+        config,
+        attempt + 1,
+        delayMs * 2,
+        maxAttempts
+      );
     }
   }
 
@@ -191,9 +223,95 @@ export class SshService {
     );
   }
 
+  private isBalanceRolloutTransientFenceError(error: unknown): boolean {
+    const fullText =
+      error instanceof SshCommandExecutionError
+        ? `${error.message}\n${error.output}`
+        : error instanceof Error
+          ? error.message
+          : '';
+
+    if (!fullText) {
+      return false;
+    }
+
+    const normalized = fullText.toLowerCase();
+
+    return (
+      normalized.includes(
+        'legacy balance mutation blocked because managed rollout lock is busy'
+      ) ||
+      normalized.includes(
+        'legacy balance mutation blocked because managed rollout service is active'
+      ) ||
+      normalized.includes(
+        'legacy balance mutation blocked by managed rollout phase:'
+      )
+    );
+  }
+
   private getAptLockRetryDelayMs(attempt: number): number {
     const delay = this.aptLockRetryBaseDelayMs * (attempt + 1);
     return Math.min(delay, this.aptLockRetryMaxDelayMs);
+  }
+
+  private getBalanceRolloutFenceRetryDelayMs(attempt: number): number {
+    const delay = this.balanceRolloutFenceRetryBaseDelayMs * (attempt + 1);
+    return Math.min(delay, this.balanceRolloutFenceRetryMaxDelayMs);
+  }
+
+  private normalizeTerminalOutput(output: string): string {
+    return stripAnsi(output)
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => {
+        if (!line.includes('\r')) {
+          return line;
+        }
+
+        const repaints = line.split('\r').filter((value) => value.trim());
+        return repaints.at(-1) ?? '';
+      })
+      .join('\n')
+      .replace(/[ \t]+\n/g, '\n');
+  }
+
+  private normalizeOutputForComparison(output: string): string {
+    return output.replace(/\s+/g, ' ').trim();
+  }
+
+  private summarizeCommand(command: string): string {
+    const normalized = stripAnsi(command).replace(/\s+/g, ' ').trim();
+
+    if (normalized.includes('UNDERCHAT_LEGACY_BALANCE_')) {
+      return 'Install base packages, Docker, images and Balance API';
+    }
+
+    if (normalized.includes('/v1/health/check')) {
+      if (normalized.includes('UNDERCHAT_INSTALL_READINESS')) {
+        return 'Check installation completion';
+      }
+
+      return 'Check Balance API health';
+    }
+
+    if (normalized.includes('docker image inspect')) {
+      return 'Check required Docker images';
+    }
+
+    if (normalized.includes('docker logs under-balance-api')) {
+      return 'Read Balance API container logs';
+    }
+
+    if (normalized.includes('docker ps')) {
+      return 'Inspect Docker runtime';
+    }
+
+    if (normalized.length <= 180) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, 177)}...`;
   }
 
   private appendCommandOutput(
@@ -201,20 +319,45 @@ export class SshService {
     command: string,
     output: string,
     results: IServerSshCentrifugo[],
-    sendCentrifugo: boolean
-  ): void {
+    sendCentrifugo: boolean,
+    onOutput?: (event: IServerSshCentrifugo) => void,
+    currentInstallStage?: ServerInstallStageId
+  ): ServerInstallStageId | undefined {
     const date = new Date();
-    const outputStripAnsi = stripAnsi(output);
-    const commandStripAnsi = stripAnsi(command);
+    const outputStripAnsi = this.normalizeTerminalOutput(output);
+    const commandStripAnsi = this.summarizeCommand(command);
 
+    if (!outputStripAnsi.trim()) {
+      return currentInstallStage;
+    }
+
+    const lastResult = results.at(-1);
+    if (
+      lastResult?.command === commandStripAnsi &&
+      this.normalizeOutputForComparison(lastResult.output) ===
+        this.normalizeOutputForComparison(outputStripAnsi)
+    ) {
+      return currentInstallStage;
+    }
+
+    const stageMarker = parseServerInstallStageMarker(outputStripAnsi);
+    const installStage = stageMarker?.stage ?? currentInstallStage;
     const serverSshCentrifugo: IServerSshCentrifugo = {
       server_id: serverId,
-      command: commandStripAnsi,
-      output: outputStripAnsi,
+      command: stageMarker ? 'Installation stage' : commandStripAnsi,
+      output: stageMarker
+        ? `Installation stage ${stageMarker.stage} ${stageMarker.status}`
+        : outputStripAnsi,
       date,
+      install_event_type: stageMarker ? 'stage' : 'output',
+      ...(installStage && { install_stage: installStage }),
+      ...(stageMarker && {
+        install_stage_status: stageMarker.status,
+      }),
     };
 
     results.push(serverSshCentrifugo);
+    onOutput?.(serverSshCentrifugo);
 
     if (sendCentrifugo) {
       this.centrifugoService.publish(
@@ -222,6 +365,8 @@ export class SshService {
         serverSshCentrifugo
       );
     }
+
+    return installStage;
   }
 
   private clearRunningCommandStream(
@@ -281,6 +426,17 @@ export class SshService {
     return this.isAptDpkgLockError(error);
   }
 
+  private shouldRetryBalanceRolloutFence(
+    error: unknown,
+    attempts: number
+  ): boolean {
+    if (attempts >= this.balanceRolloutFenceRetryMaxAttempts) {
+      return false;
+    }
+
+    return this.isBalanceRolloutTransientFenceError(error);
+  }
+
   private async executeCommandWithAptLockRetry(
     conn: Client,
     params: {
@@ -291,6 +447,9 @@ export class SshService {
       results: IServerSshCentrifugo[];
       cancellationId: string;
       runningCommand: IRunningServerCommand | null;
+      commandTimeoutMs: number;
+      stdin?: string | Buffer;
+      onOutput?: (event: IServerSshCentrifugo) => void;
     }
   ): Promise<void> {
     const {
@@ -301,14 +460,24 @@ export class SshService {
       results,
       cancellationId,
       runningCommand,
+      commandTimeoutMs,
+      stdin,
+      onOutput,
     } = params;
     let aptLockAttempts = 0;
+    let balanceRolloutFenceAttempts = 0;
+    let currentInstallStage: ServerInstallStageId | undefined;
 
     while (true) {
       try {
         await this.execCommand(conn, command, {
-          pty: true,
+          // A PTY may echo stdin back to stdout. Commands carrying sensitive
+          // input must use a raw channel so the payload can never reach
+          // Centrifugo, accumulated results, or SSH error output.
+          pty: stdin === undefined,
+          timeoutMs: commandTimeoutMs,
           failOnNonZero,
+          stdin,
           isCancelled: () => runningCommand?.canceled ?? false,
           createCancelError: () =>
             this.buildCancelledRunCommandsError(
@@ -319,12 +488,14 @@ export class SshService {
           onStreamReady: (stream) =>
             this.handleRunningCommandStreamReady(runningCommand, stream),
           onData: (line) => {
-            this.appendCommandOutput(
+            currentInstallStage = this.appendCommandOutput(
               serverId,
               command,
               line,
               results,
-              sendCentrifugo
+              sendCentrifugo,
+              onOutput,
+              currentInstallStage
             );
           },
         });
@@ -344,24 +515,54 @@ export class SshService {
           );
         }
 
-        if (!this.shouldRetryAptLock(command, error, aptLockAttempts)) {
-          throw new SshRunCommandsError(command, results, error);
+        if (this.shouldRetryAptLock(command, error, aptLockAttempts)) {
+          const waitMs = this.getAptLockRetryDelayMs(aptLockAttempts);
+          aptLockAttempts += 1;
+
+          currentInstallStage = this.appendCommandOutput(
+            serverId,
+            command,
+            `[ssh][apt-lock] lock detectado, aguardando ${Math.ceil(
+              waitMs / 1000
+            )}s para retry ${aptLockAttempts}/${this.aptLockRetryMaxAttempts}\n`,
+            results,
+            sendCentrifugo,
+            onOutput,
+            currentInstallStage
+          );
+
+          await this.sleep(waitMs);
+          continue;
         }
 
-        const waitMs = this.getAptLockRetryDelayMs(aptLockAttempts);
-        aptLockAttempts += 1;
+        if (
+          this.shouldRetryBalanceRolloutFence(
+            error,
+            balanceRolloutFenceAttempts
+          )
+        ) {
+          const waitMs = this.getBalanceRolloutFenceRetryDelayMs(
+            balanceRolloutFenceAttempts
+          );
+          balanceRolloutFenceAttempts += 1;
 
-        this.appendCommandOutput(
-          serverId,
-          command,
-          `[ssh][apt-lock] lock detectado, aguardando ${Math.ceil(
-            waitMs / 1000
-          )}s para retry ${aptLockAttempts}/${this.aptLockRetryMaxAttempts}\n`,
-          results,
-          sendCentrifugo
-        );
+          currentInstallStage = this.appendCommandOutput(
+            serverId,
+            command,
+            `[ssh][balance-rollout] managed rollout fence busy, waiting ${Math.ceil(
+              waitMs / 1000
+            )}s before retry ${balanceRolloutFenceAttempts}/${this.balanceRolloutFenceRetryMaxAttempts}\n`,
+            results,
+            sendCentrifugo,
+            onOutput,
+            currentInstallStage
+          );
 
-        await this.sleep(waitMs);
+          await this.sleep(waitMs);
+          continue;
+        }
+
+        throw new SshRunCommandsError(command, results, error);
       } finally {
         this.clearRunningCommandStream(runningCommand);
       }
@@ -373,6 +574,11 @@ export class SshService {
       const conn = new Client();
       let resolved = false;
       let connectionTimeout: NodeJS.Timeout | undefined;
+      const requestedReadyTimeout = Number(config.readyTimeout);
+      const readyTimeoutMs =
+        Number.isFinite(requestedReadyTimeout) && requestedReadyTimeout > 0
+          ? Math.floor(requestedReadyTimeout)
+          : 30_000;
 
       const cleanup = (): void => {
         if (connectionTimeout) {
@@ -423,7 +629,7 @@ export class SshService {
 
       const connectConfig: ConnectConfig = {
         ...config,
-        readyTimeout: 30_000,
+        readyTimeout: readyTimeoutMs,
         keepaliveInterval: 20_000,
         keepaliveCountMax: 10,
       };
@@ -444,7 +650,7 @@ export class SshService {
         error.name = 'ConnectionTimeoutError';
 
         reject(error);
-      }, 30_000);
+      }, readyTimeoutMs);
 
       conn.on('ready', handleReady);
       conn.on('error', handleError);
@@ -465,6 +671,7 @@ export class SshService {
       isCancelled?: () => boolean;
       createCancelError?: () => Error;
       failOnNonZero?: boolean;
+      stdin?: string | Buffer;
     } = {}
   ): Promise<string> {
     const {
@@ -475,105 +682,219 @@ export class SshService {
       isCancelled,
       createCancelError,
       failOnNonZero = false,
+      stdin,
     } = options;
 
     return new Promise((resolve, reject) => {
-      conn.exec(command, { pty }, (err, stream) => {
-        if (err) {
-          return reject(err);
-        }
+      let output = '';
+      let timer: NodeJS.Timeout | undefined;
+      let settled = false;
+      let activeStream: ClientChannel | null = null;
+      let stdoutPending = '';
+      let stderrPending = '';
 
-        let output = '';
-        let timer: NodeJS.Timeout | undefined;
-        let settled = false;
+      const emitCompleteFrames = (
+        text: string,
+        stream: 'stdout' | 'stderr',
+        flush = false
+      ): void => {
+        let pending =
+          stream === 'stdout' ? stdoutPending + text : stderrPending + text;
+        let boundaryIndex = -1;
 
-        const resolveOnce = (value: string): void => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          if (timer) {
-            clearTimeout(timer);
-          }
-          resolve(value);
-        };
-
-        const rejectOnce = (error: Error): void => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          if (timer) {
-            clearTimeout(timer);
-          }
-          reject(error);
-        };
-
-        if (onStreamReady) {
-          onStreamReady(stream);
-        }
-
-        if (timeoutMs > 0) {
-          timer = setTimeout(() => {
-            stream.close();
-            rejectOnce(new Error('execCommand timeout'));
-          }, timeoutMs);
-        }
-        stream.on('data', (chunk: Buffer) => {
-          const text = chunk.toString();
-
-          output += text;
-          if (onData) {
-            onData(text);
-          }
-        });
-        stream.stderr.on('data', (chunk: Buffer) => {
-          const text = chunk.toString();
-
-          output += text;
-          if (onData) {
-            onData(text);
-          }
-        });
-        stream.on('close', (code: number | undefined, signal: string) => {
-          if (isCancelled?.()) {
-            rejectOnce(
-              createCancelError?.() ?? new Error('SSH command canceled')
-            );
-            return;
-          }
-
-          const normalizedCode = code ?? null;
-          const normalizedSignal = signal || null;
+        while (true) {
+          const newLineIndex = pending.indexOf('\n');
+          const carriageReturnIndex = pending.indexOf('\r');
 
           if (
-            failOnNonZero &&
-            normalizedCode !== null &&
-            normalizedCode !== 0
+            carriageReturnIndex >= 0 &&
+            (newLineIndex < 0 || carriageReturnIndex < newLineIndex)
           ) {
-            return rejectOnce(
-              new SshCommandExecutionError(
-                command,
-                normalizedCode,
-                normalizedSignal,
-                output.trimEnd()
-              )
-            );
+            /*
+             * A PTY normally emits CRLF. Wait for the byte after a trailing
+             * CR so a CRLF split across SSH chunks remains one complete line.
+             * Emitting CR immediately loses the newline and makes consumers
+             * concatenate adjacent command records.
+             */
+            if (carriageReturnIndex === pending.length - 1 && !flush) {
+              break;
+            }
+            boundaryIndex =
+              pending[carriageReturnIndex + 1] === '\n'
+                ? carriageReturnIndex + 1
+                : carriageReturnIndex;
+          } else if (newLineIndex >= 0) {
+            boundaryIndex = newLineIndex;
+          } else {
+            boundaryIndex = -1;
           }
 
-          resolveOnce(output.trimEnd());
-        });
-        stream.on('error', (e: Error) => {
-          if (isCancelled?.()) {
-            rejectOnce(
-              createCancelError?.() ?? new Error('SSH command canceled')
-            );
+          if (boundaryIndex < 0) break;
+
+          const frame = pending.slice(0, boundaryIndex + 1);
+          pending = pending.slice(boundaryIndex + 1);
+          onData?.(frame);
+        }
+
+        if (flush && pending) {
+          onData?.(pending);
+          pending = '';
+        }
+
+        if (stream === 'stdout') {
+          stdoutPending = pending;
+        } else {
+          stderrPending = pending;
+        }
+      };
+
+      const flushPendingFrames = (): void => {
+        emitCompleteFrames('', 'stdout', true);
+        emitCompleteFrames('', 'stderr', true);
+      };
+
+      const cleanupTimer = (): void => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = undefined;
+        }
+      };
+
+      const resolveOnce = (value: string): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanupTimer();
+        resolve(value);
+      };
+
+      const rejectOnce = (error: Error): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanupTimer();
+        reject(error);
+      };
+
+      const closeTimedOutTransport = (): void => {
+        try {
+          activeStream?.close();
+        } catch {}
+        try {
+          activeStream?.destroy();
+        } catch {}
+        try {
+          conn.end();
+        } catch {}
+        try {
+          conn.destroy();
+        } catch {}
+      };
+
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          rejectOnce(new SshCommandTimeoutError(command, timeoutMs));
+          closeTimedOutTransport();
+        }, timeoutMs);
+      }
+
+      try {
+        conn.exec(command, { pty }, (err, stream) => {
+          if (settled) {
+            try {
+              stream?.close();
+            } catch {}
+            try {
+              stream?.destroy();
+            } catch {}
             return;
           }
 
-          rejectOnce(e);
+          if (err) {
+            rejectOnce(err);
+            return;
+          }
+
+          activeStream = stream;
+
+          if (onStreamReady) {
+            onStreamReady(stream);
+          }
+
+          stream.on('data', (chunk: Buffer) => {
+            const text = chunk.toString();
+
+            output += text;
+            emitCompleteFrames(text, 'stdout');
+          });
+          stream.stderr.on('data', (chunk: Buffer) => {
+            const text = chunk.toString();
+
+            output += text;
+            emitCompleteFrames(text, 'stderr');
+          });
+          stream.on('close', (code: number | undefined, signal: string) => {
+            flushPendingFrames();
+
+            if (isCancelled?.()) {
+              rejectOnce(
+                createCancelError?.() ?? new Error('SSH command canceled')
+              );
+              return;
+            }
+
+            const normalizedCode = code ?? null;
+            const normalizedSignal = signal || null;
+
+            if (
+              failOnNonZero &&
+              normalizedCode !== null &&
+              normalizedCode !== 0
+            ) {
+              return rejectOnce(
+                new SshCommandExecutionError(
+                  command,
+                  normalizedCode,
+                  normalizedSignal,
+                  output.trimEnd()
+                )
+              );
+            }
+
+            resolveOnce(output.trimEnd());
+          });
+          stream.on('error', (e: Error) => {
+            flushPendingFrames();
+
+            if (isCancelled?.()) {
+              rejectOnce(
+                createCancelError?.() ?? new Error('SSH command canceled')
+              );
+              return;
+            }
+
+            rejectOnce(e);
+          });
+
+          // End the writable side explicitly so remote consumers (including
+          // `systemd-run --pipe`) receive EOF after the complete payload.
+          // The value is deliberately never copied into output or errors.
+          if (stdin !== undefined && !isCancelled?.()) {
+            try {
+              stream.end(stdin);
+            } catch (error) {
+              rejectOnce(
+                error instanceof Error ? error : new Error(String(error))
+              );
+              closeTimedOutTransport();
+            }
+          }
         });
-      });
+      } catch (error) {
+        rejectOnce(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
 
@@ -608,7 +929,9 @@ export class SshService {
   async getDistroAndVersion(config: ConnectConfig): Promise<IDistroInfo> {
     const conn = await this.connect(config);
     try {
-      const raw = await this.execCommand(conn, 'cat /etc/os-release');
+      const raw = await this.execCommand(conn, 'cat /etc/os-release', {
+        timeoutMs: 30_000,
+      });
       const lines = raw.split('\n');
 
       const distro =
@@ -650,11 +973,28 @@ export class SshService {
     options: {
       failOnNonZero?: boolean;
       cancellationKey?: string;
+      signal?: AbortSignal;
+      connectMaxAttempts?: number;
+      commandTimeoutMs?: number;
+      stdin?: string | Buffer;
+      onOutput?: (event: IServerSshCentrifugo) => void;
     } = {}
   ): Promise<IServerSshCentrifugo[]> {
-    const conn = await this.connect(config);
+    if (options.stdin !== undefined && commands.length !== 1) {
+      throw new Error('SSH stdin requires exactly one command.');
+    }
+
+    const conn = await this.connect(
+      config,
+      options.connectMaxAttempts ?? this.connectMaxRetries
+    );
     const results: IServerSshCentrifugo[] = [];
-    const { failOnNonZero = false, cancellationKey } = options;
+    const {
+      failOnNonZero = false,
+      cancellationKey,
+      signal,
+      commandTimeoutMs = 0,
+    } = options;
     const runningCommand: IRunningServerCommand | null = cancellationKey
       ? {
           conn,
@@ -665,6 +1005,19 @@ export class SshService {
 
     if (cancellationKey && runningCommand) {
       this.runningCommandsByServer.set(cancellationKey, runningCommand);
+    }
+
+    const cancelOnAbort = () => {
+      if (runningCommand) {
+        runningCommand.canceled = true;
+      }
+      if (cancellationKey) {
+        this.cancelServerExecution(cancellationKey);
+      }
+    };
+    signal?.addEventListener('abort', cancelOnAbort, { once: true });
+    if (signal?.aborted) {
+      cancelOnAbort();
     }
 
     try {
@@ -685,11 +1038,15 @@ export class SshService {
           results,
           cancellationId: cancellationKey ?? serverId,
           runningCommand,
+          commandTimeoutMs,
+          stdin: options.stdin,
+          onOutput: options.onOutput,
         });
       }
 
       return results;
     } finally {
+      signal?.removeEventListener('abort', cancelOnAbort);
       if (cancellationKey && runningCommand) {
         const current = this.runningCommandsByServer.get(cancellationKey);
         if (current === runningCommand) {
@@ -730,22 +1087,61 @@ export class SshService {
     return commandsMap[key] ?? [];
   }
 
-  getStatusCommands(info: IDistroInfo, ip: string, port: number): string[] {
+  getStatusCommands(
+    info: IDistroInfo,
+    ip: string,
+    port: number,
+    defaultImages: IServerBuildDefaultImages
+  ): string[] {
     const key = `${info.distro}:${info.version}` as EAllowedDistroVersion;
+    const baileysImage = escapeShellSingleQuotes(defaultImages.baileys);
+    const wwebjsImage = escapeShellSingleQuotes(defaultImages.wwebjs);
+    const whatsmeowImage = escapeShellSingleQuotes(defaultImages.whatsmeow);
+    const balanceApiImage = escapeShellSingleQuotes(defaultImages.balance_api);
+    const command = `bash -c 'UNDERCHAT_INSTALL_READINESS=1; \
+      EXPECTED_BAILEYS_REF="$1"; \
+      EXPECTED_WWEBJS_REF="$2"; \
+      EXPECTED_WHATSMEOW_REF="$3"; \
+      EXPECTED_BALANCE_REF="$4"; \
+      ROLLOUT_STATE_DIR=/var/lib/underchat/balance-rollout; \
+      ROLLOUT_STATE_FILE="$ROLLOUT_STATE_DIR/state.env"; \
+      ROLLOUT_UNIT=underchat-balance-rollout-v1.service; \
+      if [ ! -d "$ROLLOUT_STATE_DIR" ] || [ -L "$ROLLOUT_STATE_DIR" ]; then echo false; exit 0; fi; \
+      if ! exec 9<"$ROLLOUT_STATE_DIR" || ! flock -n 9; then echo false; exit 0; fi; \
+      ROLLOUT_ACTIVE_STATE=$(systemctl show "$ROLLOUT_UNIT" --property=ActiveState --value 2>/dev/null || true); \
+      case "$ROLLOUT_ACTIVE_STATE" in inactive|failed) ;; *) echo false; exit 0 ;; esac; \
+      if [ -e "$ROLLOUT_STATE_FILE" ] || [ -L "$ROLLOUT_STATE_FILE" ]; then \
+        if [ -L "$ROLLOUT_STATE_FILE" ] || [ ! -f "$ROLLOUT_STATE_FILE" ] || [ ! -r "$ROLLOUT_STATE_FILE" ] || \
+          [ "$(stat -c "%u" -- "$ROLLOUT_STATE_FILE" 2>/dev/null)" != 0 ] || \
+          [ "$(stat -c "%a" -- "$ROLLOUT_STATE_FILE" 2>/dev/null)" != 600 ] || \
+          [ "$(grep -c "^PHASE=" "$ROLLOUT_STATE_FILE" 2>/dev/null)" != 1 ]; then echo false; exit 0; fi; \
+        ROLLOUT_PHASE=$(sed -n "s/^PHASE=//p" "$ROLLOUT_STATE_FILE" | head -n 1 | tr -d "\\r"); \
+        case "$ROLLOUT_PHASE" in complete|rolled_back) ;; *) echo false; exit 0 ;; esac; \
+      fi; \
+      EXPECTED_BAILEYS_IMAGE_ID=$(docker image inspect --format "{{.Id}}" "$EXPECTED_BAILEYS_REF" 2>/dev/null || true); \
+      EXPECTED_WWEBJS_IMAGE_ID=$(docker image inspect --format "{{.Id}}" "$EXPECTED_WWEBJS_REF" 2>/dev/null || true); \
+      EXPECTED_WHATSMEOW_IMAGE_ID=$(docker image inspect --format "{{.Id}}" "$EXPECTED_WHATSMEOW_REF" 2>/dev/null || true); \
+      EXPECTED_BALANCE_IMAGE_ID=$(docker image inspect --format "{{.Id}}" "$EXPECTED_BALANCE_REF" 2>/dev/null || true); \
+      BAILEYS_ALIAS_IMAGE_ID=$(docker image inspect --format "{{.Id}}" ${EWorkerImage.baileys} 2>/dev/null || true); \
+      WWEBJS_ALIAS_IMAGE_ID=$(docker image inspect --format "{{.Id}}" ${EWorkerImage.wwebjs} 2>/dev/null || true); \
+      WHATSMEOW_ALIAS_IMAGE_ID=$(docker image inspect --format "{{.Id}}" ${EWorkerImage.whatsmeow} 2>/dev/null || true); \
+      BALANCE_ALIAS_IMAGE_ID=$(docker image inspect --format "{{.Id}}" ${EWorkerImage.balance_api} 2>/dev/null || true); \
+      RUNNING_IMAGE_ID=$(docker inspect --format "{{.Image}}" under-balance-api 2>/dev/null || true); \
+      HTTP_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 5 http://${ip}:${port}/v1/health/check 2>/dev/null || true); \
+      if [ -n "$EXPECTED_BAILEYS_IMAGE_ID" ] && [ "$BAILEYS_ALIAS_IMAGE_ID" = "$EXPECTED_BAILEYS_IMAGE_ID" ] && \
+        [ -n "$EXPECTED_WWEBJS_IMAGE_ID" ] && [ "$WWEBJS_ALIAS_IMAGE_ID" = "$EXPECTED_WWEBJS_IMAGE_ID" ] && \
+        [ -n "$EXPECTED_WHATSMEOW_IMAGE_ID" ] && [ "$WHATSMEOW_ALIAS_IMAGE_ID" = "$EXPECTED_WHATSMEOW_IMAGE_ID" ] && \
+        [ -n "$EXPECTED_BALANCE_IMAGE_ID" ] && [ "$BALANCE_ALIAS_IMAGE_ID" = "$EXPECTED_BALANCE_IMAGE_ID" ] && \
+        [ "$RUNNING_IMAGE_ID" = "$EXPECTED_BALANCE_IMAGE_ID" ] && \
+        docker ps --filter "name=^/under-balance-api$" --filter status=running --format "{{.ID}}" | grep -q . && \
+        [ "$HTTP_STATUS" = 200 ]; then echo true; else echo false; fi' -- \
+      '${baileysImage}' '${wwebjsImage}' '${whatsmeowImage}' '${balanceApiImage}'`;
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
-      [EAllowedDistroVersion.Ubuntu_25_10]: [
-        `bash -c "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
-      ],
-      [EAllowedDistroVersion.Ubuntu_25_04]: [
-        `bash -c "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
-      ],
-      [EAllowedDistroVersion.Ubuntu_24_10]: [
-        `bash -c "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
-      ],
-      [EAllowedDistroVersion.Ubuntu_24_04]: [
-        `bash -c "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
-      ],
+      [EAllowedDistroVersion.Ubuntu_25_10]: [command],
+      [EAllowedDistroVersion.Ubuntu_25_04]: [command],
+      [EAllowedDistroVersion.Ubuntu_24_10]: [command],
+      [EAllowedDistroVersion.Ubuntu_24_04]: [command],
     };
 
     return commandsMap[key] ?? [];

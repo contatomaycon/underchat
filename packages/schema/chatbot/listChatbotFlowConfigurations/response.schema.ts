@@ -17,10 +17,18 @@ const configurationsSchema = Type.Object({
       quantity: Type.Optional(Type.Number()),
       time: Type.Optional(Type.Number()),
       action: Type.Optional(Type.String()),
-      redirect_type: Type.Optional(Type.String()),
+      redirect_type: Type.Optional(
+        Type.Union([
+          Type.Literal('user'),
+          Type.Literal('sector'),
+          Type.Literal('chatbot'),
+        ])
+      ),
       selected_user: Type.Optional(Type.String()),
       selected_sector: Type.Optional(Type.String()),
       selected_sector_user: Type.Optional(Type.String()),
+      selected_channel: Type.Optional(Type.String({ format: 'uuid' })),
+      selected_chatbot: Type.Optional(Type.String({ format: 'uuid' })),
     })
   ),
   redirect_failed_attempts: Type.Optional(

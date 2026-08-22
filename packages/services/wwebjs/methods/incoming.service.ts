@@ -1,5 +1,7 @@
 import { inject, singleton } from 'tsyringe';
 import Redis from 'ioredis';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash, randomUUID } from 'node:crypto';
 import { Message, type Client } from '@wwebjs/whatsapp-web.js';
 import type { IMessageKeyLike } from '@core/common/interfaces/IMessageKeyLike';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
@@ -9,10 +11,7 @@ import {
   MessageSummaryPatch,
 } from '@core/services/messageStatus.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
-import {
-  wwebjsEnvironment,
-  generalEnvironment,
-} from '@core/config/environments';
+import { wwebjsEnvironment } from '@core/config/environments';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import type { IWwebjsPinEventData } from '@core/common/interfaces/IWwebjsPinEventData';
 import { wwebjsMessageToUpsert } from '../util/wwebjsMessageToUpsert';
@@ -30,11 +29,41 @@ import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { WwebjsDeliveryConfirmationService } from './deliveryConfirmation.service';
-import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
-import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
+import {
+  IInboundMessageSpoolScope,
+  InboundMessageSpoolService,
+  ObsoleteInboundMessageSpoolPayloadError,
+} from '@core/services/inboundMessageSpool.service';
 import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
+import type { IWhatsappRuntimeFenceConnectionAuthorization } from '@core/common/interfaces/IWhatsappRuntimeFenceConnectionAuthorization';
 import { LidJidCacheService } from '@core/services/lidJidCache.service';
+import { extractWwebjsMessageId } from '../util/wwebjsMessageId';
+import { ensureInboundEventId } from '@core/common/functions/inboundEventIdentity';
+import { ensureMessageStatusEventId } from '@core/common/functions/messageStatusIdentity';
+import {
+  IMessageSendAcquiredClaim,
+  MessageSendIdempotencyService,
+} from '@core/services/messageSendIdempotency.service';
+import {
+  IWhatsappRuntimeFence,
+  IWhatsappRuntimeEffectLease,
+  WhatsappRuntimeFenceService,
+} from '@core/services/whatsappRuntimeFence.service';
+import { resolveHistoryReconciliationConfig } from '@core/common/functions/historyReconciliationConfig';
+import { waitRuntimeFenceRetry } from '@core/common/functions/runtimeFenceRetry';
+import {
+  ProviderInvocationInFlightError,
+  ProviderInvocationSingleFlight,
+} from '@core/common/functions/providerInvocationSingleFlight';
+import {
+  isProviderAuxiliaryInvocationFenceError,
+  invokeProviderAuxiliaryWithTimeout,
+  ProviderAuxiliaryInvocationTimeoutError,
+  resolveProviderAuxiliaryTimeoutMs,
+} from '@core/common/functions/providerAuxiliaryInvocation';
+import type { IProviderInvocationBoundary } from '@core/common/interfaces/IProviderInvocationBoundary';
+import { workerErrorDiagnostics } from '@core/common/functions/workerErrorDiagnostics';
 
 const ACK_ERROR = -1;
 const ACK_SERVER = 1;
@@ -46,6 +75,11 @@ const SYSTEM_MESSAGE_JID_ALIASES = new Set([
   SYSTEM_MESSAGE_JID,
   '0@s.whatsapp.net',
 ]);
+
+function hashWwebjsIncomingLogIdentifier(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return `sha256:${createHash('sha256').update(value.trim()).digest('hex')}`;
+}
 
 function readPositiveIntEnv(key: string, fallback: number): number {
   const raw = process.env[key];
@@ -61,18 +95,20 @@ function readPositiveIntEnv(key: string, fallback: number): number {
   return Math.floor(parsed);
 }
 
-const HISTORY_RECONCILIATION_ENABLED =
-  process.env.HISTORY_RECONCILIATION_ENABLED !== 'false';
-const HISTORY_RECONCILIATION_MESSAGE_LIMIT = readPositiveIntEnv(
-  'HISTORY_RECONCILIATION_MESSAGE_LIMIT',
-  100
-);
-const HISTORY_RECONCILIATION_WINDOW_MS = 60 * 60 * 1000;
+function isHistoryReconciliationEnabled(): boolean {
+  return resolveHistoryReconciliationConfig().enabled;
+}
+const HISTORY_RECONCILIATION_CONFIG = resolveHistoryReconciliationConfig();
+const HISTORY_RECONCILIATION_MESSAGE_LIMIT =
+  HISTORY_RECONCILIATION_CONFIG.messageLimit;
+const HISTORY_RECONCILIATION_WINDOW_MS = HISTORY_RECONCILIATION_CONFIG.windowMs;
 const HISTORY_EVENT_BUFFER_FLUSH_DELAY_MS = 1000;
 const HISTORY_EVENT_POST_READY_GRACE_MS = 2 * 60 * 1000;
 const HISTORY_EVENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const HISTORY_EVENT_DEDUPE_MAX_SIZE = 100000;
-const HISTORY_FETCH_CHAT_SCAN_LIMIT = HISTORY_RECONCILIATION_MESSAGE_LIMIT;
+const HISTORY_FETCH_CHAT_SCAN_LIMIT =
+  HISTORY_RECONCILIATION_CONFIG.chatScanLimit;
+const HISTORY_FETCH_PER_CHAT_LIMIT = HISTORY_RECONCILIATION_CONFIG.perChatLimit;
 const WWEBJS_REACTION_LIVE_MAX_AGE_MS = readPositiveIntEnv(
   'WWEBJS_REACTION_LIVE_MAX_AGE_MS',
   5 * 60 * 1000
@@ -86,6 +122,24 @@ const WWEBJS_REACTION_DEDUPE_TTL_MS = Math.max(
   5 * 60 * 1000
 );
 const WWEBJS_REACTION_DEDUPE_MAX_SIZE = 100000;
+const WWEBJS_SEND_MESSAGE_TIMEOUT_MS = Math.min(
+  120_000,
+  Math.max(5_000, readPositiveIntEnv('WWEBJS_SEND_MESSAGE_TIMEOUT_MS', 45_000))
+);
+const TERMINAL_RUNTIME_FENCE_GRPC_CODES = new Set([3, 7, 9, 16]);
+
+function isTerminalRuntimeFenceActivationError(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    return true;
+  }
+  const code =
+    error && typeof error === 'object'
+      ? Number((error as { code?: unknown }).code)
+      : Number.NaN;
+  return (
+    Number.isSafeInteger(code) && TERMINAL_RUNTIME_FENCE_GRPC_CODES.has(code)
+  );
+}
 
 interface WwebjsResolvedJids {
   remoteJid: string;
@@ -111,6 +165,14 @@ interface IKafkaRetryQueueItem {
   metadata: IKafkaSendMetadata;
   attempts: number;
   nextAttemptAt: number;
+}
+
+interface WwebjsConnectionScope extends IInboundMessageSpoolScope {
+  activatedAt: number;
+  activationOrder: number;
+  connectionSequence: number;
+  connectionAttemptId?: string;
+  activation: Promise<boolean>;
 }
 
 interface IWwebjsHistoryBufferedMessage {
@@ -202,15 +264,7 @@ function normalizeNameCandidate(value: unknown): string | undefined {
 }
 
 function getMessageIdSerialized(msg: { id?: unknown }): string | undefined {
-  if (!msg?.id) return undefined;
-  if (
-    typeof msg.id === 'object' &&
-    msg.id !== null &&
-    '_serialized' in (msg.id as object)
-  ) {
-    return (msg.id as { _serialized: string })._serialized;
-  }
-  return String(msg.id);
+  return extractWwebjsMessageId(msg);
 }
 
 function isSystemMessageJid(value: string): boolean {
@@ -252,58 +306,8 @@ function parseBooleanLike(value: unknown): boolean | undefined {
   return undefined;
 }
 
-function getRemoteFromMessageKeyValue(
-  value: Record<string, unknown>
-): string | undefined {
-  const direct =
-    getNonEmptyString(value.remoteJid) ?? getNonEmptyString(value.remote_jid);
-  if (direct) {
-    return direct;
-  }
-
-  const remote = value.remote;
-  if (typeof remote === 'string') {
-    return getNonEmptyString(remote);
-  }
-
-  if (typeof remote === 'object' && remote !== null) {
-    const remoteObj = remote as Record<string, unknown>;
-    return (
-      getNonEmptyString(remoteObj._serialized) ??
-      getNonEmptyString(remoteObj.id)
-    );
-  }
-
-  return undefined;
-}
-
 function extractSerializedMessageKey(value: unknown): string | undefined {
-  if (typeof value === 'string') {
-    return getNonEmptyString(value);
-  }
-
-  if (!value || typeof value !== 'object') {
-    return undefined;
-  }
-
-  const keyObject = value as Record<string, unknown>;
-  const serialized = getNonEmptyString(keyObject._serialized);
-  if (serialized) {
-    return serialized;
-  }
-
-  const keyId =
-    getNonEmptyString(keyObject.id) ??
-    getNonEmptyString(keyObject.stanzaId) ??
-    getNonEmptyString(keyObject.stanzaID);
-  const remoteJid = getRemoteFromMessageKeyValue(keyObject);
-  const fromMe = parseBooleanLike(keyObject.fromMe ?? keyObject.from_me);
-
-  if (fromMe !== undefined && remoteJid && keyId) {
-    return `${fromMe}_${remoteJid}_${keyId}`;
-  }
-
-  return keyId;
+  return extractWwebjsMessageId(value, { allowStanzaIdFallback: true });
 }
 
 function getReactionMsgIdSerialized(
@@ -343,9 +347,7 @@ function getFromMeFromSerializedLike(value: unknown): boolean | undefined {
     return fromMe;
   }
 
-  const serialized =
-    getNonEmptyString(objectValue._serialized) ??
-    getNonEmptyString(objectValue.id);
+  const serialized = extractWwebjsMessageId(objectValue);
   if (!serialized) {
     return undefined;
   }
@@ -708,6 +710,7 @@ function isUpsertMessagePayload(value: unknown): value is IUpsertMessage {
 @singleton()
 export class WwebjsIncomingMessageService {
   private currentClient: Client | undefined;
+  private currentConnectionAuthorization?: IWhatsappRuntimeFenceConnectionAuthorization;
   private rejectCallConfig = false;
   private readonly processedCalls = new Map<string, number>();
   private readonly processedPinMessages = new Map<string, number>();
@@ -738,11 +741,7 @@ export class WwebjsIncomingMessageService {
   private readonly NAME_CACHE_PREFIX = 'name:jid:';
   private readonly NAME_CACHE_NO_NAME = '__no_name__';
   private readonly PROFILE_PIC_TIMEOUT_MS = 3000;
-  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 1;
   private readonly SEND_CONFIRMATION_TIMEOUT_MS = 20_000;
-  private readonly CALL_AUTO_REPLY_DEDUPE_PREFIX = 'call:auto-reply';
-  private readonly CALL_AUTO_REPLY_DEDUPE_TTL_SECONDS =
-    generalEnvironment.automationSendDedupeTtlSeconds;
   private readonly E2E_NOTIFICATION_DEDUPE_PREFIX = 'wwebjs:e2e:';
   private readonly E2E_NOTIFICATION_DEDUPE_TTL = 31536000;
   private readonly CIPHERTEXT_FANOUT_DEDUPE_PREFIX = 'wwebjs:ciphertext:';
@@ -766,6 +765,17 @@ export class WwebjsIncomingMessageService {
   private kafkaRetryProcessing = false;
   private kafkaRetryTimer: ReturnType<typeof setTimeout> | undefined;
   private kafkaRetryNextRunAt = 0;
+  private activeConnectionScope: WwebjsConnectionScope | undefined;
+  private runtimeFenceTransition: Promise<void> = Promise.resolve();
+  private readonly connectionScopeStorage =
+    new AsyncLocalStorage<WwebjsConnectionScope>();
+  private readonly auxiliaryProviderInvocationFence =
+    new ProviderInvocationSingleFlight();
+  private readonly AUXILIARY_PROVIDER_TIMEOUT_MS =
+    resolveProviderAuxiliaryTimeoutMs();
+  private auxiliaryProviderFailureRecovery:
+    | ((client: Client, error: unknown, options: { timedOut: boolean }) => void)
+    | undefined;
 
   constructor(
     @inject(StreamProducerService)
@@ -779,9 +789,12 @@ export class WwebjsIncomingMessageService {
     private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
     @inject(WwebjsDeliveryConfirmationService)
     private readonly deliveryConfirmation: WwebjsDeliveryConfirmationService,
+    @inject(MessageSendIdempotencyService)
+    private readonly messageSendIdempotencyService: MessageSendIdempotencyService,
     @inject(InboundMessageSpoolService)
     private readonly inboundMessageSpoolService: InboundMessageSpoolService = {
       startPublisher: () => undefined,
+      stopPublisher: async () => undefined,
       publish: async (
         payload: IInboundMessageSpoolPayload,
         publisher: (payload: IInboundMessageSpoolPayload) => Promise<void>
@@ -799,14 +812,12 @@ export class WwebjsIncomingMessageService {
       rememberFromUpsert: async () => null,
       rememberFromChat: async () => null,
       extractPhoneJidFromChat: () => null,
-    } as unknown as LidJidCacheService
-  ) {
-    this.inboundMessageSpoolService.startPublisher(
-      'wwebjs',
-      wwebjsEnvironment.wwebjsWorkerId,
-      (payload) => this.publishSpoolPayload(payload)
-    );
-  }
+    } as unknown as LidJidCacheService,
+    @inject(WhatsappRuntimeFenceService)
+    private readonly whatsappRuntimeFenceService: WhatsappRuntimeFenceService = new WhatsappRuntimeFenceService(
+      redis
+    )
+  ) {}
 
   private logEvent(eventName: string, payload: Record<string, unknown>): void {
     void eventName;
@@ -837,15 +848,500 @@ export class WwebjsIncomingMessageService {
     await new Promise<void>((resolve) => setTimeout(resolve, ms));
   }
 
+  private activateConnectionScope(): WwebjsConnectionScope {
+    const runtimeGeneration = Number(wwebjsEnvironment.runtimeGeneration);
+    const authorization = this.currentConnectionAuthorization;
+    const scope = {
+      runtimeGeneration,
+      connectionEpoch: authorization?.connection_epoch ?? randomUUID(),
+      connectionAttemptId: authorization?.connection_attempt_id,
+      activationOrder: 0,
+      connectionSequence: 0,
+      activatedAt: Date.now(),
+    } as WwebjsConnectionScope;
+
+    this.activeConnectionScope = scope;
+    scope.activation =
+      Number.isSafeInteger(runtimeGeneration) && runtimeGeneration > 0
+        ? this.enqueueRuntimeFenceTransition(async () => {
+            if (this.activeConnectionScope !== scope) {
+              return false;
+            }
+
+            let retryDelayMs = 100;
+            let durableActivation:
+              | {
+                  connection_sequence: number;
+                }
+              | undefined;
+            while (this.activeConnectionScope === scope) {
+              let begin;
+              try {
+                begin = await this.whatsappRuntimeFenceService.beginActivation({
+                  worker_id: wwebjsEnvironment.wwebjsWorkerId,
+                  runtime_generation: runtimeGeneration,
+                  connection_epoch: scope.connectionEpoch,
+                  source_provider: 'wwebjs',
+                });
+              } catch {
+                await waitRuntimeFenceRetry(retryDelayMs);
+                retryDelayMs = Math.min(retryDelayMs * 2, 2000);
+                continue;
+              }
+
+              if (this.activeConnectionScope !== scope) {
+                await this.whatsappRuntimeFenceService.deactivate(
+                  wwebjsEnvironment.wwebjsWorkerId,
+                  runtimeGeneration,
+                  scope.connectionEpoch
+                );
+                return false;
+              }
+              if (begin.status === 'superseded') {
+                return false;
+              }
+              scope.activationOrder = begin.activation_order;
+              if (begin.activated_at > 0) {
+                scope.activatedAt = begin.activated_at;
+              }
+              if (begin.status === 'active') {
+                scope.connectionSequence = begin.connection_sequence;
+                break;
+              }
+              if (begin.status === 'waiting' || begin.status === 'draining') {
+                await waitRuntimeFenceRetry(retryDelayMs);
+                retryDelayMs = Math.min(retryDelayMs * 2, 2000);
+                continue;
+              }
+
+              if (!durableActivation) {
+                try {
+                  durableActivation =
+                    await this.balanceWorkerStatusGrpcClientService.activateWhatsappRuntimeFence(
+                      {
+                        worker_id: wwebjsEnvironment.wwebjsWorkerId,
+                        account_id: wwebjsEnvironment.wwebjsAccountId,
+                        source_provider: 'wwebjs',
+                        runtime_generation: runtimeGeneration,
+                        connection_epoch: scope.connectionEpoch,
+                        connection_attempt_id: scope.connectionAttemptId,
+                      }
+                    );
+                  scope.connectionSequence =
+                    durableActivation.connection_sequence;
+                } catch (error) {
+                  if (isTerminalRuntimeFenceActivationError(error)) {
+                    await this.whatsappRuntimeFenceService.deactivate(
+                      wwebjsEnvironment.wwebjsWorkerId,
+                      runtimeGeneration,
+                      scope.connectionEpoch
+                    );
+                    throw error;
+                  }
+                  await waitRuntimeFenceRetry(retryDelayMs);
+                  retryDelayMs = Math.min(retryDelayMs * 2, 2000);
+                  continue;
+                }
+              }
+
+              if (this.activeConnectionScope !== scope) {
+                await this.whatsappRuntimeFenceService.deactivate(
+                  wwebjsEnvironment.wwebjsWorkerId,
+                  runtimeGeneration,
+                  scope.connectionEpoch
+                );
+                return false;
+              }
+
+              try {
+                const finalized =
+                  await this.whatsappRuntimeFenceService.finalizeActivation({
+                    worker_id: wwebjsEnvironment.wwebjsWorkerId,
+                    runtime_generation: runtimeGeneration,
+                    connection_epoch: scope.connectionEpoch,
+                    connection_sequence: scope.connectionSequence,
+                    source_provider: 'wwebjs',
+                    activation_order: scope.activationOrder,
+                  });
+                if (finalized) {
+                  break;
+                }
+              } catch {
+                // The same epoch retries begin/finalize. Redis remains
+                // fail-closed until the exact pending activation is finalized.
+              }
+
+              if (this.activeConnectionScope === scope) {
+                await waitRuntimeFenceRetry(retryDelayMs);
+                retryDelayMs = Math.min(retryDelayMs * 2, 2000);
+              }
+            }
+            if (
+              this.activeConnectionScope !== scope ||
+              scope.connectionSequence <= 0 ||
+              scope.activationOrder <= 0
+            ) {
+              return false;
+            }
+
+            const view = (
+              this.whatsappRuntimeFenceService as unknown as {
+                view?: (
+                  workerId: string
+                ) => Promise<IWhatsappRuntimeFence | null>;
+              }
+            ).view;
+            if (!view) {
+              return true;
+            }
+
+            const activeFence = await view.call(
+              this.whatsappRuntimeFenceService,
+              wwebjsEnvironment.wwebjsWorkerId
+            );
+            if (
+              activeFence?.runtime_generation !== runtimeGeneration ||
+              activeFence.connection_epoch !== scope.connectionEpoch ||
+              activeFence.connection_sequence !== scope.connectionSequence ||
+              activeFence.activation_order !== scope.activationOrder ||
+              activeFence.state !== 'active' ||
+              activeFence.source_provider !== 'wwebjs' ||
+              this.activeConnectionScope !== scope
+            ) {
+              await this.whatsappRuntimeFenceService.deactivate(
+                wwebjsEnvironment.wwebjsWorkerId,
+                runtimeGeneration,
+                scope.connectionEpoch
+              );
+              return false;
+            }
+
+            scope.activatedAt = activeFence.activated_at;
+            return true;
+          })
+        : Promise.resolve(false);
+
+    void scope.activation
+      .then((accepted) => {
+        if (accepted && this.activeConnectionScope === scope) {
+          const fence: IWhatsappRuntimeFence = {
+            worker_id: wwebjsEnvironment.wwebjsWorkerId,
+            runtime_generation: scope.runtimeGeneration,
+            connection_epoch: scope.connectionEpoch,
+            connection_sequence: scope.connectionSequence,
+            source_provider: 'wwebjs',
+            activated_at: scope.activatedAt,
+            state: 'active',
+            activation_order: scope.activationOrder,
+          };
+          this.inboundMessageSpoolService.startPublisher(
+            'wwebjs',
+            wwebjsEnvironment.wwebjsWorkerId,
+            scope,
+            (payload) => this.publishSpoolPayload(payload),
+            () => this.whatsappRuntimeFenceService.isCurrent(fence)
+          );
+        } else if (this.activeConnectionScope === scope) {
+          void this.inboundMessageSpoolService.stopPublisher(
+            'wwebjs',
+            wwebjsEnvironment.wwebjsWorkerId,
+            scope
+          );
+        }
+      })
+      .catch((error) => {
+        console.error('[wwebjs] runtime fence activation failed:', {
+          worker_id: wwebjsEnvironment.wwebjsWorkerId,
+          runtime_generation: scope.runtimeGeneration,
+          connection_epoch: scope.connectionEpoch,
+          ...workerErrorDiagnostics(error),
+        });
+        if (this.activeConnectionScope === scope) {
+          void this.inboundMessageSpoolService.stopPublisher(
+            'wwebjs',
+            wwebjsEnvironment.wwebjsWorkerId,
+            scope
+          );
+        }
+      });
+    return scope;
+  }
+
+  private stopActiveConnectionScope(): void {
+    const scope = this.activeConnectionScope;
+    if (!scope) {
+      return;
+    }
+    this.activeConnectionScope = undefined;
+    const deactivate = this.enqueueRuntimeFenceTransition(async () => {
+      await this.whatsappRuntimeFenceService.deactivate(
+        wwebjsEnvironment.wwebjsWorkerId,
+        scope.runtimeGeneration,
+        scope.connectionEpoch
+      );
+    });
+    void Promise.allSettled([
+      deactivate,
+      this.inboundMessageSpoolService.stopPublisher(
+        'wwebjs',
+        wwebjsEnvironment.wwebjsWorkerId,
+        scope
+      ),
+    ]);
+  }
+
+  private enqueueRuntimeFenceTransition<T>(
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const transition = this.runtimeFenceTransition.then(operation, operation);
+    this.runtimeFenceTransition = transition.then(
+      () => undefined,
+      () => undefined
+    );
+    return transition;
+  }
+
+  private async prepareFencedPayload(payload: unknown): Promise<boolean> {
+    if (typeof payload !== 'object' || payload === null) {
+      return false;
+    }
+
+    const record = payload as Record<string, unknown>;
+    const payloadGeneration = Number(record.runtime_generation);
+    const payloadEpoch =
+      typeof record.connection_epoch === 'string'
+        ? record.connection_epoch.trim()
+        : '';
+    const contextualScope =
+      this.connectionScopeStorage.getStore() ?? this.activeConnectionScope;
+    const scope =
+      Number.isSafeInteger(payloadGeneration) &&
+      payloadGeneration > 0 &&
+      payloadEpoch
+        ? {
+            runtimeGeneration: payloadGeneration,
+            connectionEpoch: payloadEpoch,
+          }
+        : contextualScope;
+    const active = this.activeConnectionScope;
+
+    if (
+      !scope ||
+      !active ||
+      scope.runtimeGeneration !== active.runtimeGeneration ||
+      scope.connectionEpoch !== active.connectionEpoch
+    ) {
+      return false;
+    }
+
+    record.source_provider = 'wwebjs';
+    record.runtime_generation = String(scope.runtimeGeneration);
+    record.connection_epoch = scope.connectionEpoch;
+
+    if (!(await active.activation)) {
+      return false;
+    }
+
+    const envelope = record.message;
+    if (typeof envelope === 'object' && envelope !== null) {
+      const timestampMs = this.resolveMessageTimestampMs(envelope);
+      // WhatsApp timestamps frequently have only second precision. Discard the
+      // complete activation second so a pre-connection event cannot be
+      // rounded into the current connection.
+      const connectionCutoffMs =
+        (Math.floor(active.activatedAt / 1000) + 1) * 1000;
+      if (record.from_history_sync === true) {
+        if (
+          timestampMs <= 0 ||
+          timestampMs < Date.now() - HISTORY_RECONCILIATION_WINDOW_MS
+        ) {
+          return false;
+        }
+      } else if (timestampMs > 0 && timestampMs < connectionCutoffMs) {
+        return false;
+      }
+    }
+
+    return this.whatsappRuntimeFenceService.isCurrent({
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      runtime_generation: scope.runtimeGeneration,
+      connection_epoch: scope.connectionEpoch,
+      source_provider: 'wwebjs',
+    });
+  }
+
+  private resolveMessageTimestampMs(envelope: unknown): number {
+    if (typeof envelope !== 'object' || envelope === null) {
+      return 0;
+    }
+    const rawTimestamp = Number(
+      (envelope as Record<string, unknown>).messageTimestamp
+    );
+    return rawTimestamp > 1_000_000_000_000
+      ? rawTimestamp
+      : rawTimestamp > 0
+        ? rawTimestamp * 1000
+        : 0;
+  }
+
+  private async isTerminallyObsoleteSpoolPayload(
+    payload: IInboundMessageSpoolPayload,
+    active: WwebjsConnectionScope
+  ): Promise<boolean> {
+    const payloadGeneration = Number(payload.runtime_generation);
+    const payloadEpoch = payload.connection_epoch?.trim();
+    const superseded =
+      Number.isSafeInteger(payloadGeneration) &&
+      payloadGeneration > 0 &&
+      !!payloadEpoch &&
+      (payloadGeneration < active.runtimeGeneration ||
+        (payloadGeneration === active.runtimeGeneration &&
+          payloadEpoch !== active.connectionEpoch));
+    if (!superseded) {
+      return false;
+    }
+
+    const timestampMs = this.resolveMessageTimestampMs(payload.upsert.message);
+    if (
+      timestampMs > 0 &&
+      timestampMs >= Date.now() - HISTORY_RECONCILIATION_WINDOW_MS
+    ) {
+      return false;
+    }
+
+    return this.whatsappRuntimeFenceService.isCurrent({
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      runtime_generation: active.runtimeGeneration,
+      connection_epoch: active.connectionEpoch,
+      source_provider: 'wwebjs',
+    });
+  }
+
+  private isConnectionScopeCurrent(): Promise<boolean> {
+    return this.prepareFencedPayload({});
+  }
+
+  public async captureActiveConnectionScope(): Promise<IWhatsappRuntimeFence | null> {
+    const active = this.activeConnectionScope;
+    if (!active || !(await active.activation)) {
+      return null;
+    }
+    const fence: IWhatsappRuntimeFence = {
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      runtime_generation: active.runtimeGeneration,
+      connection_epoch: active.connectionEpoch,
+      connection_sequence: active.connectionSequence,
+      source_provider: 'wwebjs',
+      activated_at: active.activatedAt,
+    };
+    return (await this.whatsappRuntimeFenceService.isCurrent(fence))
+      ? fence
+      : null;
+  }
+
+  /**
+   * Returns the already-activated durable fence without performing I/O. Status
+   * persistence uses this to bind the event to the exact provider connection.
+   */
+  public getActiveRuntimeFenceIdentity(): {
+    connection_epoch: string;
+    connection_sequence: number;
+  } | null {
+    const active = this.activeConnectionScope;
+    if (!active || active.connectionSequence <= 0) {
+      return null;
+    }
+    return {
+      connection_epoch: active.connectionEpoch,
+      connection_sequence: active.connectionSequence,
+    };
+  }
+
+  public async acquireActiveRuntimeEffectLease(): Promise<IWhatsappRuntimeEffectLease | null> {
+    const active = this.activeConnectionScope;
+    if (!active || !(await active.activation)) {
+      return null;
+    }
+    if (this.activeConnectionScope !== active) {
+      return null;
+    }
+    return this.whatsappRuntimeFenceService.acquireEffectLease({
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      runtime_generation: active.runtimeGeneration,
+      connection_epoch: active.connectionEpoch,
+      source_provider: 'wwebjs',
+    });
+  }
+
+  private async runWithRuntimeEffectLease<T>(
+    payload: unknown,
+    operation: () => Promise<T>
+  ): Promise<{ executed: boolean; value?: T }> {
+    if (!(await this.prepareFencedPayload(payload))) {
+      return { executed: false };
+    }
+    const lease = await this.whatsappRuntimeFenceService.acquireEffectLease(
+      payload as IWhatsappRuntimeFence
+    );
+    if (!lease) {
+      return { executed: false };
+    }
+    try {
+      lease.assertOwned();
+      return { executed: true, value: await operation() };
+    } finally {
+      await lease.release().catch((error) => {
+        console.error(
+          '[wwebjs] Failed to release runtime effect lease; TTL cleanup will fence cutover',
+          workerErrorDiagnostics(error)
+        );
+      });
+    }
+  }
+
   private async publishSpoolPayload(
     payload: IInboundMessageSpoolPayload
   ): Promise<void> {
-    payload.upsert.source_provider = 'wwebjs';
-    await this.streamProducerService.send(
-      payload.kafka_topic,
-      payload.upsert,
-      payload.kafka_key
+    const active = this.activeConnectionScope;
+    if (
+      !active ||
+      !(await active.activation) ||
+      this.activeConnectionScope !== active
+    ) {
+      throw new Error('wwebjs_inbound_spool_without_active_runtime');
+    }
+
+    const replayingPreviousRuntime =
+      Number(payload.runtime_generation) !== active.runtimeGeneration ||
+      payload.connection_epoch !== active.connectionEpoch ||
+      payload.source_provider !== 'wwebjs';
+    if (
+      replayingPreviousRuntime &&
+      (await this.isTerminallyObsoleteSpoolPayload(payload, active))
+    ) {
+      throw new ObsoleteInboundMessageSpoolPayloadError(
+        'superseded_runtime_outside_history_window'
+      );
+    }
+    const upsert: IUpsertMessage = {
+      ...payload.upsert,
+      source_provider: 'wwebjs',
+      runtime_generation: String(active.runtimeGeneration),
+      connection_epoch: active.connectionEpoch,
+      ...(replayingPreviousRuntime ? { from_history_sync: true } : {}),
+    };
+    ensureInboundEventId(upsert);
+
+    const publish = await this.runWithRuntimeEffectLease(upsert, () =>
+      this.streamProducerService.send(
+        payload.kafka_topic,
+        upsert,
+        payload.kafka_key
+      )
     );
+    if (!publish.executed) {
+      throw new Error('wwebjs_inbound_spool_runtime_lease_revoked');
+    }
   }
 
   private buildSpoolPayload(
@@ -854,6 +1350,11 @@ export class WwebjsIncomingMessageService {
     metadata: IKafkaSendMetadata,
     kafkaKey?: string | Buffer
   ): IInboundMessageSpoolPayload {
+    const eventId = ensureInboundEventId(upsert);
+    const connectionEpoch = upsert.connection_epoch?.trim();
+    if (!connectionEpoch) {
+      throw new TypeError('WWebJS upsert is missing a connection epoch');
+    }
     const resolvedKafkaKey = buildUpsertMessageKafkaKey(
       upsert,
       typeof kafkaKey === 'string'
@@ -863,19 +1364,24 @@ export class WwebjsIncomingMessageService {
 
     return {
       provider: 'wwebjs',
+      source_provider: 'wwebjs',
       account_id: upsert.account_id,
       worker_id: upsert.worker_id,
+      runtime_generation: String(upsert.runtime_generation),
+      connection_epoch: connectionEpoch,
       event_source: metadata.event,
       dedupe_key:
-        typeof kafkaKey === 'string'
+        eventId ??
+        (typeof kafkaKey === 'string'
           ? kafkaKey
-          : (metadata.messageId ?? metadata.messageKeyId ?? resolvedKafkaKey),
+          : (metadata.messageId ?? metadata.messageKeyId ?? resolvedKafkaKey)),
       kafka_topic: topic,
       kafka_key: resolvedKafkaKey,
       upsert,
       raw_meta: {
         message_id: metadata.messageId,
         message_key_id: metadata.messageKeyId,
+        event_id: eventId,
         type: upsert.type,
       },
       received_at: new Date().toISOString(),
@@ -910,9 +1416,11 @@ export class WwebjsIncomingMessageService {
       });
     } catch (error) {
       console.error('[wwebjs] failed to park incoming message:', {
-        id: getMessageIdSerialized(msg),
+        message_id_hash: hashWwebjsIncomingLogIdentifier(
+          getMessageIdSerialized(msg)
+        ),
         reason,
-        error: error instanceof Error ? error.message : String(error),
+        ...workerErrorDiagnostics(error),
       });
     }
   }
@@ -1027,11 +1535,19 @@ export class WwebjsIncomingMessageService {
         processedDue += 1;
 
         try {
-          await this.streamProducerService.send(
-            item.topic,
+          const publish = await this.runWithRuntimeEffectLease(
             item.payload,
-            item.kafkaKey
+            () =>
+              this.streamProducerService.send(
+                item.topic,
+                item.payload,
+                item.kafkaKey
+              )
           );
+          if (!publish.executed) {
+            this.discardKafkaRetryItem(item, 'connection_scope_revoked');
+            continue;
+          }
           const lifecyclePayload = isUpsertMessagePayload(item.payload)
             ? item.payload
             : undefined;
@@ -1182,15 +1698,18 @@ export class WwebjsIncomingMessageService {
     console.error('[wwebjs] Discarding kafka retry item:', {
       reason,
       topic: item.topic,
-      kafka_key: kafkaKey,
+      kafka_key_hash: hashWwebjsIncomingLogIdentifier(kafkaKey),
       event: item.metadata.event,
-      message_id: item.metadata.messageId,
-      message_key_id: item.metadata.messageKeyId,
-      attempts: item.attempts,
+      message_id_hash: hashWwebjsIncomingLogIdentifier(item.metadata.messageId),
+      message_key_id_hash: hashWwebjsIncomingLogIdentifier(
+        item.metadata.messageKeyId
+      ),
+      attempts:
+        typeof details.attempts === 'number' ? details.attempts : item.attempts,
       max_attempts: this.KAFKA_RETRY_MAX_ATTEMPTS,
       queue_size: this.kafkaRetryQueue.length,
-      error: error ? errorMessage : undefined,
-      ...details,
+      ...(error ? workerErrorDiagnostics(error) : {}),
+      detail_fields: Object.keys(details).sort(),
     });
   }
 
@@ -1200,6 +1719,9 @@ export class WwebjsIncomingMessageService {
     metadata: IKafkaSendMetadata,
     kafkaKey?: string | Buffer
   ): Promise<boolean> {
+    if (!(await this.prepareFencedPayload(payload))) {
+      return false;
+    }
     const lifecyclePayload = isUpsertMessagePayload(payload)
       ? payload
       : undefined;
@@ -1230,19 +1752,21 @@ export class WwebjsIncomingMessageService {
         metadata,
         resolvedKafkaKey
       );
-      const published = await this.inboundMessageSpoolService.publish(
-        spoolPayload,
-        (payload) => this.publishSpoolPayload(payload)
+      const spool = await this.runWithRuntimeEffectLease(lifecyclePayload, () =>
+        this.inboundMessageSpoolService.publish(spoolPayload, (payload) =>
+          this.publishSpoolPayload(payload)
+        )
       );
+      const accepted = spool.executed && spool.value === true;
       this.logLifecycleForUpsert(lifecyclePayload, {
         stage: 'wwebjs.kafka.spool',
         decision: 'persist_before_publish',
-        outcome: published ? 'published' : 'spooled',
+        outcome: accepted ? 'queued' : 'rejected',
         topic,
         kafka_key: spoolPayload.kafka_key,
         metadata_event: metadata.event,
       });
-      return published;
+      return accepted;
     }
 
     for (
@@ -1251,7 +1775,12 @@ export class WwebjsIncomingMessageService {
       attempt++
     ) {
       try {
-        await this.streamProducerService.send(topic, payload, resolvedKafkaKey);
+        const publish = await this.runWithRuntimeEffectLease(payload, () =>
+          this.streamProducerService.send(topic, payload, resolvedKafkaKey)
+        );
+        if (!publish.executed) {
+          return false;
+        }
         if (lifecyclePayload) {
           this.logLifecycleForUpsert(lifecyclePayload, {
             stage: 'wwebjs.kafka.publish.success',
@@ -1317,6 +1846,10 @@ export class WwebjsIncomingMessageService {
       }
     }
 
+    if (!(await this.prepareFencedPayload(payload))) {
+      return false;
+    }
+
     const nextAttemptAt =
       Date.now() +
       this.computeKafkaRetryDelayMs(this.KAFKA_IMMEDIATE_SEND_ATTEMPTS);
@@ -1338,194 +1871,248 @@ export class WwebjsIncomingMessageService {
     return false;
   }
 
-  bindTo(client: Client): void {
+  bindTo(
+    client: Client,
+    authorization?: IWhatsappRuntimeFenceConnectionAuthorization
+  ): void {
     if (this.currentClient === client) {
       return;
     }
 
+    this.stopActiveConnectionScope();
+    const connectionEpoch = authorization?.connection_epoch.trim();
+    const connectionAttemptId = authorization?.connection_attempt_id?.trim();
+    if (authorization && !connectionEpoch) {
+      throw new TypeError('wwebjs_runtime_fence_authorization_invalid');
+    }
+    this.currentConnectionAuthorization = connectionEpoch
+      ? {
+          connection_epoch: connectionEpoch,
+          connection_attempt_id: connectionAttemptId || undefined,
+        }
+      : undefined;
     this.currentClient = client;
-    this.listenerAttachedAtSeconds = Math.floor(Date.now() / 1000);
+    const scoped = <TArgs extends unknown[]>(
+      listener: (...args: TArgs) => void
+    ): ((...args: TArgs) => void) => {
+      return (...args: TArgs) => {
+        const connectionScope = this.activeConnectionScope;
+        if (
+          !connectionScope ||
+          !this.connectionReady ||
+          this.currentClient !== client
+        ) {
+          return;
+        }
+
+        this.connectionScopeStorage.run(connectionScope, () =>
+          listener(...args)
+        );
+      };
+    };
+    this.listenerAttachedAtSeconds = 0;
     this.connectionReady = false;
     this.connectionReadyAtMs = 0;
     this.clearHistoryEventBuffer();
     this.processedHistoryMessages.clear();
     this.historyEventSequence = 0;
     this.historyEventPublishedCount = 0;
-    client.on('message', (msg: Message) => {
-      this.logEvent('message', {
-        id: getMessageIdSerialized(msg),
-        fromMe: msg.fromMe,
-        from: msg.from,
-        to: msg.to,
-        type: msg.type,
-      });
-      this.logLifecycleForMessage(msg, {
-        stage: 'wwebjs.incoming.received_raw',
-        decision: 'receive_provider_message',
-        outcome: 'received',
-        event_source: 'message',
-        raw_payload: msg,
-      });
+    client.on(
+      'message',
+      scoped((msg: Message) => {
+        this.logEvent('message', {
+          id: getMessageIdSerialized(msg),
+          fromMe: msg.fromMe,
+          from: msg.from,
+          to: msg.to,
+          type: msg.type,
+        });
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.received_raw',
+          decision: 'receive_provider_message',
+          outcome: 'received',
+          event_source: 'message',
+          raw_payload: msg,
+        });
 
-      if (this.enqueueHistoricalMessageIfNeeded(msg, 'message')) {
-        return;
-      }
+        if (this.enqueueHistoricalMessageIfNeeded(msg, 'message')) {
+          return;
+        }
 
-      if (this.shouldSkipIncomingMessage(msg, 'message')) {
-        return;
-      }
+        if (this.shouldSkipIncomingMessage(msg, 'message')) {
+          return;
+        }
 
-      this.logLifecycleForMessage(msg, {
-        stage: 'wwebjs.incoming.received',
-        decision: 'receive_provider_message',
-        outcome: 'received',
-        raw_payload: msg,
-      });
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.received',
+          decision: 'receive_provider_message',
+          outcome: 'received',
+          raw_payload: msg,
+        });
 
-      void this.handleIncomingMessage(msg, { eventSource: 'message' });
-    });
-    client.on('message_ciphertext', (msg: Message) => {
-      this.logEvent('message_ciphertext', {
-        id: getMessageIdSerialized(msg),
-        fromMe: msg.fromMe,
-        from: msg.from,
-        to: msg.to,
-        type: msg.type,
-      });
-      this.logLifecycleForMessage(msg, {
-        stage: 'wwebjs.incoming.received_raw',
-        decision: 'receive_provider_message',
-        outcome: 'received',
-        event_source: 'message_ciphertext',
-        raw_payload: msg,
-      });
+        void this.handleIncomingMessage(msg, { eventSource: 'message' });
+      })
+    );
+    client.on(
+      'message_ciphertext',
+      scoped((msg: Message) => {
+        this.logEvent('message_ciphertext', {
+          id: getMessageIdSerialized(msg),
+          fromMe: msg.fromMe,
+          from: msg.from,
+          to: msg.to,
+          type: msg.type,
+        });
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.received_raw',
+          decision: 'receive_provider_message',
+          outcome: 'received',
+          event_source: 'message_ciphertext',
+          raw_payload: msg,
+        });
 
-      if (!this.shouldHandleCiphertextMessage(msg)) {
-        return;
-      }
+        if (!this.shouldHandleCiphertextMessage(msg)) {
+          return;
+        }
 
-      if (this.enqueueHistoricalMessageIfNeeded(msg, 'message_ciphertext')) {
-        return;
-      }
+        if (this.enqueueHistoricalMessageIfNeeded(msg, 'message_ciphertext')) {
+          return;
+        }
 
-      if (this.shouldSkipIncomingMessage(msg, 'message_ciphertext')) {
-        return;
-      }
+        if (this.shouldSkipIncomingMessage(msg, 'message_ciphertext')) {
+          return;
+        }
 
-      void this.handleIncomingMessage(msg, {
-        eventSource: 'message_ciphertext',
-      });
-    });
-    client.on('message_ciphertext_failed', (msg: Message) => {
-      this.logEvent('message_ciphertext_failed', {
-        id: getMessageIdSerialized(msg),
-        fromMe: msg.fromMe,
-        from: msg.from,
-        to: msg.to,
-        type: msg.type,
-      });
-      this.logLifecycleForMessage(msg, {
-        stage: 'wwebjs.incoming.received_raw',
-        decision: 'receive_provider_message',
-        outcome: 'received',
-        event_source: 'message_ciphertext_failed',
-        raw_payload: msg,
-      });
+        void this.handleIncomingMessage(msg, {
+          eventSource: 'message_ciphertext',
+        });
+      })
+    );
+    client.on(
+      'message_ciphertext_failed',
+      scoped((msg: Message) => {
+        this.logEvent('message_ciphertext_failed', {
+          id: getMessageIdSerialized(msg),
+          fromMe: msg.fromMe,
+          from: msg.from,
+          to: msg.to,
+          type: msg.type,
+        });
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.received_raw',
+          decision: 'receive_provider_message',
+          outcome: 'received',
+          event_source: 'message_ciphertext_failed',
+          raw_payload: msg,
+        });
 
-      if (this.shouldSkipCiphertextFailedMessage(msg)) {
-        return;
-      }
+        if (this.shouldSkipCiphertextFailedMessage(msg)) {
+          return;
+        }
 
-      this.handleCiphertextFailed(msg);
+        this.handleCiphertextFailed(msg);
 
-      if (
-        this.enqueueHistoricalMessageIfNeeded(msg, 'message_ciphertext_failed')
-      ) {
-        return;
-      }
+        if (
+          this.enqueueHistoricalMessageIfNeeded(
+            msg,
+            'message_ciphertext_failed'
+          )
+        ) {
+          return;
+        }
 
-      if (this.shouldSkipIncomingMessage(msg, 'message_ciphertext')) {
-        return;
-      }
+        if (this.shouldSkipIncomingMessage(msg, 'message_ciphertext')) {
+          return;
+        }
 
-      void this.handleIncomingMessage(msg, {
-        eventSource: 'message_ciphertext',
-      });
-    });
-    client.on('message_create', (msg: Message) => {
-      this.logEvent('message_create', {
-        id: getMessageIdSerialized(msg),
-        fromMe: msg.fromMe,
-        from: msg.from,
-        to: msg.to,
-        type: msg.type,
-      });
-      this.logLifecycleForMessage(msg, {
-        stage: 'wwebjs.incoming.received_raw',
-        decision: 'receive_provider_message',
-        outcome: 'received',
-        event_source: 'message_create',
-        raw_payload: msg,
-      });
+        void this.handleIncomingMessage(msg, {
+          eventSource: 'message_ciphertext',
+        });
+      })
+    );
+    client.on(
+      'message_create',
+      scoped((msg: Message) => {
+        this.logEvent('message_create', {
+          id: getMessageIdSerialized(msg),
+          fromMe: msg.fromMe,
+          from: msg.from,
+          to: msg.to,
+          type: msg.type,
+        });
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.received_raw',
+          decision: 'receive_provider_message',
+          outcome: 'received',
+          event_source: 'message_create',
+          raw_payload: msg,
+        });
 
-      if (this.enqueueHistoricalMessageIfNeeded(msg, 'message_create')) {
-        return;
-      }
+        if (this.enqueueHistoricalMessageIfNeeded(msg, 'message_create')) {
+          return;
+        }
 
-      if (!this.shouldHandleFromMeCreatedMessage(msg)) {
-        return;
-      }
+        if (!this.shouldHandleFromMeCreatedMessage(msg)) {
+          return;
+        }
 
-      if (this.shouldSkipIncomingMessage(msg, 'message_create')) {
-        return;
-      }
+        if (this.shouldSkipIncomingMessage(msg, 'message_create')) {
+          return;
+        }
 
-      this.logLifecycleForMessage(msg, {
-        stage: 'wwebjs.incoming.received',
-        decision: 'receive_provider_message',
-        outcome: 'received',
-        reason: 'from_me_external',
-        raw_payload: msg,
-      });
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.received',
+          decision: 'receive_provider_message',
+          outcome: 'received',
+          reason: 'from_me_external',
+          raw_payload: msg,
+        });
 
-      void this.handleIncomingMessage(msg, { eventSource: 'message_create' });
-    });
-    client.on('message_revoke_everyone', (after: Message, before?: Message) => {
-      this.logEvent('message_revoke_everyone', {
-        afterId: getMessageIdSerialized(after),
-        beforeId: before ? getMessageIdSerialized(before) : undefined,
-        fromMe: after.fromMe,
-        from: after.from,
-        to: after.to,
-        type: after.type,
-        raw_payload: { after, before },
-      });
+        void this.handleIncomingMessage(msg, { eventSource: 'message_create' });
+      })
+    );
+    client.on(
+      'message_revoke_everyone',
+      scoped((after: Message, before?: Message) => {
+        this.logEvent('message_revoke_everyone', {
+          afterId: getMessageIdSerialized(after),
+          beforeId: before ? getMessageIdSerialized(before) : undefined,
+          fromMe: after.fromMe,
+          from: after.from,
+          to: after.to,
+          type: after.type,
+          raw_payload: { after, before },
+        });
 
-      if (this.shouldSkipIncomingEventMessage(after)) {
-        return;
-      }
+        if (this.shouldSkipIncomingEventMessage(after)) {
+          return;
+        }
 
-      void this.handleRevokeEveryone(after, before);
-    });
-    client.on('message_revoke_me', (msg: Message) => {
-      this.logEvent('message_revoke_me', {
-        id: getMessageIdSerialized(msg),
-        fromMe: msg.fromMe,
-        from: msg.from,
-        to: msg.to,
-        type: msg.type,
-        raw_payload: msg,
-      });
+        void this.handleRevokeEveryone(after, before);
+      })
+    );
+    client.on(
+      'message_revoke_me',
+      scoped((msg: Message) => {
+        this.logEvent('message_revoke_me', {
+          id: getMessageIdSerialized(msg),
+          fromMe: msg.fromMe,
+          from: msg.from,
+          to: msg.to,
+          type: msg.type,
+          raw_payload: msg,
+        });
 
-      if (this.shouldSkipIncomingEventMessage(msg)) {
-        return;
-      }
+        if (this.shouldSkipIncomingEventMessage(msg)) {
+          return;
+        }
 
-      void this.handleRevokeMe(msg);
-    });
+        void this.handleRevokeMe(msg);
+      })
+    );
     client.on(
       'message_edit',
-      (message: Message, newBody: string, prevBody: string) => {
+      scoped((message: Message, newBody: string, prevBody: string) => {
         this.logEvent('message_edit', {
           id: getMessageIdSerialized(message),
           fromMe: message.fromMe,
@@ -1542,85 +2129,98 @@ export class WwebjsIncomingMessageService {
         }
 
         void this.handleMessageEdit(message, newBody, prevBody);
-      }
+      })
     );
-    client.on('message_reaction', (reaction: WwebjsReactionEvent) => {
-      const reactionId = getReactionIdSerialized(reaction);
-      const parentMsgId = getReactionMsgIdSerialized(reaction);
-
-      this.logEvent('message_reaction', {
-        reactionId,
-        parentMsgId,
-        senderId: getReactionSenderId(reaction),
-        emoji: getReactionEmoji(reaction),
-        raw_payload: reaction,
-      });
-
-      const reactionRemote = getRemoteFromSerializedMessageId(reactionId);
-      const parentRemote = parentMsgId
-        ? getRemoteFromSerializedMessageId(parentMsgId)
-        : undefined;
-      if (this.shouldSkipIncomingEventByJids([reactionRemote, parentRemote])) {
-        return;
-      }
-
-      const reactionValidation = this.shouldSkipReactionEvent(
-        reactionId,
-        parentMsgId,
-        reaction
-      );
-      if (!reactionValidation.allowed || !reactionValidation.timestampSeconds) {
-        return;
-      }
-
-      void this.handleMessageReaction(
-        client,
-        reaction,
-        reactionValidation.timestampSeconds
-      );
-    });
     client.on(
-      'call',
-      (call: {
-        id?: string;
-        from?: string;
-        fromMe?: boolean;
-        timestamp?: number;
-        isVideo?: boolean;
-        reject?: () => Promise<void>;
-      }) => {
-        this.logEvent('call', {
-          id: call.id,
-          from: call.from,
-          fromMe: call.fromMe,
-          timestamp: call.timestamp,
-          isVideo: call.isVideo,
-          raw_payload: call,
+      'message_reaction',
+      scoped((reaction: WwebjsReactionEvent) => {
+        const reactionId = getReactionIdSerialized(reaction);
+        const parentMsgId = getReactionMsgIdSerialized(reaction);
+
+        this.logEvent('message_reaction', {
+          reactionId,
+          parentMsgId,
+          senderId: getReactionSenderId(reaction),
+          emoji: getReactionEmoji(reaction),
+          raw_payload: reaction,
         });
 
-        void this.handleCall(call);
-      }
+        const reactionRemote = getRemoteFromSerializedMessageId(reactionId);
+        const parentRemote = parentMsgId
+          ? getRemoteFromSerializedMessageId(parentMsgId)
+          : undefined;
+        if (
+          this.shouldSkipIncomingEventByJids([reactionRemote, parentRemote])
+        ) {
+          return;
+        }
+
+        const reactionValidation = this.shouldSkipReactionEvent(
+          reactionId,
+          parentMsgId,
+          reaction
+        );
+        if (
+          !reactionValidation.allowed ||
+          !reactionValidation.timestampSeconds
+        ) {
+          return;
+        }
+
+        void this.handleMessageReaction(
+          client,
+          reaction,
+          reactionValidation.timestampSeconds
+        );
+      })
     );
-    client.on('message_ack', (msg: Message, ack: number) => {
-      this.logEvent('message_ack', {
-        id: getMessageIdSerialized(msg),
-        fromMe: msg.fromMe,
-        from: msg.from,
-        to: msg.to,
-        type: msg.type,
-        ack,
-        raw_payload: msg,
-      });
+    client.on(
+      'call',
+      scoped(
+        (call: {
+          id?: string;
+          from?: string;
+          fromMe?: boolean;
+          timestamp?: number;
+          isVideo?: boolean;
+          reject?: () => Promise<void>;
+        }) => {
+          this.logEvent('call', {
+            id: call.id,
+            from: call.from,
+            fromMe: call.fromMe,
+            timestamp: call.timestamp,
+            isVideo: call.isVideo,
+            raw_payload: call,
+          });
 
-      if (this.shouldSkipIncomingEventMessage(msg)) {
-        return;
-      }
+          void this.handleCall(call);
+        }
+      )
+    );
+    client.on(
+      'message_ack',
+      scoped((msg: Message, ack: number) => {
+        this.logEvent('message_ack', {
+          id: getMessageIdSerialized(msg),
+          fromMe: msg.fromMe,
+          from: msg.from,
+          to: msg.to,
+          type: msg.type,
+          ack,
+          raw_payload: msg,
+        });
 
-      void this.handleMessageAck(msg, ack);
-    });
+        if (this.shouldSkipIncomingEventMessage(msg)) {
+          return;
+        }
+
+        void this.handleMessageAck(msg, ack);
+      })
+    );
     client.on(
       'message_pinned',
-      (message: Message, pinData?: IWwebjsPinEventData) => {
+      scoped((message: Message, pinData?: IWwebjsPinEventData) => {
         this.logEvent('message_pinned', {
           id: getMessageIdSerialized(message),
           fromMe: message.fromMe,
@@ -1639,7 +2239,7 @@ export class WwebjsIncomingMessageService {
         }
 
         void this.handlePinnedMessage(message, pinData);
-      }
+      })
     );
   }
 
@@ -1651,22 +2251,112 @@ export class WwebjsIncomingMessageService {
     return client ? this.currentClient === client : true;
   }
 
-  public markConnectionReady(): void {
-    if (!this.currentClient) {
-      return;
+  /**
+   * Acquires the database/Redis runtime fence without opening the incoming
+   * event bridge yet. Connection orchestration uses this as the barrier before
+   * Kafka consumers are allowed to resume.
+   */
+  public prepareConnectionFence(): Promise<boolean> {
+    const client = this.currentClient;
+    if (!client) {
+      return Promise.resolve(false);
     }
 
+    const existingScope = this.activeConnectionScope;
+    if (existingScope) {
+      return this.waitForPreparedConnectionFence(client, existingScope);
+    }
+
+    const connectionScope = this.activateConnectionScope();
+    return this.waitForPreparedConnectionFence(client, connectionScope);
+  }
+
+  public markConnectionReady(): Promise<boolean> {
+    const client = this.currentClient;
+    if (!client) {
+      return Promise.resolve(false);
+    }
+
+    const existingScope = this.activeConnectionScope;
+    if (this.connectionReady && existingScope) {
+      return this.waitForPreparedConnectionFence(client, existingScope);
+    }
+
+    const connectionScope = existingScope ?? this.activateConnectionScope();
     this.connectionReady = true;
     this.connectionReadyAtMs = Date.now();
     this.listenerAttachedAtSeconds = Math.floor(Date.now() / 1000);
-    if (this.historyEventBuffer.size > 0) {
-      void this.flushHistoryEventBuffer();
+    return connectionScope.activation.then(
+      (accepted) => {
+        if (
+          !accepted ||
+          this.currentClient !== client ||
+          this.activeConnectionScope !== connectionScope
+        ) {
+          if (this.activeConnectionScope === connectionScope) {
+            this.markConnectionUnavailable();
+          }
+          return false;
+        }
+
+        if (this.historyEventBuffer.size > 0) {
+          void this.flushHistoryEventBuffer();
+        }
+        void this.reconcileRecentHistoryFromChats(client);
+        return true;
+      },
+      () => {
+        if (this.activeConnectionScope === connectionScope) {
+          this.markConnectionUnavailable();
+        }
+        return false;
+      }
+    );
+  }
+
+  private waitForPreparedConnectionFence(
+    client: Client,
+    connectionScope: WwebjsConnectionScope
+  ): Promise<boolean> {
+    return connectionScope.activation.then(
+      (accepted) =>
+        accepted &&
+        this.currentClient === client &&
+        this.activeConnectionScope === connectionScope,
+      () => false
+    );
+  }
+
+  public markConnectionUnavailable(client?: Client): void {
+    if (client && this.currentClient !== client) {
+      return;
     }
-    void this.reconcileRecentHistoryFromChats(this.currentClient);
+
+    this.connectionReady = false;
+    this.connectionReadyAtMs = 0;
+    this.listenerAttachedAtSeconds = 0;
+    this.stopActiveConnectionScope();
+    if (this.kafkaRetryTimer) {
+      clearTimeout(this.kafkaRetryTimer);
+      this.kafkaRetryTimer = undefined;
+    }
+    this.kafkaRetryNextRunAt = 0;
+    this.kafkaRetryQueue.length = 0;
+    this.clearHistoryEventBuffer();
+  }
+
+  public configureAuxiliaryProviderFailureRecovery(
+    recover: (
+      client: Client,
+      error: unknown,
+      options: { timedOut: boolean }
+    ) => void
+  ): void {
+    this.auxiliaryProviderFailureRecovery = recover;
   }
 
   private async reconcileRecentHistoryFromChats(client: Client): Promise<void> {
-    if (!HISTORY_RECONCILIATION_ENABLED) {
+    if (!isHistoryReconciliationEnabled()) {
       return;
     }
 
@@ -1680,7 +2370,14 @@ export class WwebjsIncomingMessageService {
     const startedAt = Date.now();
     let chats: unknown[];
     try {
-      chats = await getChats.call(client);
+      chats = await this.invokeAuxiliaryProvider(
+        client,
+        'history_fetch',
+        () => getChats.call(client),
+        undefined,
+        this.AUXILIARY_PROVIDER_TIMEOUT_MS,
+        { recoverRuntimeOnFailure: false }
+      );
     } catch (error) {
       this.logEvent('history_fetch_failed', {
         step: 'get_chats',
@@ -1706,29 +2403,48 @@ export class WwebjsIncomingMessageService {
     this.cleanupProcessedHistoryMessages(Date.now());
     const candidates = new Map<string, IWwebjsHistoryFetchCandidate>();
     for (const chat of recentChats) {
-      if (this.getRemainingHistoryEventLimit() <= 0) {
+      const remainingLimit = this.getRemainingHistoryEventLimit();
+      if (remainingLimit <= 0 || candidates.size >= remainingLimit) {
         break;
       }
 
       if (typeof chat.fetchMessages !== 'function') {
         continue;
       }
+      const fetchMessages = chat.fetchMessages.bind(chat);
 
       let messages: Message[];
       try {
-        messages = await chat.fetchMessages({
-          limit: HISTORY_RECONCILIATION_MESSAGE_LIMIT,
-        });
+        messages = await this.invokeAuxiliaryProvider(
+          client,
+          'history_fetch',
+          () =>
+            fetchMessages({
+              limit: Math.min(
+                HISTORY_FETCH_PER_CHAT_LIMIT,
+                remainingLimit - candidates.size
+              ),
+            }),
+          undefined,
+          this.AUXILIARY_PROVIDER_TIMEOUT_MS,
+          { recoverRuntimeOnFailure: false }
+        );
       } catch (error) {
         this.logEvent('history_fetch_failed', {
           step: 'fetch_messages',
           chatId: this.getHistoryFetchChatId(chat),
           error: error instanceof Error ? error.message : String(error),
         });
+        if (isProviderAuxiliaryInvocationFenceError(error)) {
+          return;
+        }
         continue;
       }
 
       for (const msg of messages) {
+        if (candidates.size >= remainingLimit) {
+          break;
+        }
         const candidate = this.buildHistoryFetchCandidate(msg);
         if (!candidate) {
           continue;
@@ -2083,7 +2799,7 @@ export class WwebjsIncomingMessageService {
     msg: Message,
     source: WwebjsIncomingEventSource
   ): boolean {
-    if (!HISTORY_RECONCILIATION_ENABLED) {
+    if (!isHistoryReconciliationEnabled()) {
       return false;
     }
 
@@ -2162,20 +2878,17 @@ export class WwebjsIncomingMessageService {
   }
 
   private isTimestampWithinHistoryMaxAge(timestampMs: number): boolean {
-    return Date.now() - timestampMs <= HISTORY_RECONCILIATION_WINDOW_MS;
+    return timestampMs >= Date.now() - HISTORY_RECONCILIATION_WINDOW_MS;
   }
 
   private getHistoryMessageAgeStatus(msg: Message): IWwebjsHistoryAgeStatus {
     const timestampMs = this.getMessageTimestampMs(msg);
     if (!timestampMs) {
-      const canAcceptMissingTimestamp = this.canAcceptMissingHistoryTimestamp();
       return {
-        allowed: canAcceptMissingTimestamp,
+        allowed: false,
         timestampMs: null,
         ageMs: null,
-        reason: canAcceptMissingTimestamp
-          ? 'missing_timestamp_accepted_in_ready_grace'
-          : 'missing_timestamp',
+        reason: 'missing_timestamp',
       };
     }
 
@@ -2513,13 +3226,6 @@ export class WwebjsIncomingMessageService {
     this.historyEventBuffer.clear();
   }
 
-  private canAcceptMissingHistoryTimestamp(): boolean {
-    return (
-      HISTORY_RECONCILIATION_ENABLED &&
-      (!this.connectionReady || this.isWithinPostReadyHistoryGraceWindow())
-    );
-  }
-
   private isWithinPostReadyHistoryGraceWindow(now = Date.now()): boolean {
     return (
       this.connectionReady &&
@@ -2576,7 +3282,7 @@ export class WwebjsIncomingMessageService {
         : null;
     }
 
-    return this.canAcceptMissingHistoryTimestamp() ? Date.now() : null;
+    return null;
   }
 
   private async resolveMessageChatTimestampMs(
@@ -2719,26 +3425,7 @@ export class WwebjsIncomingMessageService {
   }
 
   private getSerializedId(value: unknown): string | undefined {
-    if (!value) return undefined;
-
-    if (typeof value === 'string') {
-      return getNonEmptyString(value);
-    }
-
-    if (typeof value !== 'object') {
-      return undefined;
-    }
-
-    const objectValue = value as Record<string, unknown>;
-    const directKeys = ['_serialized', 'id', 'stanzaId', 'stanzaID'];
-    for (const key of directKeys) {
-      const normalized = getNonEmptyString(objectValue[key]);
-      if (normalized) {
-        return normalized;
-      }
-    }
-
-    return undefined;
+    return extractWwebjsMessageId(value, { allowStanzaIdFallback: true });
   }
 
   private getPinParentMessageId(
@@ -3361,7 +4048,11 @@ export class WwebjsIncomingMessageService {
     }
 
     try {
-      const resolved = await getContactLidAndPhone.call(client, [lidJid]);
+      const resolved = await this.invokeAuxiliaryProvider(
+        client,
+        'incoming_lid_resolution',
+        () => getContactLidAndPhone.call(client, [lidJid])
+      );
       const first = Array.isArray(resolved) ? resolved[0] : resolved;
       if (!first || typeof first !== 'object') {
         return undefined;
@@ -3382,7 +4073,10 @@ export class WwebjsIncomingMessageService {
       }
 
       return this.normalizePhoneDigits(lidOrPhoneLike.split('@')[0]);
-    } catch {
+    } catch (error) {
+      if (isProviderAuxiliaryInvocationFenceError(error)) {
+        throw error;
+      }
       return undefined;
     }
   }
@@ -3392,7 +4086,11 @@ export class WwebjsIncomingMessageService {
     lidJid: string
   ): Promise<string | undefined> {
     try {
-      const [result] = await client.onWhatsApp([lidJid]);
+      const [result] = await this.invokeAuxiliaryProvider(
+        client,
+        'incoming_lid_resolution',
+        () => client.onWhatsApp([lidJid])
+      );
       const resolvedJid = result?.jid
         ? (normalizeJid(result.jid) ?? result.jid)
         : undefined;
@@ -3401,7 +4099,10 @@ export class WwebjsIncomingMessageService {
       }
 
       return this.normalizePhoneDigits(resolvedJid.split('@')[0]);
-    } catch {
+    } catch (error) {
+      if (isProviderAuxiliaryInvocationFenceError(error)) {
+        throw error;
+      }
       return undefined;
     }
   }
@@ -3419,38 +4120,48 @@ export class WwebjsIncomingMessageService {
     }
 
     try {
-      const result: string | null = await (
+      const evaluate = (
         pupPage as {
           evaluate: (
             fn: (jid: string) => Promise<string | null>,
             jid: string
           ) => Promise<string | null>;
         }
-      ).evaluate(async (jid: string) => {
-        try {
-          const win = globalThis as any;
-          const { lid, phone } = await win.WWebJS.enforceLidAndPnRetrieval(jid);
-          if (phone?._serialized) {
-            return phone._serialized as string;
-          }
-          if (lid?._serialized && !lid._serialized.endsWith('@lid')) {
-            return lid._serialized as string;
-          }
-          const phoneWid = win
-            .require('WAWebApiContact')
-            .getPhoneNumber(win.require('WAWebWidFactory').createWid(jid));
-          return (phoneWid?._serialized as string) ?? null;
-        } catch {
-          return null;
-        }
-      }, lidJid);
+      ).evaluate.bind(pupPage);
+      const result: string | null = await this.invokeAuxiliaryProvider(
+        client,
+        'incoming_lid_resolution',
+        () =>
+          evaluate(async (jid: string) => {
+            try {
+              const win = globalThis as any;
+              const { lid, phone } =
+                await win.WWebJS.enforceLidAndPnRetrieval(jid);
+              if (phone?._serialized) {
+                return phone._serialized as string;
+              }
+              if (lid?._serialized && !lid._serialized.endsWith('@lid')) {
+                return lid._serialized as string;
+              }
+              const phoneWid = win
+                .require('WAWebApiContact')
+                .getPhoneNumber(win.require('WAWebWidFactory').createWid(jid));
+              return (phoneWid?._serialized as string) ?? null;
+            } catch {
+              return null;
+            }
+          }, lidJid)
+      );
 
       if (!result || result.endsWith('@lid')) {
         return undefined;
       }
 
       return this.normalizePhoneDigits(result.split('@')[0]);
-    } catch {
+    } catch (error) {
+      if (isProviderAuxiliaryInvocationFenceError(error)) {
+        throw error;
+      }
       return undefined;
     }
   }
@@ -3460,13 +4171,17 @@ export class WwebjsIncomingMessageService {
     lidCandidate?: string
   ): void {
     console.warn('[wwebjs] remote_jid_resolution_fallback_failed', {
-      message_id: getMessageIdSerialized(msg),
-      id_remote_jid: getMessageIdRemoteJid(msg),
-      id_remote: getMessageIdRemote(msg),
-      from: msg.from,
-      to: msg.to,
+      message_id_hash: hashWwebjsIncomingLogIdentifier(
+        getMessageIdSerialized(msg)
+      ),
+      id_remote_jid_hash: hashWwebjsIncomingLogIdentifier(
+        getMessageIdRemoteJid(msg)
+      ),
+      id_remote_hash: hashWwebjsIncomingLogIdentifier(getMessageIdRemote(msg)),
+      from_hash: hashWwebjsIncomingLogIdentifier(msg.from),
+      to_hash: hashWwebjsIncomingLogIdentifier(msg.to),
       from_me: msg.fromMe,
-      lid_candidate: lidCandidate,
+      lid_candidate_hash: hashWwebjsIncomingLogIdentifier(lidCandidate),
       worker_id: wwebjsEnvironment.wwebjsWorkerId,
       account_id: wwebjsEnvironment.wwebjsAccountId,
     });
@@ -3713,7 +4428,18 @@ export class WwebjsIncomingMessageService {
         this.resolvePhotoForMessage(client, msg, resolvedJids),
       ]);
 
-      const upsert = await wwebjsMessageToUpsert(msg, resolvedJids, pushName);
+      const upsert = await wwebjsMessageToUpsert(
+        msg,
+        resolvedJids,
+        pushName,
+        undefined,
+        (invoke) =>
+          this.invokeAuxiliaryProvider(
+            client,
+            'incoming_quoted_message_lookup',
+            invoke
+          )
+      );
       if (!upsert) {
         this.logLifecycleForMessage(msg, {
           stage: 'wwebjs.incoming.skip',
@@ -3737,10 +4463,9 @@ export class WwebjsIncomingMessageService {
       upsert.source_provider = 'wwebjs';
       if (options.fromHistorySync) {
         upsert.from_history_sync = true;
-        if (!upsert.message.messageTimestamp) {
-          upsert.message.messageTimestamp =
-            this.getMessageTimestampSeconds(msg) ??
-            Math.floor(Date.now() / 1000);
+        const historyTimestamp = this.getMessageTimestampSeconds(msg);
+        if (!upsert.message.messageTimestamp && historyTimestamp) {
+          upsert.message.messageTimestamp = historyTimestamp;
         }
       }
       upsert.photo = photo ?? null;
@@ -3755,7 +4480,13 @@ export class WwebjsIncomingMessageService {
       });
 
       try {
-        await this.upsertMediaEnricher.enrich(upsert, msg);
+        await this.upsertMediaEnricher.enrich(upsert, msg, (invoke) =>
+          this.invokeAuxiliaryProvider(
+            client,
+            'incoming_media_download',
+            invoke
+          )
+        );
         this.logLifecycleForUpsert(upsert, {
           stage: 'wwebjs.media.enrich',
           decision: 'media_enrichment',
@@ -3816,15 +4547,17 @@ export class WwebjsIncomingMessageService {
         outcome: 'error',
         reason: 'exception',
         level: 'error',
-        error: error instanceof Error ? error.message : String(error),
+        ...workerErrorDiagnostics(error),
       });
       console.error('[wwebjs] handleIncomingMessage failed:', {
-        id: getMessageIdSerialized(msg),
+        message_id_hash: hashWwebjsIncomingLogIdentifier(
+          getMessageIdSerialized(msg)
+        ),
         fromMe: msg.fromMe,
-        from: msg.from,
-        to: msg.to,
+        from_hash: hashWwebjsIncomingLogIdentifier(msg.from),
+        to_hash: hashWwebjsIncomingLogIdentifier(msg.to),
         type: msg.type,
-        error: error instanceof Error ? error.message : String(error),
+        ...workerErrorDiagnostics(error),
       });
     }
   }
@@ -3841,9 +4574,11 @@ export class WwebjsIncomingMessageService {
     const subtype = getNonEmptyString(rawData?.subtype);
 
     console.warn('[wwebjs] message_ciphertext_failed', {
-      id: getMessageIdSerialized(msg),
-      from: msg.from,
-      to: msg.to,
+      message_id_hash: hashWwebjsIncomingLogIdentifier(
+        getMessageIdSerialized(msg)
+      ),
+      from_hash: hashWwebjsIncomingLogIdentifier(msg.from),
+      to_hash: hashWwebjsIncomingLogIdentifier(msg.to),
       type: msg.type,
       subtype,
       fromMe: msg.fromMe,
@@ -3878,7 +4613,13 @@ export class WwebjsIncomingMessageService {
       msg,
       resolvedJids,
       pushName,
-      pinData
+      pinData,
+      (invoke) =>
+        this.invokeAuxiliaryProvider(
+          client,
+          'incoming_quoted_message_lookup',
+          invoke
+        )
     );
     if (!upsert) return;
     upsert.photo = photo ?? null;
@@ -3930,7 +4671,10 @@ export class WwebjsIncomingMessageService {
         return undefined;
       }
       return this.extractNameFromContact(contact);
-    } catch {
+    } catch (error) {
+      if (isProviderAuxiliaryInvocationFenceError(error)) {
+        throw error;
+      }
       return undefined;
     }
   }
@@ -3955,7 +4699,11 @@ export class WwebjsIncomingMessageService {
         if (isMe) {
           continue;
         }
-      } catch {}
+      } catch (error) {
+        if (isProviderAuxiliaryInvocationFenceError(error)) {
+          throw error;
+        }
+      }
 
       filtered.push(candidate);
     }
@@ -4088,7 +4836,12 @@ export class WwebjsIncomingMessageService {
 
       if (typeof getContactById === 'function') {
         contactCandidates = await this.removeSelfContactCandidates(
-          (contactId) => getContactById.call(client, contactId),
+          (contactId) =>
+            this.invokeAuxiliaryProvider(
+              client,
+              'incoming_contact_lookup',
+              () => getContactById.call(client, contactId)
+            ),
           contactCandidates
         );
       }
@@ -4099,7 +4852,12 @@ export class WwebjsIncomingMessageService {
 
       if (typeof getContactById === 'function') {
         const contactName = await this.resolveNameFromContactCandidates(
-          (contactId) => getContactById.call(client, contactId),
+          (contactId) =>
+            this.invokeAuxiliaryProvider(
+              client,
+              'incoming_contact_lookup',
+              () => getContactById.call(client, contactId)
+            ),
           contactCandidates
         );
         if (contactName) {
@@ -4117,22 +4875,38 @@ export class WwebjsIncomingMessageService {
     }
 
     try {
-      const contact = await msg.getContact();
+      const contact = await this.invokeAuxiliaryProvider(
+        client,
+        'incoming_contact_lookup',
+        () => msg.getContact()
+      );
       const contactName = this.extractNameFromContact(contact);
       if (contactName) {
         return contactName;
       }
-    } catch {}
+    } catch (error) {
+      if (isProviderAuxiliaryInvocationFenceError(error)) {
+        throw error;
+      }
+    }
 
     try {
-      const chat = await msg.getChat();
+      const chat = await this.invokeAuxiliaryProvider(
+        client,
+        'incoming_contact_lookup',
+        () => msg.getChat()
+      );
       const chatName = normalizeNameCandidate(
         (chat as { name?: unknown } | undefined)?.name
       );
       if (chatName) {
         return chatName;
       }
-    } catch {}
+    } catch (error) {
+      if (isProviderAuxiliaryInvocationFenceError(error)) {
+        throw error;
+      }
+    }
 
     return undefined;
   }
@@ -4213,29 +4987,6 @@ export class WwebjsIncomingMessageService {
     return candidates.filter((candidate) => !selfCandidates.has(candidate));
   }
 
-  private async withProfileTimeout(
-    promise: Promise<string>
-  ): Promise<string | undefined> {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-    try {
-      const timeout = new Promise<undefined>((resolve) => {
-        timeoutId = setTimeout(
-          () => resolve(undefined),
-          this.PROFILE_PIC_TIMEOUT_MS
-        );
-      });
-      const result = await Promise.race([promise, timeout]);
-      return getNonEmptyString(result);
-    } catch {
-      return undefined;
-    } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-    }
-  }
-
   private async getCachedPhoto(
     candidates: string[]
   ): Promise<string | null | undefined> {
@@ -4254,7 +5005,7 @@ export class WwebjsIncomingMessageService {
 
         if (!(await this.isCachedPhotoUsable(cached))) {
           console.warn('[wwebjs] shared profile photo cache is not usable', {
-            candidate,
+            candidate_hash: hashWwebjsIncomingLogIdentifier(candidate),
             host: this.getUrlHost(cached),
           });
           continue;
@@ -4375,9 +5126,21 @@ export class WwebjsIncomingMessageService {
     candidates: string[]
   ): Promise<string | undefined> {
     for (const candidate of candidates) {
-      const photo = await this.withProfileTimeout(
-        client.getProfilePicUrl(candidate)
-      );
+      let photo: string | undefined;
+      try {
+        const resolved = await this.invokeAuxiliaryProvider(
+          client,
+          'incoming_profile_photo_lookup',
+          () => client.getProfilePicUrl(candidate),
+          undefined,
+          this.PROFILE_PIC_TIMEOUT_MS
+        );
+        photo = getNonEmptyString(resolved);
+      } catch (error) {
+        if (isProviderAuxiliaryInvocationFenceError(error)) {
+          throw error;
+        }
+      }
       if (photo) {
         return photo;
       }
@@ -4410,7 +5173,12 @@ export class WwebjsIncomingMessageService {
 
       if (typeof getContactById === 'function') {
         candidates = await this.removeSelfContactCandidates(
-          (contactId) => getContactById.call(client, contactId),
+          (contactId) =>
+            this.invokeAuxiliaryProvider(
+              client,
+              'incoming_contact_lookup',
+              () => getContactById.call(client, contactId)
+            ),
           candidates
         );
       }
@@ -4430,15 +5198,29 @@ export class WwebjsIncomingMessageService {
 
     if (!msg.fromMe) {
       try {
-        const contact = await msg.getContact();
-        const photoFromContact = await this.withProfileTimeout(
-          contact.getProfilePicUrl()
+        const contact = await this.invokeAuxiliaryProvider(
+          client,
+          'incoming_contact_lookup',
+          () => msg.getContact()
+        );
+        const photoFromContact = getNonEmptyString(
+          await this.invokeAuxiliaryProvider(
+            client,
+            'incoming_profile_photo_lookup',
+            () => contact.getProfilePicUrl(),
+            undefined,
+            this.PROFILE_PIC_TIMEOUT_MS
+          )
         );
         if (photoFromContact) {
           this.cachePhoto(candidates, photoFromContact);
           return photoFromContact;
         }
-      } catch {}
+      } catch (error) {
+        if (isProviderAuxiliaryInvocationFenceError(error)) {
+          throw error;
+        }
+      }
     }
 
     const photoFromClient = await this.fetchPhotoByCandidates(
@@ -4643,7 +5425,11 @@ export class WwebjsIncomingMessageService {
     let remoteJid = '';
     let remoteJidAlt: string | undefined;
     try {
-      const parentMsg = await client.getMessageById(parentMsgId);
+      const parentMsg = await this.invokeAuxiliaryProvider(
+        client,
+        'incoming_reaction_lookup',
+        () => client.getMessageById(parentMsgId)
+      );
       if (parentMsg) {
         if (this.shouldSkipIncomingEventMessage(parentMsg)) {
           return;
@@ -4657,7 +5443,11 @@ export class WwebjsIncomingMessageService {
         remoteJid = resolvedJids?.remoteJid ?? '';
         remoteJidAlt = resolvedJids?.remoteJidAlt;
       }
-    } catch {}
+    } catch (error) {
+      if (isProviderAuxiliaryInvocationFenceError(error)) {
+        throw error;
+      }
+    }
 
     if (!remoteJid) {
       const fallbackRemote = getRemoteFromSerializedMessageId(parentMsgId);
@@ -4720,6 +5510,39 @@ export class WwebjsIncomingMessageService {
     isVideo?: boolean;
     reject?: () => Promise<void>;
   }): Promise<void> {
+    const lease = await this.acquireActiveRuntimeEffectLease().catch(
+      (error) => {
+        console.error(
+          '[wwebjs] Failed to acquire call-event runtime effect lease',
+          workerErrorDiagnostics(error)
+        );
+        return null;
+      }
+    );
+    if (!lease) {
+      return;
+    }
+    try {
+      lease.assertOwned();
+      await this.handleCallWithinLease(call);
+    } finally {
+      await lease.release().catch((error) => {
+        console.error(
+          '[wwebjs] Failed to release call-event runtime effect lease',
+          workerErrorDiagnostics(error)
+        );
+      });
+    }
+  }
+
+  private async handleCallWithinLease(call: {
+    id?: string;
+    from?: string;
+    fromMe?: boolean;
+    timestamp?: number;
+    isVideo?: boolean;
+    reject?: () => Promise<void>;
+  }): Promise<void> {
     const client = this.currentClient;
     if (!client) return;
 
@@ -4774,43 +5597,29 @@ export class WwebjsIncomingMessageService {
         );
 
       if (callAction.reject_call && call.reject) {
+        if (!(await this.isConnectionScopeCurrent())) {
+          return;
+        }
         call.reject().catch(() => {});
       }
 
       const text = callAction.show_message_text?.trim();
       if (callAction.show_message_on_call && text) {
-        const callIdentity = call.id?.trim() || callKey;
-        const canSendAutoReply =
-          await this.acquireCallAutoReplySendAttempt(callIdentity);
-        if (!canSendAutoReply) {
+        if (!(await this.isConnectionScopeCurrent())) {
           return;
         }
-
-        const sentMessage = await this.sendMessageWithConfirmation(
+        await this.sendCallAutoReply({
           client,
-          jid,
-          text
-        );
-        const systemMessageUpsert = this.buildCallAutoReplySystemUpsert(
+          callId: call.id,
           jid,
           text,
-          getMessageIdSerialized(sentMessage),
-          sentMessage.timestamp
-        );
-        systemMessageUpsert.photo = photo ?? null;
-        await this.sendToKafkaWithRetry(
-          topic,
-          systemMessageUpsert,
-          {
-            event: 'incoming_call_auto_reply_system_upsert',
-            messageId: systemMessageUpsert.message.key.id,
-            messageKeyId: systemMessageUpsert.message.key.id,
-          },
-          systemMessageUpsert.message.key.id
-        );
+          photo: photo ?? null,
+        });
       }
     } catch (error) {
-      console.error('[wwebjs] resolveIncomingCallAction failed:', error);
+      console.error('[wwebjs] resolveIncomingCallAction failed', {
+        ...workerErrorDiagnostics(error),
+      });
     }
   }
 
@@ -4851,33 +5660,283 @@ export class WwebjsIncomingMessageService {
     };
   }
 
-  private getCallAutoReplyDedupeKey(callIdentity: string): string {
-    return `${this.CALL_AUTO_REPLY_DEDUPE_PREFIX}:wwebjs:${wwebjsEnvironment.wwebjsAccountId}:${wwebjsEnvironment.wwebjsWorkerId}:${callIdentity}`;
+  private getCallAutoReplyOperationId(callId?: string | null): string | null {
+    const normalizedCallId = callId?.trim();
+    if (!normalizedCallId) {
+      return null;
+    }
+
+    return `call-auto-reply:${wwebjsEnvironment.wwebjsWorkerId}:${normalizedCallId}`;
   }
 
-  private async acquireCallAutoReplySendAttempt(
-    callIdentity: string
-  ): Promise<boolean> {
-    const dedupeKey = this.getCallAutoReplyDedupeKey(callIdentity);
+  private getCallAutoReplyRecoveryResult(result: unknown): {
+    upsert: IUpsertMessage;
+    kafkaKey: string;
+  } | null {
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+
+    const stored = result as {
+      call_auto_reply_system_upsert?: unknown;
+      kafka_key?: unknown;
+    };
+    if (!isUpsertMessagePayload(stored.call_auto_reply_system_upsert)) {
+      return null;
+    }
+
+    const storedKafkaKey =
+      typeof stored.kafka_key === 'string' && stored.kafka_key.trim()
+        ? stored.kafka_key.trim()
+        : null;
+    const messageKeyId = stored.call_auto_reply_system_upsert.message?.key?.id;
+    const kafkaKey = storedKafkaKey ?? messageKeyId;
+    if (!kafkaKey) {
+      return null;
+    }
+
+    return {
+      upsert: stored.call_auto_reply_system_upsert,
+      kafkaKey,
+    };
+  }
+
+  private async recoverSucceededCallAutoReply(result: unknown): Promise<void> {
+    const recovery = this.getCallAutoReplyRecoveryResult(result);
+    if (!recovery) {
+      return;
+    }
+
+    const messageId = recovery.upsert.message?.key?.id;
+    await this.sendToKafkaWithRetry(
+      this.kafkaServiceQueueService.upsertMessage(),
+      recovery.upsert,
+      {
+        event: 'incoming_call_auto_reply_system_upsert_recovery',
+        messageId,
+        messageKeyId: messageId,
+      },
+      recovery.kafkaKey
+    );
+  }
+
+  private async releaseCallAutoReplyReservation(
+    claim: IMessageSendAcquiredClaim
+  ): Promise<void> {
+    await this.messageSendIdempotencyService
+      .releaseReservation(claim)
+      .catch(() => undefined);
+  }
+
+  private async sendCallAutoReply(input: {
+    client: Client;
+    callId?: string | null;
+    jid: string;
+    text: string;
+    photo: string | null;
+  }): Promise<void> {
+    const lease = await this.acquireActiveRuntimeEffectLease();
+    if (!lease) {
+      return;
+    }
+    try {
+      lease.assertOwned();
+      await this.sendCallAutoReplyWithinLease(input, () => lease.assertOwned());
+    } finally {
+      await lease.release().catch((error) => {
+        console.error(
+          '[wwebjs] Failed to release call auto-reply runtime effect lease',
+          workerErrorDiagnostics(error)
+        );
+      });
+    }
+  }
+
+  private async sendCallAutoReplyWithinLease(
+    input: {
+      client: Client;
+      callId?: string | null;
+      jid: string;
+      text: string;
+      photo: string | null;
+    },
+    assertEffectLeaseOwned: () => void
+  ): Promise<void> {
+    const capturedScope =
+      this.connectionScopeStorage.getStore() ?? this.activeConnectionScope;
+    const assertProviderAuthorityRegistered = (): void => {
+      assertEffectLeaseOwned();
+      if (
+        !capturedScope ||
+        this.activeConnectionScope !== capturedScope ||
+        this.currentClient !== input.client
+      ) {
+        throw new Error('call_auto_reply_connection_scope_revoked');
+      }
+    };
+    assertProviderAuthorityRegistered();
+    if (!(await this.isConnectionScopeCurrent())) {
+      return;
+    }
+    assertProviderAuthorityRegistered();
+
+    const operationId = this.getCallAutoReplyOperationId(input.callId);
+    if (!operationId) {
+      console.warn(
+        '[wwebjs] Call event without stable call id, skipping auto-reply'
+      );
+      return;
+    }
+
+    const claim = await this.messageSendIdempotencyService.claimOperation({
+      accountId: wwebjsEnvironment.wwebjsAccountId,
+      operationType: 'direct',
+      operationId,
+      meta: {
+        worker_id: wwebjsEnvironment.wwebjsWorkerId,
+        call_id: input.callId?.trim(),
+        source: 'incoming_call_auto_reply',
+      },
+    });
+    if (claim.status === 'error') {
+      throw new Error('call_auto_reply_idempotency_error');
+    }
+
+    if (claim.status === 'duplicate') {
+      if (!(await this.isConnectionScopeCurrent())) {
+        return;
+      }
+      if (claim.state === 'succeeded') {
+        await this.recoverSucceededCallAutoReply(claim.result);
+      }
+      return;
+    }
+
+    let providerLifecycleStarted = false;
+    let providerInvocationTransitionUncertain = false;
+    let providerStartRejected: unknown | null = null;
+    let providerInvocationPromise: Promise<void> | null = null;
+    let succeeded = false;
+    const beforeProviderInvoke: IProviderInvocationBoundary =
+      (): Promise<void> => {
+        if (providerStartRejected !== null) {
+          return Promise.reject(providerStartRejected);
+        }
+        if (providerLifecycleStarted) {
+          return Promise.resolve();
+        }
+        if (!providerInvocationPromise) {
+          providerInvocationPromise = (async () => {
+            assertProviderAuthorityRegistered();
+            if (!(await this.isConnectionScopeCurrent())) {
+              throw new Error('call_auto_reply_connection_scope_revoked');
+            }
+            assertProviderAuthorityRegistered();
+
+            providerInvocationTransitionUncertain = true;
+            const invoked =
+              await this.messageSendIdempotencyService.markProviderInvoked(
+                claim
+              );
+            if (invoked !== 'transitioned') {
+              throw new Error(`call_auto_reply_idempotency_${invoked}`);
+            }
+            providerInvocationTransitionUncertain = false;
+            providerLifecycleStarted = true;
+          })();
+        }
+        return providerInvocationPromise;
+      };
+    beforeProviderInvoke.assertActive = (): void => {
+      if (providerStartRejected !== null) {
+        throw providerStartRejected;
+      }
+      assertProviderAuthorityRegistered();
+      if (!providerLifecycleStarted) {
+        throw new Error('call_auto_reply_provider_boundary_not_started');
+      }
+    };
+    beforeProviderInvoke.onStartRejected = async (
+      error: unknown
+    ): Promise<void> => {
+      if (!providerLifecycleStarted) {
+        return;
+      }
+      providerStartRejected = error;
+      const reverted =
+        await this.messageSendIdempotencyService.revertProviderInvocationBeforeStart(
+          claim
+        );
+      if (reverted !== 'transitioned') {
+        throw new Error(
+          `call_auto_reply_idempotency_provider_start_revert_${reverted}`
+        );
+      }
+      providerLifecycleStarted = false;
+    };
 
     try {
-      const acquired = await this.redis.set(
-        dedupeKey,
-        '1',
-        'EX',
-        this.CALL_AUTO_REPLY_DEDUPE_TTL_SECONDS,
-        'NX'
+      const sentMessage = await this.sendMessageWithConfirmation(
+        input.client,
+        input.jid,
+        input.text,
+        beforeProviderInvoke
       );
+      const systemMessageUpsert = this.buildCallAutoReplySystemUpsert(
+        input.jid,
+        input.text,
+        getMessageIdSerialized(sentMessage),
+        sentMessage.timestamp
+      );
+      systemMessageUpsert.photo = input.photo;
+      const kafkaKey = systemMessageUpsert.message.key.id;
+      if (!kafkaKey) {
+        throw new Error('call_auto_reply_missing_system_message_id');
+      }
 
-      return acquired === 'OK';
+      if (!(await this.prepareFencedPayload(systemMessageUpsert))) {
+        throw new Error('call_auto_reply_connection_scope_revoked');
+      }
+
+      const persisted = await this.messageSendIdempotencyService.markSucceeded(
+        claim,
+        {
+          schema_version: 'call_auto_reply_system_upsert_recovery_v1',
+          provider: 'wwebjs',
+          account_id: wwebjsEnvironment.wwebjsAccountId,
+          worker_id: wwebjsEnvironment.wwebjsWorkerId,
+          operation_id: operationId,
+          call_auto_reply_system_upsert: systemMessageUpsert,
+          kafka_key: kafkaKey,
+        }
+      );
+      if (persisted !== 'transitioned') {
+        throw new Error(`call_auto_reply_idempotency_${persisted}`);
+      }
+      succeeded = true;
+
+      await this.sendToKafkaWithRetry(
+        this.kafkaServiceQueueService.upsertMessage(),
+        systemMessageUpsert,
+        {
+          event: 'incoming_call_auto_reply_system_upsert',
+          messageId: systemMessageUpsert.message.key.id,
+          messageKeyId: systemMessageUpsert.message.key.id,
+        },
+        kafkaKey
+      );
     } catch (error) {
-      console.error('[wwebjs] Failed to acquire call auto-reply dedupe key', {
-        error,
-        dedupeKey,
-        account_id: wwebjsEnvironment.wwebjsAccountId,
-        worker_id: wwebjsEnvironment.wwebjsWorkerId,
-      });
-      return false;
+      if (providerInvocationTransitionUncertain) {
+        // A timeout/disconnect while persisting `provider_invoked` has an
+        // unknown durable outcome. Never reopen this operation for replay.
+      } else if (!providerLifecycleStarted) {
+        await this.releaseCallAutoReplyReservation(claim);
+      } else if (!succeeded) {
+        await this.messageSendIdempotencyService
+          .markAmbiguous(claim, error)
+          .catch(() => undefined);
+      }
+      throw error;
     }
   }
 
@@ -4923,6 +5982,8 @@ export class WwebjsIncomingMessageService {
 
     const statusUpdate: IMessageStatusUpdate = {
       account_id: wwebjsEnvironment.wwebjsAccountId,
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      source_provider: 'wwebjs',
       message_id: messageId,
       patch,
       key: {
@@ -4931,11 +5992,13 @@ export class WwebjsIncomingMessageService {
         fromMe: true,
       },
     };
+    ensureMessageStatusEventId(statusUpdate);
 
     const topic = this.kafkaServiceQueueService.updateMessageStatus();
     const kafkaKey = MessageStatusService.statusKafkaKey(
       wwebjsEnvironment.wwebjsAccountId,
-      messageId
+      messageId,
+      wwebjsEnvironment.wwebjsWorkerId
     );
     await this.sendToKafkaWithRetry(
       topic,
@@ -4952,26 +6015,31 @@ export class WwebjsIncomingMessageService {
   private async sendMessageWithConfirmation(
     client: Client,
     jid: string,
-    text: string
+    text: string,
+    beforeProviderInvoke?: IProviderInvocationBoundary
   ): Promise<Message> {
     const startedAt = Date.now();
     console.info('[WwebjsSend][auto_reply] send_start', {
-      jid,
+      jid_hash: hashWwebjsIncomingLogIdentifier(jid),
       text_length: text.length,
       has_link: /https?:\/\//i.test(text),
     });
 
     let sentMessage: Message;
     try {
-      sentMessage = await client.sendMessage(jid, text, {
-        waitUntilMsgSent: true,
-      });
+      sentMessage = await this.invokeAuxiliaryProvider(
+        client,
+        'auto_reply_send',
+        () => client.sendMessage(jid, text, { waitUntilMsgSent: false }),
+        beforeProviderInvoke,
+        WWEBJS_SEND_MESSAGE_TIMEOUT_MS
+      );
     } catch (error) {
       console.error('[WwebjsSend][auto_reply] send_failed_before_ack', {
-        jid,
+        jid_hash: hashWwebjsIncomingLogIdentifier(jid),
         text_length: text.length,
         duration_ms: Date.now() - startedAt,
-        error: error instanceof Error ? error.message : String(error),
+        ...workerErrorDiagnostics(error),
       });
       throw error;
     }
@@ -4979,7 +6047,7 @@ export class WwebjsIncomingMessageService {
     const sentMessageId = getMessageIdSerialized(sentMessage);
     if (!sentMessageId) {
       console.error('[WwebjsSend][auto_reply] send_failed_without_message_id', {
-        jid,
+        jid_hash: hashWwebjsIncomingLogIdentifier(jid),
         text_length: text.length,
         duration_ms: Date.now() - startedAt,
       });
@@ -4989,58 +6057,63 @@ export class WwebjsIncomingMessageService {
     }
 
     console.info('[WwebjsSend][auto_reply] send_dispatched', {
-      jid,
-      message_id: sentMessageId,
+      jid_hash: hashWwebjsIncomingLogIdentifier(jid),
+      message_id_hash: hashWwebjsIncomingLogIdentifier(sentMessageId),
       text_length: text.length,
       duration_ms: Date.now() - startedAt,
     });
 
-    const outcome = await this.deliveryConfirmation.waitForOutcome(
-      sentMessageId,
-      this.SEND_CONFIRMATION_TIMEOUT_MS
-    );
-
-    if (outcome === 'sent') {
-      console.info('[WwebjsSend][auto_reply] send_ack_sent', {
-        jid,
-        message_id: sentMessageId,
-        duration_ms: Date.now() - startedAt,
-      });
-      return sentMessage;
-    }
-
-    const lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
-    const confirmationError =
-      outcome === 'failed'
-        ? new Error(
-            `Message delivery failed acknowledgement for ${sentMessageId}`
-          )
-        : new Error(
-            `Message delivery confirmation timeout for ${sentMessageId}`
-          );
-
-    console.warn('[WwebjsSend][auto_reply] send_ack_not_confirmed', {
+    this.deliveryConfirmation.markSent(sentMessageId);
+    void this.observeAutoReplyDeliveryConfirmation({
       jid,
-      message_id: sentMessageId,
-      outcome: lastOutcome,
-      duration_ms: Date.now() - startedAt,
-      error: confirmationError.message,
+      messageId: sentMessageId,
+      startedAt,
     });
+    return sentMessage;
+  }
 
-    throw new MessageDeliveryConfirmationFailedError({
-      maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
-      lastMessageId: sentMessageId,
-      lastOutcome,
-      cause: confirmationError,
-    });
+  private async observeAutoReplyDeliveryConfirmation(input: {
+    jid: string;
+    messageId: string;
+    startedAt: number;
+  }): Promise<void> {
+    try {
+      const outcome = await this.deliveryConfirmation.waitForOutcome(
+        input.messageId,
+        this.SEND_CONFIRMATION_TIMEOUT_MS
+      );
+      if (outcome === 'sent') {
+        console.info('[WwebjsSend][auto_reply] send_ack_sent', {
+          jid_hash: hashWwebjsIncomingLogIdentifier(input.jid),
+          message_id_hash: hashWwebjsIncomingLogIdentifier(input.messageId),
+          duration_ms: Date.now() - input.startedAt,
+        });
+        return;
+      }
+
+      console.warn('[WwebjsSend][auto_reply] send_ack_not_confirmed', {
+        jid_hash: hashWwebjsIncomingLogIdentifier(input.jid),
+        message_id_hash: hashWwebjsIncomingLogIdentifier(input.messageId),
+        outcome: outcome === 'failed' ? 'failed' : 'timeout',
+        duration_ms: Date.now() - input.startedAt,
+      });
+    } catch (error) {
+      console.warn(
+        '[WwebjsSend][auto_reply] send_ack_observation_failed_after_provider_accept',
+        {
+          jid_hash: hashWwebjsIncomingLogIdentifier(input.jid),
+          message_id_hash: hashWwebjsIncomingLogIdentifier(input.messageId),
+          duration_ms: Date.now() - input.startedAt,
+          ...workerErrorDiagnostics(error),
+        }
+      );
+    }
   }
 
   unbind(): void {
-    this.clearHistoryEventBuffer();
+    this.markConnectionUnavailable(this.currentClient);
     this.currentClient = undefined;
-    this.listenerAttachedAtSeconds = 0;
-    this.connectionReady = false;
-    this.connectionReadyAtMs = 0;
+    this.currentConnectionAuthorization = undefined;
     this.historyEventSequence = 0;
     this.historyEventPublishedCount = 0;
     this.processedCalls.clear();
@@ -5050,8 +6123,73 @@ export class WwebjsIncomingMessageService {
     this.processedReactions.clear();
   }
 
+  private async invokeAuxiliaryProvider<T>(
+    client: Client,
+    operation: string,
+    invoke: () => Promise<T>,
+    beforeProviderInvoke?: IProviderInvocationBoundary,
+    timeoutMs = this.AUXILIARY_PROVIDER_TIMEOUT_MS,
+    options: { recoverRuntimeOnFailure?: boolean } = {}
+  ): Promise<T> {
+    const recoverRuntimeOnFailure = options.recoverRuntimeOnFailure !== false;
+    const providerLease = this.auxiliaryProviderInvocationFence.acquire(client);
+    if (!providerLease) {
+      const stalled = this.auxiliaryProviderInvocationFence.isStalled(client);
+      const error = new ProviderInvocationInFlightError(
+        stalled ? 'stalled' : 'capacity'
+      );
+      if (stalled && recoverRuntimeOnFailure) {
+        this.markConnectionUnavailable(client);
+        this.auxiliaryProviderFailureRecovery?.(client, error, {
+          timedOut: true,
+        });
+      }
+      throw error;
+    }
+    try {
+      await beforeProviderInvoke?.();
+    } catch (error) {
+      providerLease.releaseBeforeStart();
+      throw error;
+    }
+
+    try {
+      beforeProviderInvoke?.assertActive?.();
+    } catch (error) {
+      providerLease.releaseBeforeStart();
+      await beforeProviderInvoke?.onStartRejected?.(error);
+      throw error;
+    }
+
+    const providerCall = providerLease.start(invoke);
+    try {
+      return await invokeProviderAuxiliaryWithTimeout({
+        provider: 'wwebjs',
+        operation,
+        timeoutMs,
+        invoke: () => providerCall,
+      });
+    } catch (error) {
+      if (error instanceof ProviderAuxiliaryInvocationTimeoutError) {
+        if (recoverRuntimeOnFailure) {
+          providerLease.markStalled();
+          this.markConnectionUnavailable(client);
+          this.auxiliaryProviderFailureRecovery?.(client, error, {
+            timedOut: true,
+          });
+        }
+      } else if (recoverRuntimeOnFailure) {
+        this.auxiliaryProviderFailureRecovery?.(client, error, {
+          timedOut: false,
+        });
+      }
+      throw error;
+    }
+  }
+
   async markRead(keys: IMessageKeyLike[]): Promise<void> {
-    if (!this.currentClient) {
+    const client = this.currentClient;
+    if (!client) {
       return;
     }
 
@@ -5064,13 +6202,9 @@ export class WwebjsIncomingMessageService {
       }
     }
 
-    const client = this.currentClient;
-    const promises: Promise<unknown>[] = [];
-    for (const chatId of chatIds) {
-      promises.push(client.sendSeen(chatId));
-    }
-
-    await Promise.all(promises);
+    await this.invokeAuxiliaryProvider(client, 'mark_read', () =>
+      Promise.all(Array.from(chatIds).map((chatId) => client.sendSeen(chatId)))
+    );
   }
 
   updateRejectCallConfig(reject: boolean): void {

@@ -29,13 +29,34 @@ import {
   IWorkerRuntimeHealthResponseProto,
 } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
 import {
+  IPrepareSessionStorageMigrationRequestProto,
+  IPrepareSessionStorageMigrationResponseProto,
+} from '@core/common/interfaces/ISessionStorageMigrationPrepareProto';
+import {
+  commandProtoToSessionStorageMigrationResponse,
+  type ICommandSessionStorageMigrationPrepareResponse,
+  sessionStorageMigrationPrepareToCommandProto,
+} from '@core/common/functions/sessionStorageMigrationCommandProtoMapper';
+import {
+  ILegacySessionVolumeDeleteRequestProto,
+  ILegacySessionVolumeDeleteResponseProto,
+} from '@core/common/interfaces/ILegacySessionVolumeDeleteProto';
+import {
   IActivateWarmWorkerRequestProto,
   ICreateWarmWorkerRequestProto,
   IDeleteWarmWorkerRequestProto,
   IWarmWorkerCommandResponseProto,
 } from '@core/common/interfaces/IWorkerWarmCommandProto';
+import {
+  BALANCE_WARM_CONTROL_TOKEN_METADATA,
+  balanceRuntimeFenceToken,
+  balanceWarmControlToken,
+} from '@core/common/functions/balanceRuntimeFenceCredential';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
+import { workerLifecycleBudgets } from '@core/common/functions/workerLifecycleBudgets';
+import type { IWorkerSelfHealingRequestProto } from '@core/common/interfaces/IWorkerSelfHealingRequestProto';
+import { BALANCER_RUNTIME_FENCE_TOKEN_METADATA } from '@core/common/functions/balancerRuntimeFenceAuth';
 
 const protoPath = resolveProtoPath('worker_command.proto');
 const packageDefinition = loadSync(protoPath, {
@@ -53,9 +74,40 @@ if (!WorkerCommandClient) {
   throw new Error('WorkerCommand client not found in proto');
 }
 
+function positiveTimeout(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 const GRPC_DEADLINE_MS = 10_000;
 const SECURE_IMPORT_GRPC_DEADLINE_MS = 120_000;
 const RUNTIME_HEALTH_GRPC_DEADLINE_MS = 10_000;
+const SESSION_STORAGE_MIGRATION_GRPC_DEADLINE_MS = 310_000;
+const DOWNSTREAM_REQUEST_CONNECTION_GRPC_DEADLINE_MS = Math.min(
+  120_000,
+  Math.max(
+    10_000,
+    positiveTimeout(
+      process.env.WORKER_REQUEST_CONNECTION_GRPC_DEADLINE_MS,
+      45_000
+    )
+  )
+);
+const WORKER_CONNECTION_STATUS_GRPC_DEADLINE_MS = Math.min(
+  180_000,
+  Math.max(
+    DOWNSTREAM_REQUEST_CONNECTION_GRPC_DEADLINE_MS + 30_000,
+    positiveTimeout(
+      process.env.WORKER_CONNECTION_STATUS_GRPC_DEADLINE_MS,
+      DOWNSTREAM_REQUEST_CONNECTION_GRPC_DEADLINE_MS + 30_000
+    )
+  )
+);
+const WORKER_DELETE_GRPC_DEADLINE_MS = positiveTimeout(
+  process.env.WORKER_DELETE_GRPC_DEADLINE_MS,
+  5 * 60_000
+);
+const WORKER_LIFECYCLE_GRPC_DEADLINE_MS = workerLifecycleBudgets.grpcDeadlineMs;
 
 @injectable()
 export class WorkerGrpcClientService {
@@ -70,18 +122,21 @@ export class WorkerGrpcClientService {
 
   async createWorker(
     payload: IWorkerPayload,
-    timeoutMs: number = GRPC_DEADLINE_MS
+    timeoutMs: number = WORKER_LIFECYCLE_GRPC_DEADLINE_MS
   ): Promise<void> {
     await this.call('CreateWorker', payload, timeoutMs);
   }
 
-  async deleteWorker(payload: IWorkerPayload): Promise<void> {
-    await this.call('DeleteWorker', payload);
+  async deleteWorker(
+    payload: IWorkerPayload,
+    timeoutMs: number = WORKER_DELETE_GRPC_DEADLINE_MS
+  ): Promise<void> {
+    await this.call('DeleteWorker', payload, timeoutMs);
   }
 
   async recreateWorker(
     payload: IWorkerPayload,
-    timeoutMs: number = GRPC_DEADLINE_MS
+    timeoutMs: number = WORKER_LIFECYCLE_GRPC_DEADLINE_MS
   ): Promise<void> {
     await this.call('RecreateWorker', payload, timeoutMs);
   }
@@ -117,7 +172,8 @@ export class WorkerGrpcClientService {
   async changeConnectionStatus(
     serverId: string,
     payload: StatusConnectionWorkerRequest,
-    accountId: string
+    accountId: string,
+    timeoutMs: number = WORKER_CONNECTION_STATUS_GRPC_DEADLINE_MS
   ): Promise<void> {
     const { host, port } =
       await this.workerGrpcRegistryService.getAddress(serverId);
@@ -129,7 +185,7 @@ export class WorkerGrpcClientService {
 
     const protoPayload = statusConnectionRequestToProto(payload, accountId);
     const metadata = new Metadata();
-    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+    const deadline = new Date(Date.now() + timeoutMs);
 
     void this.connectionLifecycleDebugService.log(
       'service.worker_command_grpc.change_connection_status_call',
@@ -174,6 +230,40 @@ export class WorkerGrpcClientService {
         grpc_address: address,
       }
     );
+  }
+
+  async requestWorkerSelfHealing(
+    serverId: string,
+    payload: IWorkerSelfHealingRequestProto
+  ): Promise<void> {
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const client = new WorkerCommandClient(
+      `${host}:${port}`,
+      credentials.createInsecure()
+    );
+    const metadata = new Metadata();
+    metadata.set(
+      BALANCER_RUNTIME_FENCE_TOKEN_METADATA,
+      balanceRuntimeFenceToken()
+    );
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+
+    await new Promise<void>((resolve, reject) => {
+      (client as any).RequestWorkerSelfHealing(
+        payload,
+        metadata,
+        { deadline },
+        (err: ServiceError | null) => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        }
+      );
+    });
   }
 
   private async call(
@@ -276,6 +366,10 @@ export class WorkerGrpcClientService {
     );
     const deadline = timeoutMs ? new Date(Date.now() + timeoutMs) : undefined;
     const metadata = new Metadata();
+    metadata.set(
+      BALANCE_WARM_CONTROL_TOKEN_METADATA,
+      balanceWarmControlToken()
+    );
     const options = deadline ? { deadline } : {};
     const debugTraceId = (payload as { debug_trace_id?: string })
       .debug_trace_id;
@@ -401,6 +495,7 @@ export class WorkerGrpcClientService {
       payload_json: payload.payload_json ?? '',
       checksum: payload.checksum ?? '',
       debug_trace_id: payload.debug_trace_id ?? '',
+      authorized_connection_epoch: payload.authorized_connection_epoch ?? '',
     };
 
     void this.connectionLifecycleDebugService.log(
@@ -413,6 +508,9 @@ export class WorkerGrpcClientService {
         worker_type_id: payload.worker_type_id,
         connection_attempt_id: payload.connection_attempt_id,
         runtime_generation: payload.runtime_generation,
+        authorized_connection_epoch_set: Boolean(
+          payload.authorized_connection_epoch
+        ),
         method: 'ImportSecureSession',
         grpc_address: address,
       }
@@ -458,6 +556,80 @@ export class WorkerGrpcClientService {
         }
       );
       return state;
+    });
+  }
+
+  async prepareSessionStorageMigration(
+    serverId: string,
+    payload: IPrepareSessionStorageMigrationRequestProto
+  ): Promise<IPrepareSessionStorageMigrationResponseProto> {
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const client = new WorkerCommandClient(
+      `${host}:${port}`,
+      credentials.createInsecure()
+    );
+    const metadata = new Metadata();
+    const deadline = new Date(
+      Date.now() + SESSION_STORAGE_MIGRATION_GRPC_DEADLINE_MS
+    );
+    return new Promise((resolve, reject) => {
+      (client as any).PrepareSessionStorageMigration(
+        sessionStorageMigrationPrepareToCommandProto(payload),
+        metadata,
+        { deadline },
+        (
+          error: ServiceError | null,
+          response?: ICommandSessionStorageMigrationPrepareResponse
+        ) => {
+          client.close();
+          if (error) {
+            reject(error);
+            return;
+          }
+          if (!response) {
+            reject(
+              new Error('prepare_session_storage_migration_empty_response')
+            );
+            return;
+          }
+          resolve(commandProtoToSessionStorageMigrationResponse(response));
+        }
+      );
+    });
+  }
+
+  async deleteLegacySessionVolume(
+    serverId: string,
+    payload: ILegacySessionVolumeDeleteRequestProto
+  ): Promise<ILegacySessionVolumeDeleteResponseProto> {
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const client = new WorkerCommandClient(
+      `${host}:${port}`,
+      credentials.createInsecure()
+    );
+    return new Promise((resolve, reject) => {
+      (client as any).DeleteLegacySessionVolume(
+        payload,
+        new Metadata(),
+        { deadline: new Date(Date.now() + 30_000) },
+        (
+          error: ServiceError | null,
+          response?: ILegacySessionVolumeDeleteResponseProto
+        ) => {
+          client.close();
+          if (error) {
+            reject(error);
+            return;
+          }
+          if (!response) {
+            reject(new Error('legacy_session_volume_delete_empty_response'));
+            return;
+          }
+          resolve(response);
+        }
+      );
     });
   }
 

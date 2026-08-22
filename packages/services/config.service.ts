@@ -6,7 +6,7 @@ import { ListChannelsRequest } from '@core/schema/config/listChannels/request.sc
 import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
 import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
-import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
+import { IConfigChannelsRecreateAllFilters } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 import { IConfigChannelRecreateTarget } from '@core/common/interfaces/IConfigChannelRecreateTarget';
 import { IViewChannelContext } from '@core/common/interfaces/IViewChannelContext';
 
@@ -46,14 +46,22 @@ export class ConfigService {
     return this.channelViewerRepository.viewChannelContext(channelId);
   };
 
+  existsActiveAccountByIdConsistent = async (
+    accountId: string
+  ): Promise<boolean> => {
+    return this.channelViewerRepository.existsActiveAccountByIdConsistent(
+      accountId
+    );
+  };
+
   listAllNonDeletedChannelIds = async (
-    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+    filters: IConfigChannelsRecreateAllFilters
   ): Promise<string[]> => {
     return this.channelsListerRepository.listAllNonDeletedChannelIds(filters);
   };
 
   listAllNonDeletedChannelRecreateTargets = async (
-    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+    filters: IConfigChannelsRecreateAllFilters
   ): Promise<IConfigChannelRecreateTarget[]> => {
     return this.channelsListerRepository.listAllNonDeletedChannelRecreateTargets(
       filters

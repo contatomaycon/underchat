@@ -8,11 +8,14 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { getUser } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import { EPermissionRoleStatus } from '@core/common/enums/EPermissionRoleStatus';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
 import { EPermissionPermissions } from '@core/common/enums/EPermissions/permission';
 import { useRolesStore } from '@/@webcore/stores/role';
 import { usePermissionStore } from '@/@webcore/stores/permission';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
+import { can } from '@/@layouts/plugins/casl';
 
 definePage({
   meta: {
@@ -77,6 +80,10 @@ const itemsPerPage = ref([
 
 const isDialogDeleterShow = ref(false);
 const roleToDelete = ref<string | null>(null);
+const rolePlanBlockAction = ref<{
+  permissionRoleId: string;
+  action: 'block' | 'unblock';
+} | null>(null);
 
 const isDialogEditRoleShow = ref(false);
 const isAddRoleVisible = ref(false);
@@ -86,6 +93,7 @@ const rolePermissionsId = ref<string | null>(null);
 
 const headers: DataTableHeader<ListRoleResponse>[] = [
   { title: t('name'), key: 'name' },
+  { title: t('status'), key: 'status' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -127,6 +135,54 @@ const deleteRole = async (id: string) => {
   isDialogDeleterShow.value = true;
 };
 
+const isSystemRole = (item: ListRoleResponse): boolean =>
+  item.permission_role_id === EPermissionRole.master ||
+  item.permission_role_id === EPermissionRole.administrator;
+
+const isRoleBlockedByPlan = (item: ListRoleResponse): boolean =>
+  item.status === EPermissionRoleStatus.blocked;
+
+const canToggleRolePlanBlock = (item: ListRoleResponse): boolean =>
+  can(permissionsEdit) &&
+  item.permission_role_id !== currentPermissionRoleId &&
+  !isSystemRole(item);
+
+const isDialogRolePlanBlockShow = computed({
+  get: () => rolePlanBlockAction.value !== null,
+  set: (value: boolean) => {
+    if (!value) {
+      rolePlanBlockAction.value = null;
+    }
+  },
+});
+
+const rolePlanBlockDialogTitle = computed(() => {
+  const action = rolePlanBlockAction.value?.action ?? 'block';
+
+  return `${t(action)} ${t('role')}`;
+});
+
+const rolePlanBlockDialogMessage = computed(() => {
+  const action = rolePlanBlockAction.value?.action ?? 'block';
+
+  return t(
+    action === 'block'
+      ? 'block_role_confirmation'
+      : 'unblock_role_confirmation'
+  );
+});
+
+const openRolePlanBlockDialog = (item: ListRoleResponse) => {
+  if (!canToggleRolePlanBlock(item)) {
+    return;
+  }
+
+  rolePlanBlockAction.value = {
+    permissionRoleId: item.permission_role_id,
+    action: isRoleBlockedByPlan(item) ? 'unblock' : 'block',
+  };
+};
+
 const handleDelete = async () => {
   if (!roleToDelete.value) return;
 
@@ -136,6 +192,24 @@ const handleDelete = async () => {
   }
 
   roleToDelete.value = null;
+};
+
+const handleRolePlanBlock = async () => {
+  if (!rolePlanBlockAction.value) {
+    return;
+  }
+
+  const { permissionRoleId, action } = rolePlanBlockAction.value;
+  const result =
+    action === 'block'
+      ? await roleStore.blockRole(permissionRoleId)
+      : await roleStore.unblockRole(permissionRoleId);
+
+  if (result) {
+    await roleStore.listRoles(query.value);
+  }
+
+  rolePlanBlockAction.value = null;
 };
 
 const openEditDialog = (id: string) => {
@@ -238,6 +312,16 @@ watch(
               <span>{{ formatDateTime(item.created_at) }}</span>
             </template>
 
+            <template #item.status="{ item }">
+              <VChip
+                size="small"
+                :color="isRoleBlockedByPlan(item) ? 'error' : 'success'"
+                variant="tonal"
+              >
+                {{ $t(isRoleBlockedByPlan(item) ? 'blocked' : 'active') }}
+              </VChip>
+            </template>
+
             <template #item.actions="{ item }">
               <div class="d-flex gap-1">
                 <IconBtn
@@ -266,6 +350,26 @@ watch(
                   ><VIcon
                     icon="tabler-edit"
                     @click="openEditDialog(item.permission_role_id)"
+                /></IconBtn>
+
+                <IconBtn v-if="canToggleRolePlanBlock(item)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>
+                      {{
+                        `${$t(isRoleBlockedByPlan(item) ? 'unblock' : 'block')} ${$t('role')}`
+                      }}
+                    </span> </VTooltip
+                  ><VIcon
+                    :icon="
+                      isRoleBlockedByPlan(item)
+                        ? 'tabler-lock-open'
+                        : 'tabler-lock'
+                    "
+                    @click="openRolePlanBlockDialog(item)"
                 /></IconBtn>
 
                 <IconBtn v-if="$canPermission(permissionsDelete)"
@@ -303,6 +407,14 @@ watch(
         :title="$t('delete_role')"
         :message="$t('delete_role_confirmation')"
         @confirm="handleDelete"
+      />
+
+      <VDialogHandler
+        v-if="isDialogRolePlanBlockShow"
+        v-model="isDialogRolePlanBlockShow"
+        :title="rolePlanBlockDialogTitle"
+        :message="rolePlanBlockDialogMessage"
+        @confirm="handleRolePlanBlock"
       />
 
       <AppEditRole

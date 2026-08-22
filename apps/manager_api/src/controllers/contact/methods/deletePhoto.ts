@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { DeleteContactPhotoRequest } from '@core/schema/contact/deletePhoto/request.schema';
 import { ContactPhotoDeleterUseCase } from '@core/useCases/contact/ContactPhotoDeleter.useCase';
+import { resolveOutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 
 export const deletePhoto = async (
   request: FastifyRequest<{
@@ -21,7 +22,9 @@ export const deletePhoto = async (
     const response = await contactPhotoDeleterUseCase.execute(
       t,
       request.params.contact_id,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.user_id,
+      resolveOutboundWebhookRequestSource(request.module)
     );
 
     if (response) {

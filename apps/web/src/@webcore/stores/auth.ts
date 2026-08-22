@@ -31,6 +31,7 @@ import { AuthForgotPasswordSendCodeResponse } from '@core/schema/auth/forgotPass
 import { AuthForgotPasswordVerifyCodeRequest } from '@core/schema/auth/forgotPassword/verifyCode/request.schema';
 import { AuthForgotPasswordVerifyCodeResponse } from '@core/schema/auth/forgotPassword/verifyCode/response.schema';
 import { UserAttendanceGuardStatus } from '@core/schema/user/attendanceHours/shared.schema';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -67,6 +68,17 @@ export const useAuthStore = defineStore('auth', {
     updatePlanProducts(planProducts: string[]) {
       this.planProducts = planProducts;
       setPlanProducts(planProducts);
+    },
+    revokeIntegrationEntitlement() {
+      if (!this.planProducts.includes(EPlanProduct.integration)) {
+        return;
+      }
+
+      this.updatePlanProducts(
+        this.planProducts.filter(
+          (planProductId) => planProductId !== EPlanProduct.integration
+        )
+      );
     },
     async initializeAttendanceGuard(
       attendanceGuard: UserAttendanceGuardStatus | null | undefined

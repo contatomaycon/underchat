@@ -6,6 +6,9 @@ import { VoiceIaIntegrationService } from './voiceIaIntegration.service';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
 import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
 import type { TranscribeAudioResponse } from '@core/schema/chat/transcribeAudio/response.schema';
+import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { executeSafeOutboundHttp } from '@core/common/functions/safeOutboundHttp';
+import { getChatbotApiOutboundHttpPolicy } from '@core/common/functions/chatbotApiOutboundHttpPolicy';
 
 @injectable()
 export class TranscriptionService {
@@ -25,7 +28,8 @@ export class TranscriptionService {
   async transcribeMessage(
     chatId: string,
     messageId: string,
-    accountId: string
+    accountId: string,
+    outboundWebhookSource = 'transcription_service'
   ): Promise<TranscribeAudioResponse> {
     const message = await this.chatService.findMessageByMessageId(
       accountId,
@@ -36,12 +40,21 @@ export class TranscriptionService {
       throw new Error('Mensagem não encontrada.');
     }
 
+    if (message.chat_id !== chatId) {
+      throw new Error('message_not_found');
+    }
+
     if (message.content?.type !== 'audio') {
       throw new Error('A mensagem não é do tipo áudio.');
     }
 
     const existingTranscription = message.content?.audio?.transcription;
     if (existingTranscription) {
+      await this.persistTranscriptionEvent(
+        message,
+        existingTranscription,
+        outboundWebhookSource
+      );
       return { transcription: existingTranscription, cached: true };
     }
 
@@ -95,17 +108,23 @@ export class TranscriptionService {
       );
     }
 
-    const audioResponse = await fetch(audioUrl);
-    if (!audioResponse.ok) {
+    const audioResponse = await executeSafeOutboundHttp({
+      url: audioUrl,
+      method: 'GET',
+      ...getChatbotApiOutboundHttpPolicy(),
+    });
+    if (
+      audioResponse.kind !== 'response' ||
+      audioResponse.statusCode < 200 ||
+      audioResponse.statusCode >= 300
+    ) {
       throw new Error('Não foi possível baixar o áudio para transcrição.');
     }
 
-    const arrayBuffer = await audioResponse.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
     const mimetype = message.content?.audio?.mimetype?.trim() || 'audio/mpeg';
 
     const result = await this.voiceIaIntegrationService.transcribe(
-      buffer,
+      audioResponse.body,
       voiceIaConfig,
       mimetype
     );
@@ -115,22 +134,48 @@ export class TranscriptionService {
       throw new Error('Não foi possível transcrever o áudio.');
     }
 
-    try {
-      const updatedContent = {
+    const persisted = await this.persistTranscriptionEvent(
+      message,
+      transcription,
+      outboundWebhookSource
+    );
+    if (!persisted) {
+      throw new Error('Não foi possível persistir a transcrição do áudio.');
+    }
+
+    return { transcription, cached: false };
+  }
+
+  private async persistTranscriptionEvent(
+    message: IChatMessage,
+    transcription: string,
+    outboundWebhookSource: string
+  ): Promise<boolean> {
+    if (!message?.content?.audio) {
+      return false;
+    }
+
+    const updatedMessage = {
+      ...message,
+      content: {
         ...message.content,
         audio: {
           ...message.content.audio,
           transcription,
         },
-      };
-      await this.chatService.updateMessageContent(messageId, updatedContent);
-    } catch (error) {
-      console.error(
-        '[TranscriptionService] Failed to persist transcription to ES',
-        error
-      );
-    }
+      },
+    };
 
-    return { transcription, cached: false };
+    return this.chatService.updateMessageChat(updatedMessage, {
+      eventTypes: ['message.transcription.updated'],
+      idempotencyKey: `message-transcription:${message.message_id}`,
+      source: outboundWebhookSource,
+      previousMessage: message,
+      actor: { type: 'system' },
+      changes: {
+        transcription_available: true,
+        origin: outboundWebhookSource,
+      },
+    });
   }
 }

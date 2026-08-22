@@ -71,9 +71,12 @@ async function handleAttendanceBlocked(response: Response): Promise<boolean> {
 
 type ApiEnvelope<T> = { status: boolean; data: T };
 type ApiEnvelopeWithMessage<T> = {
+  id?: unknown;
   status?: boolean;
   data?: T;
   message?: unknown;
+  operation_id?: unknown;
+  idempotency_key?: unknown;
 };
 type QueryParamScalar = string | number;
 type QueryParamValue = QueryParamScalar | QueryParamScalar[] | null | undefined;
@@ -82,6 +85,10 @@ export type ApiDetailedResponse<T> = {
   status: boolean;
   data: T | null;
   message: string | null;
+  requestId: string | null;
+  httpStatus: number | null;
+  operationId?: string;
+  idempotencyKey?: string;
 };
 
 async function parseJsonSafe<T>(
@@ -97,7 +104,8 @@ async function parseJsonSafe<T>(
 }
 
 function normalizeDetailedResponse<T>(
-  data: ApiEnvelopeWithMessage<T> | null | undefined
+  data: ApiEnvelopeWithMessage<T> | null | undefined,
+  httpStatus: number | null = null
 ): ApiDetailedResponse<T> {
   const message =
     typeof data?.message === 'string' && data.message.trim().length > 0
@@ -111,6 +119,17 @@ function normalizeDetailedResponse<T>(
     status,
     data: payload,
     message,
+    requestId:
+      typeof data?.id === 'string' && data.id.trim().length > 0
+        ? data.id
+        : null,
+    httpStatus,
+    ...(typeof data?.operation_id === 'string' && data.operation_id
+      ? { operationId: data.operation_id }
+      : {}),
+    ...(typeof data?.idempotency_key === 'string' && data.idempotency_key
+      ? { idempotencyKey: data.idempotency_key }
+      : {}),
   };
 }
 
@@ -119,7 +138,7 @@ async function parseJsonDetailed<T>(
 ): Promise<ApiDetailedResponse<T> | null> {
   try {
     const data = (await response.json()) as ApiEnvelopeWithMessage<T>;
-    return normalizeDetailedResponse(data);
+    return normalizeDetailedResponse(data, response.status);
   } catch {
     return null;
   }
@@ -133,10 +152,13 @@ function parseJsonText<T>(text: string): T | null {
   }
 }
 
-function parseDetailedJsonText<T>(text: string): ApiDetailedResponse<T> | null {
+function parseDetailedJsonText<T>(
+  text: string,
+  httpStatus: number | null = null
+): ApiDetailedResponse<T> | null {
   const data = parseJsonText<ApiEnvelopeWithMessage<T>>(text);
   if (!data) return null;
-  return normalizeDetailedResponse(data);
+  return normalizeDetailedResponse(data, httpStatus);
 }
 
 async function buildAuthHeaders(
@@ -511,7 +533,10 @@ export async function apiPostFormWithMessage<T>(
       return null;
     }
 
-    return parseDetailedJsonText<T>(uploadResponse.bodyText);
+    return parseDetailedJsonText<T>(
+      uploadResponse.bodyText,
+      uploadResponse.status
+    );
   }
 
   const res = await requestWithAuthRetry(
@@ -673,7 +698,10 @@ export async function apiPatchFormWithMessage<T>(
       return null;
     }
 
-    return parseDetailedJsonText<T>(uploadResponse.bodyText);
+    return parseDetailedJsonText<T>(
+      uploadResponse.bodyText,
+      uploadResponse.status
+    );
   }
 
   const res = await requestWithAuthRetry(

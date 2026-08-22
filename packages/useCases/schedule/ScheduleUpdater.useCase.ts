@@ -17,6 +17,10 @@ import { formatDateToISO } from '@core/common/functions/formatDateToISO';
 import { APP_TIMEZONE } from '@core/common/constants/timezone';
 import { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 import { ScheduleOfficialMessageService } from '@core/services/scheduleOfficialMessage.service';
+import {
+  assertUserChannelAccess,
+  UserChannelScope,
+} from '@core/common/functions/assertUserChannelAccess';
 
 @injectable()
 export class ScheduleUpdaterUseCase {
@@ -206,15 +210,22 @@ export class ScheduleUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     scheduleId: string,
     body: UpdateScheduleRequest,
-    accountId: string
+    accountId: string,
+    userChannels: UserChannelScope = []
   ): Promise<boolean> {
     await this.ensureScheduleExists(t, scheduleId);
-    await this.ensureWorkerIsValid(t, body, accountId);
     const currentSchedule =
       await this.scheduleService.viewScheduleById(scheduleId);
-    if (!currentSchedule) {
+    if (!currentSchedule || currentSchedule.account.account_id !== accountId) {
       throw new Error(t('schedule_not_found'));
     }
+
+    assertUserChannelAccess(t, currentSchedule.worker.worker_id, userChannels);
+    await this.ensureWorkerIsValid(t, body, accountId);
+    const workerIdValue =
+      this.extractStringValue(body.worker_id) ??
+      currentSchedule.worker.worker_id;
+    assertUserChannelAccess(t, workerIdValue, userChannels);
 
     const sendDate = this.extractStringValue(body.send_date);
     if (sendDate) {
@@ -230,6 +241,15 @@ export class ScheduleUpdaterUseCase {
     const contactIds = this.extractContactIds(body.contact_ids);
     const contactGroupIds = this.extractContactGroupIds(body.contact_group_ids);
     const sendToValue = this.extractStringValue(body.send_to);
+    const hasContactIdsField = body.contact_ids !== undefined;
+    const hasContactGroupIdsField = body.contact_group_ids !== undefined;
+    const recipientSendToValue =
+      sendToValue ??
+      (hasContactIdsField
+        ? EScheduleSendTo.contacts
+        : hasContactGroupIdsField
+          ? EScheduleSendTo.contact_groups
+          : undefined);
     const sendSpeedValue = this.resolveSendSpeed(
       this.extractStringValue(body.send_speed)
     );
@@ -242,14 +262,22 @@ export class ScheduleUpdaterUseCase {
         ? currentSchedule.chatbot_id
         : chatbotIdValue;
     const messageValue = this.extractMessageValue(body.message);
-    const workerIdValue =
-      this.extractStringValue(body.worker_id) ??
-      currentSchedule.worker.worker_id;
     const officialTemplateInput = this.extractOfficialTemplateValue(
       body.official_template as unknown
     );
 
-    this.validateRequiredFields(sendToValue, contactIds, contactGroupIds, t);
+    if (
+      hasContactIdsField ||
+      hasContactGroupIdsField ||
+      (sendToValue !== undefined && sendToValue !== currentSchedule.send_to)
+    ) {
+      this.validateRequiredFields(
+        recipientSendToValue,
+        contactIds,
+        contactGroupIds,
+        t
+      );
+    }
 
     const isOfficialWorker =
       await this.scheduleOfficialMessageService.isOfficialWorker(
@@ -300,6 +328,7 @@ export class ScheduleUpdaterUseCase {
           {
             t,
             accountId,
+            workerId: workerIdValue,
             chatbotId: effectiveChatbotIdValue,
           }
         );
@@ -313,7 +342,7 @@ export class ScheduleUpdaterUseCase {
         sendDate,
       },
       typeValue,
-      sendToValue,
+      recipientSendToValue,
       isOfficialWorker ? EScheduleSendSpeed.low : sendSpeedValue,
       effectiveChatbotIdValue,
       messageValue,

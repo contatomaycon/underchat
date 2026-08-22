@@ -14,5 +14,6 @@ export interface IWorkerLifecycleAck {
   operation_id: string;
   reason: string;
   recreate_available_at?: string | null;
+  runtime_generation?: number;
   debug_trace_id?: string;
 }

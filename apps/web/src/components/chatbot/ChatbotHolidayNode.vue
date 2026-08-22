@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import './chatbot-node-workbench.css';
+import { computed, ref, watch } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { useI18n } from 'vue-i18n';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
+import ApiVariableField from './api-request/ApiVariableField.vue';
+import type { ApiRequestVariable } from './api-request/types';
 
 interface HolidayOption {
   id: string;
@@ -14,6 +17,7 @@ interface HolidayOption {
 interface HolidayData {
   holidayMessage?: string;
   options: HolidayOption[];
+  availableVariables?: ApiRequestVariable[];
   onRemove?: () => void;
 }
 
@@ -29,10 +33,14 @@ const holidayPlaceholderParams = {
 const props = defineProps<NodeProps>();
 const { t } = useI18n();
 
-const buildHolidayOptions = (existingOptions?: HolidayOption[]): HolidayOption[] => {
+const buildHolidayOptions = (
+  existingOptions?: HolidayOption[]
+): HolidayOption[] => {
   const options = Array.isArray(existingOptions) ? existingOptions : [];
 
-  const isHolidayOption = options.find((option) => option.id === HOLIDAY_IS_OPTION_ID);
+  const isHolidayOption = options.find(
+    (option) => option.id === HOLIDAY_IS_OPTION_ID
+  );
   const notHolidayOption = options.find(
     (option) => option.id === HOLIDAY_NOT_OPTION_ID
   );
@@ -45,8 +53,7 @@ const buildHolidayOptions = (existingOptions?: HolidayOption[]): HolidayOption[]
     },
     {
       id: HOLIDAY_NOT_OPTION_ID,
-      text:
-        notHolidayOption?.text || t('chatbot_holiday_option_not_holiday'),
+      text: notHolidayOption?.text || t('chatbot_holiday_option_not_holiday'),
       required: true,
     },
   ];
@@ -62,6 +69,9 @@ const getInitialData = (): HolidayData => {
 };
 
 const holidayData = ref<HolidayData>(getInitialData());
+const availableVariables = computed<ApiRequestVariable[]>(
+  () => (props.data as HolidayData)?.availableVariables || []
+);
 
 const buildOptionHandleId = (optionId: string): string => {
   return `option-${optionId}-source`;
@@ -95,7 +105,7 @@ watch(
 </script>
 
 <template>
-  <div class="chatbot-holiday-node">
+  <div class="chatbot-holiday-node chatbot-workbench-node">
     <Handle
       id="target"
       type="target"
@@ -103,27 +113,36 @@ watch(
       class="handle-target"
     />
 
-    <VCard class="holiday-card" elevation="2">
+    <VCard class="holiday-card chatbot-workbench-card" elevation="2">
       <VCardTitle
-        class="d-flex align-center justify-space-between pa-2 node-drag-handle"
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle chatbot-workbench-header"
       >
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-calendar-star" color="primary" size="20" />
-          <span class="text-sm font-weight-medium">{{ t('chatbot_holidays') }}</span>
+        <div class="d-flex align-center ga-2 chatbot-workbench-identity">
+          <VIcon
+            icon="tabler-calendar-star"
+            color="primary"
+            size="20"
+            class="chatbot-workbench-icon"
+          />
+          <span class="text-sm font-weight-medium chatbot-workbench-title">{{
+            t('chatbot_holidays')
+          }}</span>
         </div>
         <VIcon
           v-if="(props.data as HolidayData)?.onRemove"
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
+      <VCardText class="pa-3 chatbot-workbench-body">
         <div class="d-flex align-center ga-1 mb-1">
-          <VLabel class="text-body-2">{{ t('chatbot_holiday_message') }}</VLabel>
+          <VLabel class="text-body-2">{{
+            t('chatbot_holiday_message')
+          }}</VLabel>
           <AppInfoTooltip
             :title="t('chatbot_holiday_placeholders_title')"
             :text="
@@ -131,17 +150,17 @@ watch(
             "
           />
         </div>
-        <VTextarea
-          v-model="holidayData.holidayMessage"
+        <ApiVariableField
+          :model-value="holidayData.holidayMessage || ''"
+          :variables="availableVariables"
           :placeholder="
             t('chatbot_holiday_message_placeholder', holidayPlaceholderParams)
           "
-          variant="outlined"
-          density="comfortable"
-          rows="3"
-          auto-grow
+          multiline
+          :rows="3"
           hide-details
           class="nodrag"
+          @update:model-value="holidayData.holidayMessage = $event"
         />
 
         <div class="options-list nodrag">

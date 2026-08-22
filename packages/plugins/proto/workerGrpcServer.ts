@@ -3,6 +3,7 @@ import fp from 'fastify-plugin';
 import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
+  Metadata,
   Server,
   ServerCredentials,
   sendUnaryData,
@@ -10,8 +11,14 @@ import {
   status,
 } from '@grpc/grpc-js';
 import { container } from 'tsyringe';
-import { balanceEnvironment } from '@core/config/environments';
-import { WorkerCommandHandlerService } from '@core/services/workerCommandHandler.service';
+import {
+  balanceEnvironment,
+  buildEnvironment,
+} from '@core/config/environments';
+import {
+  WorkerCommandHandlerService,
+  WorkerOnlineReadinessRejectedError,
+} from '@core/services/workerCommandHandler.service';
 import {
   protoToWorkerPayload,
   protoToStatusConnectionRequest,
@@ -48,11 +55,58 @@ import {
   IWorkerRuntimeHealthRequestProto,
   IWorkerRuntimeHealthResponseProto,
 } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
+import {
+  commandProtoToSessionStorageMigrationPrepare,
+  type ICommandSessionStorageMigrationPrepareRequest,
+  type ICommandSessionStorageMigrationPrepareResponse,
+  sessionStorageMigrationResponseToCommandProto,
+} from '@core/common/functions/sessionStorageMigrationCommandProtoMapper';
+import {
+  ILegacySessionVolumeDeleteRequestProto,
+  ILegacySessionVolumeDeleteResponseProto,
+} from '@core/common/interfaces/ILegacySessionVolumeDeleteProto';
+import {
+  IWhatsappRuntimeFenceActivationRequestProto,
+  IWhatsappRuntimeFenceActivationResponseProto,
+} from '@core/common/interfaces/IWhatsappRuntimeFenceActivationProto';
+import {
+  BALANCER_RUNTIME_FENCE_TOKEN_METADATA,
+  isValidBalancerRuntimeFenceToken,
+} from '@core/common/functions/balancerRuntimeFenceAuth';
+import {
+  BALANCE_WARM_CONTROL_TOKEN_METADATA,
+  balanceRuntimeFenceToken,
+  balanceWarmControlToken,
+} from '@core/common/functions/balanceRuntimeFenceCredential';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
+import { StaleWhatsappRuntimeDatabaseFenceError } from '@core/repositories/worker/WhatsappRuntimeDatabaseFence.repository';
+import { WorkerRecreateServerSlotService } from '@core/services/workerRecreateServerSlot.service';
+import { WorkerService } from '@core/services/worker.service';
+import {
+  IChromiumLockCleanupAuthorizationRequestProto,
+  IChromiumLockCleanupAuthorizationResponseProto,
+} from '@core/common/interfaces/IChromiumLockCleanupAuthorizationProto';
+import { isWorkerRecreateServerSlotHoldTimeoutError } from '@core/common/functions/workerLifecycleBudgets';
+import { isWorkerLifecycleAuthoritativeConflictError } from '@core/common/functions/workerLifecycleErrorPolicy';
+import {
+  WarmCreationAdmissionQueue,
+  WarmCreationAdmissionQueueClosedError,
+  WarmCreationAdmissionQueueOperationTimeoutError,
+  WarmCreationAdmissionQueueSaturatedError,
+} from '@core/common/functions/warmCreationAdmissionQueue';
 
 const protoPath = resolveProtoPath('worker_command.proto');
+const WARM_CREATION_SHUTDOWN_DRAIN_MS = 6_000;
+const WARM_CREATION_MAX_PENDING = 36;
+const WARM_CREATION_HARD_EXIT_MS = 10_000;
+const SUPPORTED_WARM_WORKER_TYPES = new Set<string>([
+  EWorkerType.baileys,
+  EWorkerType.wwebjs,
+  EWorkerType.whatsmeow,
+]);
+let warmCreationReplacementScheduled = false;
 
 const packageDefinition = loadSync(protoPath, {
   keepCase: true,
@@ -83,6 +137,7 @@ interface ISecureSessionImportRequestProto {
   payload_json?: string;
   checksum?: string;
   debug_trace_id?: string;
+  authorized_connection_epoch?: string;
 }
 
 function optionalProtoNumber(value: unknown): number | undefined {
@@ -96,6 +151,16 @@ function optionalProtoNumber(value: unknown): number | undefined {
   }
 
   return undefined;
+}
+
+function workerLifecycleGrpcErrorCode(error: unknown): status {
+  if (isWorkerRecreateServerSlotHoldTimeoutError(error)) {
+    return status.DEADLINE_EXCEEDED;
+  }
+  if (isWorkerLifecycleAuthoritativeConflictError(error)) {
+    return status.FAILED_PRECONDITION;
+  }
+  return status.INTERNAL;
 }
 
 function normalizeSecureSessionImportRequest(
@@ -115,6 +180,7 @@ function normalizeSecureSessionImportRequest(
     payload_json: input.payload_json || undefined,
     checksum: input.checksum || undefined,
     debug_trace_id: input.debug_trace_id || undefined,
+    authorized_connection_epoch: input.authorized_connection_epoch || undefined,
   };
 }
 
@@ -137,14 +203,142 @@ function getMetadataString(
   return undefined;
 }
 
+function isSupportedWarmWorkerType(value: unknown): value is EWorkerType {
+  return (
+    typeof value === 'string' && SUPPORTED_WARM_WORKER_TYPES.has(value.trim())
+  );
+}
+
 const workerGrpcServerPlugin: FastifyPluginAsync = async (
   fastify: FastifyInstance
 ) => {
   const handler = container.resolve(WorkerCommandHandlerService);
+  const requestWarmCreationProcessReplacement = (
+    error: WarmCreationAdmissionQueueOperationTimeoutError
+  ): void => {
+    if (warmCreationReplacementScheduled) {
+      return;
+    }
+    warmCreationReplacementScheduled = true;
+    fastify.log.fatal(
+      {
+        err: error,
+        provider: error.key,
+        timeout_ms: error.timeoutMs,
+      },
+      'Warm creation stalled; replacing Balance process'
+    );
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
+    try {
+      process.kill(process.pid, 'SIGTERM');
+    } catch {
+      process.exit(1);
+    }
+    const hardExit = setTimeout(
+      () => process.exit(1),
+      WARM_CREATION_HARD_EXIT_MS
+    );
+    hardExit.unref?.();
+  };
+  const warmCreationQueue = new WarmCreationAdmissionQueue({
+    maxPending: WARM_CREATION_MAX_PENDING,
+    operationTimeoutMs:
+      buildEnvironment.workerImageProvisionTimeoutMs + 120_000,
+    onOperationTimeout: requestWarmCreationProcessReplacement,
+  });
   const connectionLifecycleDebugService = container.resolve(
     ConnectionLifecycleDebugService
   );
+  const workerRecreateServerSlotService = container.resolve(
+    WorkerRecreateServerSlotService
+  );
+  const workerService = container.resolve(WorkerService);
+  // Validate the shared secret before binding the internal gRPC port. A
+  // production balancer must never start and discover a missing credential
+  // only when the first provider reconnects.
+  const runtimeFenceActivationToken = balanceRuntimeFenceToken();
+  const warmControlToken = balanceWarmControlToken();
+  const hasValidRuntimeFenceCredential = (metadata: Metadata): boolean => {
+    const suppliedToken = metadata.get(
+      BALANCER_RUNTIME_FENCE_TOKEN_METADATA
+    )[0];
+    return isValidBalancerRuntimeFenceToken(
+      suppliedToken,
+      runtimeFenceActivationToken
+    );
+  };
+  const hasValidWarmControlCredential = (metadata: Metadata): boolean => {
+    const suppliedToken = metadata.get(BALANCE_WARM_CONTROL_TOKEN_METADATA)[0];
+    return isValidBalancerRuntimeFenceToken(suppliedToken, warmControlToken);
+  };
+  const rejectInvalidRuntimeFenceCredential = <T>(
+    callback: sendUnaryData<T>
+  ): void => {
+    const message = 'Invalid runtime fence credentials';
+    callback(
+      {
+        code: status.UNAUTHENTICATED,
+        message,
+        details: message,
+      },
+      null
+    );
+  };
+  const validateWarmMutationTarget = <
+    TRequest extends { server_id?: string; worker_type_id?: string },
+    TResponse,
+  >(
+    request: TRequest,
+    callback: sendUnaryData<TResponse>
+  ): request is TRequest & {
+    server_id: string;
+    worker_type_id: EWorkerType;
+  } => {
+    if (
+      !request.server_id?.trim() ||
+      !isSupportedWarmWorkerType(request.worker_type_id)
+    ) {
+      const message =
+        'Missing or invalid required fields: server_id, worker_type_id';
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message,
+          details: message,
+        },
+        null
+      );
+      return false;
+    }
+    if (request.server_id.trim() !== balanceEnvironment.serverId) {
+      const message = 'Warm request was routed to another server';
+      callback(
+        {
+          code: status.FAILED_PRECONDITION,
+          message,
+          details: message,
+        },
+        null
+      );
+      return false;
+    }
+    return true;
+  };
   const grpcServer = new Server();
+
+  const clearedStartupSlots =
+    await workerRecreateServerSlotService.clearServerSlotsOnStartup(
+      balanceEnvironment.serverId
+    );
+  fastify.log.info(
+    {
+      server_id: balanceEnvironment.serverId,
+      cleared_slots: clearedStartupSlots,
+    },
+    'Cleared unadopted recreate reservations before starting WorkerCommand gRPC'
+  );
 
   const handleUnary = (
     call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
@@ -163,6 +357,57 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
           code: status.INVALID_ARGUMENT,
           message: e.message,
           details: e.message,
+        },
+        null
+      );
+      return;
+    }
+    if (
+      !payload.lifecycle_operation_id?.trim() &&
+      (action === 'create' ||
+        action === 'delete' ||
+        action === 'recreate' ||
+        action === 'cleanup')
+    ) {
+      /*
+       * A journal-less destructive command is a mixed-version replay with no
+       * authoritative identity. ACK it as a terminal no-op so an old direct
+       * gRPC caller cannot wedge a retry loop or remove the current runtime.
+       */
+      void connectionLifecycleDebugService.log(
+        'service.command_grpc.journal_less_noop',
+        {
+          trace_id: payload.debug_trace_id,
+          layer: 'service',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: payload.worker_type_id,
+          action,
+          reason: 'destructive_lifecycle_identity_missing',
+        }
+      );
+      fastify.log.warn(
+        {
+          action,
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+        },
+        'Settled journal-less worker command without side effects'
+      );
+      callback(null, {});
+      return;
+    }
+    if (
+      payload.lifecycle_operation_id &&
+      !payload.lifecycle_semantic_fingerprint?.trim()
+    ) {
+      const message =
+        'Missing lifecycle_semantic_fingerprint for fenced worker command';
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message,
+          details: message,
         },
         null
       );
@@ -204,14 +449,12 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
         reason: msg,
       });
       fastify.log.error({ err, action }, 'WorkerCommand gRPC handler error');
-      return { code: status.INTERNAL, message: msg, details: msg };
+      return {
+        code: workerLifecycleGrpcErrorCode(err),
+        message: msg,
+        details: msg,
+      };
     };
-
-    if (action === 'create' || action === 'recreate') {
-      void handler.handle(payload).catch(handleError);
-      callback(null, {});
-      return;
-    }
 
     handler
       .handle(payload)
@@ -311,8 +554,8 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
         runtime_generation: req.runtime_generation,
         status: req.status,
         code: req.code,
-        qrcode: req.qrcode,
-        pairing_code: req.pairing_code,
+        has_qrcode: Boolean(req.qrcode),
+        has_pairing_code: Boolean(req.pairing_code),
       }
     );
     logLocalConnectionStatus('service.command_grpc.notify_status_received', {
@@ -333,8 +576,8 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       phone: req.phone,
       connection_attempt_id: req.connection_attempt_id,
       runtime_generation: req.runtime_generation,
-      qrcode: req.qrcode,
-      pairing_code: req.pairing_code,
+      has_qrcode: Boolean(req.qrcode),
+      has_pairing_code: Boolean(req.pairing_code),
     });
 
     handler
@@ -389,7 +632,17 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
           { err, workerId: req.worker_id },
           'NotifyWorkerStatus gRPC handler error'
         );
-        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+        callback(
+          {
+            code:
+              err instanceof WorkerOnlineReadinessRejectedError
+                ? status.FAILED_PRECONDITION
+                : status.INTERNAL,
+            message: msg,
+            details: msg,
+          },
+          null
+        );
       });
   };
 
@@ -433,6 +686,11 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       provider_state: req.provider_state,
       degraded_reason: req.degraded_reason,
       kafka_unhealthy: req.kafka_unhealthy,
+      session_ready: req.session_ready,
+      can_send: req.can_send,
+      can_receive_runtime: req.can_receive_runtime,
+      authenticated: req.authenticated,
+      phone: req.phone,
       runtime_generation: req.runtime_generation,
       recovery_window_seconds: req.recovery_window_seconds,
     });
@@ -574,6 +832,9 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       worker_type_id: payload.worker_type_id,
       connection_attempt_id: payload.connection_attempt_id,
       runtime_generation: payload.runtime_generation,
+      authorized_connection_epoch_set: Boolean(
+        payload.authorized_connection_epoch
+      ),
       target_provider: payload.target_provider,
       has_payload_ref: Boolean(payload.payload_ref),
       has_payload_json: Boolean(payload.payload_json),
@@ -646,6 +907,48 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handlePrepareSessionStorageMigration = (
+    call: ServerUnaryCall<
+      ICommandSessionStorageMigrationPrepareRequest,
+      ICommandSessionStorageMigrationPrepareResponse
+    >,
+    callback: sendUnaryData<ICommandSessionStorageMigrationPrepareResponse>
+  ) => {
+    handler
+      .prepareSessionStorageMigration(
+        commandProtoToSessionStorageMigrationPrepare(call.request)
+      )
+      .then((response) =>
+        callback(null, sessionStorageMigrationResponseToCommandProto(response))
+      )
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        callback(
+          { code: status.FAILED_PRECONDITION, message, details: message },
+          null
+        );
+      });
+  };
+
+  const handleDeleteLegacySessionVolume = (
+    call: ServerUnaryCall<
+      ILegacySessionVolumeDeleteRequestProto,
+      ILegacySessionVolumeDeleteResponseProto
+    >,
+    callback: sendUnaryData<ILegacySessionVolumeDeleteResponseProto>
+  ) => {
+    handler
+      .deleteLegacySessionVolume(call.request)
+      .then((response) => callback(null, response))
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        callback(
+          { code: status.FAILED_PRECONDITION, message, details: message },
+          null
+        );
+      });
+  };
+
   const handleCreateWarmWorker = (
     call: ServerUnaryCall<
       ICreateWarmWorkerRequestProto,
@@ -653,25 +956,93 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     >,
     callback: sendUnaryData<IWarmWorkerCommandResponseProto>
   ) => {
-    handler
-      .createWarmWorker(call.request)
-      .then((response) => {
-        callback(null, response);
-      })
-      .catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        fastify.log.error(
-          { err, warmPoolId: call.request.warm_pool_id },
-          'CreateWarmWorker gRPC handler error'
-        );
-        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+    if (!hasValidWarmControlCredential(call.metadata)) {
+      rejectInvalidRuntimeFenceCredential(callback);
+      return;
+    }
+
+    const request = call.request;
+    if (!request.warm_pool_id?.trim()) {
+      const message = 'Missing required field: warm_pool_id';
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message,
+          details: message,
+        },
+        null
+      );
+      return;
+    }
+    if (!validateWarmMutationTarget(request, callback)) {
+      return;
+    }
+
+    /*
+     * Warm creation includes Docker startup plus HTTP and worker-gRPC
+     * readiness fences and can legitimately outlive a short transport call.
+     * The Service has already persisted the idempotent `warming` claim before
+     * reaching this handler, so acknowledge admission immediately and let the
+     * Balance finish the fenced operation. A crash leaves the durable claim
+     * for the scheduled stale-row reconciler instead of holding a Kafka
+     * partition behind a long unary request.
+     */
+    let creation: Promise<void>;
+    try {
+      creation = warmCreationQueue.enqueue(request.worker_type_id, async () => {
+        await handler.createWarmWorker(request);
       });
+    } catch (error) {
+      const message =
+        error instanceof WarmCreationAdmissionQueueClosedError ||
+        error instanceof WarmCreationAdmissionQueueSaturatedError
+          ? error.message
+          : 'warm_creation_admission_failed';
+      callback(
+        {
+          code: status.UNAVAILABLE,
+          message,
+          details: message,
+        },
+        null
+      );
+      return;
+    }
+    void creation.catch((err) => {
+      fastify.log.error(
+        { err, warmPoolId: request.warm_pool_id },
+        'CreateWarmWorker background operation failed'
+      );
+    });
+
+    callback(null, {
+      warm_pool_id: request.warm_pool_id,
+      container_name: `warm-${request.warm_pool_id}`,
+      session_volume_name: `warm-${request.warm_pool_id}`,
+      claimed: true,
+    });
   };
 
   const handleDeleteWarmWorker = (
     call: ServerUnaryCall<IDeleteWarmWorkerRequestProto, unknown>,
     callback: sendUnaryData<unknown>
   ) => {
+    if (!hasValidWarmControlCredential(call.metadata)) {
+      rejectInvalidRuntimeFenceCredential(callback);
+      return;
+    }
+    if (!call.request.warm_pool_id?.trim()) {
+      const message = 'Missing required field: warm_pool_id';
+      callback(
+        { code: status.INVALID_ARGUMENT, message, details: message },
+        null
+      );
+      return;
+    }
+    if (!validateWarmMutationTarget(call.request, callback)) {
+      return;
+    }
+
     handler
       .deleteWarmWorker(call.request)
       .then(() => {
@@ -696,6 +1067,30 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
   ) => {
     const req = call.request;
 
+    if (!hasValidWarmControlCredential(call.metadata)) {
+      rejectInvalidRuntimeFenceCredential(callback);
+      return;
+    }
+    if (!validateWarmMutationTarget(req, callback)) {
+      return;
+    }
+    if (
+      !req.lifecycle_operation_id?.trim() ||
+      !req.lifecycle_semantic_fingerprint?.trim()
+    ) {
+      const message =
+        'Missing lifecycle operation identity for warm activation';
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message,
+          details: message,
+        },
+        null
+      );
+      return;
+    }
+
     handler
       .activateWarmWorker(req)
       .then((response) => {
@@ -711,7 +1106,94 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
           },
           'ActivateWarmWorker gRPC handler error'
         );
-        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+        callback(
+          {
+            code: workerLifecycleGrpcErrorCode(err),
+            message: msg,
+            details: msg,
+          },
+          null
+        );
+      });
+  };
+
+  const handleActivateWhatsappRuntimeFence = (
+    call: ServerUnaryCall<
+      IWhatsappRuntimeFenceActivationRequestProto,
+      IWhatsappRuntimeFenceActivationResponseProto
+    >,
+    callback: sendUnaryData<IWhatsappRuntimeFenceActivationResponseProto>
+  ) => {
+    if (!hasValidRuntimeFenceCredential(call.metadata)) {
+      rejectInvalidRuntimeFenceCredential(callback);
+      return;
+    }
+
+    handler
+      .activateWhatsappRuntimeFence(call.request)
+      .then((response) => callback(null, response))
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        const errorCode =
+          err instanceof TypeError
+            ? status.INVALID_ARGUMENT
+            : err instanceof StaleWhatsappRuntimeDatabaseFenceError
+              ? status.FAILED_PRECONDITION
+              : status.UNAVAILABLE;
+        fastify.log.error(
+          {
+            err,
+            workerId: call.request.worker_id,
+            runtimeGeneration: call.request.runtime_generation,
+            sourceProvider: call.request.source_provider,
+          },
+          'ActivateWhatsappRuntimeFence gRPC handler error'
+        );
+        callback(
+          {
+            code: errorCode,
+            message: msg,
+            details: msg,
+          },
+          null
+        );
+      });
+  };
+
+  const handleAuthorizeChromiumLockCleanup = (
+    call: ServerUnaryCall<
+      IChromiumLockCleanupAuthorizationRequestProto,
+      IChromiumLockCleanupAuthorizationResponseProto
+    >,
+    callback: sendUnaryData<IChromiumLockCleanupAuthorizationResponseProto>
+  ) => {
+    if (!hasValidRuntimeFenceCredential(call.metadata)) {
+      rejectInvalidRuntimeFenceCredential(callback);
+      return;
+    }
+
+    workerService
+      .authorizeChromiumLockCleanup(call.request)
+      .then((response) => callback(null, response))
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          {
+            err,
+            requestId: call.request.request_id,
+            workerId: call.request.worker_id,
+            requesterContainerId: call.request.requester_container_id,
+          },
+          'AuthorizeChromiumLockCleanup gRPC handler error'
+        );
+        callback(
+          {
+            code: status.UNAVAILABLE,
+            message: msg,
+            details: msg,
+          },
+          null
+        );
       });
   };
 
@@ -741,6 +1223,10 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     ValidatePhone: handleValidatePhone,
     ImportSecureSession: handleImportSecureSession,
     RuntimeHealth: handleRuntimeHealth,
+    PrepareSessionStorageMigration: handlePrepareSessionStorageMigration,
+    DeleteLegacySessionVolume: handleDeleteLegacySessionVolume,
+    ActivateWhatsappRuntimeFence: handleActivateWhatsappRuntimeFence,
+    AuthorizeChromiumLockCleanup: handleAuthorizeChromiumLockCleanup,
     CreateWarmWorker: handleCreateWarmWorker,
     DeleteWarmWorker: handleDeleteWarmWorker,
     ActivateWarmWorker: handleActivateWarmWorker,
@@ -761,13 +1247,23 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
   });
 
   fastify.addHook('onClose', async () => {
-    await new Promise<void>((resolve) => {
+    const grpcShutdown = new Promise<void>((resolve) => {
       grpcServer.tryShutdown((e) => {
         if (e)
           fastify.log.warn({ err: e }, 'WorkerCommand gRPC shutdown warning');
         resolve();
       });
     });
+    const [drain] = await Promise.all([
+      warmCreationQueue.close(WARM_CREATION_SHUTDOWN_DRAIN_MS),
+      grpcShutdown,
+    ]);
+    if (!drain.completed) {
+      fastify.log.warn(
+        { pending: drain.pending, timeout_ms: WARM_CREATION_SHUTDOWN_DRAIN_MS },
+        'Warm creation queue did not drain before Balance shutdown deadline'
+      );
+    }
   });
 };
 

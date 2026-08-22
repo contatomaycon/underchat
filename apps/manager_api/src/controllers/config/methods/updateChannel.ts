@@ -39,6 +39,7 @@ export const updateChannel = async (
       name: request.body.name,
       worker_type: request.body.worker_type,
       server_id: request.body.server_id,
+      connection_strategy: request.body.connection_strategy,
     };
     const response = debugTraceId
       ? await channelUpdaterUseCase.execute(t, input, debugTraceId)

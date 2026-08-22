@@ -16,8 +16,15 @@ import { requiredValidator } from '@/@webcore/utils/validators';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { validateCpf } from '@core/common/functions/validateCpf';
-import { validateCnpj } from '@core/common/functions/validateCnpj';
+import {
+  formatCnpj,
+  normalizeCnpj,
+  validateCnpj,
+} from '@core/common/functions/validateCnpj';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
+import { cnpjAlphanumericMask } from '@/@webcore/utils/masks';
+import ContactValidationBadge from '@/components/contact/ContactValidationBadge.vue';
+import type { ContactValidationStatus } from '@core/common/types/ContactValidationStatus';
 
 const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
@@ -152,7 +159,9 @@ const toggleDocumentVisibility = async () => {
     }
     if (!documentPartialOriginal.value?.includes('*')) {
       document.value =
-        documentPartialOriginal.value?.replaceAll(/\D/g, '') ?? null;
+        (isCNPJ.value
+          ? normalizeCnpj(documentPartialOriginal.value ?? '')
+          : documentPartialOriginal.value?.replaceAll(/\D/g, '')) ?? null;
     }
     isDocumentDecrypted.value = false;
     return;
@@ -165,7 +174,9 @@ const toggleDocumentVisibility = async () => {
   isLoadingDocument.value = false;
 
   if (decryptedDocument) {
-    document.value = decryptedDocument.replaceAll(/\D/g, '');
+    document.value = isCNPJ.value
+      ? normalizeCnpj(decryptedDocument)
+      : decryptedDocument.replaceAll(/\D/g, '');
     isDocumentDecrypted.value = true;
   }
 };
@@ -198,9 +209,9 @@ const docConfig = {
     placeholder: '000.000.000-00',
   },
   cnpj: {
-    mask: '##.###.###/####-##',
+    mask: cnpjAlphanumericMask,
     label: t('cnpj'),
-    placeholder: '00.000.000/0000-00',
+    placeholder: '00.AAA.000/00AA-00',
   },
 };
 
@@ -229,44 +240,37 @@ const formatCpfDigits = (digits: string) => {
   return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9, 11)}`;
 };
 
-const formatCnpjDigits = (digits: string) => {
-  const clean = digits.slice(0, 14);
-  if (clean.length <= 2) return clean;
-  if (clean.length <= 5) {
-    return `${clean.slice(0, 2)}.${clean.slice(2)}`;
-  }
-  if (clean.length <= 8) {
-    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
-  }
-  if (clean.length <= 12) {
-    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
-  }
-  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
-};
+const normalizeDocumentInput = (value: string | null | undefined): string =>
+  isCNPJ.value
+    ? normalizeCnpj(value ?? '')
+    : (value ?? '').replaceAll(/\D/g, '');
 
 const documentFormatted = computed({
   get: () => {
     if (isDocumentDecrypted.value && document.value) {
       const digits = document.value.replaceAll(/\D/g, '');
       if (isCPF.value) return formatCpfDigits(digits);
-      if (isCNPJ.value) return formatCnpjDigits(digits);
+      if (isCNPJ.value) return formatCnpj(document.value);
       return document.value;
     }
     if (document.value) {
       const digits = document.value.replaceAll(/\D/g, '');
       if (isCPF.value) return formatCpfDigits(digits);
-      if (isCNPJ.value) return formatCnpjDigits(digits);
+      if (isCNPJ.value) return formatCnpj(document.value);
       return document.value;
     }
     return documentPartialOriginal.value ?? '';
   },
   set: (value: string) => {
     if (isDocumentDecrypted.value) {
-      document.value = value.replaceAll(/\D/g, '');
+      document.value = isCNPJ.value
+        ? normalizeCnpj(value)
+        : value.replaceAll(/\D/g, '');
       return;
     }
-    const digits = value.replaceAll(/\D/g, '');
-    document.value = digits;
+    document.value = isCNPJ.value
+      ? normalizeCnpj(value)
+      : value.replaceAll(/\D/g, '');
     documentPartialOriginal.value = value;
   },
 });
@@ -286,10 +290,7 @@ const documentValidator = (v: string | null | undefined) => {
     }
   }
   if (isCNPJ.value) {
-    if (digits.length !== 14) {
-      return t('cnpj_invalid');
-    }
-    if (!validateCnpj(digits)) {
+    if (!validateCnpj(s)) {
       return t('cnpj_invalid');
     }
   }
@@ -367,6 +368,7 @@ watch(contact_document_type_id, () => {
 });
 
 const isValided = ref<boolean>(false);
+const validationStatus = ref<ContactValidationStatus | null>(null);
 const photo = ref<string | null>(null);
 const photoFile = ref<File | null>(null);
 const photoPreview = ref<string | null>(null);
@@ -473,12 +475,10 @@ const determineDocumentToSave = (): string | null | undefined => {
     return null;
   }
 
-  const documentValue = document.value
-    ? document.value.replaceAll(/\D/g, '')
-    : '';
-  const documentPartialOriginalNumbers = documentPartialOriginal.value
-    ? documentPartialOriginal.value.replaceAll(/\D/g, '')
-    : '';
+  const documentValue = normalizeDocumentInput(document.value);
+  const documentPartialOriginalValue = normalizeDocumentInput(
+    documentPartialOriginal.value
+  );
 
   if (isDocumentDecrypted.value && documentValue) {
     return documentValue;
@@ -488,7 +488,7 @@ const determineDocumentToSave = (): string | null | undefined => {
     !isDocumentDecrypted.value &&
     documentValue &&
     !documentPartialOriginal.value?.includes('*') &&
-    documentValue !== documentPartialOriginalNumbers
+    documentValue !== documentPartialOriginalValue
   ) {
     return documentValue;
   }
@@ -497,7 +497,7 @@ const determineDocumentToSave = (): string | null | undefined => {
     !isDocumentDecrypted.value &&
     documentValue &&
     !documentPartialOriginal.value?.includes('*') &&
-    documentValue === documentPartialOriginalNumbers
+    documentValue === documentPartialOriginalValue
   ) {
     return documentValue;
   }
@@ -552,11 +552,12 @@ const loadContactData = async () => {
         document.value = null;
       } else {
         document.value = documentPartialOriginal.value
-          ? documentPartialOriginal.value.replaceAll(/\D/g, '')
+          ? normalizeDocumentInput(documentPartialOriginal.value)
           : null;
       }
       isDocumentDecrypted.value = false;
       isValided.value = contact.is_valided ?? false;
+      validationStatus.value = contact.validation_status ?? null;
       photo.value = contact.photo ?? null;
       photoPreview.value = contact.photo ?? null;
       photoFile.value = null;
@@ -1282,9 +1283,12 @@ onMounted(async () => {
       <VCard>
         <VCardTitle class="d-flex align-center justify-space-between">
           <span>{{ $t('edit_contact') }}</span>
-          <VChip :color="isValided ? 'success' : 'error'" size="small">
-            {{ isValided ? $t('validated') : $t('not_validated') }}
-          </VChip>
+          <ContactValidationBadge
+            v-if="!isLoadingData"
+            :validation-status="validationStatus"
+            :is-validated="isValided"
+          />
+          <VSkeletonLoader v-else type="chip" width="92" />
         </VCardTitle>
         <VCardText>
           <template v-if="isLoadingData">
@@ -1641,13 +1645,13 @@ onMounted(async () => {
                   :placeholder="
                     currentDocType === 'cpf'
                       ? '000.000.000-00'
-                      : '00.000.000/0000-00'
+                      : '00.AAA.000/00AA-00'
                   "
                   :rules="[documentValidator]"
                   :maxlength="currentDocType === 'cpf' ? 14 : 18"
                   v-maska="docMaskComputed"
                   :inputmode="
-                    documentPartialOriginal?.includes('*')
+                    documentPartialOriginal?.includes('*') || isCNPJ
                       ? undefined
                       : 'numeric'
                   "

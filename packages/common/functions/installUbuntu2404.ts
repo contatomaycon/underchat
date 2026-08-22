@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getPackageNodeVersion } from './getPackageNodeVersion';
 import { buildEnvironment } from '@core/config/environments';
 import { readEnvFile } from './readEnvFile';
@@ -11,17 +10,18 @@ import {
   getPrepareExternalAppEnvFileCommand,
   getRemoveEnvVarsFromFileCommand,
 } from './getRemoveEnvVarsFromFileCommand';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { resolveUnderchatProjectRoot } from './resolveUnderchatProjectRoot';
+import { getLegacyBalanceRolloutFencedCommandSequence } from './getStartBalanceContainerCommand';
 
 export async function installUbuntu2404(
   webView: IViewServerWebById,
   defaultImages: IServerBuildDefaultImages
 ): Promise<string[]> {
-  const patchPackage = path.join(__dirname, '../../../package.json');
+  const projectRoot = resolveUnderchatProjectRoot();
+  const patchPackage = path.join(projectRoot, 'package.json');
   const nodeVersion = getPackageNodeVersion(patchPackage);
 
-  const patchEnv = path.join(__dirname, '../../../.env');
+  const patchEnv = path.join(projectRoot, '.env');
   const envContent = await readEnvFile(patchEnv);
   const harborRegistryValue = buildEnvironment.harborRegistry;
   const harborUsernameValue = buildEnvironment.harborUsername;
@@ -39,9 +39,14 @@ export async function installUbuntu2404(
     getRemoveEnvVarsFromFileCommand('/home/app/.env');
   const prepareExternalAppEnvCommand =
     getPrepareExternalAppEnvFileCommand('/home/app/.env');
+  const dockerSetupCommand = `DEBIAN_FRONTEND=noninteractive bash -c "mkdir -p /etc/apt/keyrings && \
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg && \
+      chmod a+r /etc/apt/keyrings/docker.gpg"`;
+  const rolloutReservationStartCommand = 'dpkg --configure -a';
 
-  return [
-    'dpkg --configure -a',
+  const commands = [
+    rolloutReservationStartCommand,
     'apt-get update',
 
     'apt-get install curl -y',
@@ -55,9 +60,6 @@ export async function installUbuntu2404(
     'apt-get install lsb-release -y',
     'DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confnew" openssh-client',
 
-    'rm -rf /home/app || true',
-    'rm -rf /home/underchat || true',
-
     `bash -lc 'export NVM_DIR="$HOME/.nvm" && \
       curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash && \
       . "$NVM_DIR/nvm.sh"'`,
@@ -68,10 +70,7 @@ export async function installUbuntu2404(
       nvm use ${nodeVersion} && \
       nvm alias default ${nodeVersion}'`,
 
-    `DEBIAN_FRONTEND=noninteractive bash -c "mkdir -p /etc/apt/keyrings && \
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-        | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg && \
-      chmod a+r /etc/apt/keyrings/docker.gpg"`,
+    dockerSetupCommand,
 
     `DEBIAN_FRONTEND=noninteractive bash -c 'DISTRO=$(lsb_release -cs) && \
       if [ "$DISTRO" = "noble" ] || [ "$DISTRO" = "oracular" ]; then \
@@ -107,6 +106,9 @@ export async function installUbuntu2404(
       mkdir -p /root/.docker && \
       echo '{}' > /root/.docker/config.json"`,
 
+    'rm -rf /home/app || true',
+    'rm -rf /home/underchat || true',
+
     `bash -c "mkdir -p /home/app && chown $USER:$USER /home/app"`,
 
     `bash -c "printf '%b' '${envContent}' > /home/app/.env && \
@@ -127,12 +129,6 @@ export async function installUbuntu2404(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      docker stop under-worker-baileys 2>/dev/null || true && \
-      docker rm -f under-worker-baileys 2>/dev/null || true"`,
-
-    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
-      hash -r && \
-      cd /home/app && \
       if ! docker --config /home/app/.docker pull '${baileysImage}'; then \
         echo 'ERROR: Docker pull failed for under-worker-baileys' >&2; \
         exit 1; \
@@ -141,12 +137,6 @@ export async function installUbuntu2404(
         echo 'ERROR: Docker tag failed for under-worker-baileys' >&2; \
         exit 1; \
       fi"`,
-
-    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
-      hash -r && \
-      cd /home/app && \
-      docker stop under-worker-wwebjs 2>/dev/null || true && \
-      docker rm -f under-worker-wwebjs 2>/dev/null || true"`,
 
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
@@ -163,12 +153,6 @@ export async function installUbuntu2404(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      docker stop under-worker-whatsmeow 2>/dev/null || true && \
-      docker rm -f under-worker-whatsmeow 2>/dev/null || true"`,
-
-    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
-      hash -r && \
-      cd /home/app && \
       if ! docker --config /home/app/.docker pull '${whatsmeowImage}'; then \
         echo 'ERROR: Docker pull failed for under-worker-whatsmeow' >&2; \
         exit 1; \
@@ -176,14 +160,6 @@ export async function installUbuntu2404(
       if ! docker tag '${whatsmeowImage}' under-worker-whatsmeow:latest; then \
         echo 'ERROR: Docker tag failed for under-worker-whatsmeow' >&2; \
         exit 1; \
-      fi"`,
-
-    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
-      hash -r && \
-      cd /home/app && \
-      if docker ps -a --format '{{.Names}}' | grep -q '^under-balance-api$'; then \
-        docker stop under-balance-api 2>/dev/null || true && \
-        docker rm -f under-balance-api 2>/dev/null || true; \
       fi"`,
 
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
@@ -203,8 +179,23 @@ export async function installUbuntu2404(
       hash -r && \
       mkdir -p /home/server && \
       cd /home/app && \
+      ACTIVE_BALANCE_CONTAINER_IDS=$(docker ps -aq --filter "name=^/under-balance-api$") && \
+      RESERVED_PORT_CONTAINER_IDS=$({ \
+        docker ps -q --filter "publish=${webView.web_port}" && \
+        docker ps -q --filter "publish=50051"; \
+      } | sort -u) && \
+      for PORT_CONTAINER_ID in $RESERVED_PORT_CONTAINER_IDS; do \
+        case " $ACTIVE_BALANCE_CONTAINER_IDS " in \
+          *" $PORT_CONTAINER_ID "*) ;; \
+          *) echo "ERROR: Reserved Balance port is owned by foreign container $PORT_CONTAINER_ID" >&2; exit 1 ;; \
+        esac; \
+      done && \
+      if [ -n "$ACTIVE_BALANCE_CONTAINER_IDS" ]; then \
+        docker rm -f $ACTIVE_BALANCE_CONTAINER_IDS; \
+      fi && \
       CONTAINER_ID=$(docker run -d --name under-balance-api \
         --restart always \
+        --stop-timeout 10 \
         -p ${webView.web_port}:3003 \
         -p 50051:50051 \
         -v /var/run/docker.sock:/var/run/docker.sock \
@@ -212,8 +203,8 @@ export async function installUbuntu2404(
         --network underchat \
         -e DOCKER_HOST=unix:///var/run/docker.sock \
         -e SERVER_ID=${webView.server_id} \
-        under-balance-api:latest 2>&1 | tee -a /home/server/log_${webView.server_id}.log) && \
-      EXIT_CODE=$? && \
+        under-balance-api:latest 2>&1 | tee -a /home/server/log_${webView.server_id}.log); \
+      EXIT_CODE=$?; \
       if [ $EXIT_CODE -eq 0 ] && [ -n "$CONTAINER_ID" ] && echo "$CONTAINER_ID" | grep -qE "^[a-f0-9]{64}$"; then \
         sleep 2 && \
         if docker ps --filter id=$CONTAINER_ID --filter status=running --format "{{.ID}}" | grep -q .; then \
@@ -225,9 +216,15 @@ export async function installUbuntu2404(
         fi; \
       else \
         echo "ERROR: Failed to create container. Exit code: $EXIT_CODE. Output: $CONTAINER_ID" | tee -a /home/server/log_${webView.server_id}.log; \
+        docker rm -f under-balance-api >/dev/null 2>&1 || true; \
         exit 1; \
       fi'`,
 
     'rm -rf /home/app || true',
   ];
+  return getLegacyBalanceRolloutFencedCommandSequence(
+    commands,
+    rolloutReservationStartCommand,
+    'rm -rf /home/app || true'
+  );
 }

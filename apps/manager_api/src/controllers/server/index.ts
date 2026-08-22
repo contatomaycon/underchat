@@ -13,6 +13,7 @@ import { cancelServerBuild } from './methods/cancelServerBuild';
 import { setServerBuildDefault } from './methods/setServerBuildDefault';
 import { retryServerBuild } from './methods/retryServerBuild';
 import { deleteServerBuild } from './methods/deleteServerBuild';
+import { deleteServerBuildVersion } from './methods/deleteServerBuildVersion';
 import { pairServerBuild } from './methods/pairServerBuild';
 
 @injectable()
@@ -31,6 +32,7 @@ class ServerController {
   public setServerBuildDefault = setServerBuildDefault;
   public retryServerBuild = retryServerBuild;
   public deleteServerBuild = deleteServerBuild;
+  public deleteServerBuildVersion = deleteServerBuildVersion;
   public pairServerBuild = pairServerBuild;
 }
 

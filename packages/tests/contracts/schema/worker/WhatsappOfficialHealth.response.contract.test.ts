@@ -124,6 +124,41 @@ describe('WhatsappOfficialHealthResponse schema', () => {
           error: null,
         },
       },
+      diagnostics: {
+        reauthentication_required: false,
+        token: {
+          available: true,
+          data: {
+            valid: true,
+            app_matches_config: true,
+            type: 'SYSTEM_USER',
+            issued_at: '2026-08-03T20:32:43.000Z',
+            expires_at: null,
+            data_access_expires_at: null,
+            does_not_expire: true,
+            scopes: [
+              'business_management',
+              'whatsapp_business_management',
+              'whatsapp_business_messaging',
+            ],
+            required_scopes: [
+              'business_management',
+              'whatsapp_business_management',
+              'whatsapp_business_messaging',
+            ],
+            missing_scopes: [],
+          },
+          error: null,
+        },
+        webhook_subscription: {
+          available: true,
+          data: {
+            subscribed: true,
+            subscription_count: 1,
+          },
+          error: null,
+        },
+      },
       warnings: ['Meta did not return conversation analytics for this period.'],
     };
 

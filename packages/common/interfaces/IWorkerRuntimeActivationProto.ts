@@ -7,6 +7,9 @@ export interface IWorkerRuntimeActivationRequestProto {
   balancer_grpc_host?: string;
   balancer_grpc_port?: number | string;
   runtime_generation?: number | string;
+  session_storage?: string;
+  runtime_capability?: string;
+  writer_epoch?: string;
 }
 
 export interface IWorkerRuntimeActivationResponseProto {
@@ -20,6 +23,8 @@ export interface IWorkerRuntimeActivationResponseProto {
 export interface IWorkerRuntimeHealthRequestProto {
   worker_id?: string;
   warm_pool_id?: string;
+  worker_type_id?: string;
+  server_id?: string;
 }
 
 export interface IWorkerRuntimeHealthResponseProto {
@@ -46,4 +51,14 @@ export interface IWorkerRuntimeHealthResponseProto {
   probe_latency_ms?: number | string;
   phone?: string;
   kafka_unhealthy?: boolean;
+  kafka_consumers_ready?: boolean;
+  kafka_consumers_authorized?: boolean;
+  command_ingress_ready?: boolean;
+  command_ingress_authorized?: boolean;
+  runtime_health_schema_version?: number;
+  connection_status?: import('./IWhatsappConnectionStatus').IWhatsappConnectionStatus;
+  connection_status_source_id?: string;
+  session_storage?: string;
+  session_revision_id?: number | string;
+  session_storage_migration_id?: string;
 }

@@ -1,5 +1,9 @@
 import 'reflect-metadata';
 
+jest.mock('@whiskeysockets/baileys', () => ({
+  jidNormalizedUser: jest.fn((jid: string) => jid),
+}));
+
 jest.mock('@core/services/chat.service', () => ({
   ChatService: class ChatService {},
 }));
@@ -41,6 +45,8 @@ jest.mock('@core/services/pushNotification.service', () => ({
 
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EChatbotType } from '@core/common/enums/EChatbotType';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import type { IChat } from '@core/common/interfaces/IChat';
 import { TransferChatUseCase } from '@core/useCases/chat/TransferChat.useCase';
 
@@ -71,6 +77,7 @@ describe('TransferChatUseCase chatbot transfer', () => {
   const makeUseCase = (chat: IChat = makeChat()) => {
     const chatService = {
       findChatByChatId: jest.fn(async () => chat),
+      findOpenChatByIdentity: jest.fn(async () => null as IChat | null),
       saveChat: jest.fn(async () => true),
       transferAutomationChatToQueue: jest.fn(
         async (input: {
@@ -121,7 +128,13 @@ describe('TransferChatUseCase chatbot transfer', () => {
     };
     const sectorService = {
       listSectorUsersForTransfer: jest.fn(async () => []),
-      viewSectorById: jest.fn(async () => null),
+      viewSectorById: jest.fn(
+        async (): Promise<{
+          sector_id: string;
+          name: string;
+          color: string;
+        } | null> => null
+      ),
     };
     const chatMessageService = {
       sendMessage: jest.fn(async () => undefined),
@@ -144,6 +157,9 @@ describe('TransferChatUseCase chatbot transfer', () => {
       findStatusByUserId: jest.fn(),
     };
     const redis = {
+      status: 'ready',
+      set: jest.fn(async () => 'OK'),
+      eval: jest.fn(async () => 1),
       del: jest.fn(async () => undefined),
     };
     const pushNotificationService = {
@@ -166,9 +182,11 @@ describe('TransferChatUseCase chatbot transfer', () => {
     return {
       useCase,
       chatService,
+      sectorService,
       workerService,
       chatbotFlowRunnerService,
       pushNotificationService,
+      redis,
     };
   };
 
@@ -209,10 +227,10 @@ describe('TransferChatUseCase chatbot transfer', () => {
         chatbot_schedule_id: null,
         chatbot_webhook_id: null,
       }),
-      {
+      expect.objectContaining({
         allowHumanToAutomation: true,
         refresh: true,
-      }
+      })
     );
     expect(chatbotFlowRunnerService.clearFlowCacheForChat).toHaveBeenCalledWith(
       'account-1',
@@ -252,6 +270,49 @@ describe('TransferChatUseCase chatbot transfer', () => {
     ).rejects.toThrow('channel_required');
 
     expect(chatService.saveChat).not.toHaveBeenCalled();
+  });
+
+  it('rejects a target channel outside the direct channel scope without the permission', async () => {
+    const { useCase, chatService } = makeUseCase();
+
+    await expect(
+      useCase.execute(
+        t,
+        'account-1',
+        { chat_id: 'chat-1' },
+        { worker_id: 'worker-2', chatbot_id: 'chatbot-input-1' },
+        'user-1',
+        null,
+        [],
+        [{ id: 'worker-1', name: 'Channel' }]
+      )
+    ).rejects.toThrow('chat_access_denied');
+
+    expect(chatService.saveChat).not.toHaveBeenCalled();
+  });
+
+  it('allows a target channel outside the direct channel scope with the permission', async () => {
+    const { useCase, chatService } = makeUseCase();
+
+    await expect(
+      useCase.execute(
+        t,
+        'account-1',
+        { chat_id: 'chat-1' },
+        { worker_id: 'worker-2', chatbot_id: 'chatbot-input-1' },
+        'user-1',
+        null,
+        [
+          {
+            action_name:
+              EWorkerPermissions.view_all_channels_for_transfer_and_forwarding,
+          },
+        ] as never,
+        [{ id: 'worker-1', name: 'Channel' }]
+      )
+    ).resolves.toEqual({ chat_id: 'chat-1', status: true });
+
+    expect(chatService.saveChat).toHaveBeenCalled();
   });
 
   it('rejects chatbot transfer combined with user or sector targets', async () => {
@@ -315,6 +376,71 @@ describe('TransferChatUseCase chatbot transfer', () => {
     expect(chatService.saveChat).not.toHaveBeenCalled();
   });
 
+  it('rejects a cross-channel transfer when the contact already has an open target chat', async () => {
+    const { useCase, chatService, redis } = makeUseCase();
+    chatService.findOpenChatByIdentity.mockResolvedValueOnce(
+      makeChat({
+        chat_id: 'chat-2',
+        worker: { id: 'worker-2', name: 'Target Channel' },
+        user: { id: 'user-2', name: 'Gisele', photo: null },
+      })
+    );
+
+    await expect(
+      useCase.execute(
+        t,
+        'account-1',
+        { chat_id: 'chat-1' },
+        { worker_id: 'worker-2', user_id: 'user-2' },
+        'user-1',
+        null,
+        []
+      )
+    ).rejects.toThrow('chat_already_in_service');
+
+    expect(chatService.findOpenChatByIdentity).toHaveBeenCalledWith(
+      'account-1',
+      'worker-2',
+      {
+        phone: '5511999999999',
+        remoteJid: '5511999999999@s.whatsapp.net',
+        remoteJidAlt: null,
+      }
+    );
+    expect(redis.set).toHaveBeenCalledWith(
+      'underchat:lock:chat-create:account-1:worker-2:phone%3A5511999999999',
+      expect.any(String),
+      'PX',
+      60_000,
+      'NX'
+    );
+    expect(chatService.saveChat).not.toHaveBeenCalled();
+    expect(chatService.transferAutomationChatToQueue).not.toHaveBeenCalled();
+  });
+
+  it('does not treat the transferred chat itself as a target-channel collision', async () => {
+    const { useCase, chatService } = makeUseCase();
+    chatService.findOpenChatByIdentity.mockResolvedValueOnce(
+      makeChat({
+        worker: { id: 'worker-2', name: 'Target Channel' },
+      })
+    );
+
+    await expect(
+      useCase.execute(
+        t,
+        'account-1',
+        { chat_id: 'chat-1' },
+        { worker_id: 'worker-2', user_id: 'user-2' },
+        'user-1',
+        null,
+        []
+      )
+    ).resolves.toEqual({ chat_id: 'chat-1', status: true });
+
+    expect(chatService.saveChat).toHaveBeenCalled();
+  });
+
   it('moves the chat to ura_output and starts the linked output chatbot', async () => {
     const { useCase, chatService, chatbotFlowRunnerService } = makeUseCase();
 
@@ -342,10 +468,10 @@ describe('TransferChatUseCase chatbot transfer', () => {
         chatbot_schedule_id: null,
         chatbot_webhook_id: null,
       }),
-      {
+      expect.objectContaining({
         allowHumanToAutomation: true,
         refresh: true,
-      }
+      })
     );
     expect(chatbotFlowRunnerService.execute).toHaveBeenCalledWith(
       t,
@@ -403,5 +529,124 @@ describe('TransferChatUseCase chatbot transfer', () => {
       'worker-1',
       'chat-1'
     );
+  });
+
+  it('does not report a chatbot handoff as successful when persistence was not applied', async () => {
+    const chatbotChat = makeChat({ status: EChatStatus.ura });
+    const { useCase, chatService, chatbotFlowRunnerService } =
+      makeUseCase(chatbotChat);
+    chatService.transferAutomationChatToQueue.mockResolvedValueOnce({
+      chat: {
+        ...chatbotChat,
+        worker: chatbotChat.worker,
+        user: null,
+        sector: null,
+        secondary_users: [],
+        status: EChatStatus.ura,
+        forward_to_output_chatbot: true,
+        chatbot_transfer_id: null,
+        chatbot_schedule_id: null,
+        chatbot_webhook_id: null,
+      },
+      previousChat: chatbotChat,
+      applied: false,
+      alreadyHuman: false,
+    });
+
+    await expect(
+      useCase.execute(
+        t,
+        'account-1',
+        { chat_id: 'chat-1' },
+        { user_id: 'user-2' },
+        'user-1',
+        null,
+        []
+      )
+    ).rejects.toThrow('chat_transfer_failed');
+
+    expect(
+      chatbotFlowRunnerService.clearFlowCacheForChat
+    ).not.toHaveBeenCalled();
+  });
+
+  it('uses one revision-scoped webhook key for concurrent human transfer retries', async () => {
+    const chat = makeChat({
+      meta: {
+        assignment_event_id: 'assignment-revision-7',
+        outbound_webhook_event_ids: ['older-webhook-marker'],
+      },
+    });
+    const { useCase, chatService, sectorService } = makeUseCase(chat);
+    sectorService.viewSectorById.mockResolvedValueOnce({
+      sector_id: 'sector-2',
+      name: 'Billing',
+      color: '#123456',
+    });
+
+    await useCase.execute(
+      t,
+      'account-1',
+      { chat_id: 'chat-1' },
+      { sector_id: 'sector-2' },
+      'user-1',
+      null,
+      []
+    );
+
+    expect(chatService.saveChat).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        outboundWebhook: expect.objectContaining({
+          idempotencyKey:
+            'chat-transfer:chat-1:human:assignment-revision-7:worker-1:unassigned:sector-2:replace',
+        }),
+      })
+    );
+  });
+
+  it('acknowledges an already-applied human transfer without repeating side effects', async () => {
+    const transferredChat = makeChat({
+      status: EChatStatus.queue,
+      user: null,
+      secondary_users: [{ id: 'user-3', name: 'Secondary', photo: null }],
+      sector: { id: 'sector-2', name: 'Billing', color: '#123456' },
+      chatbot_transfer_id: null,
+      chatbot_schedule_id: null,
+      chatbot_webhook_id: null,
+    });
+    const {
+      useCase,
+      chatService,
+      sectorService,
+      chatbotFlowRunnerService,
+      pushNotificationService,
+    } = makeUseCase(transferredChat);
+    sectorService.viewSectorById.mockResolvedValueOnce({
+      sector_id: 'sector-2',
+      name: 'Billing',
+      color: '#123456',
+    });
+
+    await expect(
+      useCase.execute(
+        t,
+        'account-1',
+        { chat_id: 'chat-1' },
+        { sector_id: 'sector-2' },
+        'user-1',
+        EPermissionRole.administrator,
+        []
+      )
+    ).resolves.toEqual({ chat_id: 'chat-1', status: true });
+
+    expect(chatService.saveChat).not.toHaveBeenCalled();
+    expect(chatService.clearChatSummary).not.toHaveBeenCalled();
+    expect(
+      chatbotFlowRunnerService.clearFlowCacheForChat
+    ).not.toHaveBeenCalled();
+    expect(
+      pushNotificationService.sendNotificationForChatTransfer
+    ).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { ITypingSimulationConfig } from '../interfaces/ITypingSimulationConfig';
 
 export const DEFAULT_TYPING_SIMULATION_SPEED = 50;
 export const DEFAULT_TYPING_SIMULATION_ENABLED = true;
+export const DEFAULT_TYPING_SIMULATION_MAX_DELAY_MS = 15_000;
 export const TYPING_SIMULATION_CACHE_TTL_SECONDS = 60 * 60 * 24 * 7;
 
 export const defaultTypingSimulationConfig = (): ITypingSimulationConfig => ({
@@ -82,4 +83,15 @@ export const typingSimulationDelayMultiplier = (speed: number): number => {
   const multiplier = 1 - normalizedSpeed / 100;
 
   return Math.max(0.15, Math.min(1, multiplier));
+};
+
+export const resolveTypingSimulationMaxDelayMs = (
+  rawValue = process.env.TYPING_SIMULATION_MAX_DELAY_MS
+): number => {
+  const parsed = Number.parseInt(rawValue ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_TYPING_SIMULATION_MAX_DELAY_MS;
+  }
+
+  return Math.min(60_000, Math.max(1_000, parsed));
 };

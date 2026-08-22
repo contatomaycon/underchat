@@ -18,24 +18,33 @@ import (
 
 type NoiseSocket struct {
 	fs           *FrameSocket
-	onFrame      FrameHandler
+	onFrame      SourceFrameHandler
 	writeKey     cipher.AEAD
 	readKey      cipher.AEAD
 	writeCounter uint32
 	readCounter  uint32
 	writeLock    sync.Mutex
+	started      atomic.Bool
 	destroyed    atomic.Bool
 	stopConsumer chan struct{}
 }
 
 type DisconnectHandler func(ctx context.Context, socket *NoiseSocket, remote bool)
+
+// FrameHandler is the compatibility callback used by NoiseHandshake.Finish.
 type FrameHandler func(context.Context, []byte)
+
+// SourceFrameHandler receives the exact NoiseSocket that decrypted the frame. The
+// source socket must travel with the frame because a client may already have
+// installed a replacement transport by the time an asynchronous node handler
+// runs.
+type SourceFrameHandler func(context.Context, *NoiseSocket, []byte)
 
 func newNoiseSocket(
 	ctx context.Context,
 	fs *FrameSocket,
 	writeKey, readKey cipher.AEAD,
-	frameHandler FrameHandler,
+	frameHandler SourceFrameHandler,
 	disconnectHandler DisconnectHandler,
 ) (*NoiseSocket, error) {
 	ns := &NoiseSocket{
@@ -48,8 +57,17 @@ func newNoiseSocket(
 	fs.OnDisconnect = func(ctx context.Context, remote bool) {
 		disconnectHandler(ctx, ns, remote)
 	}
-	go ns.consumeFrames(ctx, fs.Frames)
 	return ns, nil
+}
+
+// Start activates frame consumption after the owner has installed this socket
+// as its current generation. Splitting construction from activation closes the
+// small race where the first decrypted node could be handled before the client
+// knew which NoiseSocket produced it.
+func (ns *NoiseSocket) Start(ctx context.Context) {
+	if ns != nil && ns.started.CompareAndSwap(false, true) {
+		go ns.consumeFrames(ctx, ns.fs.Frames)
+	}
 }
 
 func (ns *NoiseSocket) consumeFrames(ctx context.Context, frames <-chan []byte) {
@@ -91,6 +109,9 @@ func (ns *NoiseSocket) Stop(disconnect, allowOnDisconnect bool) {
 func (ns *NoiseSocket) SendFrame(ctx context.Context, plaintext []byte) error {
 	ns.writeLock.Lock()
 	defer ns.writeLock.Unlock()
+	if ns.destroyed.Load() {
+		return ErrSocketClosed
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -116,7 +137,7 @@ func (ns *NoiseSocket) receiveEncryptedFrame(ctx context.Context, ciphertext []b
 		ns.fs.log.Warnf("Failed to decrypt frame: %v", err)
 		return
 	}
-	ns.onFrame(ctx, plaintext)
+	ns.onFrame(ctx, ns, plaintext)
 }
 
 func (ns *NoiseSocket) IsConnected() bool {

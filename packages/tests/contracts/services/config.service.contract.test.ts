@@ -30,6 +30,7 @@ describe('ConfigService', () => {
   it('delegates balancer and listAllNonDeletedChannelIds', async () => {
     const viewChannelBalancer = jest.fn(async () => ({ worker_id: 'w1' }));
     const viewChannelContext = jest.fn(async () => ({ worker_id: 'w1' }));
+    const existsActiveAccountByIdConsistent = jest.fn(async () => true);
     const listAllNonDeletedChannelIds = jest.fn(async () => ['c1', 'c2']);
     const listAllNonDeletedChannelRecreateTargets = jest.fn(async () => [
       { worker_id: 'c1', server_id: 'srv-1' },
@@ -42,7 +43,11 @@ describe('ConfigService', () => {
         listAllNonDeletedChannelIds,
         listAllNonDeletedChannelRecreateTargets,
       } as never,
-      { viewChannelBalancer, viewChannelContext } as never,
+      {
+        viewChannelBalancer,
+        viewChannelContext,
+        existsActiveAccountByIdConsistent,
+      } as never,
       { getChannelsStatistics: jest.fn() } as never
     );
 
@@ -52,6 +57,10 @@ describe('ConfigService', () => {
     await expect(service.viewChannelContext('c1')).resolves.toEqual({
       worker_id: 'w1',
     });
+    await expect(
+      service.existsActiveAccountByIdConsistent('acc-1')
+    ).resolves.toBe(true);
+    expect(existsActiveAccountByIdConsistent).toHaveBeenCalledWith('acc-1');
     await expect(
       service.listAllNonDeletedChannelIds({ include_test: true } as never)
     ).resolves.toEqual(['c1', 'c2']);

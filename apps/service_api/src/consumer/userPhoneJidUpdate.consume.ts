@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { UserPhoneJidUpdateConsume } from '@core/consumer/user/UserPhoneJidUpdate.consume';
+import { launchServiceApiConsumerStartup } from './startupAttempt';
 
 export function startUserPhoneJidUpdateConsume(
   server: FastifyInstance
@@ -9,12 +10,13 @@ export function startUserPhoneJidUpdateConsume(
     UserPhoneJidUpdateConsume
   );
 
-  userPhoneJidUpdateConsume.execute().catch((error: unknown) => {
-    server.log.error(
-      { err: error },
-      'Error starting user phone jid update consume'
-    );
-  });
-
-  return userPhoneJidUpdateConsume;
+  return launchServiceApiConsumerStartup(
+    userPhoneJidUpdateConsume,
+    () => userPhoneJidUpdateConsume.execute(),
+    (error) =>
+      server.log.error(
+        { err: error },
+        'Error starting user phone jid update consume'
+      )
+  );
 }

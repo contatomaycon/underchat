@@ -13,6 +13,11 @@ import {
   type IPromptDocumentExtractionResult,
 } from '@core/services/promptDocumentExtractor.service';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import Redis from 'ioredis';
+import {
+  LockAcquisitionTimeoutError,
+  withLock,
+} from '@core/common/functions/withLock';
 
 @singleton()
 export class AiAgentPromptEmbeddingConsume {
@@ -22,6 +27,8 @@ export class AiAgentPromptEmbeddingConsume {
   private isRunning = false;
   private readonly RETRY_ATTEMPTS = 3;
   private readonly RETRY_BASE_DELAY_MS = 700;
+  private readonly pendingRefreshHash =
+    'ai-agent:prompt-embedding:pending-refresh:v1';
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -34,7 +41,8 @@ export class AiAgentPromptEmbeddingConsume {
     @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
     @inject(PromptDocumentExtractorService)
-    private readonly promptDocumentExtractorService: PromptDocumentExtractorService
+    private readonly promptDocumentExtractorService: PromptDocumentExtractorService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   public async execute(): Promise<void> {
@@ -65,7 +73,21 @@ export class AiAgentPromptEmbeddingConsume {
               retry_count: data.retry_count ?? 0,
             }
           );
+          throw error;
         }
+      },
+      maxRetries: 3,
+      retryDelaysMs: [1000, 5000, 15000],
+      onDiscarded: (data, context, error, reason) => {
+        console.error('[AiAgentPromptEmbedding] mensagem descartada', {
+          account_id: data.account_id,
+          ai_agent_id: data.ai_agent_id,
+          ai_agent_prompt_id: data.ai_agent_prompt_id,
+          partition: context.partition,
+          offset: context.offset,
+          reason,
+          error: this.normalizeErrorReason(error),
+        });
       },
       logger: console,
     });
@@ -74,6 +96,53 @@ export class AiAgentPromptEmbeddingConsume {
       this.isRunning = true;
     });
     this.consumer = this.runner.consumer;
+    await this.recoverDurablePendingRefreshes();
+  }
+
+  private async recoverDurablePendingRefreshes(): Promise<void> {
+    try {
+      await withLock(
+        this.redis,
+        `${this.pendingRefreshHash}:recovery-lock`,
+        async (lockContext) => {
+          const pendingJobs = await this.redis.hgetall(this.pendingRefreshHash);
+
+          for (const [jobId, serializedJob] of Object.entries(pendingJobs)) {
+            lockContext.assertActive();
+            const data = this.parseRequest(Buffer.from(serializedJob, 'utf8'));
+            if (!data) {
+              await this.redis.hdel(this.pendingRefreshHash, jobId);
+              continue;
+            }
+
+            try {
+              await this.processEmbedding(data);
+              lockContext.assertActive();
+              await this.redis.hdel(this.pendingRefreshHash, jobId);
+            } catch (error) {
+              console.error(
+                '[AiAgentPromptEmbedding] recuperação durável permaneceu pendente',
+                {
+                  error,
+                  account_id: data.account_id,
+                  ai_agent_id: data.ai_agent_id,
+                  ai_agent_prompt_id: data.ai_agent_prompt_id,
+                }
+              );
+            }
+          }
+        },
+        {
+          ttlMs: 120_000,
+          maxWaitMs: 1_000,
+        }
+      );
+    } catch (error) {
+      if (error instanceof LockAcquisitionTimeoutError) {
+        return;
+      }
+      throw error;
+    }
   }
 
   public async close(): Promise<void> {
@@ -126,11 +195,12 @@ export class AiAgentPromptEmbeddingConsume {
       return;
     }
 
+    if (currentPrompt.value !== data.value) {
+      return;
+    }
+
     if (currentPrompt.status !== EAiAgentStatus.active) {
-      await this.cleanupInactivePromptArtifacts(
-        data,
-        currentPrompt.openai_file_id
-      );
+      await this.cleanupInactivePromptArtifacts(data);
       return;
     }
 
@@ -158,13 +228,13 @@ export class AiAgentPromptEmbeddingConsume {
         ai_agent_prompt_id: data.ai_agent_prompt_id,
         source: data.source ?? 'unknown',
       });
-      return;
+      throw error;
     }
 
     const textContent = extraction.text.trim();
     if (!textContent) {
       console.warn(
-        '[AiAgentPromptEmbedding] conteúdo vazio, pulando embedding',
+        '[AiAgentPromptEmbedding] conteúdo vazio, removendo conhecimento anterior',
         {
           account_id: data.account_id,
           ai_agent_id: data.ai_agent_id,
@@ -172,7 +242,6 @@ export class AiAgentPromptEmbeddingConsume {
           extraction_source: extraction.source,
         }
       );
-      return;
     }
 
     let chunksCount = 0;
@@ -183,7 +252,8 @@ export class AiAgentPromptEmbeddingConsume {
             data.account_id,
             data.ai_agent_id,
             data.ai_agent_prompt_id,
-            textContent
+            textContent,
+            data.value
           ),
         this.RETRY_ATTEMPTS,
         {
@@ -202,7 +272,7 @@ export class AiAgentPromptEmbeddingConsume {
         ai_agent_prompt_id: data.ai_agent_prompt_id,
         source: data.source ?? 'unknown',
       });
-      return;
+      throw error;
     }
 
     console.log('[AiAgentPromptEmbedding] embeddings gerados', {
@@ -214,17 +284,104 @@ export class AiAgentPromptEmbeddingConsume {
       source: data.source ?? 'unknown',
     });
 
-    await this.processOpenAIFileUpload(data, currentPrompt.openai_file_id);
+    if (!textContent) {
+      await this.cleanupActivePromptOpenAIFile(data);
+      return;
+    }
+
+    await this.processOpenAIFileUpload(data, extraction);
+  }
+
+  private async cleanupActivePromptOpenAIFile(
+    data: IAiAgentPromptEmbeddingRequest
+  ): Promise<void> {
+    await this.embeddingService.withEmbeddingGenerationLock(
+      data.account_id,
+      data.ai_agent_id,
+      async (lockContext) => {
+        const [agent, prompt] = await Promise.all([
+          this.aiAgentService.viewAiAgent(data.ai_agent_id, data.account_id),
+          this.aiAgentService.viewAiAgentPrompt(
+            data.ai_agent_prompt_id,
+            data.account_id
+          ),
+        ]);
+
+        if (
+          !prompt ||
+          prompt.status !== EAiAgentStatus.active ||
+          prompt.value !== data.value ||
+          !prompt.openai_file_id
+        ) {
+          return;
+        }
+
+        if (agent?.ai_agent_type_id === EAiAgentType.gpt) {
+          lockContext.assertActive();
+          await this.openAIAssistantService.registerPendingOpenAIFileCleanup(
+            data.account_id,
+            data.ai_agent_id,
+            data.ai_agent_prompt_id,
+            agent.openai_vector_store_id,
+            prompt.openai_file_id
+          );
+        }
+
+        lockContext.assertActive();
+        const cleared =
+          await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
+            data.ai_agent_prompt_id,
+            data.account_id,
+            null
+          );
+        if (!cleared) {
+          throw new Error('Failed to clear the empty OpenAI prompt file.');
+        }
+
+        if (
+          agent?.ai_agent_type_id === EAiAgentType.gpt &&
+          agent.api_key &&
+          agent.base_url
+        ) {
+          await this.openAIAssistantService.cleanupPendingOpenAIFiles(
+            agent.api_key,
+            agent.base_url,
+            data.account_id,
+            data.ai_agent_id
+          );
+        }
+      }
+    );
   }
 
   private async cleanupInactivePromptArtifacts(
-    data: IAiAgentPromptEmbeddingRequest,
-    existingOpenAiFileId: string | null
+    data: IAiAgentPromptEmbeddingRequest
   ): Promise<void> {
+    await this.embeddingService.withEmbeddingGenerationLock(
+      data.account_id,
+      data.ai_agent_id,
+      () => this.cleanupInactivePromptArtifactsWithLock(data)
+    );
+  }
+
+  private async cleanupInactivePromptArtifactsWithLock(
+    data: IAiAgentPromptEmbeddingRequest
+  ): Promise<void> {
+    const currentPrompt = await this.aiAgentService.viewAiAgentPrompt(
+      data.ai_agent_prompt_id,
+      data.account_id
+    );
+    if (!currentPrompt || currentPrompt.status === EAiAgentStatus.active) {
+      return;
+    }
+
     try {
-      await this.embeddingService.deletePromptEmbeddings(
+      const deleted = await this.embeddingService.deletePromptEmbeddings(
         data.ai_agent_prompt_id
       );
+      if (!deleted) {
+        throw new Error('Failed to remove inactive prompt embeddings.');
+      }
     } catch (error) {
       console.error(
         '[AiAgentPromptEmbedding] falha ao remover embeddings de prompt inativo',
@@ -235,9 +392,10 @@ export class AiAgentPromptEmbeddingConsume {
           ai_agent_prompt_id: data.ai_agent_prompt_id,
         }
       );
+      throw error;
     }
 
-    if (!existingOpenAiFileId) {
+    if (!currentPrompt.openai_file_id) {
       return;
     }
 
@@ -247,31 +405,37 @@ export class AiAgentPromptEmbeddingConsume {
         data.account_id
       );
 
-      if (
-        !agent ||
-        agent.ai_agent_type_id !== EAiAgentType.gpt ||
-        !agent.api_key ||
-        !agent.base_url
-      ) {
-        await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
-          data.ai_agent_prompt_id,
+      if (agent?.ai_agent_type_id === EAiAgentType.gpt) {
+        await this.openAIAssistantService.registerPendingOpenAIFileCleanup(
           data.account_id,
-          null
+          data.ai_agent_id,
+          data.ai_agent_prompt_id,
+          agent.openai_vector_store_id,
+          currentPrompt.openai_file_id
         );
-        return;
       }
 
-      await this.openAIAssistantService.cleanupOpenAIFile(
-        agent.api_key,
-        agent.base_url,
-        agent.openai_vector_store_id,
-        existingOpenAiFileId
-      );
-      await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
+      const cleared = await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
         data.ai_agent_prompt_id,
         data.account_id,
         null
       );
+      if (!cleared) {
+        throw new Error('Failed to clear inactive OpenAI prompt file.');
+      }
+
+      if (
+        agent?.ai_agent_type_id === EAiAgentType.gpt &&
+        agent.api_key &&
+        agent.base_url
+      ) {
+        await this.openAIAssistantService.cleanupPendingOpenAIFiles(
+          agent.api_key,
+          agent.base_url,
+          data.account_id,
+          data.ai_agent_id
+        );
+      }
     } catch (error) {
       console.error(
         '[AiAgentPromptEmbedding] falha ao limpar artefatos OpenAI de prompt inativo',
@@ -282,13 +446,25 @@ export class AiAgentPromptEmbeddingConsume {
           ai_agent_prompt_id: data.ai_agent_prompt_id,
         }
       );
+      throw error;
     }
   }
 
   private async processOpenAIFileUpload(
     data: IAiAgentPromptEmbeddingRequest,
-    existingOpenAiFileId: string | null
+    extraction: IPromptDocumentExtractionResult
   ): Promise<void> {
+    let uploadedFileId: string | null = null;
+    let vectorStoreId: string | null = null;
+    let fileAttached = false;
+    let providerConfiguration:
+      | {
+          apiKey: string;
+          baseUrl: string;
+        }
+      | undefined;
+    let activated = false;
+
     try {
       const agent = await this.aiAgentService.viewAiAgent(
         data.ai_agent_id,
@@ -299,123 +475,198 @@ export class AiAgentPromptEmbeddingConsume {
         return;
       }
 
-      const isGpt =
-        data.ai_agent_type_id === EAiAgentType.gpt ||
-        agent.ai_agent_type_id === EAiAgentType.gpt;
-
-      if (!isGpt || !agent.api_key || !agent.base_url) {
+      if (
+        agent.status !== EAiAgentStatus.active ||
+        agent.ai_agent_type_id !== EAiAgentType.gpt ||
+        !agent.api_key ||
+        !agent.base_url
+      ) {
         return;
       }
+      providerConfiguration = {
+        apiKey: agent.api_key,
+        baseUrl: agent.base_url,
+      };
 
       const currentPrompt = await this.aiAgentService.viewAiAgentPrompt(
         data.ai_agent_prompt_id,
         data.account_id
       );
-      if (!currentPrompt || currentPrompt.status !== EAiAgentStatus.active) {
+      if (
+        !currentPrompt ||
+        currentPrompt.status !== EAiAgentStatus.active ||
+        currentPrompt.value !== data.value
+      ) {
         return;
       }
 
-      const vectorStoreId = await this.openAIAssistantService.ensureVectorStore(
-        data.ai_agent_id,
+      await this.openAIAssistantService.cleanupPendingOpenAIFiles(
+        providerConfiguration.apiKey,
+        providerConfiguration.baseUrl,
         data.account_id,
-        agent.api_key,
-        agent.base_url
+        data.ai_agent_id
       );
 
-      if (existingOpenAiFileId) {
-        try {
-          await this.openAIAssistantService.cleanupOpenAIFile(
-            agent.api_key,
-            agent.base_url,
-            vectorStoreId,
-            existingOpenAiFileId
-          );
-        } catch (error) {
-          console.error(
-            '[AiAgentPromptEmbedding] erro ao remover arquivo antigo do vector store',
-            {
-              error,
-              account_id: data.account_id,
-              ai_agent_id: data.ai_agent_id,
-              ai_agent_prompt_id: data.ai_agent_prompt_id,
-            }
-          );
-        }
-      }
-
-      if (agent.model) {
-        const instructions =
-          this.openAIAssistantService.getAssistantInstructionsFromSystemPrompt(
-            agent.system_prompt
-          );
-        await this.openAIAssistantService.ensureAssistant(
-          data.ai_agent_id,
-          data.account_id,
-          agent.api_key,
-          agent.base_url,
-          agent.model,
-          instructions,
-          vectorStoreId
-        );
-      }
-
-      const fileResponse = await this.retryWithBackoff(
-        async () => {
-          const response = await fetch(data.value);
-          if (!response.ok) {
-            throw new Error(
-              `Falha ao baixar arquivo para upload OpenAI: ${response.status}`
-            );
-          }
-          return response;
-        },
-        this.RETRY_ATTEMPTS,
-        {
-          account_id: data.account_id,
-          ai_agent_id: data.ai_agent_id,
-          ai_agent_prompt_id: data.ai_agent_prompt_id,
-          stage: 'openai_upload_download',
-          source: data.source ?? 'unknown',
-        }
-      );
-
-      const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
-      const contentType = fileResponse.headers.get('content-type');
       const filename = this.buildFilenameForOpenAIVectorStore(
         data.value,
-        contentType,
+        extraction.contentType,
         'document'
       );
 
-      const fileId = await this.openAIAssistantService.uploadFileToOpenAI(
-        agent.api_key,
-        agent.base_url,
-        fileBuffer,
+      const stagedFileId = await this.openAIAssistantService.uploadFileToOpenAI(
+        providerConfiguration.apiKey,
+        providerConfiguration.baseUrl,
+        extraction.buffer,
         filename
       );
+      uploadedFileId = stagedFileId;
 
-      await this.openAIAssistantService.addFileToVectorStoreWithRecovery(
-        agent.api_key,
-        agent.base_url,
-        vectorStoreId,
-        fileId,
+      await this.embeddingService.withEmbeddingGenerationLock(
+        data.account_id,
         data.ai_agent_id,
-        data.account_id
+        async (lockContext) => {
+          let [latestAgent, latestPrompt] = await Promise.all([
+            this.aiAgentService.viewAiAgent(data.ai_agent_id, data.account_id),
+            this.aiAgentService.viewAiAgentPrompt(
+              data.ai_agent_prompt_id,
+              data.account_id
+            ),
+          ]);
+
+          if (
+            !latestAgent ||
+            latestAgent.status !== EAiAgentStatus.active ||
+            latestAgent.ai_agent_type_id !== EAiAgentType.gpt ||
+            latestAgent.api_key !== providerConfiguration?.apiKey ||
+            latestAgent.base_url !== providerConfiguration?.baseUrl ||
+            !latestPrompt ||
+            latestPrompt.status !== EAiAgentStatus.active ||
+            latestPrompt.value !== data.value
+          ) {
+            return;
+          }
+
+          lockContext.assertActive();
+          const ensuredVectorStoreId =
+            await this.openAIAssistantService.ensureVectorStore(
+              data.ai_agent_id,
+              data.account_id,
+              providerConfiguration.apiKey,
+              providerConfiguration.baseUrl
+            );
+          lockContext.assertActive();
+          vectorStoreId =
+            await this.openAIAssistantService.addFileToVectorStoreWithRecovery(
+              providerConfiguration.apiKey,
+              providerConfiguration.baseUrl,
+              ensuredVectorStoreId,
+              stagedFileId,
+              data.ai_agent_id,
+              data.account_id
+            );
+          fileAttached = true;
+
+          [latestAgent, latestPrompt] = await Promise.all([
+            this.aiAgentService.viewAiAgent(data.ai_agent_id, data.account_id),
+            this.aiAgentService.viewAiAgentPrompt(
+              data.ai_agent_prompt_id,
+              data.account_id
+            ),
+          ]);
+          if (
+            !latestAgent ||
+            latestAgent.status !== EAiAgentStatus.active ||
+            latestAgent.ai_agent_type_id !== EAiAgentType.gpt ||
+            latestAgent.api_key !== providerConfiguration.apiKey ||
+            latestAgent.base_url !== providerConfiguration.baseUrl ||
+            latestAgent.openai_vector_store_id !== vectorStoreId ||
+            !latestPrompt ||
+            latestPrompt.status !== EAiAgentStatus.active ||
+            latestPrompt.value !== data.value
+          ) {
+            return;
+          }
+
+          lockContext.assertActive();
+          const previousOpenAiFileId = latestPrompt.openai_file_id;
+          if (previousOpenAiFileId && previousOpenAiFileId !== stagedFileId) {
+            await this.openAIAssistantService.registerPendingOpenAIFileCleanup(
+              data.account_id,
+              data.ai_agent_id,
+              data.ai_agent_prompt_id,
+              vectorStoreId,
+              previousOpenAiFileId
+            );
+          }
+
+          const updated =
+            await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
+              data.ai_agent_prompt_id,
+              data.account_id,
+              stagedFileId
+            );
+          if (!updated) {
+            throw new Error('Failed to activate the new OpenAI prompt file.');
+          }
+          activated = true;
+        }
       );
 
-      await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
-        data.ai_agent_prompt_id,
+      if (!activated) {
+        await this.cleanupUploadedOpenAIFile(
+          data,
+          providerConfiguration,
+          vectorStoreId,
+          uploadedFileId,
+          fileAttached,
+          'stale upload'
+        );
+        uploadedFileId = null;
+        return;
+      }
+
+      await this.openAIAssistantService.cleanupPendingOpenAIFiles(
+        providerConfiguration.apiKey,
+        providerConfiguration.baseUrl,
         data.account_id,
-        fileId
+        data.ai_agent_id
       );
 
       console.log('[AiAgentPromptEmbedding] arquivo enviado para OpenAI', {
         account_id: data.account_id,
         ai_agent_id: data.ai_agent_id,
         ai_agent_prompt_id: data.ai_agent_prompt_id,
-        file_id: fileId,
+        file_id: uploadedFileId,
       });
     } catch (error) {
+      if (!activated && uploadedFileId && providerConfiguration) {
+        try {
+          await this.cleanupUploadedOpenAIFile(
+            data,
+            providerConfiguration,
+            vectorStoreId,
+            uploadedFileId,
+            fileAttached,
+            'failed upload'
+          );
+        } catch (cleanupError) {
+          console.error(
+            '[AiAgentPromptEmbedding] falha ao compensar arquivo OpenAI',
+            {
+              cleanupError,
+              account_id: data.account_id,
+              ai_agent_id: data.ai_agent_id,
+              ai_agent_prompt_id: data.ai_agent_prompt_id,
+              file_id: uploadedFileId,
+            }
+          );
+          throw new AggregateError(
+            [error, cleanupError],
+            'OpenAI prompt upload and cleanup both failed.'
+          );
+        }
+      }
+
       console.error(
         '[AiAgentPromptEmbedding] erro ao enviar arquivo para OpenAI',
         {
@@ -425,7 +676,51 @@ export class AiAgentPromptEmbeddingConsume {
           ai_agent_prompt_id: data.ai_agent_prompt_id,
         }
       );
+      throw error;
     }
+  }
+
+  private async cleanupUploadedOpenAIFile(
+    data: IAiAgentPromptEmbeddingRequest,
+    providerConfiguration: {
+      apiKey: string;
+      baseUrl: string;
+    },
+    vectorStoreId: string | null,
+    fileId: string,
+    fileAttached: boolean,
+    reason: string
+  ): Promise<void> {
+    if (fileAttached) {
+      await this.openAIAssistantService.registerPendingOpenAIFileCleanup(
+        data.account_id,
+        data.ai_agent_id,
+        data.ai_agent_prompt_id,
+        vectorStoreId,
+        fileId
+      );
+      await this.openAIAssistantService.cleanupPendingOpenAIFiles(
+        providerConfiguration.apiKey,
+        providerConfiguration.baseUrl,
+        data.account_id,
+        data.ai_agent_id
+      );
+      return;
+    }
+
+    await this.openAIAssistantService.cleanupOpenAIFile(
+      providerConfiguration.apiKey,
+      providerConfiguration.baseUrl,
+      null,
+      fileId
+    );
+    console.warn('[AiAgentPromptEmbedding] upload OpenAI compensado', {
+      reason,
+      account_id: data.account_id,
+      ai_agent_id: data.ai_agent_id,
+      ai_agent_prompt_id: data.ai_agent_prompt_id,
+      file_id: fileId,
+    });
   }
 
   private buildFilenameForOpenAIVectorStore(
@@ -512,8 +807,6 @@ export class AiAgentPromptEmbeddingConsume {
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        if (attempt > 1) {
-        }
         return await operation();
       } catch (error) {
         lastError = error;

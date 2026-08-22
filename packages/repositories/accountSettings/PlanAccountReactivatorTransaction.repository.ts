@@ -5,7 +5,14 @@ import {
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq, ExtractTablesWithRelations } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  ExtractTablesWithRelations,
+  isNull,
+  ne,
+  sql,
+} from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { currentTime } from '@core/common/functions/currentTime';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
@@ -25,13 +32,30 @@ export class PlanAccountReactivatorTransactionRepository {
     >,
     accountId: string
   ): Promise<boolean> => {
+    const currentPlans = await tx
+      .select({ plan_account_id: planAccount.plan_account_id })
+      .from(planAccount)
+      .where(eq(planAccount.account_id, accountId))
+      .orderBy(
+        sql`${planAccount.updated_at} DESC NULLS LAST`,
+        sql`${planAccount.created_at} DESC NULLS LAST`,
+        sql`${planAccount.plan_account_id} DESC`
+      )
+      .limit(1)
+      .for('update')
+      .execute();
+
+    const currentPlan = currentPlans[0];
+    if (!currentPlan) {
+      return false;
+    }
+
     const result = await tx
       .update(planAccount)
       .set({
         cancellation_date: null,
-        updated_at: currentTime(),
       })
-      .where(eq(planAccount.account_id, accountId))
+      .where(eq(planAccount.plan_account_id, currentPlan.plan_account_id))
       .execute();
 
     return (result.rowCount ?? 0) > 0;
@@ -51,7 +75,13 @@ export class PlanAccountReactivatorTransactionRepository {
         account_status_id: EAccountStatus.active,
         updated_at: currentTime(),
       })
-      .where(eq(account.account_id, accountId))
+      .where(
+        and(
+          eq(account.account_id, accountId),
+          ne(account.account_status_id, EAccountStatus.blocked),
+          isNull(account.deleted_at)
+        )
+      )
       .execute();
 
     return (result.rowCount ?? 0) > 0;

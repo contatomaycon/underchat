@@ -22,7 +22,7 @@ WhatsApp Business App.
   https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users
 - OAuth/code exchange da Graph API:
   `/{api_version}/oauth/access_token`
-- Leitura/validacao de numeros da WABA:
+- Leitura dos numeros comerciais pertencentes a WABA:
   `/{api_version}/{waba_id}/phone_numbers`
 - Webhooks futuros para coexistencia:
   - `messages`
@@ -35,6 +35,23 @@ WhatsApp Business App.
 
 Referencia do webhook:
 https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/account_update
+
+## Validacao de numeros destinatarios
+
+A Cloud API nao oferece consulta previa para confirmar se um numero arbitrario
+de destinatario possui WhatsApp. O endpoint `/{waba_id}/phone_numbers` lista
+somente os numeros comerciais conectados a propria WABA e nao deve ser usado
+para validar contatos.
+
+Contatos associados exclusivamente a canais `EWorkerType.whatsapp` podem ser
+marcados como validados sem consulta remota. Essa validacao deve registrar a
+origem interna `official_assumed`, para que canais Baileys, WWebJS ou Whatsmeow
+nao reutilizem a presuncao sem executar sua propria consulta. Numeros observados
+em mensagens recebidas pela Meta devem usar `official_inbound`.
+
+Nao enviar mensagem ou template de teste para validar um contato: isso produz
+um contato real com o destinatario, depende das regras de janela/template e pode
+gerar cobranca.
 
 ## APIs que nao devem ser usadas neste modo
 

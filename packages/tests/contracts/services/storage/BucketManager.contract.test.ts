@@ -225,6 +225,12 @@ describe('BucketManager', () => {
             LifecycleConfiguration: expect.objectContaining({
               Rules: expect.arrayContaining([
                 expect.objectContaining({
+                  ID: 'ExpireChatbotApiTemporaryAfter7Days',
+                  Status: ExpirationStatus.Enabled,
+                  Filter: { Prefix: 'chatbot-api-temporary/' },
+                  Expiration: { Days: 7 },
+                }),
+                expect.objectContaining({
                   ID: 'ExpireAfter6Months',
                   Status: ExpirationStatus.Enabled,
                 }),

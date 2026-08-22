@@ -26,6 +26,7 @@ import {
 import { workerConnectionLogsSchema } from '@core/schema/worker/workerConnectionLogs';
 import { recreateWorkerSchema } from '@core/schema/worker/recreateWorker';
 import { resetWorkerConnectionSchema } from '@core/schema/worker/resetWorkerConnection';
+import { disconnectWorkerConnectionSchema } from '@core/schema/worker/disconnectWorkerConnection';
 import { uploadProfileStatusSchema } from '@core/schema/worker/uploadProfileStatus';
 import { listProfileStatusSchema } from '@core/schema/worker/listProfileStatus';
 import { updateProfileStatusSchema } from '@core/schema/worker/updateProfileStatus';
@@ -62,6 +63,8 @@ import { viewAttendanceInactivityAlertSchema } from '@core/schema/worker/viewAtt
 import { updateAttendanceInactivityAlertSchema } from '@core/schema/worker/updateAttendanceInactivityAlert';
 import { viewOperatorReplyPendingAlertSchema } from '@core/schema/worker/viewOperatorReplyPendingAlert';
 import { updateOperatorReplyPendingAlertSchema } from '@core/schema/worker/updateOperatorReplyPendingAlert';
+import { viewOperatorReplyPendingRedistributionSchema } from '@core/schema/worker/viewOperatorReplyPendingRedistribution';
+import { updateOperatorReplyPendingRedistributionSchema } from '@core/schema/worker/updateOperatorReplyPendingRedistribution';
 import { checkWorkerOpenConversationsSchema } from '@core/schema/worker/checkWorkerOpenConversations';
 import { workerExternalConnectionLinkSchema } from '@core/schema/worker/externalConnectionLink';
 import {
@@ -77,7 +80,6 @@ import { connectWhatsappOfficialSchema } from '@core/schema/worker/connectWhatsa
 import { ensureWhatsappOfficialWebhookSubscriptionSchema } from '@core/schema/worker/ensureWhatsappOfficialWebhookSubscription';
 import { whatsappOfficialHealthSchema } from '@core/schema/worker/whatsappOfficialHealth';
 import {
-  workerAuthenticatorDownloadSchema,
   workerSecureConnectionCancelSchema,
   workerSecureConnectionCreateSchema,
   workerSecureConnectionHelperSessionSchema,
@@ -85,6 +87,14 @@ import {
   workerSecureConnectionHelperViewSchema,
   workerSecureConnectionViewSchema,
 } from '@core/schema/worker/secureConnection';
+import { workerDownloadArtifactsSchema } from '@core/schema/worker/downloadArtifacts';
+import { blockWorkerSchema } from '@core/schema/worker/blockWorker';
+import { unblockWorkerSchema } from '@core/schema/worker/unblockWorker';
+import {
+  resolveWhatsappProviderHandoffSchema,
+  viewWhatsappProviderHandoffEvidenceSchema,
+  viewWhatsappProviderHandoffSchema,
+} from '@core/schema/worker/whatsappProviderHandoff';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -122,6 +132,17 @@ export default function workerRoutes(server: FastifyInstance) {
   server.post('/worker/:worker_id/connection/reset', {
     schema: resetWorkerConnectionSchema,
     handler: workerController.resetWorkerConnection,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerRecreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.delete('/worker/:worker_id/connection', {
+    schema: disconnectWorkerConnectionSchema,
+    handler: workerController.disconnectWorkerConnection,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerRecreatePermissions),
@@ -212,9 +233,9 @@ export default function workerRoutes(server: FastifyInstance) {
     handler: workerController.uploadSecureConnectionHelperSession,
   });
 
-  server.get('/worker/connection/authenticator/download/:platform', {
-    schema: workerAuthenticatorDownloadSchema,
-    handler: workerController.downloadAuthenticatorInstaller,
+  server.get('/worker/connection/download-artifacts', {
+    schema: workerDownloadArtifactsSchema,
+    handler: workerController.listDownloadArtifacts,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerCreatePermissions),
@@ -351,6 +372,61 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/provider-handoff/latest', {
+    schema: viewWhatsappProviderHandoffSchema,
+    handler: workerController.viewWhatsappProviderHandoff,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/provider-handoff/evidence', {
+    schema: viewWhatsappProviderHandoffEvidenceSchema,
+    handler: workerController.viewWhatsappProviderHandoffEvidence,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/worker/:worker_id/provider-handoff/:handoff_id/resolve', {
+    schema: resolveWhatsappProviderHandoffSchema,
+    handler: workerController.resolveWhatsappProviderHandoff,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/worker/:worker_id/block', {
+    schema: blockWorkerSchema,
+    handler: workerController.blockWorker,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/worker/:worker_id/unblock', {
+    schema: unblockWorkerSchema,
+    handler: workerController.unblockWorker,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
       planGuard,
       planStatus,
     ],
@@ -751,6 +827,34 @@ export default function workerRoutes(server: FastifyInstance) {
       planStatus,
     ],
   });
+
+  server.get(
+    '/worker/:worker_id/config/operator-reply-pending-redistribution',
+    {
+      schema: viewOperatorReplyPendingRedistributionSchema,
+      handler: workerController.viewOperatorReplyPendingRedistribution,
+      preHandler: [
+        (request, reply) =>
+          server.authenticateJwt(request, reply, workerViewPermissions),
+        planGuard,
+        planStatus,
+      ],
+    }
+  );
+
+  server.patch(
+    '/worker/:worker_id/config/operator-reply-pending-redistribution',
+    {
+      schema: updateOperatorReplyPendingRedistributionSchema,
+      handler: workerController.updateOperatorReplyPendingRedistribution,
+      preHandler: [
+        (request, reply) =>
+          server.authenticateJwt(request, reply, workerEditPermissions),
+        planGuard,
+        planStatus,
+      ],
+    }
+  );
 
   server.get('/worker/:worker_id/config/chatbot', {
     schema: viewChatbotSchema,

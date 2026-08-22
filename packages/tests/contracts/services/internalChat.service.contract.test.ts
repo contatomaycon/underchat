@@ -133,7 +133,45 @@ const makeService = (options?: {
     getConversationById: jest.fn().mockResolvedValue(conversation),
     updateConversationLastMessage: jest.fn().mockResolvedValue(undefined),
     applyUnreadOnNewMessage: jest.fn().mockResolvedValue(undefined),
+    markConversationRead: jest.fn().mockResolvedValue(true),
     sumUnreadOpenConversationsForUser: jest.fn().mockResolvedValue(0),
+    listUnreadOpenConversationsForUser: jest.fn().mockResolvedValue([]),
+    listParticipantUnreadStates: jest.fn().mockResolvedValue([
+      {
+        user_id: authorUserId,
+        unread_count: 0,
+        closed_at: null,
+      },
+      {
+        user_id: memberUserId,
+        unread_count: 0,
+        closed_at: null,
+      },
+    ]),
+    listParticipants: jest.fn().mockResolvedValue([
+      {
+        user_id: authorUserId,
+        name: 'Author',
+        photo: null,
+        email: null,
+        sector: null,
+        position: null,
+        role: EInternalChatConversationParticipantRole.member,
+        unread_count: 0,
+        closed_at: null,
+      },
+      {
+        user_id: memberUserId,
+        name: 'Member',
+        photo: null,
+        email: null,
+        sector: null,
+        position: null,
+        role: EInternalChatConversationParticipantRole.member,
+        unread_count: 0,
+        closed_at: null,
+      },
+    ]),
     listParticipantIds: jest
       .fn()
       .mockResolvedValue(
@@ -236,19 +274,54 @@ describe('InternalChatService', () => {
   it('views unread summary from open conversations for the current user', async () => {
     const { service, conversationRepository } = makeService();
 
-    conversationRepository.sumUnreadOpenConversationsForUser.mockResolvedValue(
-      9
+    conversationRepository.listUnreadOpenConversationsForUser.mockResolvedValue(
+      [{ conversation_id: conversationId, unread_count: 9 }]
     );
 
     await expect(
       service.viewUnreadSummary(accountId, memberUserId)
     ).resolves.toEqual({
       unread_count: 9,
+      unread_conversations: [
+        { conversation_id: conversationId, unread_count: 9 },
+      ],
     });
 
     expect(
-      conversationRepository.sumUnreadOpenConversationsForUser
+      conversationRepository.listUnreadOpenConversationsForUser
     ).toHaveBeenCalledWith(accountId, memberUserId);
+  });
+
+  it('publishes the absolute unread projection after marking a conversation read', async () => {
+    const { service, conversationRepository, centrifugoService } =
+      makeService();
+    conversationRepository.listParticipantUnreadStates.mockResolvedValue([
+      {
+        user_id: memberUserId,
+        unread_count: 0,
+        closed_at: null,
+      },
+    ]);
+
+    await expect(
+      service.markConversationRead(accountId, memberUserId, conversationId, {
+        last_read_message_id: messageId,
+      })
+    ).resolves.toBe(true);
+
+    expect(conversationRepository.markConversationRead).toHaveBeenCalledWith({
+      conversationId,
+      userId: memberUserId,
+      lastReadMessageId: messageId,
+    });
+    expect(centrifugoService.publishSub).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        type: 'internal_chat_conversation_sync',
+        conversation_id: conversationId,
+        unread_by_user: { [memberUserId]: 0 },
+      })
+    );
   });
 
   it('allows the author to edit a text message and publishes a sanitized payload', async () => {

@@ -5,7 +5,6 @@ import { ScheduleStatusUpdaterRepository } from '@core/repositories/schedule/Sch
 import { ContactService } from './contact.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
-import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
 import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { StreamProducerService } from './streamProducer.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
@@ -29,9 +28,10 @@ import { IScheduleMessageResult } from '@core/common/interfaces/IScheduleMessage
 import { IScheduleContactValidated } from '@core/common/interfaces/IScheduleContactValidated';
 import { IScheduleMessage } from '@core/common/interfaces/IScheduleMessage';
 import {
-  buildScheduleSendQueueKey,
+  resolveWorkerCommandChatEntityKey,
   ensureMessageSendHash,
 } from '@core/common/functions/messageIdentity';
+import { WorkerCommandAdmissionService } from './workerCommandAdmission.service';
 import { PlanAccountService } from './planAccount.service';
 import moment from 'moment-timezone';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
@@ -67,6 +67,11 @@ import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialC
 import { OfficialWhatsappTemplateService } from './officialWhatsappTemplate.service';
 import { IOfficialWhatsappTemplate } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 import { buildOfficialWhatsappDisplayFromTemplate } from '@core/common/functions/officialWhatsappDisplay';
+import { normalizeOfficialTemplateVariableValue } from '@core/common/functions/normalizeOfficialTemplateVariableValue';
+import { ScheduleStatusCoordinationService } from './scheduleStatusCoordination.service';
+import { CONTACT_VALIDATION_ORIGINS } from '@core/common/types/ContactValidationOrigin';
+import { ScheduleOfficialMessageService } from './scheduleOfficialMessage.service';
+import { resolveChatLifecycleEventTypes } from '@core/common/constants/outboundWebhookEvents';
 
 @injectable()
 export class ScheduleSendService {
@@ -84,10 +89,10 @@ export class ScheduleSendService {
     private readonly contactService: ContactService,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(WorkerCommandAdmissionService)
+    private readonly workerCommandAdmissionService: WorkerCommandAdmissionService,
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject(PlanAccountService)
@@ -106,7 +111,11 @@ export class ScheduleSendService {
     private readonly workerConfigService: WorkerConfigService,
     @inject(OfficialWhatsappTemplateService)
     private readonly officialWhatsappTemplateService: OfficialWhatsappTemplateService,
-    @inject('Redis') private readonly redis: Redis
+    @inject(ScheduleOfficialMessageService)
+    private readonly scheduleOfficialMessageService: ScheduleOfficialMessageService,
+    @inject('Redis') private readonly redis: Redis,
+    @inject(ScheduleStatusCoordinationService)
+    private readonly scheduleStatusCoordinationService: ScheduleStatusCoordinationService
   ) {}
 
   private getRandomDelayMs(sendSpeed: string | undefined): number {
@@ -339,6 +348,13 @@ export class ScheduleSendService {
       query: {
         bool: {
           must: mustConditions,
+          must_not: [
+            {
+              exists: {
+                field: 'reprocessed_by_message_id',
+              },
+            },
+          ],
         },
       },
     };
@@ -374,6 +390,65 @@ export class ScheduleSendService {
           contact_id: string;
         } => item !== null
       );
+  }
+
+  private getMessageReprocessLockKey(
+    scheduleId: string,
+    messageId: string
+  ): string {
+    return `schedule:message-reprocess:${scheduleId}:${messageId}`;
+  }
+
+  private async markFailedMessageAsReprocessed(
+    scheduleId: string,
+    accountId: string,
+    contactId: string,
+    sourceMessageId: string,
+    replacementMessageId: string
+  ): Promise<boolean> {
+    const reprocessedAtEpochMillis =
+      await this.scheduleStatusCoordinationService.currentTimeMilliseconds();
+    const result = await this.elasticDatabaseService.updateWithScriptOCC(
+      EElasticIndex.schedule,
+      sourceMessageId,
+      {
+        source: `
+          if (
+            ctx._source == null ||
+            ctx._source.schedule_id != params.schedule_id ||
+            ctx._source.account == null ||
+            ctx._source.account.id != params.account_id ||
+            ctx._source.contact == null ||
+            ctx._source.contact.id != params.contact_id ||
+            ctx._source.status != params.failed_status ||
+            (
+              ctx._source.containsKey('reprocessed_by_message_id') &&
+              ctx._source.reprocessed_by_message_id != null
+            )
+          ) {
+            ctx.op = 'noop';
+          } else {
+            ctx._source.reprocessed_by_message_id =
+              params.replacement_message_id;
+            ctx._source.reprocessed_at = params.reprocessed_at;
+          }
+        `,
+        params: {
+          schedule_id: scheduleId,
+          account_id: accountId,
+          contact_id: contactId,
+          failed_status: EScheduleStatus.failed,
+          replacement_message_id: replacementMessageId,
+          reprocessed_at: new Date(reprocessedAtEpochMillis).toISOString(),
+        },
+      },
+      {
+        maxRetries: 5,
+        refresh: true,
+      }
+    );
+
+    return result === 'updated';
   }
 
   private async clearDuplicateLock(
@@ -550,7 +625,11 @@ export class ScheduleSendService {
     const variables = await Promise.all(
       (sourceTemplate.variables ?? []).map(async (variable) => ({
         ...variable,
-        value: await this.replaceTags(variable.value, schedule, contact),
+        value: await this.replaceTags(
+          normalizeOfficialTemplateVariableValue(variable.value),
+          schedule,
+          contact
+        ),
       }))
     );
     const officialTemplate = {
@@ -933,6 +1012,8 @@ export class ScheduleSendService {
     status: EScheduleStatus | string,
     options?: {
       overrideOnConflict?: boolean;
+      attemptId?: string;
+      resetStatusIdentity?: boolean;
     }
   ): Promise<boolean> {
     if (!message.message_id) {
@@ -948,11 +1029,14 @@ export class ScheduleSendService {
       const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
       const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
       const jid = normalizePhoneToJid(phone, phoneDdi);
-      const now = new Date().toISOString();
+      const nowEpochMillis =
+        await this.scheduleStatusCoordinationService.currentTimeMilliseconds();
+      const now = new Date(nowEpochMillis).toISOString();
 
       const document: ScheduleDocument = {
         id: message.message_id,
         schedule_id: schedule.schedule_id,
+        attempt_id: options?.attemptId ?? null,
         message_key: {
           remote_jid: jid ?? null,
         },
@@ -980,6 +1064,14 @@ export class ScheduleSendService {
         send_log: null,
         created_at: now,
         updated_at: now,
+        updated_at_epoch_millis: nowEpochMillis,
+        ...(options?.resetStatusIdentity
+          ? {
+              last_event_id: null,
+              last_event_sort_key: null,
+              status_rank: null,
+            }
+          : {}),
       };
 
       const createResult = await this.createScheduleIdempotent(
@@ -987,11 +1079,8 @@ export class ScheduleSendService {
         message.message_id
       );
 
-      if (createResult.created) {
-        return true;
-      }
-
-      if (options?.overrideOnConflict) {
+      let persisted = createResult.created;
+      if (!persisted && options?.overrideOnConflict) {
         const updateResult = await this.elasticDatabaseService.updateWithOCC(
           EElasticIndex.schedule,
           message.message_id,
@@ -1002,18 +1091,20 @@ export class ScheduleSendService {
           }
         );
 
-        return (
+        persisted =
           updateResult === 'updated' ||
           updateResult === 'created' ||
-          updateResult === 'noop'
+          updateResult === 'noop';
+      } else if (!persisted) {
+        const patchParams =
+          this.buildPatchScheduleMissingFieldsParams(document);
+        persisted = await this.patchExistingScheduleMissingFields(
+          message.message_id,
+          patchParams.patch
         );
       }
 
-      const patchParams = this.buildPatchScheduleMissingFieldsParams(document);
-      return await this.patchExistingScheduleMissingFields(
-        message.message_id,
-        patchParams.patch
-      );
+      return persisted;
     } catch (error) {
       console.error(
         `Failed to save to Elasticsearch for schedule ${schedule.schedule_id}, contact ${contact.contact_id}:`,
@@ -1026,10 +1117,12 @@ export class ScheduleSendService {
   private async sendMessageToKafka(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
-    message: IChatMessage
+    message: IChatMessage,
+    attemptId: string
   ): Promise<void> {
     const scheduleMessage: IScheduleMessage = {
       schedule_id: schedule.schedule_id,
+      attempt_id: attemptId,
       account_id: schedule.account_id,
       contact_id: contact.contact_id,
       message,
@@ -1040,15 +1133,37 @@ export class ScheduleSendService {
     if (!workerId) {
       throw new Error('Worker ID is required to send schedule message');
     }
-    const topic = isOfficialWhatsappWorker(schedule.worker_type_id)
-      ? this.kafkaServiceQueueService.officialWhatsappSendMessage()
-      : this.kafkaBaileysQueueService.workerScheduleSendMessage(workerId);
+    if (isOfficialWhatsappWorker(schedule.worker_type_id)) {
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.officialWhatsappSendMessage(),
+        scheduleMessage,
+        resolveWorkerCommandChatEntityKey(
+          schedule.account_id,
+          workerId,
+          message
+        )
+      );
+      return;
+    }
 
-    await this.streamProducerService.send(
-      topic,
-      scheduleMessage,
-      buildScheduleSendQueueKey(schedule.account_id, workerId)
-    );
+    await this.workerCommandAdmissionService.admit({
+      accountId: schedule.account_id,
+      workerId,
+      commandType: 'schedule_send',
+      entityKey: resolveWorkerCommandChatEntityKey(
+        schedule.account_id,
+        workerId,
+        message
+      ),
+      operationId: attemptId,
+      scheduleProjection: {
+        schedule_id: schedule.schedule_id,
+        message_id: message.message_id,
+        attempt_id: attemptId,
+      },
+      payload: scheduleMessage as unknown as Record<string, never>,
+      source: 'schedule',
+    });
   }
 
   private async validateContactPhone(
@@ -1093,6 +1208,18 @@ export class ScheduleSendService {
     );
   }
 
+  private canUsePersistedValidationFallback(
+    contact: IScheduleContactValidated,
+    fallbackJid: string | null
+  ): boolean {
+    return (
+      contact.is_validated &&
+      contact.validation_origin !==
+        CONTACT_VALIDATION_ORIGINS.officialAssumed &&
+      !!fallbackJid
+    );
+  }
+
   private async resolveChatbotValidatedJid(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
@@ -1104,7 +1231,7 @@ export class ScheduleSendService {
     const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
 
     if (!decryptedPhone) {
-      if (contact.is_validated && fallbackJid) {
+      if (this.canUsePersistedValidationFallback(contact, fallbackJid)) {
         return fallbackJid;
       }
       return null;
@@ -1140,6 +1267,8 @@ export class ScheduleSendService {
 
       const shouldSyncValidation =
         !contact.is_validated ||
+        contact.validation_origin !==
+          CONTACT_VALIDATION_ORIGINS.whatsappLookup ||
         normalizedPhone !== decryptedPhone ||
         normalizedPhoneDdi !== phoneDdi;
 
@@ -1147,7 +1276,10 @@ export class ScheduleSendService {
         const updated = await this.contactService.updateContactValidation(
           contact.contact_id,
           `${normalizedPhoneDdi}${normalizedPhone}`,
-          true
+          true,
+          undefined,
+          undefined,
+          CONTACT_VALIDATION_ORIGINS.whatsappLookup
         );
 
         if (!updated) {
@@ -1173,7 +1305,7 @@ export class ScheduleSendService {
       }
 
       if (this.isTechnicalValidationError(error)) {
-        if (contact.is_validated && fallbackJid) {
+        if (this.canUsePersistedValidationFallback(contact, fallbackJid)) {
           return fallbackJid;
         }
         return null;
@@ -1186,9 +1318,10 @@ export class ScheduleSendService {
   private async reportScheduleChatbotFailure(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
-    status: EScheduleStatus
+    status: EScheduleStatus,
+    messageId?: string
   ): Promise<IScheduleMessageResult> {
-    const failedMessage = this.createFailedMessage(schedule);
+    const failedMessage = this.createFailedMessage(schedule, messageId);
     await this.saveToElasticsearch(schedule, contact, failedMessage, status);
 
     return { success: false, contactId: contact.contact_id };
@@ -1196,9 +1329,10 @@ export class ScheduleSendService {
 
   private async reportScheduleChatbotIgnored(
     schedule: ISchedulePendingData,
-    contact: IScheduleContactValidated
+    contact: IScheduleContactValidated,
+    messageId?: string
   ): Promise<IScheduleMessageResult> {
-    const failedMessage = this.createFailedMessage(schedule);
+    const failedMessage = this.createFailedMessage(schedule, messageId);
     await this.saveToElasticsearch(
       schedule,
       contact,
@@ -1277,13 +1411,122 @@ export class ScheduleSendService {
     };
   }
 
+  private async compensateScheduleChatbotStartFailure(
+    schedule: ISchedulePendingData,
+    chat: IChat
+  ): Promise<void> {
+    let closedChat: IChat | null = null;
+
+    try {
+      await this.elasticDatabaseService.refreshIndex(EElasticIndex.message);
+
+      const lastPersistedMessage =
+        await this.chatService.findLastMessageByChatId(
+          schedule.account_id,
+          chat.chat_id
+        );
+      if (lastPersistedMessage) {
+        console.warn(
+          '[ScheduleSendService] Chatbot start compensation skipped because the chat already has a persisted message',
+          {
+            schedule_id: schedule.schedule_id,
+            chat_id: chat.chat_id,
+            message_id: lastPersistedMessage.message_id,
+          }
+        );
+        return;
+      }
+
+      const currentChat = await this.chatService.findChatByChatId(
+        schedule.account_id,
+        chat.chat_id
+      );
+      if (!currentChat || currentChat.status !== EChatStatus.ura_schedule) {
+        return;
+      }
+      if (currentChat.summary?.last_message_id) {
+        return;
+      }
+
+      const candidateClosedChat: IChat = {
+        ...currentChat,
+        status: EChatStatus.closed,
+        closed_at: new Date().toISOString(),
+      };
+      const closed = await this.chatService.saveChat(candidateClosedChat, {
+        refresh: true,
+        expectedCurrentStatuses: [EChatStatus.ura_schedule],
+        enforceExpectedLastMessageId: true,
+        expectedLastMessageId: null,
+        enforceExpectedSummaryRevision: true,
+        expectedSummaryRevision: currentChat.summary?.revision ?? 0,
+        outboundWebhook: {
+          eventTypes: resolveChatLifecycleEventTypes({
+            operation: 'status_changed',
+            previousStatus: currentChat.status,
+            currentStatus: EChatStatus.closed,
+          }),
+          idempotencyKey: `schedule-chatbot-start-failed:${schedule.schedule_id}:${chat.chat_id}`,
+          source: 'schedule_chatbot_compensation',
+          previousChat: currentChat,
+          actor: { type: 'automation' },
+          changes: {
+            previous_status: currentChat.status,
+            status: EChatStatus.closed,
+            reason: 'chatbot_start_failed_before_first_message',
+            schedule_id: schedule.schedule_id,
+          },
+        },
+      });
+      if (!closed) {
+        return;
+      }
+      closedChat = candidateClosedChat;
+    } catch (error) {
+      console.error(
+        '[ScheduleSendService] Failed to verify or close a failed chatbot start safely',
+        {
+          schedule_id: schedule.schedule_id,
+          chat_id: chat.chat_id,
+          error,
+        }
+      );
+      return;
+    }
+
+    if (!closedChat) {
+      return;
+    }
+
+    try {
+      await Promise.all([
+        this.chatService.invalidateChatCache(closedChat),
+        this.chatbotFlowRunnerService.clearFlowCacheForChat(
+          closedChat.account.id,
+          closedChat.worker.id,
+          closedChat.chat_id
+        ),
+      ]);
+    } catch (error) {
+      console.error(
+        '[ScheduleSendService] Failed to clear caches after closing an empty failed chatbot chat',
+        {
+          schedule_id: schedule.schedule_id,
+          chat_id: chat.chat_id,
+          error,
+        }
+      );
+    }
+  }
+
   private async runScheduleChatbotFlow(
     t: ReturnType<typeof i18next.t>,
     minimalData: IUpsertMessage,
     chat: IChat,
     chatbotId: string,
     schedule: ISchedulePendingData,
-    contact: IScheduleContactValidated
+    contact: IScheduleContactValidated,
+    messageId?: string
   ): Promise<IScheduleMessageResult | null> {
     try {
       await this.chatbotFlowRunnerService.execute(
@@ -1299,10 +1542,12 @@ export class ScheduleSendService {
         `[ScheduleSendService] Chatbot flow error schedule=${schedule.schedule_id} contact=${contact.contact_id}:`,
         err
       );
+      await this.compensateScheduleChatbotStartFailure(schedule, chat);
       return this.reportScheduleChatbotFailure(
         schedule,
         contact,
-        EScheduleStatus.failed
+        EScheduleStatus.failed,
+        messageId
       );
     }
   }
@@ -1311,7 +1556,8 @@ export class ScheduleSendService {
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
     jid: string,
-    now: string
+    now: string,
+    messageId?: string
   ): IChatMessage {
     const phoneFromJid = getPhoneFromJid(jid, null);
     const extractedFromJid = phoneFromJid
@@ -1324,7 +1570,7 @@ export class ScheduleSendService {
       extractedFromJid?.phone_ddi ?? this.normalizePhoneDdi(contact.phone_ddi);
 
     const message: IChatMessage = {
-      message_id: uuidv7(),
+      message_id: messageId ?? uuidv7(),
       chat_id: `${schedule.account_id}:${jid}`,
       message_key: {
         remote_jid: jid,
@@ -1377,13 +1623,15 @@ export class ScheduleSendService {
   private async sendScheduleChatbot(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
-    jid: string
+    jid: string,
+    messageId?: string
   ): Promise<IScheduleMessageResult> {
     if (!schedule.chatbot_id) {
       return this.reportScheduleChatbotFailure(
         schedule,
         contact,
-        EScheduleStatus.failed
+        EScheduleStatus.failed,
+        messageId
       );
     }
 
@@ -1394,7 +1642,8 @@ export class ScheduleSendService {
       return this.reportScheduleChatbotFailure(
         schedule,
         contact,
-        EScheduleStatus.limit_exhausted
+        EScheduleStatus.limit_exhausted,
+        messageId
       );
     }
 
@@ -1413,7 +1662,7 @@ export class ScheduleSendService {
     );
 
     if (existingChat) {
-      return this.reportScheduleChatbotIgnored(schedule, contact);
+      return this.reportScheduleChatbotIgnored(schedule, contact, messageId);
     }
 
     const lockKey = buildChatIdentityLockKey(
@@ -1433,7 +1682,11 @@ export class ScheduleSendService {
         );
 
         if (existingChat) {
-          return this.reportScheduleChatbotIgnored(schedule, contact);
+          return this.reportScheduleChatbotIgnored(
+            schedule,
+            contact,
+            messageId
+          );
         }
 
         const now = new Date().toISOString();
@@ -1443,12 +1696,30 @@ export class ScheduleSendService {
 
         const savedChat = await this.chatService.saveChat(chatWithProtocol, {
           refresh: true,
+          outboundWebhook: {
+            eventTypes: [
+              'chat.created',
+              'chat.automation.started',
+              ...(chatWithProtocol.protocol_start?.length
+                ? (['chat.protocol.updated'] as const)
+                : []),
+            ],
+            idempotencyKey: `schedule-chat-created:${schedule.schedule_id}:${contact.contact_id}:${chatWithProtocol.chat_id}`,
+            source: 'schedule_chatbot',
+            previousChat: null,
+            actor: { type: 'automation' },
+            changes: {
+              initial_status: chatWithProtocol.status,
+              schedule_id: schedule.schedule_id,
+            },
+          },
         });
         if (!savedChat) {
           return this.reportScheduleChatbotFailure(
             schedule,
             contact,
-            EScheduleStatus.failed
+            EScheduleStatus.failed,
+            messageId
           );
         }
 
@@ -1461,7 +1732,8 @@ export class ScheduleSendService {
           chatWithProtocol,
           chatbotId,
           schedule,
-          contact
+          contact,
+          messageId
         );
         if (flowFailure) {
           return flowFailure;
@@ -1471,7 +1743,8 @@ export class ScheduleSendService {
           schedule,
           contact,
           jid,
-          now
+          now,
+          messageId
         );
         await this.persistScheduleChatbotSyntheticMessage(
           schedule,
@@ -1506,10 +1779,12 @@ export class ScheduleSendService {
     options?: {
       skipAlreadySentCheck?: boolean;
       skipDuplicateCheck?: boolean;
-      forcedMessageId?: string;
+      messageId?: string;
       overrideDocumentOnConflict?: boolean;
     }
   ): Promise<IScheduleMessageResult> {
+    const attemptId = uuidv7();
+
     if (!options?.skipAlreadySentCheck) {
       const alreadySent = await this.checkMessageSent(
         schedule.schedule_id,
@@ -1538,26 +1813,55 @@ export class ScheduleSendService {
       }
     }
 
-    const jid = await this.validateContactPhone(contact);
+    let jid = await this.validateContactPhone(contact);
+    const isOfficialWorker = isOfficialWhatsappWorker(schedule.worker_type_id);
+
+    if (isOfficialWorker && !contact.is_validated) {
+      const updated = await this.contactService.updateContactIsValided(
+        contact.contact_id,
+        true,
+        undefined,
+        undefined,
+        CONTACT_VALIDATION_ORIGINS.officialAssumed
+      );
+      if (updated) {
+        contact.is_validated = true;
+        contact.validation_origin = CONTACT_VALIDATION_ORIGINS.officialAssumed;
+      } else {
+        jid = null;
+      }
+    }
+
+    if (
+      !isOfficialWorker &&
+      (schedule.type === EScheduleType.chatbot ||
+        contact.validation_origin ===
+          CONTACT_VALIDATION_ORIGINS.officialAssumed)
+    ) {
+      jid = await this.resolveChatbotValidatedJid(schedule, contact, jid);
+    }
 
     if (schedule.type === EScheduleType.chatbot) {
-      const validatedJid = await this.resolveChatbotValidatedJid(
-        schedule,
-        contact,
-        jid
-      );
-
-      if (!validatedJid) {
-        return this.reportScheduleChatbotIgnored(schedule, contact);
+      if (!jid) {
+        return this.reportScheduleChatbotIgnored(
+          schedule,
+          contact,
+          options?.messageId
+        );
       }
 
-      return this.sendScheduleChatbot(schedule, contact, validatedJid);
+      return this.sendScheduleChatbot(
+        schedule,
+        contact,
+        jid,
+        options?.messageId
+      );
     }
 
     if (!jid) {
       const failedMessage = this.createFailedMessage(
         schedule,
-        options?.forcedMessageId
+        options?.messageId
       );
       const saved = await this.saveToElasticsearch(
         schedule,
@@ -1566,6 +1870,8 @@ export class ScheduleSendService {
         EScheduleStatus.failed,
         {
           overrideOnConflict: options?.overrideDocumentOnConflict,
+          attemptId,
+          resetStatusIdentity: true,
         }
       );
 
@@ -1585,7 +1891,7 @@ export class ScheduleSendService {
       schedule,
       contact,
       jid,
-      options?.forcedMessageId
+      options?.messageId
     );
 
     try {
@@ -1606,6 +1912,8 @@ export class ScheduleSendService {
           EScheduleStatus.limit_exhausted,
           {
             overrideOnConflict: options?.overrideDocumentOnConflict,
+            attemptId,
+            resetStatusIdentity: true,
           }
         );
 
@@ -1621,6 +1929,30 @@ export class ScheduleSendService {
         };
       }
 
+      const queued =
+        await this.scheduleStatusCoordinationService.queueMessageAttempt({
+          scheduleId: schedule.schedule_id,
+          accountId: schedule.account_id,
+          workerId: message.worker.id,
+          messageId: message.message_id,
+          attemptId,
+        });
+      if (queued !== 'queued') {
+        console.info(
+          '[ScheduleSendService] Schedule message attempt is already active',
+          {
+            schedule_id: schedule.schedule_id,
+            message_id: message.message_id,
+            attempt_id: attemptId,
+            state: queued,
+          }
+        );
+        return {
+          success: false,
+          contactId: contact.contact_id,
+        };
+      }
+
       const saved = await this.saveToElasticsearch(
         schedule,
         contact,
@@ -1628,6 +1960,8 @@ export class ScheduleSendService {
         EScheduleStatus.processing,
         {
           overrideOnConflict: options?.overrideDocumentOnConflict,
+          attemptId,
+          resetStatusIdentity: true,
         }
       );
 
@@ -1641,7 +1975,7 @@ export class ScheduleSendService {
         };
       }
 
-      await this.sendMessageToKafka(schedule, contact, message);
+      await this.sendMessageToKafka(schedule, contact, message, attemptId);
 
       return {
         success: true,
@@ -1653,15 +1987,58 @@ export class ScheduleSendService {
         error
       );
 
-      await this.saveToElasticsearch(
+      const terminalStatePersisted = await this.saveToElasticsearch(
         schedule,
         contact,
         message,
         EScheduleStatus.failed,
         {
-          overrideOnConflict: options?.overrideDocumentOnConflict,
+          overrideOnConflict: true,
+          attemptId,
+          resetStatusIdentity: true,
         }
       );
+
+      if (terminalStatePersisted) {
+        const claimCompleted = await this.scheduleStatusCoordinationService
+          .completeQueuedMessageAttempt({
+            scheduleId: schedule.schedule_id,
+            messageId: message.message_id,
+            attemptId,
+          })
+          .catch((claimError) => {
+            console.error(
+              '[ScheduleSendService] Failed to complete persisted terminal schedule attempt',
+              {
+                schedule_id: schedule.schedule_id,
+                message_id: message.message_id,
+                attempt_id: attemptId,
+                error: claimError,
+              }
+            );
+            return false;
+          });
+
+        if (!claimCompleted) {
+          console.warn(
+            '[ScheduleSendService] Terminal state persisted but queued attempt remains recoverable',
+            {
+              schedule_id: schedule.schedule_id,
+              message_id: message.message_id,
+              attempt_id: attemptId,
+            }
+          );
+        }
+      } else {
+        console.error(
+          '[ScheduleSendService] Terminal state was not persisted; queued attempt remains recoverable',
+          {
+            schedule_id: schedule.schedule_id,
+            message_id: message.message_id,
+            attempt_id: attemptId,
+          }
+        );
+      }
 
       return {
         success: false,
@@ -1731,6 +2108,31 @@ export class ScheduleSendService {
       results: allResults,
       interrupted: false,
     };
+  }
+
+  private async assertOfficialChatbotScheduleCanExecute(
+    schedule: ISchedulePendingData
+  ): Promise<void> {
+    if (
+      schedule.type !== EScheduleType.chatbot ||
+      !isOfficialWhatsappWorker(schedule.worker_type_id)
+    ) {
+      return;
+    }
+
+    const t = i18next.t.bind(i18next);
+    if (!schedule.chatbot_id) {
+      throw new Error(t('schedule_chatbot_required'));
+    }
+
+    await this.scheduleOfficialMessageService.assertOfficialScheduleChatbotStart(
+      {
+        t,
+        accountId: schedule.account_id,
+        workerId: schedule.worker_id,
+        chatbotId: schedule.chatbot_id,
+      }
+    );
   }
 
   private async hasAnyQueuedMessageForSchedule(
@@ -1845,6 +2247,8 @@ export class ScheduleSendService {
               return;
             }
 
+            await this.assertOfficialChatbotScheduleCanExecute(schedule);
+
             const contacts =
               await this.scheduleContactsValidatedListerRepository.listValidatedContactsBySchedule(
                 schedule.schedule_id,
@@ -1910,6 +2314,72 @@ export class ScheduleSendService {
     }
   }
 
+  private async reprocessFailedMessageReference(
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated,
+    failedMessage: { message_id: string; contact_id: string }
+  ): Promise<IScheduleMessageResult | null> {
+    const lockKey = this.getMessageReprocessLockKey(
+      schedule.schedule_id,
+      failedMessage.message_id
+    );
+
+    try {
+      return await withLock(
+        this.redis,
+        lockKey,
+        async () => {
+          const [currentFailedMessage] = await this.listFailedMessageReferences(
+            schedule.schedule_id,
+            schedule.account_id,
+            failedMessage.message_id
+          );
+
+          if (
+            !currentFailedMessage ||
+            currentFailedMessage.contact_id !== contact.contact_id
+          ) {
+            return null;
+          }
+
+          const replacementMessageId = uuidv7();
+          const claimed = await this.markFailedMessageAsReprocessed(
+            schedule.schedule_id,
+            schedule.account_id,
+            failedMessage.contact_id,
+            failedMessage.message_id,
+            replacementMessageId
+          );
+
+          if (!claimed) {
+            return null;
+          }
+
+          await this.clearDuplicateLock(
+            schedule.schedule_id,
+            failedMessage.contact_id
+          );
+
+          return this.sendScheduleMessage(schedule, contact, {
+            skipAlreadySentCheck: true,
+            messageId: replacementMessageId,
+          });
+        },
+        {
+          ttlMs: 300000,
+          retryMs: 100,
+          maxWaitMs: 1000,
+        }
+      );
+    } catch (error) {
+      if (error instanceof LockAcquisitionTimeoutError) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
   async reprocessFailedMessages(
     scheduleId: string,
     accountId: string
@@ -1926,6 +2396,8 @@ export class ScheduleSendService {
         reprocessed: 0,
       };
     }
+
+    await this.assertOfficialChatbotScheduleCanExecute(schedule);
 
     const failedMessages = await this.listFailedMessageReferences(
       scheduleId,
@@ -1964,15 +2436,13 @@ export class ScheduleSendService {
         continue;
       }
 
-      await this.clearDuplicateLock(scheduleId, failedMessage.contact_id);
+      const result = await this.reprocessFailedMessageReference(
+        schedule,
+        contact,
+        failedMessage
+      );
 
-      const result = await this.sendScheduleMessage(schedule, contact, {
-        skipAlreadySentCheck: true,
-        forcedMessageId: failedMessage.message_id,
-        overrideDocumentOnConflict: true,
-      });
-
-      if (result.success) {
+      if (result?.success) {
         reprocessed++;
       }
     }
@@ -1994,6 +2464,8 @@ export class ScheduleSendService {
     if (!schedule || schedule.account_id !== accountId) {
       return false;
     }
+
+    await this.assertOfficialChatbotScheduleCanExecute(schedule);
 
     const [failedMessage] = await this.listFailedMessageReferences(
       scheduleId,
@@ -2020,15 +2492,13 @@ export class ScheduleSendService {
       return false;
     }
 
-    await this.clearDuplicateLock(scheduleId, failedMessage.contact_id);
+    const result = await this.reprocessFailedMessageReference(
+      schedule,
+      contact,
+      failedMessage
+    );
 
-    const result = await this.sendScheduleMessage(schedule, contact, {
-      skipAlreadySentCheck: true,
-      forcedMessageId: failedMessage.message_id,
-      overrideDocumentOnConflict: true,
-    });
-
-    return result.success;
+    return result?.success ?? false;
   }
 
   async processScheduleById(scheduleId: string): Promise<void> {

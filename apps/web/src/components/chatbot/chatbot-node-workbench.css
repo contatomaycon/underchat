@@ -1,0 +1,165 @@
+.chatbot-workbench-node {
+  position: relative;
+}
+
+.chatbot-workbench-node .chatbot-workbench-card.v-card {
+  position: relative;
+  border: 1px solid rgba(var(--v-theme-primary), 0.22) !important;
+  border-radius: 13px !important;
+  background: rgb(var(--v-theme-surface));
+  box-shadow:
+    inset 0 3px 0 rgb(var(--v-theme-primary)),
+    0 12px 28px rgba(20, 46, 77, 0.11),
+    0 2px 6px rgba(20, 46, 77, 0.06) !important;
+  overflow: visible;
+}
+
+.chatbot-workbench-node .chatbot-workbench-header.v-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-block-size: 56px;
+  padding: 11px 11px 9px 12px !important;
+  border-block-end: 1px solid rgba(var(--v-border-color), 0.64);
+  border-radius: 12px 12px 0 0;
+  background:
+    linear-gradient(
+      105deg,
+      rgba(var(--v-theme-primary), 0.06),
+      transparent 60%
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 19px,
+      rgba(var(--v-theme-primary), 0.025) 20px
+    ),
+    rgb(var(--v-theme-surface));
+  cursor: grab;
+  overflow: visible;
+  user-select: none;
+  white-space: normal;
+}
+
+.chatbot-workbench-node .chatbot-workbench-header:active {
+  cursor: grabbing;
+}
+
+.chatbot-workbench-node .chatbot-workbench-identity {
+  display: grid !important;
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 9px !important;
+  min-inline-size: 0;
+  row-gap: 1px;
+}
+
+.chatbot-workbench-node .chatbot-workbench-identity::before {
+  grid-column: 2;
+  grid-row: 1;
+  color: rgb(var(--v-theme-primary));
+  content: 'CHATBOT';
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.5rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  line-height: 1.15;
+}
+
+.chatbot-workbench-node .chatbot-workbench-identity::after {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  block-size: 34px;
+  inline-size: 34px;
+  border: 1px solid rgba(var(--v-theme-primary), 0.22);
+  border-radius: 9px;
+  background: rgba(var(--v-theme-primary), 0.09);
+  content: '';
+}
+
+.chatbot-workbench-node .chatbot-workbench-icon.v-icon {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  z-index: 1;
+  block-size: 19px !important;
+  inline-size: 19px !important;
+  align-self: center;
+  font-size: 19px !important;
+  justify-self: center;
+}
+
+.chatbot-workbench-node .chatbot-workbench-title {
+  grid-column: 2;
+  grid-row: 2;
+  min-inline-size: 0;
+  margin: 0;
+  color: rgba(var(--v-theme-on-surface), 0.9);
+  font-size: 0.8125rem !important;
+  font-weight: 760 !important;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.chatbot-workbench-node .chatbot-workbench-remove.v-icon {
+  block-size: 28px !important;
+  inline-size: 28px !important;
+  flex: 0 0 28px;
+  border-radius: 7px;
+  color: rgb(var(--v-theme-error)) !important;
+  cursor: pointer;
+  font-size: 18px !important;
+  transition:
+    background-color 150ms ease,
+    transform 150ms ease;
+}
+
+.chatbot-workbench-node .chatbot-workbench-remove:hover {
+  background: rgba(var(--v-theme-error), 0.09);
+  transform: translateY(-1px);
+}
+
+.chatbot-workbench-node .chatbot-workbench-body.v-card-text {
+  padding: 12px !important;
+}
+
+.chatbot-workbench-node .vue-flow__handle {
+  box-sizing: border-box;
+  block-size: 20px;
+  inline-size: 20px;
+  border: 3px solid rgb(var(--v-theme-surface));
+  box-shadow: 0 0 0 1px rgba(22, 43, 69, 0.17);
+  z-index: 4;
+}
+
+.chatbot-workbench-node .vue-flow__handle-target {
+  background: rgb(var(--v-theme-success)) !important;
+}
+
+.chatbot-workbench-node .vue-flow__handle-source {
+  background: rgb(var(--v-theme-error)) !important;
+}
+
+.chatbot-workbench-node > .vue-flow__handle-top {
+  inset-block-start: 0;
+}
+
+.chatbot-workbench-node > .vue-flow__handle-bottom {
+  inset-block-end: 0;
+}
+
+.chatbot-workbench-node .vue-flow__handle-right {
+  inset-inline-end: -22px;
+  transform: translateY(-50%);
+}
+
+.chatbot-workbench-node--compact .chatbot-workbench-header.v-card-title {
+  min-block-size: 52px;
+}
+
+@media (max-width: 720px) {
+  .chatbot-workbench-node .chatbot-workbench-header.v-card-title {
+    min-block-size: 52px;
+    padding-inline: 10px !important;
+  }
+}

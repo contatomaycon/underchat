@@ -1,6 +1,9 @@
 import { injectable, inject } from 'tsyringe';
 import whatsappWeb from '@wwebjs/whatsapp-web.js';
-import { WwebjsHelpersService } from './helpers.service';
+import {
+  WwebjsHelpersService,
+  type WwebjsProviderInvocationBoundary,
+} from './helpers.service';
 import { messageToWaLike } from '../util/messageToWaLike';
 import {
   resolveQuotedMessageId,
@@ -22,11 +25,18 @@ export class WwebjsMessageLocationContactService {
     jid: string,
     location: IWALocationMessage,
     quoted?: { key: IWwebjsQuotedKeyInput },
-    extra?: Record<string, unknown>
+    extra?: Record<string, unknown>,
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const quotedMessageId = quoted?.key?.id
-      ? await resolveQuotedMessageId(client, jid, quoted.key)
+      ? await resolveQuotedMessageId(client, jid, quoted.key, (invoke) =>
+          this.helpers.invokeProviderLookup(
+            client,
+            'quoted_message_lookup',
+            invoke
+          )
+        )
       : undefined;
 
     const loc = new Location(
@@ -48,7 +58,12 @@ export class WwebjsMessageLocationContactService {
       options.quotedMessageId = quotedMessageId;
       options.ignoreQuoteErrors = false;
     }
-    const msg = await this.helpers.sendMessage(jid, loc, options);
+    const msg = await this.helpers.sendMessage(
+      jid,
+      loc,
+      options,
+      beforeProviderInvoke
+    );
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -57,11 +72,18 @@ export class WwebjsMessageLocationContactService {
     jid: string,
     vcard: string,
     quoted?: { key: IWwebjsQuotedKeyInput },
-    extra?: Record<string, unknown>
+    extra?: Record<string, unknown>,
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const quotedMessageId = quoted?.key?.id
-      ? await resolveQuotedMessageId(client, jid, quoted.key)
+      ? await resolveQuotedMessageId(client, jid, quoted.key, (invoke) =>
+          this.helpers.invokeProviderLookup(
+            client,
+            'quoted_message_lookup',
+            invoke
+          )
+        )
       : undefined;
 
     const options: {
@@ -77,7 +99,12 @@ export class WwebjsMessageLocationContactService {
       options.quotedMessageId = quotedMessageId;
       options.ignoreQuoteErrors = false;
     }
-    const msg = await this.helpers.sendMessage(jid, vcard, options);
+    const msg = await this.helpers.sendMessage(
+      jid,
+      vcard,
+      options,
+      beforeProviderInvoke
+    );
 
     return messageToWaLike(msg ?? undefined);
   }

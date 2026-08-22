@@ -20,6 +20,8 @@ function decodeDebugPayload(call: unknown[]): Record<string, unknown> {
 
 describe('ConnectionLifecycleDebugService', () => {
   const originalEnabled = process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED;
+  const originalWhatsappSessionDebug =
+    process.env.WHATSAPP_SESSION_DEBUG_ENABLED;
 
   afterEach(() => {
     if (originalEnabled === undefined) {
@@ -27,11 +29,17 @@ describe('ConnectionLifecycleDebugService', () => {
     } else {
       process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = originalEnabled;
     }
+    if (originalWhatsappSessionDebug === undefined) {
+      delete process.env.WHATSAPP_SESSION_DEBUG_ENABLED;
+    } else {
+      process.env.WHATSAPP_SESSION_DEBUG_ENABLED = originalWhatsappSessionDebug;
+    }
     jest.restoreAllMocks();
   });
 
   it('does not log when lifecycle debug is disabled', async () => {
     process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = 'false';
+    process.env.WHATSAPP_SESSION_DEBUG_ENABLED = 'false';
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
     const service = new ConnectionLifecycleDebugService(
       createFailingRedis() as never
@@ -40,6 +48,26 @@ describe('ConnectionLifecycleDebugService', () => {
     await service.log('test.disabled', { trace_id: 'trace-disabled' });
 
     expect(consoleSpy).not.toHaveBeenCalled();
+  });
+
+  it('enables end-to-end lifecycle logs with WhatsApp session debug', async () => {
+    process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = 'false';
+    process.env.WHATSAPP_SESSION_DEBUG_ENABLED = 'true';
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+    const service = new ConnectionLifecycleDebugService(
+      createFailingRedis() as never
+    );
+
+    await service.log('wwebjs.qr_stream.received', {
+      trace_id: 'trace-whatsapp-session-debug',
+      worker_id: '019fccbb-5447-718c-bb95-71782a995e54',
+      stage: 'qr_request_claimed',
+    });
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[connection-lifecycle-debug]',
+      expect.stringContaining('wwebjs.qr_stream.received')
+    );
   });
 
   it('uses local sequence fallback and per-trace ordering', async () => {
@@ -80,11 +108,82 @@ describe('ConnectionLifecycleDebugService', () => {
     expect(output).not.toContain('123-456');
 
     const payload = decodeDebugPayload(consoleSpy.mock.calls[0]);
-    expect(payload.has_qr).toBe(true);
-    expect(payload.qr_length).toBe('raw-qr-value'.length);
-    expect(payload.qr_sha256_12).toEqual(expect.any(String));
-    expect(payload.has_pairing_code).toBe(true);
-    expect(payload.pairing_code_length).toBe('123-456'.length);
-    expect(payload.pairing_code_sha256_12).toEqual(expect.any(String));
+    expect(payload.qrcode).toEqual(
+      expect.objectContaining({ redacted: true, present: true })
+    );
+    expect(payload.pairing_code).toEqual(
+      expect.objectContaining({ redacted: true, present: true })
+    );
+  });
+
+  it('uses the shared sanitizer for identifiers, locations and errors', async () => {
+    process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = 'true';
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+    const service = new ConnectionLifecycleDebugService(
+      createFailingRedis() as never
+    );
+
+    await service.log('test.shared_redaction', {
+      trace_id: 'trace-shared-redaction',
+      phone: '5511999999999',
+      jid: '5511999999999@s.whatsapp.net',
+      database_url: 'postgres://user:password@db.internal/underchat',
+      qrcode: 'secret-qr-value',
+      passkey_response: '{"signature":"secret-signature"}',
+      error: new Error('postgres://error-user:error-pass@db/error'),
+      reason: 'postgres://reason-user:reason-pass@db/reason',
+    });
+
+    const output = JSON.stringify(consoleSpy.mock.calls);
+    for (const secret of [
+      '5511999999999',
+      'user:password',
+      'secret-qr-value',
+      'secret-signature',
+      'error-user:error-pass',
+      'reason-user:reason-pass',
+    ]) {
+      expect(output).not.toContain(secret);
+    }
+
+    const payload = decodeDebugPayload(consoleSpy.mock.calls[0]);
+    expect(payload.phone).toMatch(/^sha256:/);
+    expect(payload.jid).toMatch(/^sha256:/);
+    expect(payload.database_url).toEqual(
+      expect.objectContaining({ redacted: true, present: true })
+    );
+    expect(payload.qrcode).toEqual(
+      expect.objectContaining({ redacted: true, present: true })
+    );
+    expect(payload.passkey_response).toEqual(
+      expect.objectContaining({ redacted: true, present: true })
+    );
+    expect(payload.error).toEqual({
+      error_name: 'error',
+      error_code: 'unclassified_error',
+    });
+    expect(payload.reason).toEqual(
+      expect.objectContaining({ redacted: true, present: true })
+    );
+  });
+
+  it('hashes an unsafe externally supplied trace id before Redis or stdout', async () => {
+    process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = 'true';
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+    const redis = createFailingRedis();
+    const service = new ConnectionLifecycleDebugService(redis as never);
+
+    await service.log('test.trace_redaction', {
+      trace_id: 'postgres://trace-user:trace-pass@db/trace',
+    });
+
+    const output = JSON.stringify(consoleSpy.mock.calls);
+    expect(output).not.toContain('trace-user:trace-pass');
+    const payload = decodeDebugPayload(consoleSpy.mock.calls[0]);
+    expect(payload.trace_id).toMatch(/^trace_sha256_[0-9a-f]{64}$/);
+    const pipeline = redis.pipeline.mock.results[0]?.value;
+    expect(pipeline.incr).toHaveBeenCalledWith(
+      expect.stringMatching(/trace_sha256_[0-9a-f]{64}$/)
+    );
   });
 });

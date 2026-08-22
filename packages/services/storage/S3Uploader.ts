@@ -1,7 +1,7 @@
-import { injectable, inject, container } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { S3BackupUploadService } from '@core/services/s3BackupUpload.service';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
+import { workerErrorDiagnostics } from '@core/common/functions/workerErrorDiagnostics';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
@@ -12,6 +12,8 @@ export interface UploadParams {
   body: Buffer;
   contentType: string;
   accountId?: string;
+  expiresAt?: Date;
+  tagging?: string;
 }
 
 export interface UploadWithRetryResult {
@@ -46,6 +48,8 @@ export class S3Uploader {
       Key: params.key,
       Body: params.body,
       ContentType: params.contentType,
+      Expires: params.expiresAt,
+      Tagging: params.tagging,
     });
 
     await client.send(command);
@@ -61,7 +65,7 @@ export class S3Uploader {
       try {
         await this.attemptUpload(client, params);
         return { attempts: attempt + 1 };
-      } catch (error: any) {
+      } catch (error: unknown) {
         lastError = error;
         console.error('[S3Uploader] Upload attempt failed', {
           bucket: params.bucket,
@@ -70,10 +74,7 @@ export class S3Uploader {
           size: params.body.byteLength,
           attempt: attempt + 1,
           maxAttempts: MAX_RETRIES,
-          errorName: error?.name,
-          errorCode: error?.Code ?? error?.code,
-          statusCode: error?.$metadata?.httpStatusCode,
-          message: error?.message ?? String(error),
+          ...workerErrorDiagnostics(error),
         });
 
         if (attempt < MAX_RETRIES - 1) {
@@ -226,40 +227,14 @@ export class S3Uploader {
       backup_error: metadata.backupError,
     };
 
-    const registeredLocally =
-      await this.tryRegisterFallbackUploadLocally(payload);
-
-    if (registeredLocally) {
-      return;
-    }
-
     try {
       await this.balanceWorkerStatusGrpcClientService.registerS3BackupFallbackUpload(
         payload
       );
     } catch (error) {
-      console.error('Erro ao registrar fallback no S3 backup:', error);
-    }
-  }
-
-  private async tryRegisterFallbackUploadLocally(payload: {
-    account_id: string;
-    bucket: string;
-    object_key: string;
-    file_name: string | null;
-    content_type: string;
-    size_bytes: number;
-    primary_attempts: number;
-    backup_attempts: number;
-    primary_error: string | null;
-    backup_error: string | null;
-  }): Promise<boolean> {
-    try {
-      const s3BackupUploadService = container.resolve(S3BackupUploadService);
-      await s3BackupUploadService.registerFallbackUpload(payload);
-      return true;
-    } catch {
-      return false;
+      console.error('Erro ao registrar fallback no S3 backup', {
+        ...workerErrorDiagnostics(error),
+      });
     }
   }
 }

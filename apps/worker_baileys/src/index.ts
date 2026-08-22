@@ -9,6 +9,7 @@ import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
+import workerDatabasePlugin from '@core/plugins/workerDatabase';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
@@ -21,6 +22,9 @@ import baileysConsumersOnListenHook, {
   activateBaileysRuntime,
 } from './consumer';
 import { hasUnhealthyKafkaConsumer } from './consumer/registry';
+import planEntitlementTelemetryPlugin from '@core/plugins/planEntitlementTelemetry';
+import { installNodeWorkerGracefulShutdown } from '@core/common/functions/nodeWorkerGracefulShutdown';
+import { workerErrorDiagnostics } from '@core/common/functions/workerErrorDiagnostics';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -31,6 +35,9 @@ const server = fastify({
   },
   genReqId: () => v7(),
   logger: true,
+});
+const nodeWorkerShutdown = installNodeWorkerGracefulShutdown(server, {
+  workerName: 'Baileys',
 });
 
 server.decorateRequest('module', ERouteModule.worker_baileys);
@@ -46,7 +53,11 @@ server.register(safePlugin(fastifyQs, 'fastifyQs'));
 server.register(safePlugin(databaseElasticPlugin, 'databaseElastic'), {
   prefix: ERouteModule.worker_baileys,
 });
+server.register(safePlugin(workerDatabasePlugin, 'workerDatabase'));
 server.register(safePlugin(redisPlugin, 'redis'));
+server.register(
+  safePlugin(planEntitlementTelemetryPlugin, 'planEntitlementTelemetry')
+);
 server.register(safePlugin(s3Plugin, 's3'));
 server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
   module: ERouteModule.worker_baileys,
@@ -71,10 +82,17 @@ const start = async () => {
   try {
     await server.listen({ port: 3005, host: '0.0.0.0' });
 
-    console.log('Server running');
-  } catch {
+    server.log.info('Baileys worker server running');
+  } catch (err) {
+    if (nodeWorkerShutdown.isShuttingDown()) {
+      return;
+    }
+    server.log.fatal(
+      workerErrorDiagnostics(err),
+      'Unable to start Baileys worker server'
+    );
     process.exit(1);
   }
 };
 
-start();
+void start();

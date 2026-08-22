@@ -2,8 +2,8 @@ import 'reflect-metadata';
 import { Value } from '@sinclair/typebox/value';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
+import { EWorkerSessionStorage } from '@core/common/enums/EWorkerSessionStorage';
 import { listWarmChannelsSchema } from '@core/schema/config/listWarmChannels';
-import { recreateWarmChannelSchema } from '@core/schema/config/recreateWarmChannel';
 import { recreateWarmChannelsAllSchema } from '@core/schema/config/recreateWarmChannelsAll';
 import { updateWarmChannelSettingsSchema } from '@core/schema/config/updateWarmChannelSettings';
 import { viewWarmChannelSettingsSchema } from '@core/schema/config/viewWarmChannelSettings';
@@ -53,7 +53,8 @@ describe('Warm channels API schemas', () => {
               state: EWorkerWarmPoolState.ready,
               container_id: 'container-1',
               container_name: 'warm-container-1',
-              session_volume_name: 'volume-1',
+              session_storage: EWorkerSessionStorage.postgres,
+              session_volume_name: null,
               last_health_at: '2026-06-05T12:00:00.000Z',
               last_error: null,
               created_at: '2026-06-05T10:00:00.000Z',
@@ -65,8 +66,7 @@ describe('Warm channels API schemas', () => {
     ).toBe(true);
   });
 
-  it('exposes recreate params/body and accepted response contracts', () => {
-    expect(recreateWarmChannelSchema.params).toBeDefined();
+  it('exposes only the bulk recreate body and accepted response contract', () => {
     expect(
       check(recreateWarmChannelsAllSchema.body, {
         server_id: 'srv-1',
@@ -79,13 +79,6 @@ describe('Warm channels API schemas', () => {
       })
     ).toBe(true);
 
-    expect(
-      check(recreateWarmChannelSchema.response[202], {
-        status: true,
-        message: 'accepted',
-        data: { enqueued: 1 },
-      })
-    ).toBe(true);
     expect(
       check(recreateWarmChannelsAllSchema.response[202], {
         status: true,

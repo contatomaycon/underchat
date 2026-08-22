@@ -7,9 +7,8 @@ import { IWorkerConfigValue } from '@core/common/interfaces/IWorkerConfigValue';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
 import Redis from 'ioredis';
-import { StreamProducerService } from './streamProducer.service';
-import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { IWorkerConfigUpdateEvent } from '@core/common/interfaces/IWorkerConfigUpdateEvent';
+import { WorkerConfigRevisionService } from '@core/services/workerConfigRevision.service';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
@@ -34,11 +33,14 @@ import {
 import { ITypingSimulationConfig } from '@core/common/interfaces/ITypingSimulationConfig';
 import { IOperatorReplyPendingAlertConfig } from '@core/common/interfaces/IOperatorReplyPendingAlertConfig';
 import { parseOperatorReplyPendingAlertConfig } from '@core/common/functions/operatorReplyPendingAlertConfig';
+import { IOperatorReplyPendingRedistributionConfig } from '@core/common/interfaces/IOperatorReplyPendingRedistributionConfig';
+import { parseOperatorReplyPendingRedistributionConfig } from '@core/common/functions/operatorReplyPendingRedistributionConfig';
 import {
   ISecurityKeyConfig,
   TSecurityKeyScope,
 } from '@core/common/interfaces/ISecurityKeyConfig';
 import { defaultSecurityKeyConfig } from '@core/common/functions/securityKeyConfig';
+import { WorkerCommandAdmissionService } from './workerCommandAdmission.service';
 
 @injectable()
 export class WorkerConfigService {
@@ -47,12 +49,12 @@ export class WorkerConfigService {
     private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
     @inject(WorkerConfigUpserterRepository)
     private readonly workerConfigUpserterRepository: WorkerConfigUpserterRepository,
-    @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService,
-    @inject(KafkaServiceQueueService)
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(WorkerCommandAdmissionService)
+    private readonly workerCommandAdmissionService: WorkerCommandAdmissionService,
     @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(WorkerConfigRevisionService)
+    private readonly workerConfigRevisionService: WorkerConfigRevisionService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -85,15 +87,34 @@ export class WorkerConfigService {
 
   async upsertWorkerConfig(
     t: TFunction<'translation', undefined>,
+    accountId: string,
     workerId: string,
     input: IUpdateWorkerConfig
   ): Promise<WorkerConfig> {
     const normalizedInput = this.normalizeWorkerConfigInput(input);
 
-    await this.workerConfigUpserterRepository.upsertWorkerConfig(
-      workerId,
-      normalizedInput
-    );
+    const persisted =
+      await this.workerConfigUpserterRepository.upsertWorkerConfig(
+        workerId,
+        normalizedInput
+      );
+    let rejectCallRevisionToPublish: string | null = null;
+    if (persisted.reject_call_revision) {
+      const currentRevision =
+        await this.workerConfigUpserterRepository.viewRejectCallRevision(
+          workerId
+        );
+      if (!currentRevision) {
+        throw new Error('worker_config_current_revision_missing');
+      }
+      if (currentRevision === persisted.reject_call_revision) {
+        await this.workerConfigRevisionService.registerCurrent(
+          workerId,
+          currentRevision
+        );
+        rejectCallRevisionToPublish = currentRevision;
+      }
+    }
 
     await this.invalidateWorkerConfigCache(workerId);
 
@@ -131,15 +152,26 @@ export class WorkerConfigService {
     }
 
     if (normalizedInput.reject_call !== undefined) {
-      const updateEvent: IWorkerConfigUpdateEvent = {
-        worker_id: workerId,
-        reject_call: normalizedInput.reject_call,
-      };
+      if (!persisted.reject_call_revision) {
+        throw new Error('worker_config_revision_missing');
+      }
+      if (rejectCallRevisionToPublish) {
+        const updateEvent: IWorkerConfigUpdateEvent = {
+          worker_id: workerId,
+          reject_call: normalizedInput.reject_call,
+          revision: rejectCallRevisionToPublish,
+        };
 
-      await this.streamProducerService.send(
-        this.kafkaServiceQueueService.workerConfigUpdate(),
-        updateEvent
-      );
+        await this.workerCommandAdmissionService.admit({
+          accountId,
+          workerId,
+          commandType: 'worker_config',
+          entityKey: `control:${accountId}:${workerId}:config`,
+          operationId: rejectCallRevisionToPublish,
+          payload: updateEvent as unknown as Record<string, never>,
+          source: 'worker_config',
+        });
+      }
     }
 
     return this.mapToWorkerConfig(result);
@@ -1158,6 +1190,46 @@ export class WorkerConfigService {
 
     const enabled = config.statusId === EWorkerConfigStatus.active;
     return parseOperatorReplyPendingAlertConfig(config.value, enabled);
+  }
+
+  async updateOperatorReplyPendingRedistribution(
+    workerId: string,
+    config: IOperatorReplyPendingRedistributionConfig
+  ): Promise<IOperatorReplyPendingRedistributionConfig> {
+    const statusId = config.enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+    const valueToSave = JSON.stringify({
+      time_minutes: config.time_minutes,
+      sector_ids: config.sector_ids,
+    });
+
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateOperatorReplyPendingRedistribution(
+        workerId,
+        valueToSave,
+        statusId
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return parseOperatorReplyPendingRedistributionConfig(
+      result,
+      config.enabled
+    );
+  }
+
+  async viewOperatorReplyPendingRedistribution(
+    workerId: string
+  ): Promise<IOperatorReplyPendingRedistributionConfig> {
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.operator_reply_pending_redistribution
+      );
+
+    const enabled = config.statusId === EWorkerConfigStatus.active;
+    return parseOperatorReplyPendingRedistributionConfig(config.value, enabled);
   }
 
   async viewChatbotConfigByAccountId(accountId: string): Promise<{

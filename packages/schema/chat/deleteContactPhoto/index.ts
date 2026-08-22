@@ -2,6 +2,7 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { deleteChatContactPhotoRequestSchema } from './request.schema';
+import { chatMutationErrorResponseSchema } from '../mutationErrorResponse.schema';
 
 export const deleteChatContactPhotoSchema = {
   description: 'Remove a foto de perfil de um contato para chat',
@@ -32,6 +33,7 @@ export const deleteChatContactPhotoSchema = {
       },
       { description: 'Successful' }
     ),
+    400: chatMutationErrorResponseSchema('Bad Request'),
     401: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -50,6 +52,7 @@ export const deleteChatContactPhotoSchema = {
       },
       { description: 'Forbidden' }
     ),
+    404: chatMutationErrorResponseSchema('Not Found'),
     500: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

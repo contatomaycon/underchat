@@ -3,17 +3,21 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { UserCardsListerUseCase } from '@core/useCases/plan/UserCardsLister.useCase';
+import { BillingUserCardsListerUseCase } from '@core/useCases/plan/BillingUserCardsLister.useCase';
 
 export const listUserCards = async (
   request: FastifyRequest,
   reply: FastifyReply
 ) => {
-  const userCardsListerUseCase = container.resolve(UserCardsListerUseCase);
+  const billingUserCardsListerUseCase = container.resolve(
+    BillingUserCardsListerUseCase
+  );
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await userCardsListerUseCase.execute(tokenJwtData.user_id);
+    const response = await billingUserCardsListerUseCase.execute(
+      tokenJwtData.account_id
+    );
 
     return sendResponse(reply, {
       message: t('user_cards_list_successfully'),

@@ -160,6 +160,7 @@ describe('ContactListerRepository', () => {
         birthday: '2026-04-21',
         notes: 'obs',
         is_valided: true,
+        validation_status: 'validated',
         photo: 'photo',
         responsible_attendant: {
           user_id: 'user-1',

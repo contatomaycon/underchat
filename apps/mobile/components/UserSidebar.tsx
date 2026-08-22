@@ -40,6 +40,7 @@ import {
 } from '../utils/keyboard';
 import { teardownMobileSession } from '../utils/sessionTeardown';
 import { useChannelStatus } from '../context/ChannelStatusContext';
+import { EWorkerStatus } from '../../../packages/common/enums/EWorkerStatus';
 import { addSessionUpdatedListener } from '../utils/appResumeBus';
 import {
   disableBiometricLogin,
@@ -49,6 +50,7 @@ import {
   type BiometricCapability,
 } from '../utils/biometricAuth';
 import { changeUserPresenceStatus } from '../utils/userPresenceStatus';
+import type { WhatsappConnectionPublicStatus } from '../../../packages/common/functions/whatsappConnectionStatus';
 
 type SidebarStatus = 'online' | 'busy' | 'do_not_disturb' | 'away' | 'offline';
 type PhotoPickerSource = 'camera' | 'gallery';
@@ -193,21 +195,33 @@ function getBiometricSettingsDescription(
 }
 
 const CHANNEL_STATUS_COLORS: Record<string, string> = {
-  '019a930d-c6f6-766d-9c84-30af6ecc33b2': colors.success,
-  '019a930d-c6f6-766d-9c84-3696c2cd5ed8': colors.error,
-  '019a930d-c6f6-766d-9c84-48cb970a9f21': colors.error,
-  '019a930d-c6f6-766d-9c84-5056ccf66633': colors.error,
-  '019bcd18-ce66-77a2-9d7c-e48159c253da': colors.warning,
-  '019a930d-c6f6-766d-9c84-52e87789979b': colors.warning,
-  '019a930d-c6f6-766d-9c84-3904383fe742': colors.warning,
-  '019a930d-c6f6-766d-9c84-3f0abf55560d': colors.grey400,
+  [EWorkerStatus.online]: colors.success,
+  [EWorkerStatus.offline]: colors.error,
+  [EWorkerStatus.error]: colors.error,
+  [EWorkerStatus.mismatched]: colors.error,
+  [EWorkerStatus.deleting]: colors.error,
+  [EWorkerStatus.delete]: colors.error,
+  [EWorkerStatus.stopped]: colors.warning,
+  [EWorkerStatus.blocked]: colors.warning,
+  [EWorkerStatus.creating]: colors.warning,
+  [EWorkerStatus.recreating]: colors.primary,
+  [EWorkerStatus.disponible]: colors.warning,
+  [EWorkerStatus.new]: colors.grey400,
 };
 
 function getChannelDotColor(
   isOnline: boolean,
-  statusId?: string | null
+  statusId?: string | null,
+  connectionStatus?: WhatsappConnectionPublicStatus | null
 ): string {
   if (isOnline) return colors.success;
+  if (
+    connectionStatus === 'offline' ||
+    connectionStatus === 'reconnect_required' ||
+    connectionStatus === 'error'
+  ) {
+    return colors.error;
+  }
   if (statusId && CHANNEL_STATUS_COLORS[statusId])
     return CHANNEL_STATUS_COLORS[statusId];
   return colors.warning;
@@ -215,9 +229,15 @@ function getChannelDotColor(
 
 function getChannelStatusLabel(
   isOnline: boolean,
-  statusName?: string | null
+  statusName?: string | null,
+  connectionStatus?: WhatsappConnectionPublicStatus | null
 ): string {
   if (isOnline) return pt.channel_online;
+  if (connectionStatus === 'qr') return pt.channel_awaiting_qr;
+  if (connectionStatus === 'connecting') return 'Conectando';
+  if (connectionStatus === 'reconnect_required') return 'Reconectar';
+  if (connectionStatus === 'error') return 'Erro';
+  if (connectionStatus === 'offline') return pt.channel_offline;
   if (statusName) return statusName;
   return pt.channel_offline;
 }
@@ -276,7 +296,8 @@ function ChannelStatusSection() {
                       {
                         backgroundColor: getChannelDotColor(
                           ch.isOnline,
-                          ch.status?.id
+                          ch.status?.id,
+                          ch.connectionStatus
                         ),
                       },
                     ]}
@@ -287,10 +308,20 @@ function ChannelStatusSection() {
                   <Text
                     style={[
                       channelStyles.statusLabel,
-                      { color: getChannelDotColor(ch.isOnline, ch.status?.id) },
+                      {
+                        color: getChannelDotColor(
+                          ch.isOnline,
+                          ch.status?.id,
+                          ch.connectionStatus
+                        ),
+                      },
                     ]}
                   >
-                    {getChannelStatusLabel(ch.isOnline, ch.status?.name)}
+                    {getChannelStatusLabel(
+                      ch.isOnline,
+                      ch.status?.name,
+                      ch.connectionStatus
+                    )}
                   </Text>
                 </View>
               ))}

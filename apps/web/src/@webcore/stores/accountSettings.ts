@@ -26,7 +26,10 @@ import {
 } from '@core/schema/accountSettings/listAccountPayments/response.schema';
 import { ListAccountPaymentsRequest } from '@core/schema/accountSettings/listAccountPayments/request.schema';
 import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
-import { ListUserCardsFinalResponse } from '@core/schema/plan/listUserCards/response.schema';
+import {
+  ListUserCardResponse,
+  ListUserCardsFinalResponse,
+} from '@core/schema/plan/listUserCards/response.schema';
 import {
   ListAccountAddonsFinalResponse,
   ListAccountAddonsResponse,
@@ -64,6 +67,7 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
       total: 0,
     } as PagingResponseSchema,
     userCardsList: [] as ListUserCardsFinalResponse,
+    archivedUserCardsList: [] as ListUserCardsFinalResponse,
     accountAddonsList: [] as ListAccountAddonsResponse[],
     accountPlanProductsList: [] as ListAccountPlanProductsResponse[],
     accountPaymentNfse: null as ViewAccountPaymentNfseResponse | null,
@@ -552,6 +556,66 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
       } catch {
         this.loading = false;
         return null;
+      }
+    },
+    async listArchivedUserCards(): Promise<ListUserCardsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListUserCardsFinalResponse>
+        >('/account-settings/cards/archived');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.archivedUserCardsList = data.data;
+
+        return data.data;
+      } catch {
+        return null;
+      } finally {
+        this.loading = false;
+      }
+    },
+    async reactivateUserCard(
+      userCardId: string
+    ): Promise<ListUserCardResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<ListUserCardResponse>>(
+          `/account-settings/cards/${userCardId}/reactivate`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.archivedUserCardsList = this.archivedUserCardsList.filter(
+          (card) => card.user_card_id !== userCardId
+        );
+
+        const currentCardIndex = this.userCardsList.findIndex(
+          (card) => card.user_card_id === data.data.user_card_id
+        );
+
+        if (currentCardIndex === -1) {
+          this.userCardsList.push(data.data);
+        } else {
+          this.userCardsList[currentCardIndex] = data.data;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      } finally {
+        this.loading = false;
       }
     },
     async deleteUserCard(userCardId: string): Promise<boolean> {

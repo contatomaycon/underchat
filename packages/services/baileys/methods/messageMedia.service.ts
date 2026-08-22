@@ -35,7 +35,8 @@ export class BaileysMessageMediaService {
       viewOnce?: boolean;
       contextInfo?: proto.IContextInfo;
     },
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
     const content: AnyMessageContent = {
       image: image as WAMediaUpload,
@@ -47,7 +48,7 @@ export class BaileysMessageMediaService {
       contextInfo: args?.contextInfo,
     };
 
-    return this.baileysHelpersService.send(jid, content, options);
+    return this.sendWithBoundary(jid, content, options, beforeProviderInvoke);
   }
 
   /**
@@ -70,7 +71,8 @@ export class BaileysMessageMediaService {
       filesize?: number;
       contextInfo?: proto.IContextInfo;
     },
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
     const mimetype = 'video/mp4';
     const media = this.withMediaMetadata(video, {
@@ -92,7 +94,7 @@ export class BaileysMessageMediaService {
       contextInfo: args?.contextInfo,
     };
 
-    return this.baileysHelpersService.send(jid, content, options);
+    return this.sendWithBoundary(jid, content, options, beforeProviderInvoke);
   }
 
   /**
@@ -111,7 +113,8 @@ export class BaileysMessageMediaService {
       waveform?: Uint8Array;
       contextInfo?: proto.IContextInfo;
     },
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
     const isViewOnce = args?.viewOnce === true;
     const isPtt = isViewOnce ? true : !!args?.ptt;
@@ -140,7 +143,7 @@ export class BaileysMessageMediaService {
           contextInfo: args?.contextInfo,
         } as AnyMessageContent);
 
-    return this.baileysHelpersService.send(jid, content, options);
+    return this.sendWithBoundary(jid, content, options, beforeProviderInvoke);
   }
 
   /**
@@ -155,7 +158,8 @@ export class BaileysMessageMediaService {
       height?: number;
       contextInfo?: proto.IContextInfo;
     },
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
     const content: AnyMessageContent = {
       sticker: sticker as WAMediaUpload,
@@ -165,7 +169,7 @@ export class BaileysMessageMediaService {
       contextInfo: args?.contextInfo,
     };
 
-    return this.baileysHelpersService.send(jid, content, options);
+    return this.sendWithBoundary(jid, content, options, beforeProviderInvoke);
   }
 
   /**
@@ -181,7 +185,8 @@ export class BaileysMessageMediaService {
       caption?: string;
       contextInfo?: proto.IContextInfo;
     },
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
     const media = this.withMediaMetadata(document, args);
 
@@ -193,7 +198,7 @@ export class BaileysMessageMediaService {
       contextInfo: args.contextInfo,
     };
 
-    return this.baileysHelpersService.send(jid, content, options);
+    return this.sendWithBoundary(jid, content, options, beforeProviderInvoke);
   }
 
   /**
@@ -246,5 +251,21 @@ export class BaileysMessageMediaService {
       filename: args?.fileName ?? input.filename ?? undefined,
       filesize: args?.filesize ?? input.filesize ?? undefined,
     } as IMediaInput;
+  }
+
+  private sendWithBoundary(
+    jid: string,
+    content: AnyMessageContent,
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
+  ) {
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          content,
+          options,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, content, options);
   }
 }

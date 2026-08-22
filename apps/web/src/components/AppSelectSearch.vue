@@ -6,12 +6,14 @@ import {
   nextTick,
   onMounted,
   onUnmounted,
+  useId,
   useSlots,
 } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 const slots = useSlots();
+const inputId = `app-select-search-${useId()}`;
 
 type SelectValue = string | number | boolean | null;
 
@@ -181,9 +183,6 @@ const inputValue = computed(() => {
     }
     return '';
   }
-  if (shouldUseCustomSelection.value) {
-    return '';
-  }
   return displayValue.value;
 });
 
@@ -317,7 +316,9 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <VLabel v-if="label" class="mb-1 text-body-2"> {{ label }}: </VLabel>
+    <VLabel v-if="label" :for="inputId" class="mb-1 text-body-2">
+      {{ label }}:
+    </VLabel>
     <VMenu
       v-model="isMenuOpen"
       location="bottom"
@@ -331,6 +332,8 @@ onUnmounted(() => {
         <div ref="fieldWrapperRef" class="select-field-wrapper">
           <VTextField
             v-bind="menuProps"
+            :id="inputId"
+            :aria-label="label || placeholder"
             :model-value="inputValue"
             :placeholder="hasSelectedItems ? '' : placeholder"
             variant="outlined"
@@ -373,6 +376,7 @@ onUnmounted(() => {
           <div
             v-if="shouldUseCustomSelection && selectedItem"
             class="single-selection-container"
+            aria-hidden="true"
           >
             <slot name="selection" :item="selectedItem as SelectItem" />
           </div>

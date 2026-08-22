@@ -3,6 +3,7 @@ import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { officialOpeningContextRequestSchema } from './request.schema';
 import { officialOpeningContextResponseSchema } from './response.schema';
+import { chatMutationErrorResponseSchema } from '../mutationErrorResponse.schema';
 
 export const officialOpeningContextSchema = {
   description: 'Lista templates aprovados para abertura oficial WhatsApp',
@@ -60,6 +61,7 @@ export const officialOpeningContextSchema = {
       },
       { description: 'Forbidden' }
     ),
+    404: chatMutationErrorResponseSchema('Not Found'),
     500: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

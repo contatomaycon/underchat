@@ -45,7 +45,14 @@ func (cli *Client) keepAliveLoop(ctx, connCtx context.Context) {
 				})
 				if cli.EnableAutoReconnect && time.Since(lastSuccess) > KeepAliveMaxFailTime {
 					cli.Log.Debugf("Forcing reconnect due to keepalive failure")
-					cli.Disconnect()
+					cli.logSessionDebug("internal_reconnect.keepalive_requested", map[string]any{
+						"error_count":     errorCount,
+						"last_success_ms": time.Since(lastSuccess).Milliseconds(),
+					})
+					if !cli.disconnectForReconnect("keepalive_timeout") {
+						cli.Log.Debugf("Cancelling keepalive reconnect because the client entered a terminal lifecycle")
+						return
+					}
 					cli.resetExpectedDisconnect()
 					go cli.autoReconnect(ctx)
 				}

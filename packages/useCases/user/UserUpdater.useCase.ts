@@ -20,6 +20,13 @@ import { validatePassword } from '@core/common/utils/passwordValidator';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
+import { normalizeCnpj } from '@core/common/functions/validateCnpj';
+import { EUserStatus } from '@core/common/enums/EUserStatus';
+import { PlanLimitEnforcementService } from '@core/services/planLimitEnforcement.service';
+import { UserSessionInvalidationService } from '@core/services/userSessionInvalidation.service';
+import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
+import { extractIndexedMultipartValues } from '@core/common/functions/extractIndexedMultipartValues';
 
 @injectable()
 export class UserUpdaterUseCase {
@@ -39,7 +46,11 @@ export class UserUpdaterUseCase {
     @inject(PermissionService)
     private readonly permissionService: PermissionService,
     @inject(CentrifugoService)
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    @inject(PlanLimitEnforcementService)
+    private readonly planLimitEnforcementService: PlanLimitEnforcementService,
+    @inject(UserSessionInvalidationService)
+    private readonly userSessionInvalidationService: UserSessionInvalidationService
   ) {}
 
   private extractStringValue(
@@ -268,7 +279,25 @@ export class UserUpdaterUseCase {
     };
   }
 
-  private encryptDocumentData(document: string | null | undefined) {
+  private normalizeDocumentValue(
+    document: string | null | undefined,
+    documentTypeId: string | null | undefined
+  ): string | null | undefined {
+    if (!document) {
+      return document;
+    }
+
+    return documentTypeId === EUserDocumentType.CNPJ
+      ? normalizeCnpj(document)
+      : document;
+  }
+
+  private encryptDocumentData(
+    document: string | null | undefined,
+    documentTypeId?: string | null
+  ) {
+    document = this.normalizeDocumentValue(document, documentTypeId);
+
     if (!document) {
       return {
         documentCEncrypted: null,
@@ -376,10 +405,14 @@ export class UserUpdaterUseCase {
     body: UpdateUserRequest
   ): IUpdateUserDocument {
     const documentValue = this.extractStringValue(body.document);
-    const documentData = this.encryptDocumentData(documentValue);
+    const documentTypeIdValue = this.extractStringValue(body.document_type_id);
+    const documentData = this.encryptDocumentData(
+      documentValue,
+      documentTypeIdValue
+    );
 
     return {
-      user_document_type_id: this.extractStringValue(body.document_type_id),
+      user_document_type_id: documentTypeIdValue,
       document: documentData.documentCEncrypted,
       document_partial: documentData.documentPartialEncrypted,
       document_c: documentData.documentC,
@@ -390,8 +423,11 @@ export class UserUpdaterUseCase {
     body: UpdateUserRequest
   ): ICreateUserDocument {
     const documentValue = this.extractStringValue(body.document);
-    const documentData = this.encryptDocumentData(documentValue);
     const documentTypeIdValue = this.extractStringValue(body.document_type_id);
+    const documentData = this.encryptDocumentData(
+      documentValue,
+      documentTypeIdValue
+    );
 
     if (!documentTypeIdValue) {
       throw new Error('user_document_type_id is required to create document');
@@ -1025,23 +1061,10 @@ export class UserUpdaterUseCase {
       return;
     }
 
-    const sectorIdsArray: string[] = [];
-
-    Object.keys(body).forEach((key) => {
-      const match = key.match(/^sector_ids\[(\d+)\]$/);
-      if (!match) {
-        return;
-      }
-
-      const index = parseInt(match[1], 10);
-      const field = body[key];
-      const value =
-        typeof field === 'object' && field.value ? field.value : field;
-      sectorIdsArray[index] = value;
-    });
+    const sectorIdsArray = extractIndexedMultipartValues(body, 'sector_ids');
 
     if (sectorIdsArray.length > 0) {
-      body.sector_ids = { value: sectorIdsArray.filter(Boolean) };
+      body.sector_ids = { value: sectorIdsArray };
     }
   }
 
@@ -1055,23 +1078,10 @@ export class UserUpdaterUseCase {
       return;
     }
 
-    const channelIdsArray: string[] = [];
-
-    Object.keys(body).forEach((key) => {
-      const match = key.match(/^channel_ids\[(\d+)\]$/);
-      if (!match) {
-        return;
-      }
-
-      const index = parseInt(match[1], 10);
-      const field = body[key];
-      const value =
-        typeof field === 'object' && field.value ? field.value : field;
-      channelIdsArray[index] = value;
-    });
+    const channelIdsArray = extractIndexedMultipartValues(body, 'channel_ids');
 
     if (channelIdsArray.length > 0) {
-      body.channel_ids = { value: channelIdsArray.filter(Boolean) };
+      body.channel_ids = { value: channelIdsArray };
     }
   }
 
@@ -1107,6 +1117,25 @@ export class UserUpdaterUseCase {
     }
   }
 
+  private async validateProtectedUserBlock(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    body: UpdateUserRequest
+  ): Promise<void> {
+    const targetStatus = this.extractStringValue(body.user_status_id);
+    if (targetStatus !== EUserStatus.blocked) {
+      return;
+    }
+
+    const requestedRoleId = this.extractStringValue(body.permission_role_id);
+    const effectiveRoleId =
+      requestedRoleId ?? (await this.userService.getUserRole(userId));
+
+    if (isMasterOrAdministratorRole(effectiveRoleId)) {
+      throw new Error(t('cannot_block_system_user'));
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
@@ -1134,6 +1163,23 @@ export class UserUpdaterUseCase {
       currentUserPermissionRoleId
     );
 
+    await this.validateProtectedUserBlock(t, userId, body);
+
+    const targetStatus = this.extractStringValue(body.user_status_id);
+    const requestedRoleId = this.extractStringValue(body.permission_role_id);
+    if (
+      targetStatus === EUserStatus.active &&
+      !isMasterOrAdministratorRole(requestedRoleId)
+    ) {
+      const targetAccountId =
+        this.extractStringValue(body.account_id) ?? accountId;
+      await this.planLimitEnforcementService.ensureCanActivateUserIfNeeded(
+        t,
+        targetAccountId,
+        userId
+      );
+    }
+
     const updatePromises = await this.buildUpdatePromises(
       t,
       userId,
@@ -1144,10 +1190,31 @@ export class UserUpdaterUseCase {
 
     await Promise.all(updatePromises);
 
+    if (isMasterOrAdministratorRole(requestedRoleId)) {
+      const userAccountId =
+        (await this.userService.getUserAccountId(userId)) ?? accountId;
+      await this.planLimitEnforcementService.activateProtectedUserIfBlocked(
+        userAccountId,
+        userId
+      );
+    }
+
     if (body.channel_ids !== undefined) {
       const userAccountId =
         (await this.userService.getUserAccountId(userId)) ?? accountId;
       await this.publishUserChannelsUpdate(userId, userAccountId);
+    }
+
+    if (
+      targetStatus === EUserStatus.blocked ||
+      targetStatus === EUserStatus.inactive
+    ) {
+      const userAccountId =
+        (await this.userService.getUserAccountId(userId)) ?? accountId;
+      await this.userSessionInvalidationService.invalidateUser(
+        userAccountId,
+        userId
+      );
     }
 
     return true;

@@ -2,7 +2,7 @@ import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 import { container } from 'tsyringe';
 
 const updateChatStatusModulePath =
-  '../../../../../../../../apps/manager_api/src/controllers/chat/methods/updateChatStatus';
+  '@core/controllers/chat/methods/updateChatStatus';
 
 jest.mock('tsyringe', () => ({
   container: {

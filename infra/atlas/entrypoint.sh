@@ -5,18 +5,10 @@ set -e
 mkdir -p /.cache/node/corepack
 chmod -R 777 /.cache 2>/dev/null || true
 
-if [ -z "$DB_ATLAS" ]; then
-  echo "Aviso: DB_ATLAS não está definido, pulando migrações"
-  touch /tmp/migrations-complete
-  tail -f /dev/null
-  exit 0
-fi
-
-if [ -z "$DB_DATABASE_URL" ]; then
-  echo "Aviso: DB_DATABASE_URL não está definido, pulando migrações"
-  touch /tmp/migrations-complete
-  tail -f /dev/null
-  exit 0
+echo "Validando configuração discreta do PostgreSQL..."
+if ! ENV=prod ./node_modules/.bin/tsx scripts/atlas-migrate.ts --check; then
+  echo "Erro: configuração do Atlas/PostgreSQL inválida" >&2
+  exit 1
 fi
 
 echo "Iniciando migrações..."

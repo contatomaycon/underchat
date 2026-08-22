@@ -4,10 +4,34 @@ import { viewLinkPreviewResponseSchema } from '../viewLinkPreview/response.schem
 import { uploadFileRequestSchema } from '@core/schema/upload/request.schema';
 
 export const createMessageChatsParamsSchema = Type.Object({
-  chat_id: Type.String(),
+  chat_id: Type.String({ format: 'uuid' }),
 });
 
 export const createMessageChatsBodySchema = Type.Object({
+  operation_id: Type.Optional(
+    Type.Union(
+      [
+        Type.String({ minLength: 1, maxLength: 256 }),
+        Type.Null(),
+        Type.Object({
+          value: Type.String({ minLength: 1, maxLength: 256 }),
+        }),
+      ],
+      {
+        description:
+          'Identidade opcional da operacao. Quando omitida junto com hash, o servidor gera um UUIDv7 e o devolve na resposta. Para retry seguro, reutilize o operation_id devolvido.',
+      }
+    )
+  ),
+  retry_of: Type.Optional(
+    Type.Union([
+      Type.String({ minLength: 1, maxLength: 256 }),
+      Type.Null(),
+      Type.Object({
+        value: Type.String({ minLength: 1, maxLength: 256 }),
+      }),
+    ])
+  ),
   type: Type.Union([
     Type.String({ enum: Object.values(EMessageType) }),
     Type.Object({
@@ -148,13 +172,19 @@ export const createMessageChatsBodySchema = Type.Object({
     ])
   ),
   hash: Type.Optional(
-    Type.Union([
-      Type.String(),
-      Type.Null(),
-      Type.Object({
-        value: Type.String(),
-      }),
-    ])
+    Type.Union(
+      [
+        Type.String(),
+        Type.Null(),
+        Type.Object({
+          value: Type.String(),
+        }),
+      ],
+      {
+        description:
+          'Identidade legada opcional e deterministica. Clientes novos devem reutilizar o operation_id devolvido para realizar retry seguro.',
+      }
+    )
   ),
   quick_message_template_id: Type.Optional(
     Type.Union([

@@ -5,6 +5,7 @@ import {
   permissionRoleAction,
 } from '@core/models';
 import { relations } from 'drizzle-orm';
+import { EPermissionRoleStatus } from '@core/common/enums/EPermissionRoleStatus';
 
 export const permissionRole = pgTable(
   'permission_role',
@@ -15,6 +16,10 @@ export const permissionRole = pgTable(
       .notNull(),
     name: varchar({ length: 200 }).notNull(),
     description: varchar({ length: 500 }),
+    status: varchar({ length: 20 })
+      .$type<EPermissionRoleStatus>()
+      .notNull()
+      .default(EPermissionRoleStatus.active),
     created_at: timestamp('created_at', {
       mode: 'string',
       withTimezone: true,
@@ -33,6 +38,12 @@ export const permissionRole = pgTable(
       table.deleted_at
     ),
     index('permission_role_name_idx').on(table.name),
+    index('permission_role_status_idx').on(table.status),
+    index('permission_role_account_id_status_deleted_at_idx').on(
+      table.account_id,
+      table.status,
+      table.deleted_at
+    ),
   ]
 );
 

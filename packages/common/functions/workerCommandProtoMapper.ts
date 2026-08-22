@@ -4,6 +4,7 @@ import { IChangeConnectionStatusRequestProto } from '@core/common/interfaces/ICh
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EWorkerSessionStorage } from '@core/common/enums/EWorkerSessionStorage';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 
 export function protoToWorkerPayload(
@@ -23,6 +24,9 @@ export function protoToWorkerPayload(
     account_id: proto.account_id,
   };
 
+  if (proto.previous_server_id) {
+    payload.previous_server_id = proto.previous_server_id;
+  }
   if (proto.worker_status_id) {
     payload.worker_status_id = proto.worker_status_id as EWorkerStatus;
   }
@@ -40,17 +44,71 @@ export function protoToWorkerPayload(
     payload.previous_worker_status_id =
       proto.previous_worker_status_id as EWorkerStatus;
   }
-  if (proto.remove_session === true) {
-    payload.remove_session = true;
+  if (
+    proto.remove_session === true ||
+    proto._remove_session === 'remove_session'
+  ) {
+    payload.remove_session = proto.remove_session === true;
   }
-  if (proto.remove_volume === true) {
-    payload.remove_volume = true;
+  if (
+    proto.remove_volume === true ||
+    proto._remove_volume === 'remove_volume'
+  ) {
+    payload.remove_volume = proto.remove_volume === true;
   }
   if (proto.lifecycle_operation_id) {
     payload.lifecycle_operation_id = proto.lifecycle_operation_id;
   }
+  if (proto.recovery_without_journal === true) {
+    payload.recovery_without_journal = true;
+  }
+  if (proto.lifecycle_semantic_fingerprint) {
+    payload.lifecycle_semantic_fingerprint =
+      proto.lifecycle_semantic_fingerprint;
+  }
+  if (proto.session_storage) {
+    if (
+      !Object.values(EWorkerSessionStorage).includes(
+        proto.session_storage as EWorkerSessionStorage
+      )
+    ) {
+      throw new Error('Invalid session_storage');
+    }
+    payload.session_storage = proto.session_storage as EWorkerSessionStorage;
+  }
+  if (proto.previous_session_storage) {
+    if (
+      !Object.values(EWorkerSessionStorage).includes(
+        proto.previous_session_storage as EWorkerSessionStorage
+      )
+    ) {
+      throw new Error('Invalid previous_session_storage');
+    }
+    payload.previous_session_storage =
+      proto.previous_session_storage as EWorkerSessionStorage;
+  }
+  if (proto.session_storage_migration_id) {
+    payload.session_storage_migration_id = proto.session_storage_migration_id;
+  }
+  if (proto.legacy_session_volume_name) {
+    payload.legacy_session_volume_name = proto.legacy_session_volume_name;
+  }
+  if (proto.legacy_session_checksum) {
+    payload.legacy_session_checksum = proto.legacy_session_checksum;
+  }
   if (proto.debug_trace_id) {
     payload.debug_trace_id = proto.debug_trace_id;
+  }
+  if (proto.expected_container_id) {
+    payload.expected_container_id = proto.expected_container_id;
+    payload.expected_container_started_at = proto.expected_container_started_at;
+    payload.expected_container_restart_count =
+      proto.expected_container_restart_count;
+    payload.expected_container_health_status =
+      proto.expected_container_health_status;
+    payload.expected_container_paused =
+      proto.expected_container_paused === true;
+    payload.expected_runtime_generation = proto.expected_runtime_generation;
   }
 
   return payload;
@@ -65,6 +123,9 @@ export function workerPayloadToProto(
     server_id: payload.server_id,
     account_id: payload.account_id,
   };
+  if (payload.previous_server_id) {
+    proto.previous_server_id = payload.previous_server_id;
+  }
   if (payload.worker_status_id) {
     proto.worker_status_id = payload.worker_status_id;
   }
@@ -80,17 +141,52 @@ export function workerPayloadToProto(
   if (payload.previous_worker_status_id) {
     proto.previous_worker_status_id = payload.previous_worker_status_id;
   }
-  if (payload.remove_session === true) {
-    proto.remove_session = true;
+  if (payload.remove_session !== undefined) {
+    proto.remove_session = payload.remove_session;
+    proto._remove_session = 'remove_session';
   }
-  if (payload.remove_volume === true) {
-    proto.remove_volume = true;
+  if (payload.remove_volume !== undefined) {
+    proto.remove_volume = payload.remove_volume;
+    proto._remove_volume = 'remove_volume';
   }
   if (payload.lifecycle_operation_id) {
     proto.lifecycle_operation_id = payload.lifecycle_operation_id;
   }
+  if (payload.recovery_without_journal === true) {
+    proto.recovery_without_journal = true;
+  }
+  if (payload.lifecycle_semantic_fingerprint) {
+    proto.lifecycle_semantic_fingerprint =
+      payload.lifecycle_semantic_fingerprint;
+  }
+  if (payload.session_storage) {
+    proto.session_storage = payload.session_storage;
+  }
+  if (payload.previous_session_storage) {
+    proto.previous_session_storage = payload.previous_session_storage;
+  }
+  if (payload.session_storage_migration_id) {
+    proto.session_storage_migration_id = payload.session_storage_migration_id;
+  }
+  if (payload.legacy_session_volume_name) {
+    proto.legacy_session_volume_name = payload.legacy_session_volume_name;
+  }
+  if (payload.legacy_session_checksum) {
+    proto.legacy_session_checksum = payload.legacy_session_checksum;
+  }
   if (payload.debug_trace_id) {
     proto.debug_trace_id = payload.debug_trace_id;
+  }
+  if (payload.expected_container_id) {
+    proto.expected_container_id = payload.expected_container_id;
+    proto.expected_container_started_at = payload.expected_container_started_at;
+    proto.expected_container_restart_count =
+      payload.expected_container_restart_count;
+    proto.expected_container_health_status =
+      payload.expected_container_health_status;
+    proto.expected_container_paused =
+      payload.expected_container_paused === true;
+    proto.expected_runtime_generation = payload.expected_runtime_generation;
   }
   return proto;
 }
@@ -116,6 +212,9 @@ export function protoToStatusConnectionRequest(
   }
   if (proto.connection_attempt_id) {
     payload.connection_attempt_id = proto.connection_attempt_id;
+  }
+  if (proto.authorized_connection_epoch) {
+    payload.authorized_connection_epoch = proto.authorized_connection_epoch;
   }
   if (proto.debug_trace_id) {
     payload.debug_trace_id = proto.debug_trace_id;
@@ -164,6 +263,9 @@ export function statusConnectionRequestToProto(
   }
   if (payload.connection_attempt_id) {
     proto.connection_attempt_id = payload.connection_attempt_id;
+  }
+  if (payload.authorized_connection_epoch) {
+    proto.authorized_connection_epoch = payload.authorized_connection_epoch;
   }
   if (payload.debug_trace_id) {
     proto.debug_trace_id = payload.debug_trace_id;

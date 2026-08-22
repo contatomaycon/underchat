@@ -1,7 +1,10 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { recreateChannelRequestSchema } from './request.schema';
+import {
+  recreateChannelBodySchema,
+  recreateChannelRequestSchema,
+} from './request.schema';
 
 export const recreateChannelSchema = {
   description: 'Recria um canal',
@@ -13,6 +16,7 @@ export const recreateChannelSchema = {
     },
   ],
   params: recreateChannelRequestSchema,
+  body: recreateChannelBodySchema,
   headers: Type.Object({
     'Accept-Language': Type.Optional(
       Type.String({

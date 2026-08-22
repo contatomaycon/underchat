@@ -1,7 +1,8 @@
-import { singleton, inject } from 'tsyringe';
+import { singleton, inject, container } from 'tsyringe';
 import type { KafkaConsumer } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS } from '@core/common/functions/serviceApiWhatsappConsumerBindings';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import {
   type IUpsertMessageEnvelope,
@@ -12,11 +13,14 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { v7 as uuidv7 } from 'uuid';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AccountService } from '@core/services/account.service';
 import { WorkerService } from '@core/services/worker.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { ChatService } from '@core/services/chat.service';
+import {
+  ChatService,
+  type ChatOutboundWebhookMutation,
+} from '@core/services/chat.service';
 import {
   IButtonMessage,
   IChatMessage,
@@ -48,6 +52,8 @@ import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
+import { WorkerCommandAdmissionService } from '@core/services/workerCommandAdmission.service';
+import { buildWorkerCommandChatEntityKey } from '@core/common/functions/messageIdentity';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import {
   extractPhoneAndDdiFromContactMessage,
@@ -60,6 +66,7 @@ import { TFunction } from 'i18next';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
+import { OperatorReplyPendingRedistributionTrackerService } from '@core/services/operatorReplyPendingRedistributionTracker.service';
 import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { PushNotificationService } from '@core/services/pushNotification.service';
@@ -87,15 +94,32 @@ import { getActiveChatbotWorkingHoursRule } from '@core/common/functions/chatbot
 import { generalEnvironment } from '@core/config/environments';
 import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
 import { ActiveWhatsappValidationService } from '@core/services/activeWhatsappValidation.service';
+import { InboundActiveValidationLedgerService } from '@core/services/inboundActiveValidationLedger.service';
 import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 import type {
+  KafkaConsumerRunnerDiscardReason,
   KafkaConsumerRunnerContext,
   KafkaRunnerMessage,
 } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
-import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
+import {
+  buildInboundEventId,
+  ensureInboundEventId,
+} from '@core/common/functions/inboundEventIdentity';
+import {
+  classifyOfficialWhatsappProviderTimestampForEffects,
+  normalizeOfficialWhatsappProviderTimestampMs,
+  resolveOfficialWhatsappEffectMaxAgeMs,
+  resolveOfficialWhatsappFutureToleranceMs,
+  resolveOfficialWhatsappInboundTimestamp,
+} from '@core/common/functions/officialWhatsappInboundTimestamp';
+import {
+  IInboundMessageParkingPayload,
+  IInboundMessageSpoolPayload,
+  InboundMessageParkingRedriveDisposition,
+} from '@core/common/interfaces/IInboundMessageSpoolPayload';
 import { LidJidCacheService } from '@core/services/lidJidCache.service';
 import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
 import {
@@ -108,11 +132,32 @@ import {
   IOfficialWhatsappDisplayMetadata,
 } from '@core/common/interfaces/IOfficialWhatsappContentMetadata';
 import { isChatbotStatus } from '@core/common/functions/chatStatus';
+import type { OutboundWebhookEventType } from '@core/common/constants/outboundWebhookEvents';
 import type {
   IOfficialTemplateButton,
   IOfficialTemplateComponent,
   IOfficialWhatsappTemplateMessage,
 } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+import { OfficialWhatsappConversationWindowService } from '@core/services/officialWhatsappConversationWindow.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import {
+  PlanEntitlementDeniedError,
+  PlanEntitlementRevisionMismatchError,
+} from '@core/common/exceptions/PlanEntitlementError';
+import { PlanEntitlementService } from '@core/services/planEntitlement.service';
+import {
+  createPlanEntitlementAuditContext,
+  getPlanEntitlementAuditSource,
+  planEntitlementTelemetryStore,
+} from '@core/services/planEntitlementTelemetryStore';
+import { WhatsappRuntimeFenceService } from '@core/services/whatsappRuntimeFence.service';
+import { CONTACT_VALIDATION_ORIGINS } from '@core/common/types/ContactValidationOrigin';
+import {
+  assertKafkaDispatchActive,
+  getKafkaDispatchGuard,
+  runWithKafkaDispatchGuard,
+  type KafkaDispatchGuard,
+} from '@core/common/functions/kafkaDispatchFenceContext';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -123,12 +168,51 @@ interface IReactionInactivityInteraction {
 
 interface IReactionHandleResult {
   handled: boolean;
+  effectsApplied: boolean;
   inactivityInteraction: IReactionInactivityInteraction | null;
 }
 
 interface ICreateChatMessageResult {
   handled: boolean;
+  effectsApplied: boolean;
   reactionInactivityInteraction: IReactionInactivityInteraction | null;
+}
+
+interface IMessageMutationHandleResult {
+  handled: boolean;
+  effectsApplied: boolean;
+}
+
+interface IInboundTransferRevision {
+  eventId: string;
+  epochMillis: number;
+}
+
+type InboundTransferRevisionDomain = 'status' | 'assignment';
+
+interface IChatTransferPersistenceResult {
+  chat: IChat;
+  applied: boolean;
+  alreadyApplied: boolean;
+  superseded: boolean;
+}
+
+interface IPreparedChatMessage {
+  data: IUpsertMessage;
+  inputChatMessage: IChatMessage;
+  content: IContent;
+  isFromMe: boolean;
+  typeUser: ETypeUserChat;
+}
+
+type IMessagePreparationResult =
+  | { prepared: IPreparedChatMessage; result: null }
+  | { prepared: null; result: ICreateChatMessageResult };
+
+interface IChatMessageActionResult {
+  data: IUpsertMessage;
+  result: ICreateChatMessageResult | null;
+  effectsApplied: boolean;
 }
 
 interface IEditMessagePayload {
@@ -151,6 +235,150 @@ interface IAutomationTriggerGuard {
   ageMs?: number | null;
 }
 
+interface IOfficialWhatsappReplayClassification {
+  isOfficialInbound: boolean;
+  discard: boolean;
+  reason?:
+    | 'official_message_timestamp_missing'
+    | 'official_message_timestamp_future'
+    | 'official_stale_consumer_redrive'
+    | 'official_stale_webhook_replay';
+  providerTimestampMs: number | null;
+  ageMs: number | null;
+}
+
+interface IAutomationSendClaim {
+  completionKey: string;
+  leaseKey: string;
+  ownerValue: string;
+}
+
+type AutomationSendAcquireResult =
+  | { status: 'acquired'; protocol: 'legacy' }
+  | {
+      status: 'acquired';
+      protocol: 'lease_v2';
+      claim: IAutomationSendClaim;
+    }
+  | { status: 'completed' };
+
+class AutomationSendInProgressError extends Error {
+  constructor(
+    readonly automationType: 'chatbot_flow' | 'outside_hours',
+    readonly workerId: string
+  ) {
+    super(
+      `Automation send ${automationType} is already in progress for worker ${workerId}`
+    );
+    this.name = 'AutomationSendInProgressError';
+  }
+}
+
+class AutomationSendLeaseLostError extends Error {
+  constructor(readonly key: string) {
+    super(`Automation send lease ownership was lost for ${key}`);
+    this.name = 'AutomationSendLeaseLostError';
+  }
+}
+
+class AutomationSendSourceIdentityUnavailableError extends Error {
+  constructor(
+    readonly automationType: 'chatbot_flow' | 'outside_hours',
+    readonly workerId: string
+  ) {
+    super(
+      `Automation send ${automationType} has no stable source identity for worker ${workerId}`
+    );
+    this.name = 'AutomationSendSourceIdentityUnavailableError';
+  }
+}
+
+const ACQUIRE_AUTOMATION_SEND_LEASE_SCRIPT = `
+-- automation_send_acquire_v2
+if redis.call('GET', KEYS[1]) then
+  return 'completed'
+end
+local current = redis.call('GET', KEYS[2])
+if not current then
+  redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
+  return 'acquired'
+end
+return 'in_progress'
+`;
+
+const ACQUIRE_LEGACY_AUTOMATION_SEND_READER_V2_SCRIPT = `
+-- automation_send_acquire_legacy_reader_v2
+if redis.call('GET', KEYS[1]) then
+  return 'completed'
+end
+if redis.call('GET', KEYS[2]) then
+  return 'in_progress'
+end
+local acquired = redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2], 'NX')
+if acquired then
+  return 'acquired'
+end
+return 'completed'
+`;
+
+const HEARTBEAT_AUTOMATION_SEND_LEASE_SCRIPT = `
+-- automation_send_heartbeat_v2
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+  return 0
+end
+return redis.call('EXPIRE', KEYS[1], ARGV[2])
+`;
+
+const COMPLETE_AUTOMATION_SEND_LEASE_SCRIPT = `
+-- automation_send_complete_v2
+if redis.call('GET', KEYS[2]) ~= ARGV[1] then
+  return 0
+end
+if not redis.call('GET', KEYS[1]) then
+  redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+end
+redis.call('DEL', KEYS[2])
+return 1
+`;
+
+const RELEASE_AUTOMATION_SEND_LEASE_SCRIPT = `
+-- automation_send_release_v2
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+  return 0
+end
+return redis.call('DEL', KEYS[1])
+`;
+
+class StaleWhatsappRuntimeFenceError extends Error {
+  constructor(readonly data: IUpsertMessage) {
+    super(
+      `WhatsApp runtime fence is no longer active for worker ${data.worker_id}`
+    );
+    this.name = 'StaleWhatsappRuntimeFenceError';
+  }
+}
+
+class UnsafePersistedMessageConflictError extends Error {
+  constructor(readonly persistedMessageId: string) {
+    super(
+      `Persisted chat message ownership did not match idempotency conflict: ${persistedMessageId}`
+    );
+    this.name = 'UnsafePersistedMessageConflictError';
+  }
+}
+
+class MessageUpsertAccountOrWorkerNotFoundError extends Error {
+  constructor(
+    readonly accountId: string,
+    readonly workerId: string
+  ) {
+    super(
+      `Account or Worker not found: account=${accountId}, worker=${workerId}`
+    );
+    this.name = 'MessageUpsertAccountOrWorkerNotFoundError';
+  }
+}
+
 function readPositiveIntEnv(key: string, fallback: number): number {
   const raw = process.env[key];
   if (!raw) {
@@ -165,6 +393,19 @@ function readPositiveIntEnv(key: string, fallback: number): number {
   return Math.floor(parsed);
 }
 
+function readOptionalBooleanEnv(key: string): boolean {
+  const normalized = process.env[key]?.trim().toLowerCase();
+  return (
+    normalized === '1' ||
+    normalized === 'true' ||
+    normalized === 'yes' ||
+    normalized === 'on'
+  );
+}
+
+const AUTOMATION_SEND_LEASE_V2_ENABLED_ENV =
+  'MESSAGE_UPSERT_AUTOMATION_SEND_LEASE_V2_ENABLED';
+
 const CHATBOT_TRIGGER_MAX_EVENT_AGE_MS = readPositiveIntEnv(
   'CHATBOT_TRIGGER_MAX_EVENT_AGE_MS',
   15 * 60 * 1000
@@ -173,6 +414,23 @@ const CHATBOT_TRIGGER_FUTURE_TOLERANCE_MS = readPositiveIntEnv(
   'CHATBOT_TRIGGER_FUTURE_TOLERANCE_MS',
   60 * 1000
 );
+const OFFICIAL_WHATSAPP_REPLAY_EFFECT_MAX_AGE_MS =
+  resolveOfficialWhatsappEffectMaxAgeMs(
+    process.env.OFFICIAL_WHATSAPP_REPLAY_EFFECT_MAX_AGE_MS
+  );
+const OFFICIAL_WHATSAPP_PROVIDER_FUTURE_TOLERANCE_MS =
+  resolveOfficialWhatsappFutureToleranceMs(
+    process.env.OFFICIAL_WHATSAPP_PROVIDER_FUTURE_TOLERANCE_MS
+  );
+const MESSAGE_UPSERT_RECOVERABLE_PARKING_REASONS = new Set([
+  'consecutive_failures_exhausted',
+  'elastic_read_only_allow_delete',
+  'lock_acquisition_timeout',
+  'idempotency_conflict_visibility_lag',
+  'message_processing_retry_exhausted',
+  'account_or_worker_not_found',
+]);
+const MESSAGE_UPSERT_INITIAL_REDRIVE_DELAY_MS = 1000;
 
 function isReactionInactivityTypeUser(
   typeUser: ETypeUserChat
@@ -187,20 +445,38 @@ export class MessageUpsertConsume {
   private consumer: KafkaConsumer | null = null;
   private runner: KafkaConsumerRunner<IUpsertMessage> | null = null;
   private isRunning = false;
-  private readonly MAX_RETRIES = 3;
-  private readonly RETRY_DELAYS = [100, 500, 2000];
-  private readonly PROCESS_RETRY_DELAYS = [3000, 3000, 5000];
+  private readonly MAX_RETRIES = 1;
+  private readonly PROCESS_RETRY_DELAYS = [500];
   private readonly MESSAGE_PROCESSING_TIMEOUT_MS = 120000;
-  private readonly MAX_CONSECUTIVE_FAILURES = 10;
+  private readonly MAX_CONSECUTIVE_FAILURES = 1;
   private readonly OUTSIDE_HOURS_DEBOUNCE_SECONDS = 5;
   private readonly OUTSIDE_HOURS_DEFAULT_MESSAGE =
     'Olá {{ name }}, nosso horário de atendimento está encerrado no momento. Retornaremos assim que estivermos disponíveis.';
+  // Keep the v1 completion key compatible during the gated rollout. A v2
+  // processing owner stays separate; phase-one readers check both namespaces.
+  // Success atomically restores the legacy boolean `1`.
   private readonly AUTOMATION_SEND_DEDUPE_PREFIX =
     'automation-send:idempotency:v1';
+  private readonly AUTOMATION_SEND_LEASE_PREFIX =
+    'automation-send:processing:v2';
+  private readonly AUTOMATION_OUTBOUND_IDENTITY_VERSION = 'v1';
+  private readonly AUTOMATION_SEND_PROCESSING_TTL_SECONDS = 5 * 60;
+  private readonly AUTOMATION_SEND_PROCESSING_HEARTBEAT_INTERVAL_MS = Math.max(
+    1_000,
+    Math.floor((this.AUTOMATION_SEND_PROCESSING_TTL_SECONDS * 1_000) / 3)
+  );
+  private readonly AUTOMATION_SEND_COMPLETED_VALUE = '1';
   private readonly AUTOMATION_SEND_DEDUPE_TTL_SECONDS =
     generalEnvironment.automationSendDedupeTtlSeconds;
+  // Two-phase rollout: first deploy false everywhere so all pods can read v2.
+  // Then drain the whole service fleet and restart every pod with true; mixed
+  // false/true writers are unsafe because legacy `1` has no processing state.
+  private readonly AUTOMATION_SEND_LEASE_V2_ENABLED = readOptionalBooleanEnv(
+    AUTOMATION_SEND_LEASE_V2_ENABLED_ENV
+  );
   private readonly historyReceiptCache: MessageHistoryReceiptCacheService;
-
+  private readonly activeWhatsappValidationLedger: InboundActiveValidationLedgerService;
+  private readonly runtimeFence: WhatsappRuntimeFenceService;
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SETTING = 3;
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SYNC_RESPONSE = 4;
 
@@ -256,6 +532,8 @@ export class MessageUpsertConsume {
         return true;
       },
       parkConsumerMessage: async () => undefined,
+      startMessageUpsertConsumerRedrive: () => undefined,
+      stopMessageUpsertConsumerRedrive: async () => undefined,
     } as unknown as InboundMessageSpoolService,
     @inject(LidJidCacheService)
     private readonly lidJidCacheService: LidJidCacheService = {
@@ -265,11 +543,57 @@ export class MessageUpsertConsume {
       rememberFromUpsert: async () => null,
       rememberFromChat: async () => null,
       extractPhoneJidFromChat: () => null,
-    } as unknown as LidJidCacheService
+    } as unknown as LidJidCacheService,
+    @inject(OfficialWhatsappConversationWindowService)
+    private readonly officialWindowService: OfficialWhatsappConversationWindowService = {
+      hydrateChat: async (chat: IChat | null) => chat,
+    } as OfficialWhatsappConversationWindowService,
+    @inject(PlanEntitlementService)
+    private readonly planEntitlementService: PlanEntitlementService | null = null,
+    @inject(OperatorReplyPendingRedistributionTrackerService)
+    private readonly operatorReplyPendingRedistributionTracker: OperatorReplyPendingRedistributionTrackerService | null = null
   ) {
     this.historyReceiptCache = new MessageHistoryReceiptCacheService(
       this.redis
     );
+    this.activeWhatsappValidationLedger =
+      new InboundActiveValidationLedgerService(this.redis);
+    this.runtimeFence = new WhatsappRuntimeFenceService(this.redis);
+  }
+
+  private async assertKafkaDispatchActive(): Promise<void> {
+    await assertKafkaDispatchActive();
+  }
+
+  private createEventDispatchGuard(
+    data: IUpsertMessage,
+    assertAssignmentActive: () => void
+  ): KafkaDispatchGuard {
+    return async () => {
+      assertAssignmentActive();
+      if (!(await this.runtimeFence.isCurrent(data))) {
+        throw new StaleWhatsappRuntimeFenceError(data);
+      }
+      assertAssignmentActive();
+    };
+  }
+
+  private isStaleRuntimeFenceError(
+    error: unknown
+  ): error is StaleWhatsappRuntimeFenceError {
+    return error instanceof StaleWhatsappRuntimeFenceError;
+  }
+
+  private isUnsafePersistedMessageConflictError(
+    error: unknown
+  ): error is UnsafePersistedMessageConflictError {
+    return error instanceof UnsafePersistedMessageConflictError;
+  }
+
+  private isAccountOrWorkerNotFoundError(
+    error: unknown
+  ): error is MessageUpsertAccountOrWorkerNotFoundError {
+    return error instanceof MessageUpsertAccountOrWorkerNotFoundError;
   }
 
   private isLockAcquisitionTimeoutError(error: unknown): boolean {
@@ -293,6 +617,12 @@ export class MessageUpsertConsume {
     details: Record<string, unknown> = {}
   ): Promise<boolean> {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const kafkaTopic = this.kafkaServiceQueueService.upsertMessage();
+    const dedupeKey = this.resolveConsumerParkingDedupeKey(data, {
+      topic: kafkaTopic,
+      partition,
+      offset,
+    });
     await this.inboundMessageSpoolService.parkConsumerMessage({
       provider: 'message_upsert_consumer',
       account_id: data.account_id,
@@ -301,6 +631,8 @@ export class MessageUpsertConsume {
       reason,
       stage: 'message_upsert.discard.terminal',
       parked_at: new Date().toISOString(),
+      kafka_topic: kafkaTopic,
+      dedupe_key: dedupeKey,
       partition,
       offset,
       retry_count:
@@ -375,6 +707,13 @@ export class MessageUpsertConsume {
         });
         return;
       } catch (error) {
+        if (this.isStaleRuntimeFenceError(error)) {
+          throw error;
+        }
+        if (this.isAccountOrWorkerNotFoundError(error)) {
+          throw error;
+        }
+
         lastError = error;
         const isLastAttempt = attempt === this.MAX_RETRIES - 1;
         const isReadOnlyAllowDeleteError =
@@ -401,20 +740,7 @@ export class MessageUpsertConsume {
         }
 
         if (!isLastAttempt) {
-          const delayMs = this.RETRY_DELAYS[attempt] ?? 1000;
-          this.logLifecycle(data, {
-            stage: 'message_upsert.retry.attempt_error',
-            decision: 'process_with_retry',
-            outcome: 'retrying',
-            reason: 'exception',
-            level: 'warn',
-            attempts: attempt + 1,
-            max_retries: this.MAX_RETRIES,
-            next_retry_delay_ms: delayMs,
-            phone,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          await delay(delayMs);
+          await delay(this.PROCESS_RETRY_DELAYS[attempt] ?? 500);
         }
       }
     }
@@ -434,7 +760,7 @@ export class MessageUpsertConsume {
       : new Error(`Failed to process message: ${data.message?.key?.id}`);
   }
 
-  private centrifugoChatPublish(
+  private async centrifugoChatPublish(
     dataPublish: IChatMessage
   ): Promise<PublishResult> {
     if (
@@ -449,7 +775,12 @@ export class MessageUpsertConsume {
 
     const channel = chatAccountCentrifugo(dataPublish.account.id);
 
-    const promise = this.centrifugoService.publishSub(channel, dataPublish);
+    await this.assertKafkaDispatchActive();
+    const promise = this.centrifugoService.publishSub(
+      channel,
+      dataPublish,
+      () => this.assertKafkaDispatchActive()
+    );
 
     return promise
       .then((result) => {
@@ -460,17 +791,26 @@ export class MessageUpsertConsume {
       });
   }
 
-  private centrifugoChatQueuePublish(
+  private async centrifugoChatQueuePublish(
     dataPublish: IChat
   ): Promise<PublishResult> {
-    const accountChannel = chatAccountCentrifugo(dataPublish.account.id);
-    const queueChannel = chatQueueAccountCentrifugo(dataPublish.account.id);
+    const hydratedChat =
+      (await this.officialWindowService.hydrateChat(dataPublish)) ??
+      dataPublish;
+    const accountChannel = chatAccountCentrifugo(hydratedChat.account.id);
+    const queueChannel = chatQueueAccountCentrifugo(hydratedChat.account.id);
 
+    await this.assertKafkaDispatchActive();
     return Promise.allSettled([
-      this.centrifugoService.publishSub(accountChannel, dataPublish),
-      this.centrifugoService.publishSub(queueChannel, dataPublish),
+      this.centrifugoService.publishSub(accountChannel, hydratedChat, () =>
+        this.assertKafkaDispatchActive()
+      ),
+      this.centrifugoService.publishSub(queueChannel, hydratedChat, () =>
+        this.assertKafkaDispatchActive()
+      ),
     ]).then(([accountResult, queueResult]) => {
       if (accountResult.status === 'rejected') {
+        throw accountResult.reason;
       }
 
       if (queueResult.status === 'rejected') {
@@ -485,26 +825,34 @@ export class MessageUpsertConsume {
     createChat: IChat,
     data: IUpsertMessage
   ): Promise<void> {
-    await this.createChatMessage(createChat, data);
+    const persistedChat = await this.chatService.findChatByChatId(
+      data.account_id,
+      createChat.chat_id
+    );
+
+    if (!persistedChat) {
+      throw new Error(
+        `Chat persistence was not confirmed before message creation: ${createChat.chat_id}`
+      );
+    }
+
+    await this.createChatMessage(persistedChat, data);
 
     const updatedChat = await this.chatService.findChatByChatId(
       data.account_id,
       createChat.chat_id
     );
 
-    await this.notifyChatStatusChangeIfNeeded(
-      null,
-      updatedChat ?? createChat,
-      data
-    );
-
-    if (updatedChat && updatedChat.status === EChatStatus.queue) {
-      await this.centrifugoChatQueuePublish(updatedChat);
-      return;
+    if (!updatedChat) {
+      throw new Error(
+        `Chat persistence was lost after message creation: ${createChat.chat_id}`
+      );
     }
 
-    if (!updatedChat) {
-      await this.centrifugoChatQueuePublish(createChat);
+    await this.notifyChatStatusChangeIfNeeded(null, updatedChat, data);
+
+    if (updatedChat.status === EChatStatus.queue) {
+      await this.centrifugoChatQueuePublish(updatedChat);
     }
   }
 
@@ -558,6 +906,7 @@ export class MessageUpsertConsume {
     const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
 
     if (phoneAndDdi) {
+      const chatBeforeContactHydration = this.cloneChatWebhookState(newChat);
       const ignoreResult = await this.ensureContactForChat(
         newChat,
         data,
@@ -573,13 +922,42 @@ export class MessageUpsertConsume {
           closed_at: new Date().toISOString(),
         };
 
-        await this.saveChatWithCaches(closedChat);
+        await this.saveChatWithCaches(closedChat, {
+          eventTypes: [
+            ...this.resolveContactHydrationEvents(
+              chatBeforeContactHydration,
+              closedChat
+            ),
+            'chat.automation.finished',
+            'chat.closed',
+          ],
+          idempotencyKey: `chat-closed:${closedChat.chat_id}:${closedChat.closed_at}`,
+          source: data.source_provider ?? 'message_upsert',
+          previousChat: chatBeforeContactHydration,
+          actor: { type: 'system' },
+          changes: { reason: 'contact_ignore' },
+        });
 
         return null;
       }
 
-      if (ignoreResult === 'ignore_automation') {
-        await this.saveChatWithCaches(newChat);
+      const contactHydrationEvents = this.resolveContactHydrationEvents(
+        chatBeforeContactHydration,
+        newChat
+      );
+      if (contactHydrationEvents.length > 0) {
+        await this.saveChatWithCaches(newChat, {
+          eventTypes: contactHydrationEvents,
+          idempotencyKey: `chat-contact-hydrated:${newChat.chat_id}:${data.message?.key?.id ?? newChat.contact?.id ?? 'contact'}`,
+          source: data.source_provider ?? 'message_upsert',
+          previousChat: chatBeforeContactHydration,
+          actor: { type: 'system' },
+          changes: {
+            contact_id: newChat.contact?.id ?? null,
+            previous_status: chatBeforeContactHydration.status,
+            status: newChat.status,
+          },
+        });
       }
     }
 
@@ -612,10 +990,25 @@ export class MessageUpsertConsume {
       keys: [key],
     };
 
-    await this.streamProducerService.send(
-      this.kafkaServiceQueueService.markMessageRead(),
-      markReadData
-    );
+    await this.assertKafkaDispatchActive();
+    const chatIdentity =
+      key.remoteJid?.trim() || key.remoteJidAlt?.trim() || key.id?.trim();
+    if (!chatIdentity) {
+      throw new Error('worker_command_mark_read_chat_identity_missing');
+    }
+    await container.resolve(WorkerCommandAdmissionService).admit({
+      accountId,
+      workerId,
+      commandType: 'mark_read',
+      entityKey: buildWorkerCommandChatEntityKey(
+        accountId,
+        workerId,
+        chatIdentity
+      ),
+      operationId: `mark-read:${createHash('sha256').update(JSON.stringify(markReadData)).digest('hex')}`,
+      payload: markReadData as unknown as Record<string, never>,
+      source: 'message_upsert',
+    });
   }
 
   private async shouldMarkAsRead(workerId: string): Promise<boolean> {
@@ -638,6 +1031,48 @@ export class MessageUpsertConsume {
     if (typeof value !== 'string') return undefined;
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private cloneChatWebhookState(chat: IChat): IChat {
+    return {
+      ...chat,
+      contact: chat.contact ? { ...chat.contact } : null,
+      user: chat.user ? { ...chat.user } : null,
+      secondary_users: chat.secondary_users?.map((user) => ({ ...user })) ?? [],
+      label: chat.label?.map((label) => ({ ...label })) ?? null,
+    };
+  }
+
+  private resolveContactHydrationEvents(
+    previousChat: IChat,
+    currentChat: IChat
+  ): OutboundWebhookEventType[] {
+    const events: OutboundWebhookEventType[] = [];
+    const changed = (previous: unknown, current: unknown): boolean =>
+      JSON.stringify(previous ?? null) !== JSON.stringify(current ?? null);
+
+    if (changed(previousChat.contact, currentChat.contact)) {
+      events.push('chat.updated');
+    }
+    if (changed(previousChat.label, currentChat.label)) {
+      events.push('chat.labels.changed');
+    }
+    if (changed(previousChat.user, currentChat.user)) {
+      events.push('chat.assignment.changed');
+    }
+    if (previousChat.status !== currentChat.status) {
+      if (
+        isChatbotStatus(previousChat.status) &&
+        !isChatbotStatus(currentChat.status)
+      ) {
+        events.push('chat.automation.finished');
+      }
+      if (currentChat.status === EChatStatus.queue) {
+        events.push('chat.queued');
+      }
+    }
+
+    return [...new Set(events)];
   }
 
   private onlyDigits(value: string | null | undefined): string {
@@ -1419,11 +1854,16 @@ export class MessageUpsertConsume {
 
   private buildOutgoingSummary(data: IUpsertMessage): IChatMessage['summary'] {
     const statusOrAck = this.getOutgoingStatusOrAck(data);
-    const isSeen = statusOrAck !== null && statusOrAck >= 3;
+    const isBaileys = data.source_provider === 'baileys';
+    const deliveredThreshold = isBaileys ? 3 : 2;
+    const readThreshold = isBaileys ? 4 : 3;
+    const isDelivered =
+      statusOrAck !== null && statusOrAck >= deliveredThreshold;
+    const isSeen = statusOrAck !== null && statusOrAck >= readThreshold;
 
     return {
       is_sent: true,
-      is_delivered: true,
+      is_delivered: isDelivered,
       is_seen: isSeen,
       is_sent_to_internal: true,
     };
@@ -2018,7 +2458,9 @@ export class MessageUpsertConsume {
     );
 
     if (!existingChat) {
-      return;
+      throw new Error(
+        `Chat persistence was not found for existing message: ${existingMessage.chat_id}`
+      );
     }
 
     await this.createChatMessage(existingChat, data);
@@ -2030,6 +2472,38 @@ export class MessageUpsertConsume {
     } catch {
       return;
     }
+  }
+
+  private async withFreshInboundMessageMutation<T>(
+    targetMessage: IChatMessage,
+    getChat: IChat,
+    data: IUpsertMessage,
+    mutation: (freshMessage: IChatMessage) => Promise<T>
+  ): Promise<T | null> {
+    return withLock(
+      this.redis,
+      `inbound-message-mutation:${data.account_id}:${targetMessage.message_id}`,
+      async () => {
+        const freshMessage =
+          await this.elasticDatabaseService.getById<IChatMessage>(
+            EElasticIndex.message,
+            targetMessage.message_id
+          );
+        if (
+          !freshMessage ||
+          !messageBelongsToChatAndAccount(
+            freshMessage,
+            getChat.chat_id,
+            data.account_id
+          )
+        ) {
+          return null;
+        }
+
+        return mutation(freshMessage);
+      },
+      { ttlMs: 30_000, retryMs: 50, maxWaitMs: 45_000 }
+    );
   }
 
   private async handleReactionMessage(
@@ -2069,6 +2543,7 @@ export class MessageUpsertConsume {
     if (!targetMessage) {
       return {
         handled: true,
+        effectsApplied: false,
         inactivityInteraction: null,
       };
     }
@@ -2111,7 +2586,6 @@ export class MessageUpsertConsume {
     const actorTypeUser: ReactionInactivityTypeUser = isEffectivelyOwn
       ? ETypeUserChat.operator
       : ETypeUserChat.client;
-    const targetTypeUser = targetMessage.type_user;
 
     const canonicalUserName = isEffectivelyOwn
       ? (this.toNonEmptyString(getChat.worker?.name) ??
@@ -2119,115 +2593,158 @@ export class MessageUpsertConsume {
         '')
       : (this.toNonEmptyString(getChat.contact?.name) ?? '');
     const emoji = reactionMsg.text ?? '';
+    const inboundEventId = ensureInboundEventId(data);
+    const mutationResult = await this.withFreshInboundMessageMutation(
+      targetMessage,
+      getChat,
+      data,
+      async (freshTargetMessage) => {
+        const targetTypeUser = freshTargetMessage.type_user;
+        const existingReactions = freshTargetMessage.content?.reactions || [];
+        const legacyOwnIds = new Set<string>();
+        for (const legacyCandidate of [
+          this.toNonEmptyString(getChat.user?.id),
+          this.toNonEmptyString(getChat.worker?.id),
+          this.toNonEmptyString(canonicalUserId),
+        ]) {
+          if (legacyCandidate) {
+            legacyOwnIds.add(legacyCandidate);
+          }
+        }
 
-    const existingReactions = targetMessage.content?.reactions || [];
-    const legacyOwnIds = new Set<string>();
-    for (const legacyCandidate of [
-      this.toNonEmptyString(getChat.user?.id),
-      this.toNonEmptyString(getChat.worker?.id),
-      this.toNonEmptyString(canonicalUserId),
-    ]) {
-      if (legacyCandidate) {
-        legacyOwnIds.add(legacyCandidate);
+        const legacyOwnIdsNormalized = new Set<string>();
+        for (const legacyId of legacyOwnIds) {
+          legacyOwnIdsNormalized.add(
+            this.normalizeReactionActorId(legacyId) ?? legacyId
+          );
+        }
+
+        const reactionsWithoutUser = existingReactions.filter((reaction) => {
+          const reactionUserId = this.toNonEmptyString(reaction.user_id);
+          const reactionUserIdNormalized =
+            this.normalizeReactionActorId(reactionUserId) ??
+            reactionUserId ??
+            '';
+
+          if (!reactionUserId && !canonicalUserId) {
+            return true;
+          }
+
+          if (isEffectivelyOwn) {
+            const isCanonicalOwn =
+              (reactionUserId && reactionUserId === canonicalUserId) ||
+              reactionUserIdNormalized === canonicalUserIdNormalized;
+            const isLegacyOwn =
+              (reactionUserId && legacyOwnIds.has(reactionUserId)) ||
+              legacyOwnIdsNormalized.has(reactionUserIdNormalized);
+            const isLegacyUuid = isUuidLike(reactionUserId);
+
+            return !(isCanonicalOwn || isLegacyOwn || isLegacyUuid);
+          }
+
+          if (!canonicalUserIdNormalized) {
+            return true;
+          }
+
+          return reactionUserIdNormalized !== canonicalUserIdNormalized;
+        });
+
+        let updatedReactions = reactionsWithoutUser;
+        if (emoji) {
+          updatedReactions = [
+            ...reactionsWithoutUser,
+            {
+              emoji,
+              user_id: canonicalUserId,
+              user_name: canonicalUserName,
+            },
+          ];
+        }
+
+        const reactionsValue: IContent['reactions'] =
+          updatedReactions.length > 0 ? updatedReactions : null;
+        const updatedContent: IContent = {
+          ...freshTargetMessage.content,
+          type: freshTargetMessage.content?.type ?? EMessageType.text,
+          reactions: reactionsValue,
+        };
+        const updatedMessage: IChatMessage = {
+          ...freshTargetMessage,
+          content: updatedContent,
+          has_quoted: freshTargetMessage.has_quoted,
+        };
+
+        const persistence = await this.chatService.updateMessageChatIdempotent(
+          updatedMessage,
+          {
+            eventTypes: ['message.reaction.updated'],
+            idempotencyKey: `message-reaction:${updatedMessage.message_id}:${inboundEventId ?? uuidv7()}`,
+            source: data.source_provider ?? 'message_upsert',
+            previousMessage: freshTargetMessage,
+            inboundEventId,
+            actor: isEffectivelyOwn
+              ? getChat.user?.id
+                ? { type: 'user', id: getChat.user.id }
+                : { type: 'automation' }
+              : { type: 'customer' },
+            changes: {
+              emoji: emoji || null,
+              actor_id: canonicalUserId || null,
+            },
+          }
+        );
+
+        const inactivityInteraction =
+          isReactionInactivityTypeUser(targetTypeUser) &&
+          actorTypeUser !== targetTypeUser
+            ? {
+                actorTypeUser,
+                targetTypeUser,
+              }
+            : null;
+
+        return { updatedMessage, persistence, inactivityInteraction };
       }
+    );
+
+    if (!mutationResult) {
+      return {
+        handled: true,
+        effectsApplied: false,
+        inactivityInteraction: null,
+      };
     }
 
-    const legacyOwnIdsNormalized = new Set<string>();
-    for (const legacyId of legacyOwnIds) {
-      legacyOwnIdsNormalized.add(
-        this.normalizeReactionActorId(legacyId) ?? legacyId
+    const { updatedMessage, persistence, inactivityInteraction } =
+      mutationResult;
+    if (!persistence.persisted) {
+      throw new Error(
+        `Reaction persistence was not confirmed: ${updatedMessage.message_id}`
       );
     }
-
-    const reactionsWithoutUser = existingReactions.filter((reaction) => {
-      const reactionUserId = this.toNonEmptyString(reaction.user_id);
-      const reactionUserIdNormalized =
-        this.normalizeReactionActorId(reactionUserId) ?? reactionUserId ?? '';
-
-      if (!reactionUserId && !canonicalUserId) {
-        return true;
-      }
-
-      if (isEffectivelyOwn) {
-        const isCanonicalOwn =
-          (reactionUserId && reactionUserId === canonicalUserId) ||
-          reactionUserIdNormalized === canonicalUserIdNormalized;
-        const isLegacyOwn =
-          (reactionUserId && legacyOwnIds.has(reactionUserId)) ||
-          legacyOwnIdsNormalized.has(reactionUserIdNormalized);
-        const isLegacyUuid = isUuidLike(reactionUserId);
-
-        return !(isCanonicalOwn || isLegacyOwn || isLegacyUuid);
-      }
-
-      if (!canonicalUserIdNormalized) {
-        return true;
-      }
-
-      return reactionUserIdNormalized !== canonicalUserIdNormalized;
-    });
-
-    let updatedReactions = reactionsWithoutUser;
-    if (emoji) {
-      updatedReactions = [
-        ...reactionsWithoutUser,
-        {
-          emoji,
-          user_id: canonicalUserId,
-          user_name: canonicalUserName,
-        },
-      ];
+    if (persistence.applied) {
+      await this.centrifugoChatPublish(updatedMessage).catch(() => undefined);
     }
-
-    let reactionsValue: IContent['reactions'] = null;
-    if (updatedReactions.length > 0) {
-      reactionsValue = updatedReactions;
-    }
-
-    const updatedContent: IContent = {
-      ...targetMessage.content,
-      type: targetMessage.content?.type ?? EMessageType.text,
-      reactions: reactionsValue,
-    };
-
-    const updatedMessage: IChatMessage = {
-      ...targetMessage,
-      content: updatedContent,
-      has_quoted: targetMessage.has_quoted,
-    };
-
-    await Promise.allSettled([
-      this.chatService.updateMessageChat(updatedMessage),
-      this.centrifugoChatPublish(updatedMessage),
-    ]);
     await this.markHistoryReceiptKnown(data);
-
-    const inactivityInteraction =
-      isReactionInactivityTypeUser(targetTypeUser) &&
-      actorTypeUser !== targetTypeUser
-        ? {
-            actorTypeUser,
-            targetTypeUser,
-          }
-        : null;
 
     return {
       handled: true,
-      inactivityInteraction,
+      effectsApplied: persistence.applied,
+      inactivityInteraction: persistence.applied ? inactivityInteraction : null,
     };
   }
 
   private async handleEditMessage(
     getChat: IChat,
     data: IUpsertMessage
-  ): Promise<boolean | null> {
+  ): Promise<IMessageMutationHandleResult | null> {
     const editPayload = this.getEditMessagePayload(data);
     if (!editPayload) return null;
 
     const { targetMessageId, editedContent } = editPayload;
 
     if (!targetMessageId || !editedContent) {
-      return true;
+      return { handled: true, effectsApplied: false };
     }
 
     const targetMessage = await this.findEditTargetMessage(
@@ -2236,47 +2753,86 @@ export class MessageUpsertConsume {
       targetMessageId
     );
 
-    if (!targetMessage?.content) {
-      return true;
+    if (!targetMessage) {
+      return { handled: true, effectsApplied: false };
     }
 
     const newText = this.getEditedMessageText(editedContent);
 
     if (!newText) {
-      return true;
+      return { handled: true, effectsApplied: false };
     }
 
-    const newVersion: MessageVersion = {
-      type: targetMessage.content.type,
-      message: newText,
-      date: new Date().toISOString(),
-    };
+    const inboundEventId = ensureInboundEventId(data);
+    const mutationResult = await this.withFreshInboundMessageMutation(
+      targetMessage,
+      getChat,
+      data,
+      async (freshTargetMessage) => {
+        if (!freshTargetMessage.content) {
+          return null;
+        }
 
-    const versions = targetMessage.content.version ?? [];
-    const updatedContent: IContent = {
-      ...targetMessage.content,
-      version: [...versions, newVersion],
-    };
+        const newVersion: MessageVersion = {
+          type: freshTargetMessage.content.type,
+          message: newText,
+          date: new Date().toISOString(),
+        };
+        const versions = freshTargetMessage.content.version ?? [];
+        const updatedContent: IContent = {
+          ...freshTargetMessage.content,
+          version: [...versions, newVersion],
+        };
+        const updatedMessage: IChatMessage = {
+          ...freshTargetMessage,
+          content: updatedContent,
+          has_quoted: freshTargetMessage.has_quoted,
+        };
+        const persistence = await this.chatService.updateMessageChatIdempotent(
+          updatedMessage,
+          {
+            eventTypes: ['message.edited'],
+            idempotencyKey: `message-edit:${updatedMessage.message_id}:${inboundEventId ?? uuidv7()}`,
+            source: data.source_provider ?? 'message_upsert',
+            previousMessage: freshTargetMessage,
+            inboundEventId,
+            actor: data.message?.key?.fromMe
+              ? getChat.user?.id
+                ? { type: 'user', id: getChat.user.id }
+                : { type: 'automation' }
+              : { type: 'customer' },
+            changes: {
+              edited_at: newVersion.date,
+            },
+          }
+        );
 
-    const updatedMessage: IChatMessage = {
-      ...targetMessage,
-      content: updatedContent,
-      has_quoted: targetMessage.has_quoted,
-    };
+        return { updatedMessage, persistence };
+      }
+    );
 
-    await Promise.allSettled([
-      this.chatService.updateMessageChat(updatedMessage),
-      this.centrifugoChatPublish(updatedMessage),
-    ]);
+    if (!mutationResult) {
+      return { handled: true, effectsApplied: false };
+    }
+
+    const { updatedMessage, persistence } = mutationResult;
+    if (!persistence.persisted) {
+      throw new Error(
+        `Edit persistence was not confirmed: ${updatedMessage.message_id}`
+      );
+    }
+    if (persistence.applied) {
+      await this.centrifugoChatPublish(updatedMessage).catch(() => undefined);
+    }
     await this.markHistoryReceiptKnown(data);
 
-    return true;
+    return { handled: true, effectsApplied: persistence.applied };
   }
 
   private async handleDeleteMessage(
     getChat: IChat,
     data: IUpsertMessage
-  ): Promise<boolean | null> {
+  ): Promise<IMessageMutationHandleResult | null> {
     const protocolMessage = this.getProtocolMessagePayload(data);
     const protocolKey = this.toRecord(protocolMessage?.key);
     const targetMessageId = this.firstStringField(protocolKey, ['id', 'ID']);
@@ -2292,51 +2848,88 @@ export class MessageUpsertConsume {
     );
 
     if (!targetMessage) {
-      return true;
+      return { handled: true, effectsApplied: false };
     }
 
-    let content = targetMessage.content;
-    if (content?.version && content.version.length > 0) {
-      const sortedVersions = [...content.version].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-      const latestVersion = sortedVersions[0];
-      if (latestVersion && content.message === latestVersion.message) {
-        const oldestVersion = sortedVersions.at(-1);
-        if (
-          oldestVersion?.message &&
-          oldestVersion.message !== content.message
-        ) {
-          content = {
-            ...content,
-            message: oldestVersion.message,
-          };
+    const inboundEventId = ensureInboundEventId(data);
+    const mutationResult = await this.withFreshInboundMessageMutation(
+      targetMessage,
+      getChat,
+      data,
+      async (freshTargetMessage) => {
+        let content = freshTargetMessage.content;
+        if (content?.version && content.version.length > 0) {
+          const sortedVersions = [...content.version].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+          const latestVersion = sortedVersions[0];
+          if (latestVersion && content.message === latestVersion.message) {
+            const oldestVersion = sortedVersions.at(-1);
+            if (
+              oldestVersion?.message &&
+              oldestVersion.message !== content.message
+            ) {
+              content = {
+                ...content,
+                message: oldestVersion.message,
+              };
+            }
+          }
         }
+
+        const updatedMessage: IChatMessage = {
+          ...freshTargetMessage,
+          deleted: true,
+          has_quoted: freshTargetMessage.has_quoted,
+          content,
+        };
+        const persistence = await this.chatService.updateMessageChatIdempotent(
+          updatedMessage,
+          {
+            eventTypes: ['message.deleted'],
+            idempotencyKey: `message-delete:${updatedMessage.message_id}:${inboundEventId ?? uuidv7()}`,
+            source: data.source_provider ?? 'message_upsert',
+            previousMessage: freshTargetMessage,
+            inboundEventId,
+            actor: data.message?.key?.fromMe
+              ? getChat.user?.id
+                ? { type: 'user', id: getChat.user.id }
+                : { type: 'automation' }
+              : { type: 'customer' },
+            changes: {
+              deleted: true,
+            },
+          }
+        );
+
+        return { updatedMessage, persistence };
       }
+    );
+
+    if (!mutationResult) {
+      return { handled: true, effectsApplied: false };
     }
 
-    const updatedMessage: IChatMessage = {
-      ...targetMessage,
-      deleted: true,
-      has_quoted: targetMessage.has_quoted,
-      content: content,
-    };
-
-    await Promise.allSettled([
-      this.chatService.updateMessageChat(updatedMessage),
-      this.centrifugoChatPublish(updatedMessage),
-    ]);
+    const { updatedMessage, persistence } = mutationResult;
+    if (!persistence.persisted) {
+      throw new Error(
+        `Delete persistence was not confirmed: ${updatedMessage.message_id}`
+      );
+    }
+    if (persistence.applied) {
+      await this.centrifugoChatPublish(updatedMessage).catch(() => undefined);
+    }
     await this.markHistoryReceiptKnown(data);
 
-    return true;
+    return { handled: true, effectsApplied: persistence.applied };
   }
 
   private async handlePinMessage(
     getChat: IChat,
     data: IUpsertMessage
-  ): Promise<void> {
+  ): Promise<IMessageMutationHandleResult | null> {
     if (data.type !== EMessageType.system) {
-      return;
+      return null;
     }
 
     const rawMsg = this.getBaseMessage(data)?.message as
@@ -2345,7 +2938,7 @@ export class MessageUpsertConsume {
       { key?: { id?: string }; type?: unknown } | undefined;
     const targetMessageId = pinMessage?.key?.id;
     if (!targetMessageId) {
-      return;
+      return pinMessage ? { handled: true, effectsApplied: false } : null;
     }
     const targetMessage = await this.findMessageByKeyId(
       data.account_id,
@@ -2355,7 +2948,7 @@ export class MessageUpsertConsume {
     );
 
     if (!targetMessage) {
-      return;
+      return { handled: true, effectsApplied: false };
     }
 
     const jid = remoteJid(data.message?.key);
@@ -2387,23 +2980,60 @@ export class MessageUpsertConsume {
           pin_user_phone: formattedPhone,
         };
 
-    const updatedContent: IContent = {
-      ...targetMessage.content,
-      type: targetMessage.content?.type ?? EMessageType.text,
-      pin: pinData,
-    };
+    const inboundEventId = ensureInboundEventId(data);
+    const mutationResult = await this.withFreshInboundMessageMutation(
+      targetMessage,
+      getChat,
+      data,
+      async (freshTargetMessage) => {
+        const updatedContent: IContent = {
+          ...freshTargetMessage.content,
+          type: freshTargetMessage.content?.type ?? EMessageType.text,
+          pin: pinData,
+        };
+        const updatedMessage: IChatMessage = {
+          ...freshTargetMessage,
+          content: updatedContent,
+          has_quoted: freshTargetMessage.has_quoted,
+        };
+        const persistence = await this.chatService.updateMessageChatIdempotent(
+          updatedMessage,
+          {
+            eventTypes: ['message.pin.updated'],
+            idempotencyKey: `message-pin:${updatedMessage.message_id}:${inboundEventId ?? uuidv7()}`,
+            source: data.source_provider ?? 'message_upsert',
+            previousMessage: freshTargetMessage,
+            inboundEventId,
+            actor: data.message?.key?.fromMe
+              ? getChat.user?.id
+                ? { type: 'user', id: getChat.user.id }
+                : { type: 'automation' }
+              : { type: 'customer' },
+            changes: {
+              pinned: !isUnpin,
+            },
+          }
+        );
 
-    const updatedMessage: IChatMessage = {
-      ...targetMessage,
-      content: updatedContent,
-      has_quoted: targetMessage.has_quoted,
-    };
+        return { updatedMessage, persistence };
+      }
+    );
 
-    await Promise.allSettled([
-      this.chatService.updateMessageChat(updatedMessage),
-      this.centrifugoChatPublish(updatedMessage),
-    ]);
+    if (!mutationResult) {
+      return { handled: true, effectsApplied: false };
+    }
+
+    const { updatedMessage, persistence } = mutationResult;
+    if (!persistence.persisted) {
+      throw new Error(
+        `Pin persistence was not confirmed: ${updatedMessage.message_id}`
+      );
+    }
+    if (persistence.applied) {
+      await this.centrifugoChatPublish(updatedMessage).catch(() => undefined);
+    }
     await this.markHistoryReceiptKnown(data);
+    return { handled: true, effectsApplied: persistence.applied };
   }
 
   private buildTypeUserAndSummary(
@@ -2462,10 +3092,64 @@ export class MessageUpsertConsume {
     return shouldResetAttendanceInactivityFromOperatorMessageType(messageType);
   }
 
+  /**
+   * Resolves the durable provider occurrence behind a secondary mutation.
+   * Retries of the same Kafka event keep the same identity, while a later
+   * message that produces the same value remains a separate webhook event.
+   *
+   * Legacy provider payloads may not have a message id. A provider timestamp
+   * plus remote address is the strongest durable fallback available. If both
+   * are absent, the caller deliberately retains its state-based key instead
+   * of manufacturing a time-based identity that would duplicate retries.
+   */
+  private getOutboundWebhookMutationOccurrenceId(
+    data: IUpsertMessage
+  ): string | null {
+    const inboundEventId = ensureInboundEventId(data);
+    if (inboundEventId) {
+      return inboundEventId;
+    }
+
+    const providerMessageId = this.toNonEmptyString(data.message?.key?.id);
+    if (providerMessageId) {
+      return providerMessageId;
+    }
+
+    const providerTimestampMs = this.getUpsertMessageTimestampMs(data);
+    const remoteAddress =
+      this.toNonEmptyString(data.message?.key?.remoteJid) ??
+      this.toNonEmptyString(data.message?.key?.remoteJidAlt);
+    if (!providerTimestampMs || !remoteAddress) {
+      return null;
+    }
+
+    return createHash('sha256')
+      .update(
+        [
+          data.source_provider ?? 'unknown',
+          remoteAddress,
+          String(providerTimestampMs),
+        ].join('\u001f')
+      )
+      .digest('hex');
+  }
+
+  private scopeOutboundWebhookMutationKey(
+    baseKey: string,
+    data: IUpsertMessage
+  ): string {
+    const occurrenceId = this.getOutboundWebhookMutationOccurrenceId(data);
+    return occurrenceId ? `${baseKey}:${occurrenceId}` : baseKey;
+  }
+
   private async updateChatPhotoIfNeeded(
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<void> {
+    const previousChat: IChat = {
+      ...getChat,
+      contact: getChat.contact ? { ...getChat.contact } : null,
+    };
     if (!data.photo) {
       await this.syncChatPhotoFromContactIfMissing(getChat, data);
       return;
@@ -2507,7 +3191,16 @@ export class MessageUpsertConsume {
             image_url: photoResult.url,
           },
           getChat.contact.id,
-          data.account_id
+          data.account_id,
+          {
+            source: data.source_provider ?? 'message_upsert',
+            idempotencyKey: this.scopeOutboundWebhookMutationKey(
+              `contact-photo:${getChat.contact.id}:${photoResult.url}`,
+              data
+            ),
+            actor: { type: 'customer' },
+            changes: { photo: photoResult.url },
+          }
         );
 
         getChat.contact = {
@@ -2524,10 +3217,25 @@ export class MessageUpsertConsume {
         updateData.contact = getChat.contact;
       }
 
-      await this.chatService.saveChat({
-        ...getChat,
-        ...updateData,
-      });
+      await this.chatService.saveChat(
+        {
+          ...getChat,
+          ...updateData,
+        },
+        {
+          outboundWebhook: {
+            eventTypes: ['chat.updated'],
+            idempotencyKey: this.scopeOutboundWebhookMutationKey(
+              `chat-photo:${getChat.chat_id}:${photoResult.url}`,
+              data
+            ),
+            source: data.source_provider ?? 'message_upsert',
+            previousChat,
+            actor: { type: 'customer' },
+            changes: { photo: photoResult.url },
+          },
+        }
+      );
     } catch (error) {
       console.error(
         `[MessageUpsert] Failed to update chat photo for chat ${getChat.chat_id}:`,
@@ -2661,6 +3369,10 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<void> {
+    const previousChat: IChat = {
+      ...getChat,
+      contact: getChat.contact ? { ...getChat.contact } : null,
+    };
     const previousChatPhoto = this.toNonEmptyString(getChat.photo);
     const previousContactPhoto = this.resolveContactPhoto(getChat);
 
@@ -2689,10 +3401,25 @@ export class MessageUpsertConsume {
     getChat.photo = nextChatPhoto;
 
     try {
-      await this.chatService.saveChat({
-        ...getChat,
-        photo: nextChatPhoto,
-      });
+      await this.chatService.saveChat(
+        {
+          ...getChat,
+          photo: nextChatPhoto,
+        },
+        {
+          outboundWebhook: {
+            eventTypes: ['chat.updated'],
+            idempotencyKey: this.scopeOutboundWebhookMutationKey(
+              `chat-photo:${getChat.chat_id}:${nextChatPhoto}`,
+              data
+            ),
+            source: data.source_provider ?? 'message_upsert',
+            previousChat,
+            actor: { type: 'system' },
+            changes: { photo: nextChatPhoto },
+          },
+        }
+      );
     } catch (error) {
       console.error(
         `[MessageUpsert] Failed to sync contact photo for chat ${getChat.chat_id}:`,
@@ -2723,34 +3450,27 @@ export class MessageUpsertConsume {
     }
 
     try {
-      const scriptSource = `
-        if (ctx._source == null) {
-          ctx.op = 'noop';
-          return;
-        }
-        
-        if (ctx._source.name == null || ctx._source.name == '') {
-          ctx._source.name = params.name;
-        } else {
-          ctx.op = 'noop';
-        }
-      `;
-
-      const result = await this.elasticDatabaseService.updateWithScriptOCC(
-        EElasticIndex.chat,
-        getChat.chat_id,
+      const updatedChat = await this.chatService.updateChatNameIfMissing(
+        getChat,
+        name,
         {
-          source: scriptSource,
-          params: { name },
-        },
-        {
-          maxRetries: 5,
+          eventTypes: ['chat.updated'],
+          idempotencyKey: this.scopeOutboundWebhookMutationKey(
+            `chat-name:${getChat.chat_id}:${name}`,
+            data
+          ),
+          source: data.source_provider ?? 'message_upsert',
+          previousChat: getChat,
+          actor: data.message?.key?.fromMe
+            ? { type: 'system' }
+            : { type: 'customer' },
+          changes: { name },
         }
       );
 
-      if (result === 'updated' || result === 'created') {
-        getChat.name = name;
-        await this.centrifugoChatQueuePublish(getChat);
+      if (updatedChat?.name === name) {
+        Object.assign(getChat, updatedChat);
+        await this.centrifugoChatQueuePublish(updatedChat);
       }
     } catch (error) {
       console.error(
@@ -3547,10 +4267,21 @@ export class MessageUpsertConsume {
     );
 
     if (existingContact) {
-      if (existingContact.is_valided === false) {
+      const isOfficialInbound = data.source_provider === 'official_whatsapp';
+      if (
+        existingContact.is_valided === false ||
+        (isOfficialInbound &&
+          existingContact.validation_origin !==
+            CONTACT_VALIDATION_ORIGINS.officialInbound)
+      ) {
         await this.contactService.updateContactIsValided(
           existingContact.contact_id,
-          true
+          true,
+          undefined,
+          undefined,
+          isOfficialInbound
+            ? CONTACT_VALIDATION_ORIGINS.officialInbound
+            : undefined
         );
       }
 
@@ -3765,12 +4496,27 @@ export class MessageUpsertConsume {
       nickname,
       phone: phoneAndDdi.phone,
       phone_ddi: phoneAndDdi.phone_ddi ?? '55',
+      channel_ids: [data.worker_id],
     };
 
     const contactId = await this.contactService.createContact(
       contactToCreate,
       data.account_id,
-      true
+      true,
+      undefined,
+      {
+        source: data.source_provider ?? 'message_upsert',
+        idempotencyKey: this.scopeOutboundWebhookMutationKey(
+          `contact-auto-created:${data.account_id}:${phoneAndDdi.phone_ddi ?? '55'}:${phoneAndDdi.phone}`,
+          data
+        ),
+        originChannelId: data.worker_id,
+        actor: { type: 'customer' },
+        changes: { origin: 'inbound_message' },
+      },
+      data.source_provider === 'official_whatsapp'
+        ? CONTACT_VALIDATION_ORIGINS.officialInbound
+        : null
     );
 
     if (!contactId) {
@@ -3822,6 +4568,855 @@ export class MessageUpsertConsume {
     return false;
   }
 
+  private shouldIncrementUnreadForRecoveredInboundMessage(
+    getChat: IChat,
+    persistedMessage: IChatMessage,
+    allowUnreadRecovery: boolean
+  ): boolean {
+    if (
+      !allowUnreadRecovery ||
+      persistedMessage.message_key?.from_me === true
+    ) {
+      return false;
+    }
+
+    const rawSummary = getChat.summary;
+    const summary = Array.isArray(rawSummary) ? rawSummary[0] : rawSummary;
+    if (!summary) {
+      return true;
+    }
+
+    if (summary.last_processed_message_id === persistedMessage.message_id) {
+      return false;
+    }
+
+    const recoveredEpoch = new Date(persistedMessage.date).getTime();
+    if (!Number.isFinite(recoveredEpoch)) {
+      return false;
+    }
+
+    const storedEpoch =
+      typeof summary.last_date_epoch_millis === 'number' &&
+      Number.isFinite(summary.last_date_epoch_millis)
+        ? summary.last_date_epoch_millis
+        : summary.last_date
+          ? new Date(summary.last_date).getTime()
+          : Number.NaN;
+
+    if (!Number.isFinite(storedEpoch)) {
+      return true;
+    }
+
+    if (recoveredEpoch !== storedEpoch) {
+      return recoveredEpoch > storedEpoch;
+    }
+
+    const storedMessageId = summary.last_message_id ?? '';
+    return persistedMessage.message_id > storedMessageId;
+  }
+
+  private async restorePersistedMessageChatEffects(
+    getChat: IChat,
+    data: IUpsertMessage,
+    persistedMessage: IChatMessage,
+    allowUnreadRecovery: boolean
+  ): Promise<IChat> {
+    const content = (persistedMessage.content ?? {
+      type: data.type,
+    }) as IContent;
+    const messageText = extractMessageTextFromContent(content);
+    const lastDateEpochMillis = new Date(persistedMessage.date).getTime();
+    const updateOperatorReplyPending =
+      getChat.status === EChatStatus.in_chat &&
+      data.type !== EMessageType.react &&
+      data.type !== EMessageType.annotation;
+    const incrementUnreadCount =
+      this.shouldIncrementUnreadForRecoveredInboundMessage(
+        getChat,
+        persistedMessage,
+        allowUnreadRecovery
+      );
+
+    const summaryUpdated = await this.updateChatSummaryWithRetry(
+      getChat.chat_id,
+      messageText,
+      persistedMessage.date,
+      lastDateEpochMillis,
+      persistedMessage.message_id,
+      persistedMessage.message_id,
+      incrementUnreadCount,
+      persistedMessage.type_user,
+      updateOperatorReplyPending
+    );
+
+    if (!summaryUpdated) {
+      throw new Error(
+        `Chat summary persistence was not confirmed: ${getChat.chat_id}`
+      );
+    }
+
+    const updatedChat = await this.chatService.findChatByChatId(
+      data.account_id,
+      getChat.chat_id
+    );
+
+    if (!updatedChat) {
+      throw new Error(
+        `Chat persistence was not found after summary recovery: ${getChat.chat_id}`
+      );
+    }
+
+    await this.centrifugoChatQueuePublish(updatedChat);
+    if (updateOperatorReplyPending) {
+      if (persistedMessage.type_user === ETypeUserChat.client) {
+        await this.operatorReplyPendingRedistributionTracker?.scheduleForNewContactMessage(
+          updatedChat
+        );
+      } else if (persistedMessage.type_user === ETypeUserChat.operator) {
+        await this.operatorReplyPendingRedistributionTracker?.cancel(
+          updatedChat
+        );
+      }
+    }
+    return updatedChat;
+  }
+
+  private async handleChatMessageActions(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<IChatMessageActionResult> {
+    const reactionResult = await this.handleReactionMessage(getChat, data);
+    if (reactionResult !== null) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.reaction',
+        decision: 'reaction_handler',
+        outcome: reactionResult.handled ? 'handled' : 'not_handled',
+        chat_id: getChat.chat_id,
+      });
+      return {
+        data,
+        result: {
+          handled: reactionResult.handled,
+          effectsApplied: reactionResult.effectsApplied,
+          reactionInactivityInteraction: reactionResult.inactivityInteraction,
+        },
+        effectsApplied: reactionResult.effectsApplied,
+      };
+    }
+
+    const editCreateFallback = await this.buildMissingEditMessageCreateFallback(
+      getChat,
+      data
+    );
+    if (editCreateFallback) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.edit_fallback',
+        decision: 'missing_edit_target',
+        outcome: 'converted_to_create',
+        reason: 'edit_target_not_found',
+        chat_id: getChat.chat_id,
+      });
+      data = editCreateFallback;
+    }
+
+    const editResult = await this.handleEditMessage(getChat, data);
+    if (editResult !== null) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.edit',
+        decision: 'edit_handler',
+        outcome: editResult.handled ? 'handled' : 'not_handled',
+        chat_id: getChat.chat_id,
+      });
+      return {
+        data,
+        result: {
+          handled: editResult.handled,
+          effectsApplied: editResult.effectsApplied,
+          reactionInactivityInteraction: null,
+        },
+        effectsApplied: editResult.effectsApplied,
+      };
+    }
+
+    const deleteResult = await this.handleDeleteMessage(getChat, data);
+    if (deleteResult !== null) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.delete',
+        decision: 'delete_handler',
+        outcome: deleteResult.handled ? 'handled' : 'not_handled',
+        chat_id: getChat.chat_id,
+      });
+      return {
+        data,
+        result: {
+          handled: deleteResult.handled,
+          effectsApplied: deleteResult.effectsApplied,
+          reactionInactivityInteraction: null,
+        },
+        effectsApplied: deleteResult.effectsApplied,
+      };
+    }
+
+    const hasPinPayload =
+      data.type === EMessageType.system &&
+      !!(this.getBaseMessage(data)?.message as Record<string, unknown>)
+        ?.pinInChatMessage;
+    const pinResult = await this.handlePinMessage(getChat, data);
+    if (hasPinPayload) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.pin',
+        decision: 'pin_handler',
+        outcome: 'handled',
+        chat_id: getChat.chat_id,
+      });
+    }
+
+    return {
+      data,
+      result: null,
+      effectsApplied: pinResult?.effectsApplied ?? false,
+    };
+  }
+
+  private async prepareChatMessage(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<IMessagePreparationResult> {
+    const jid = remoteJid(data.message?.key);
+    const jidAlt = remoteJidAlt(data.message?.key);
+    const content = this.buildMessageContent(data);
+
+    if (this.isEmptyTextContent(content)) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.empty',
+        decision: 'content_validation',
+        outcome: 'skipped',
+        reason: 'empty_text_content',
+        chat_id: getChat.chat_id,
+      });
+      return {
+        prepared: null,
+        result: {
+          handled: true,
+          effectsApplied: false,
+          reactionInactivityInteraction: null,
+        },
+      };
+    }
+
+    const messageQuotedId = content.quoted?.key.id ?? null;
+    if (content.quoted && messageQuotedId) {
+      await this.enrichQuotedMessageContent(
+        content.quoted,
+        data.account_id,
+        getChat.chat_id,
+        messageQuotedId
+      );
+    } else if (content.message_quoted_id) {
+      const quoted = this.buildQuotedMessageFromQuotedId(
+        data,
+        content.message_quoted_id
+      );
+      const enriched = await this.enrichQuotedMessageContent(
+        quoted,
+        data.account_id,
+        getChat.chat_id,
+        content.message_quoted_id
+      );
+
+      if (enriched) {
+        content.quoted = quoted;
+      }
+    }
+
+    const hasQuotedFlag =
+      data.has_quoted || !!content.quoted || !!content.message_quoted_id;
+
+    await this.updateChatNameIfNeeded(getChat, data);
+    await this.handleMediaMessages(content, data);
+    await this.handleLocationMessage(content, data);
+    await this.handleContactMessage(content, data);
+    await this.handleContactsMessage(content, data);
+
+    (data as IUpsertMessage & { content?: IContent }).content = content;
+
+    const isFromMe = data.message?.key?.fromMe ?? false;
+    const { typeUser, summary } = this.buildTypeUserAndSummary(
+      data.type,
+      isFromMe,
+      data
+    );
+    const isExternalOwnMessage =
+      isFromMe && typeUser === ETypeUserChat.operator;
+    const inputChatMessage: IChatMessage = {
+      message_id: this.buildDeterministicMessageId(getChat, data),
+      chat_id: getChat.chat_id,
+      message_key: {
+        remote_jid: jid,
+        remote_jid_alt: jidAlt,
+        from_me: data.message?.key?.fromMe,
+        id: data.message?.key?.id,
+        participant: data.message?.key?.participant,
+        participant_alt: data.message?.key?.participantAlt,
+        addressing_mode: data.message?.key?.addressingMode,
+        is_view_once:
+          data.message?.key?.isViewOnce ?? data.type === EMessageType.view_once,
+      },
+      type_user: typeUser,
+      account: getChat.account,
+      worker: getChat.worker,
+      user: getChat.user,
+      phone: getChat.phone,
+      summary,
+      content,
+      date: this.resolvePersistedMessageDate(data),
+      deleted: false,
+      has_quoted: hasQuotedFlag,
+      hash: uuidv7(),
+      ...(isExternalOwnMessage ? { sent_from_platform: false } : {}),
+    };
+
+    if (!data.message?.key?.id) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.invalid',
+        decision: 'message_key_validation',
+        outcome: 'failed',
+        reason: 'missing_message_key_id',
+        level: 'warn',
+        chat_id: getChat.chat_id,
+      });
+      return {
+        prepared: null,
+        result: {
+          handled: false,
+          effectsApplied: false,
+          reactionInactivityInteraction: null,
+        },
+      };
+    }
+
+    return {
+      prepared: {
+        data,
+        inputChatMessage,
+        content,
+        isFromMe,
+        typeUser,
+      },
+      result: null,
+    };
+  }
+
+  private async persistChatMessage(
+    getChat: IChat,
+    prepared: IPreparedChatMessage
+  ): Promise<ICreateChatMessageResult> {
+    const { data, inputChatMessage, content, isFromMe, typeUser } = prepared;
+    const messageId = data.message?.key?.id;
+    if (!messageId) {
+      throw new Error(
+        `Chat message key was not available after message preparation: ${getChat.chat_id}`
+      );
+    }
+
+    const existingMessageByKey = await this.findMessageByKeyId(
+      data.account_id,
+      getChat.chat_id,
+      messageId,
+      data.message?.key
+    );
+    if (existingMessageByKey?.message_id) {
+      if (
+        this.shouldReplaceExistingMessageByKey(
+          existingMessageByKey,
+          inputChatMessage
+        )
+      ) {
+        const replacedMessage: IChatMessage = {
+          ...existingMessageByKey,
+          message_key: this.mergeMessageKeys(
+            existingMessageByKey.message_key,
+            inputChatMessage.message_key
+          ),
+          type_user: inputChatMessage.type_user,
+          summary: inputChatMessage.summary,
+          content: inputChatMessage.content,
+          date: inputChatMessage.date,
+          deleted: false,
+          has_quoted:
+            inputChatMessage.has_quoted || !!existingMessageByKey.has_quoted,
+          hash: existingMessageByKey.hash ?? inputChatMessage.hash,
+        };
+
+        const replacementPersisted = await this.chatService.updateMessageChat(
+          replacedMessage,
+          {
+            eventTypes: ['message.updated'],
+            idempotencyKey: `message-replaced:${replacedMessage.message_id}:${data.message?.key?.id ?? 'provider'}`,
+            source: data.source_provider ?? 'message_upsert',
+            previousMessage: existingMessageByKey,
+            actor:
+              replacedMessage.type_user === ETypeUserChat.client
+                ? { type: 'customer' }
+                : { type: 'system' },
+            changes: {
+              change_kind: 'provider_replacement',
+            },
+          }
+        );
+        if (!replacementPersisted) {
+          throw new Error(
+            `Chat message replacement persistence was not confirmed: ${replacedMessage.message_id}`
+          );
+        }
+
+        await this.updateChatPhotoIfNeeded(getChat, data);
+
+        const persistedReplacement =
+          await this.elasticDatabaseService.getById<IChatMessage>(
+            EElasticIndex.message,
+            replacedMessage.message_id
+          );
+        if (
+          !persistedReplacement ||
+          !messageBelongsToChatAndAccount(
+            persistedReplacement,
+            getChat.chat_id,
+            data.account_id
+          )
+        ) {
+          throw new Error(
+            `Persisted replacement message was not confirmed: ${replacedMessage.message_id}`
+          );
+        }
+
+        await this.centrifugoChatPublish(persistedReplacement);
+        await this.markHistoryReceiptKnown(data);
+
+        const lockKey = `chat-summary:${getChat.chat_id}`;
+        await withLock(this.redis, lockKey, async () => {
+          await this.restorePersistedMessageChatEffects(
+            getChat,
+            data,
+            persistedReplacement,
+            false
+          );
+        });
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.existing',
+          decision: 'existing_message_by_key',
+          outcome: 'replaced',
+          reason: 'existing_message_required_replacement',
+          chat_id: getChat.chat_id,
+          chat_message_id: existingMessageByKey.message_id,
+        });
+
+        return {
+          handled: true,
+          effectsApplied: true,
+          reactionInactivityInteraction: null,
+        };
+      }
+
+      await this.chatService.patchExistingMessageMissingFields(
+        existingMessageByKey.message_id,
+        inputChatMessage,
+        {
+          eventTypes: ['message.updated'],
+          idempotencyKey: `message-key-hydrated:${existingMessageByKey.message_id}:${inputChatMessage.message_key?.id ?? ''}:${inputChatMessage.message_key?.remote_jid ?? ''}:${inputChatMessage.message_key?.remote_jid_alt ?? ''}`,
+          source: 'message_upsert',
+          previousMessage: existingMessageByKey,
+          actor:
+            inputChatMessage.type_user === ETypeUserChat.client
+              ? { type: 'customer' }
+              : inputChatMessage.user?.id
+                ? { type: 'user', id: inputChatMessage.user.id }
+                : { type: 'system' },
+          changes: { message_key_hydrated: true },
+        }
+      );
+      await this.markHistoryReceiptKnown(data);
+      const lockKey = `chat-summary:${getChat.chat_id}`;
+      await withLock(this.redis, lockKey, async () => {
+        await this.restorePersistedMessageChatEffects(
+          getChat,
+          data,
+          existingMessageByKey,
+          true
+        );
+      });
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.existing',
+        decision: 'existing_message_by_key',
+        outcome: 'patched',
+        reason: 'message_already_exists',
+        chat_id: getChat.chat_id,
+        chat_message_id: existingMessageByKey.message_id,
+      });
+      return {
+        handled: true,
+        effectsApplied: false,
+        reactionInactivityInteraction: null,
+      };
+    }
+
+    const webhookEventType =
+      data.type === EMessageType.set_disappearing_messages
+        ? ('message.disappearing.updated' as const)
+        : data.type === EMessageType.annotation
+          ? ('message.annotation.created' as const)
+          : data.type === EMessageType.system
+            ? ('message.system.created' as const)
+            : inputChatMessage.type_user === ETypeUserChat.client
+              ? ('message.received' as const)
+              : ('message.sent' as const);
+    const hasMedia = Boolean(
+      inputChatMessage.content?.image ||
+      inputChatMessage.content?.video ||
+      inputChatMessage.content?.document ||
+      inputChatMessage.content?.audio ||
+      inputChatMessage.content?.sticker
+    );
+    const initialDeliveryEvents =
+      webhookEventType === 'message.sent'
+        ? [
+            ...(inputChatMessage.summary.is_sent
+              ? (['message.delivery.sent'] as const)
+              : []),
+            ...(inputChatMessage.summary.is_delivered
+              ? (['message.delivery.delivered'] as const)
+              : []),
+            ...(inputChatMessage.summary.is_seen
+              ? (['message.delivery.read'] as const)
+              : []),
+          ]
+        : [];
+    const createResult = await this.chatService.createMessageIdempotent(
+      inputChatMessage,
+      webhookEventType
+        ? {
+            eventTypes: [
+              webhookEventType,
+              ...(hasMedia ? (['message.media.updated'] as const) : []),
+              ...initialDeliveryEvents,
+            ],
+            idempotencyKey: `message-created:${inputChatMessage.message_id}`,
+            idempotencyKeyByEventType: Object.fromEntries(
+              initialDeliveryEvents.map((eventType) => [
+                eventType,
+                `message-delivery:${inputChatMessage.message_id}:${eventType}`,
+              ])
+            ),
+            source: data.source_provider ?? 'message_upsert',
+            actor:
+              inputChatMessage.type_user === ETypeUserChat.client
+                ? { type: 'customer' }
+                : inputChatMessage.user?.id
+                  ? { type: 'user', id: inputChatMessage.user.id }
+                  : { type: 'automation' },
+            changes: {
+              direction:
+                webhookEventType === 'message.disappearing.updated'
+                  ? 'control'
+                  : inputChatMessage.type_user === ETypeUserChat.client
+                    ? 'inbound'
+                    : 'outbound',
+            },
+          }
+        : undefined
+    );
+
+    if (!createResult.created && !createResult.conflict) {
+      if (createResult.attempted) {
+        await this.markHistoryReceiptKnown(data);
+      }
+
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.create',
+        decision: 'create_message_idempotent',
+        outcome: 'failed',
+        reason: createResult.attempted
+          ? 'create_attempted_without_result'
+          : 'create_not_attempted',
+        level: 'warn',
+        chat_id: getChat.chat_id,
+        chat_message_id: createResult.id,
+      });
+      throw new Error(
+        `Chat message persistence was not confirmed: ${getChat.chat_id}`
+      );
+    }
+
+    if (createResult.conflict) {
+      const persistedMessage =
+        await this.elasticDatabaseService.getById<IChatMessage>(
+          EElasticIndex.message,
+          createResult.id
+        );
+
+      if (!persistedMessage) {
+        throw new Error(
+          `Persisted chat message was not found after conflict: ${createResult.id}`
+        );
+      }
+
+      if (
+        !this.isSameWorkerProviderMessage(
+          persistedMessage,
+          inputChatMessage,
+          data
+        )
+      ) {
+        throw new UnsafePersistedMessageConflictError(createResult.id);
+      }
+
+      if (persistedMessage.chat_id !== getChat.chat_id) {
+        await this.markHistoryReceiptKnown(data);
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.create',
+          decision: 'create_message_idempotent',
+          outcome: 'replayed',
+          reason: 'idempotency_conflict_previous_chat',
+          chat_id: getChat.chat_id,
+          persisted_chat_id: persistedMessage.chat_id,
+          chat_message_id: createResult.id,
+        });
+        return {
+          handled: true,
+          effectsApplied: false,
+          reactionInactivityInteraction: null,
+        };
+      }
+
+      await this.chatService.patchExistingMessageMissingFields(
+        createResult.id,
+        inputChatMessage,
+        {
+          eventTypes: ['message.updated'],
+          idempotencyKey: `message-key-hydrated:${createResult.id}:${inputChatMessage.message_key?.id ?? ''}:${inputChatMessage.message_key?.remote_jid ?? ''}:${inputChatMessage.message_key?.remote_jid_alt ?? ''}`,
+          source: 'message_upsert',
+          previousMessage: persistedMessage,
+          actor:
+            inputChatMessage.type_user === ETypeUserChat.client
+              ? { type: 'customer' }
+              : inputChatMessage.user?.id
+                ? { type: 'user', id: inputChatMessage.user.id }
+                : { type: 'system' },
+          changes: { message_key_hydrated: true },
+        }
+      );
+
+      await this.markHistoryReceiptKnown(data);
+
+      const lockKey = `chat-summary:${getChat.chat_id}`;
+      await withLock(this.redis, lockKey, async () => {
+        await this.restorePersistedMessageChatEffects(
+          getChat,
+          data,
+          persistedMessage,
+          true
+        );
+      });
+
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.create',
+        decision: 'create_message_idempotent',
+        outcome: 'conflict_patched',
+        reason: 'idempotency_conflict',
+        chat_id: getChat.chat_id,
+        chat_message_id: createResult.id,
+      });
+      return {
+        handled: true,
+        effectsApplied: false,
+        reactionInactivityInteraction: null,
+      };
+    }
+
+    await this.updateChatPhotoIfNeeded(getChat, data);
+
+    await this.markHistoryReceiptKnown(data);
+    await this.centrifugoChatPublish(inputChatMessage);
+
+    if (!data.message?.key?.fromMe && data.message?.key) {
+      const markAsRead = await this.shouldMarkAsRead(data.worker_id);
+
+      if (markAsRead) {
+        await this.markIncomingMessageAsRead(
+          data.account_id,
+          data.worker_id,
+          data.message.key
+        );
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.mark_read',
+          decision: 'mark_as_read',
+          outcome: 'published',
+          chat_id: getChat.chat_id,
+        });
+      } else {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.mark_read',
+          decision: 'mark_as_read',
+          outcome: 'disabled',
+          reason: 'worker_config_disabled',
+          chat_id: getChat.chat_id,
+        });
+      }
+    }
+
+    const messageText = extractMessageTextFromContent(content);
+    const incrementUnreadCount = !isFromMe;
+    const lastDateEpochMillis = new Date(inputChatMessage.date).getTime();
+    const updateOperatorReplyPending =
+      getChat.status === EChatStatus.in_chat &&
+      data.type !== EMessageType.react &&
+      data.type !== EMessageType.annotation;
+
+    const lockKey = `chat-summary:${getChat.chat_id}`;
+    await withLock(
+      this.redis,
+      lockKey,
+      async () => {
+        const summaryUpdated = await this.updateChatSummaryWithRetry(
+          getChat.chat_id,
+          messageText,
+          inputChatMessage.date,
+          lastDateEpochMillis,
+          inputChatMessage.message_id,
+          inputChatMessage.message_id,
+          incrementUnreadCount,
+          typeUser,
+          updateOperatorReplyPending
+        );
+
+        if (!summaryUpdated) {
+          throw new Error(
+            `Chat summary persistence was not confirmed: ${getChat.chat_id}`
+          );
+        }
+
+        const updatedChat = await this.chatService.findChatByChatId(
+          data.account_id,
+          getChat.chat_id
+        );
+
+        if (!updatedChat) {
+          throw new Error(
+            `Chat persistence was not found after message creation: ${getChat.chat_id}`
+          );
+        }
+
+        await this.centrifugoChatQueuePublish(updatedChat);
+
+        if (updateOperatorReplyPending) {
+          if (typeUser === ETypeUserChat.client) {
+            await this.operatorReplyPendingRedistributionTracker?.scheduleForNewContactMessage(
+              updatedChat
+            );
+          } else if (typeUser === ETypeUserChat.operator) {
+            await this.operatorReplyPendingRedistributionTracker?.cancel(
+              updatedChat
+            );
+          }
+        }
+
+        if (inputChatMessage.type_user !== ETypeUserChat.operator) {
+          const messageIsFromMe =
+            inputChatMessage.message_key?.from_me === true;
+
+          if (!messageIsFromMe) {
+            await this.assertKafkaDispatchActive();
+            await this.pushNotificationService
+              .sendNotificationForChatMessage(updatedChat, inputChatMessage)
+              .catch(() => {});
+          }
+        }
+      },
+      { ttlMs: 30_000, retryMs: 50, maxWaitMs: 45_000 }
+    );
+
+    this.logLifecycle(data, {
+      stage: 'message_upsert.chat_message.create',
+      decision: 'create_message_idempotent',
+      outcome: 'created',
+      chat_id: getChat.chat_id,
+      chat_message_id: inputChatMessage.message_id,
+    });
+    return {
+      handled: true,
+      effectsApplied: true,
+      reactionInactivityInteraction: null,
+    };
+  }
+
+  private isSameWorkerProviderMessage(
+    persistedMessage: IChatMessage,
+    incomingMessage: IChatMessage,
+    data: IUpsertMessage
+  ): boolean {
+    const persistedProviderId = persistedMessage.message_key?.id?.trim();
+    const incomingProviderId =
+      incomingMessage.message_key?.id?.trim() ??
+      data.message?.key?.id?.trim() ??
+      null;
+    const persistedFromMe = persistedMessage.message_key?.from_me;
+    const incomingFromMe = incomingMessage.message_key?.from_me;
+    const directionMatches =
+      persistedFromMe === null ||
+      persistedFromMe === undefined ||
+      incomingFromMe === null ||
+      incomingFromMe === undefined ||
+      persistedFromMe === incomingFromMe;
+
+    return (
+      persistedMessage.account?.id === data.account_id &&
+      persistedMessage.worker?.id === data.worker_id &&
+      !!persistedProviderId &&
+      persistedProviderId === incomingProviderId &&
+      directionMatches &&
+      this.providerAddressCandidatesOverlap(
+        [
+          persistedMessage.message_key?.remote_jid,
+          persistedMessage.message_key?.remote_jid_alt,
+        ],
+        [
+          incomingMessage.message_key?.remote_jid,
+          incomingMessage.message_key?.remote_jid_alt,
+        ]
+      ) &&
+      this.providerAddressCandidatesOverlap(
+        [
+          persistedMessage.message_key?.participant,
+          persistedMessage.message_key?.participant_alt,
+        ],
+        [
+          incomingMessage.message_key?.participant,
+          incomingMessage.message_key?.participant_alt,
+        ]
+      )
+    );
+  }
+
+  private providerAddressCandidatesOverlap(
+    persistedCandidates: Array<string | null | undefined>,
+    incomingCandidates: Array<string | null | undefined>
+  ): boolean {
+    const persisted = new Set(
+      persistedCandidates
+        .map((candidate) => this.normalizeJidCandidate(candidate))
+        .filter((candidate): candidate is string => !!candidate)
+    );
+    const incoming = incomingCandidates
+      .map((candidate) => this.normalizeJidCandidate(candidate))
+      .filter((candidate): candidate is string => !!candidate);
+
+    return (
+      persisted.size === 0 ||
+      incoming.length === 0 ||
+      incoming.some((candidate) => persisted.has(candidate))
+    );
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -3834,436 +5429,46 @@ export class MessageUpsertConsume {
         chat_id: getChat.chat_id,
         chat_status: getChat.status,
       });
-      await this.updateChatPhotoIfNeeded(getChat, data);
-
-      const reactionResult = await this.handleReactionMessage(getChat, data);
-      if (reactionResult !== null) {
-        this.logLifecycle(data, {
-          stage: 'message_upsert.chat_message.reaction',
-          decision: 'reaction_handler',
-          outcome: reactionResult.handled ? 'handled' : 'not_handled',
-          chat_id: getChat.chat_id,
-        });
-        return {
-          handled: reactionResult.handled,
-          reactionInactivityInteraction: reactionResult.inactivityInteraction,
-        };
+      const actionResult = await this.handleChatMessageActions(getChat, data);
+      data = actionResult.data;
+      if (actionResult.result !== null) {
+        return actionResult.result;
       }
 
-      const editCreateFallback =
-        await this.buildMissingEditMessageCreateFallback(getChat, data);
-      if (editCreateFallback) {
-        this.logLifecycle(data, {
-          stage: 'message_upsert.chat_message.edit_fallback',
-          decision: 'missing_edit_target',
-          outcome: 'converted_to_create',
-          reason: 'edit_target_not_found',
-          chat_id: getChat.chat_id,
-        });
-        data = editCreateFallback;
-      }
-
-      const editResult = await this.handleEditMessage(getChat, data);
-      if (editResult !== null) {
-        this.logLifecycle(data, {
-          stage: 'message_upsert.chat_message.edit',
-          decision: 'edit_handler',
-          outcome: editResult ? 'handled' : 'not_handled',
-          chat_id: getChat.chat_id,
-        });
-        return {
-          handled: editResult,
-          reactionInactivityInteraction: null,
-        };
-      }
-
-      const deleteResult = await this.handleDeleteMessage(getChat, data);
-      if (deleteResult !== null) {
-        this.logLifecycle(data, {
-          stage: 'message_upsert.chat_message.delete',
-          decision: 'delete_handler',
-          outcome: deleteResult ? 'handled' : 'not_handled',
-          chat_id: getChat.chat_id,
-        });
-        return {
-          handled: deleteResult,
-          reactionInactivityInteraction: null,
-        };
-      }
-
-      const hasPinPayload =
-        data.type === EMessageType.system &&
-        !!(this.getBaseMessage(data)?.message as Record<string, unknown>)
-          ?.pinInChatMessage;
-      await this.handlePinMessage(getChat, data);
-      if (hasPinPayload) {
-        this.logLifecycle(data, {
-          stage: 'message_upsert.chat_message.pin',
-          decision: 'pin_handler',
-          outcome: 'handled',
-          chat_id: getChat.chat_id,
-        });
-      }
-
-      const jid = remoteJid(data.message?.key);
-      const jidAlt = remoteJidAlt(data.message?.key);
-
-      const content = this.buildMessageContent(data);
-      if (this.isEmptyTextContent(content)) {
-        this.logLifecycle(data, {
-          stage: 'message_upsert.chat_message.empty',
-          decision: 'content_validation',
-          outcome: 'skipped',
-          reason: 'empty_text_content',
-          chat_id: getChat.chat_id,
-        });
-        return {
-          handled: true,
-          reactionInactivityInteraction: null,
-        };
-      }
-
-      const messageQuotedId = content.quoted?.key.id ?? null;
-      if (content.quoted && messageQuotedId) {
-        await this.enrichQuotedMessageContent(
-          content.quoted,
-          data.account_id,
-          getChat.chat_id,
-          messageQuotedId
-        );
-      } else if (content.message_quoted_id) {
-        const quoted = this.buildQuotedMessageFromQuotedId(
-          data,
-          content.message_quoted_id
-        );
-        const enriched = await this.enrichQuotedMessageContent(
-          quoted,
-          data.account_id,
-          getChat.chat_id,
-          content.message_quoted_id
-        );
-
-        if (enriched) {
-          content.quoted = quoted;
-        }
-      }
-
-      const hasQuotedFlag =
-        data.has_quoted || !!content.quoted || !!content.message_quoted_id;
-
-      await this.updateChatNameIfNeeded(getChat, data);
-
-      await this.handleMediaMessages(content, data);
-      await this.handleLocationMessage(content, data);
-      await this.handleContactMessage(content, data);
-      await this.handleContactsMessage(content, data);
-
-      (data as IUpsertMessage & { content?: IContent }).content = content;
-
-      const isFromMe = data.message?.key?.fromMe ?? false;
-      const { typeUser, summary } = this.buildTypeUserAndSummary(
-        data.type,
-        isFromMe,
-        data
-      );
-      const isExternalOwnMessage =
-        isFromMe && typeUser === ETypeUserChat.operator;
-
-      const inputChatMessage: IChatMessage = {
-        message_id: this.buildDeterministicMessageId(getChat, data),
-        chat_id: getChat.chat_id,
-        message_key: {
-          remote_jid: jid,
-          remote_jid_alt: jidAlt,
-          from_me: data.message?.key?.fromMe,
-          id: data.message?.key?.id,
-          participant: data.message?.key?.participant,
-          participant_alt: data.message?.key?.participantAlt,
-          addressing_mode: data.message?.key?.addressingMode,
-          is_view_once:
-            data.message?.key?.isViewOnce ??
-            data.type === EMessageType.view_once,
-        },
-        type_user: typeUser,
-        account: getChat.account,
-        worker: getChat.worker,
-        user: getChat.user,
-        phone: getChat.phone,
-        summary,
-        content,
-        date: new Date().toISOString(),
-        deleted: false,
-        has_quoted: hasQuotedFlag,
-        hash: uuidv7(),
-        ...(isExternalOwnMessage ? { sent_from_platform: false } : {}),
-      };
-
-      const messageId = data.message?.key?.id;
-      if (!messageId) {
-        this.logLifecycle(data, {
-          stage: 'message_upsert.chat_message.invalid',
-          decision: 'message_key_validation',
-          outcome: 'failed',
-          reason: 'missing_message_key_id',
-          level: 'warn',
-          chat_id: getChat.chat_id,
-        });
-        return {
-          handled: false,
-          reactionInactivityInteraction: null,
-        };
-      }
-
-      const existingMessageByKey = await this.findMessageByKeyId(
-        data.account_id,
-        getChat.chat_id,
-        messageId,
-        data.message?.key
-      );
-      if (existingMessageByKey?.message_id) {
-        if (
-          this.shouldReplaceExistingMessageByKey(
-            existingMessageByKey,
-            inputChatMessage
-          )
-        ) {
-          const replacedMessage: IChatMessage = {
-            ...existingMessageByKey,
-            message_key: this.mergeMessageKeys(
-              existingMessageByKey.message_key,
-              inputChatMessage.message_key
-            ),
-            type_user: inputChatMessage.type_user,
-            summary: inputChatMessage.summary,
-            content: inputChatMessage.content,
-            date: inputChatMessage.date,
-            deleted: false,
-            has_quoted: hasQuotedFlag || !!existingMessageByKey.has_quoted,
-            hash: existingMessageByKey.hash ?? inputChatMessage.hash,
-          };
-
-          await Promise.allSettled([
-            this.chatService.updateMessageChat(replacedMessage),
-            this.centrifugoChatPublish(replacedMessage),
-          ]);
-          await this.markHistoryReceiptKnown(data);
-
-          const replacedContent =
-            replacedMessage.content as IChatMessage['content'];
-          const messageText = extractMessageTextFromContent(
-            (replacedContent ?? { type: EMessageType.text }) as IContent
-          );
-          const lastDateEpochMillis = new Date(replacedMessage.date).getTime();
-          const updateOperatorReplyPending =
-            getChat.status === EChatStatus.in_chat &&
-            data.type !== EMessageType.react &&
-            data.type !== EMessageType.annotation;
-
-          const lockKey = `chat-summary:${getChat.chat_id}`;
-          await withLock(this.redis, lockKey, async () => {
-            await this.updateChatSummaryWithRetry(
-              getChat.chat_id,
-              messageText,
-              replacedMessage.date,
-              lastDateEpochMillis,
-              replacedMessage.message_id,
-              replacedMessage.message_id,
-              false,
-              typeUser,
-              updateOperatorReplyPending
-            );
-
-            const updatedChat = await this.chatService.findChatByChatId(
-              data.account_id,
-              getChat.chat_id
-            );
-
-            if (updatedChat) {
-              await this.centrifugoChatQueuePublish(updatedChat);
-            }
-          });
-          this.logLifecycle(data, {
-            stage: 'message_upsert.chat_message.existing',
-            decision: 'existing_message_by_key',
-            outcome: 'replaced',
-            reason: 'existing_message_required_replacement',
-            chat_id: getChat.chat_id,
-            chat_message_id: existingMessageByKey.message_id,
-          });
-
+      const persistIdentity =
+        ensureInboundEventId(data) ??
+        this.toNonEmptyString(data.message?.key?.id);
+      const prepareAndPersist = async (): Promise<ICreateChatMessageResult> => {
+        const preparation = await this.prepareChatMessage(getChat, data);
+        if (preparation.prepared === null) {
           return {
-            handled: true,
-            reactionInactivityInteraction: null,
+            ...preparation.result,
+            effectsApplied:
+              actionResult.effectsApplied || preparation.result.effectsApplied,
           };
         }
 
-        await this.chatService.patchExistingMessageMissingFields(
-          existingMessageByKey.message_id,
-          inputChatMessage
+        const persistenceResult = await this.persistChatMessage(
+          getChat,
+          preparation.prepared
         );
-        await this.markHistoryReceiptKnown(data);
-        this.logLifecycle(data, {
-          stage: 'message_upsert.chat_message.existing',
-          decision: 'existing_message_by_key',
-          outcome: 'patched',
-          reason: 'message_already_exists',
-          chat_id: getChat.chat_id,
-          chat_message_id: existingMessageByKey.message_id,
-        });
         return {
-          handled: true,
-          reactionInactivityInteraction: null,
+          ...persistenceResult,
+          effectsApplied:
+            actionResult.effectsApplied || persistenceResult.effectsApplied,
         };
-      }
-
-      const createResult =
-        await this.chatService.createMessageIdempotent(inputChatMessage);
-
-      if (!createResult.created && !createResult.conflict) {
-        if (createResult.attempted) {
-          await this.markHistoryReceiptKnown(data);
-        }
-
-        this.logLifecycle(data, {
-          stage: 'message_upsert.chat_message.create',
-          decision: 'create_message_idempotent',
-          outcome: 'failed',
-          reason: createResult.attempted
-            ? 'create_attempted_without_result'
-            : 'create_not_attempted',
-          level: 'warn',
-          chat_id: getChat.chat_id,
-          chat_message_id: createResult.id,
-        });
-        return {
-          handled: false,
-          reactionInactivityInteraction: null,
-        };
-      }
-
-      if (createResult.conflict) {
-        await this.chatService.patchExistingMessageMissingFields(
-          createResult.id,
-          inputChatMessage
-        );
-
-        await this.markHistoryReceiptKnown(data);
-
-        this.logLifecycle(data, {
-          stage: 'message_upsert.chat_message.create',
-          decision: 'create_message_idempotent',
-          outcome: 'conflict_patched',
-          reason: 'idempotency_conflict',
-          chat_id: getChat.chat_id,
-          chat_message_id: createResult.id,
-        });
-        return {
-          handled: true,
-          reactionInactivityInteraction: null,
-        };
-      }
-
-      await this.markHistoryReceiptKnown(data);
-
-      await this.centrifugoChatPublish(inputChatMessage);
-
-      if (!data.message?.key?.fromMe && data.message?.key) {
-        const markAsRead = await this.shouldMarkAsRead(data.worker_id);
-
-        if (markAsRead) {
-          await this.markIncomingMessageAsRead(
-            data.account_id,
-            data.worker_id,
-            data.message.key
-          );
-          this.logLifecycle(data, {
-            stage: 'message_upsert.chat_message.mark_read',
-            decision: 'mark_as_read',
-            outcome: 'published',
-            chat_id: getChat.chat_id,
-          });
-        } else {
-          this.logLifecycle(data, {
-            stage: 'message_upsert.chat_message.mark_read',
-            decision: 'mark_as_read',
-            outcome: 'disabled',
-            reason: 'worker_config_disabled',
-            chat_id: getChat.chat_id,
-          });
-        }
-      }
-
-      const messageText = extractMessageTextFromContent(content);
-      const incrementUnreadCount = !isFromMe;
-      const lastDateEpochMillis = new Date(inputChatMessage.date).getTime();
-      const updateOperatorReplyPending =
-        getChat.status === EChatStatus.in_chat &&
-        data.type !== EMessageType.react &&
-        data.type !== EMessageType.annotation;
-
-      const lockKey = `chat-summary:${getChat.chat_id}`;
-      await withLock(
-        this.redis,
-        lockKey,
-        async () => {
-          await this.updateChatSummaryWithRetry(
-            getChat.chat_id,
-            messageText,
-            inputChatMessage.date,
-            lastDateEpochMillis,
-            inputChatMessage.message_id,
-            inputChatMessage.message_id,
-            incrementUnreadCount,
-            typeUser,
-            updateOperatorReplyPending
-          );
-
-          const updatedChat = await this.chatService.findChatByChatId(
-            data.account_id,
-            getChat.chat_id
-          );
-
-          if (!updatedChat) {
-            return;
-          }
-
-          const channelAccountId = updatedChat.account.id;
-
-          await Promise.allSettled([
-            this.centrifugoService.publishSub(
-              chatAccountCentrifugo(channelAccountId),
-              updatedChat
-            ),
-            this.centrifugoService.publishSub(
-              chatQueueAccountCentrifugo(channelAccountId),
-              updatedChat
-            ),
-          ]);
-
-          if (inputChatMessage.type_user !== ETypeUserChat.operator) {
-            const isFromMe = inputChatMessage.message_key?.from_me === true;
-
-            if (!isFromMe) {
-              await this.pushNotificationService
-                .sendNotificationForChatMessage(updatedChat, inputChatMessage)
-                .catch(() => {});
-            }
-          }
-        },
-        { ttlMs: 30_000, retryMs: 50, maxWaitMs: 45_000 }
-      );
-
-      this.logLifecycle(data, {
-        stage: 'message_upsert.chat_message.create',
-        decision: 'create_message_idempotent',
-        outcome: 'created',
-        chat_id: getChat.chat_id,
-        chat_message_id: inputChatMessage.message_id,
-      });
-      return {
-        handled: true,
-        reactionInactivityInteraction: null,
       };
+
+      if (!persistIdentity) {
+        return prepareAndPersist();
+      }
+
+      return withLock(
+        this.redis,
+        `message-upsert:persist:${data.account_id}:${persistIdentity}`,
+        prepareAndPersist,
+        { ttlMs: 300_000, retryMs: 50, maxWaitMs: 310_000 }
+      );
     } catch (error) {
       this.logLifecycle(data, {
         stage: 'message_upsert.chat_message.error',
@@ -4500,6 +5705,14 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): string {
+    const eventId = ensureInboundEventId(data) ?? buildInboundEventId(data);
+    if (eventId) {
+      const hash = createHash('sha1')
+        .update(`${data.account_id}\0${data.worker_id}\0${eventId}`)
+        .digest('hex');
+      return `wa_${hash}`;
+    }
+
     const keyId = data.message?.key?.id;
     if (!keyId) {
       return uuidv7();
@@ -5170,13 +6383,29 @@ export class MessageUpsertConsume {
       outcome: 'started',
       chat_status: status,
     });
-    const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
+    let [viewAccountName, viewWorkerNameAndId] = await Promise.all([
       this.accountService.viewAccountName(data.account_id),
       this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
     ]);
 
     if (!viewAccountName || !viewWorkerNameAndId) {
-      throw new Error('Account or Worker not found');
+      const [consistentAccountName, consistentWorkerNameAndId] =
+        await Promise.all([
+          this.accountService.viewAccountNameConsistent(data.account_id),
+          this.workerService.viewWorkerNameAndIdConsistent(
+            data.account_id,
+            data.worker_id
+          ),
+        ]);
+      viewAccountName ??= consistentAccountName;
+      viewWorkerNameAndId ??= consistentWorkerNameAndId;
+    }
+
+    if (!viewAccountName || !viewWorkerNameAndId) {
+      throw new MessageUpsertAccountOrWorkerNotFoundError(
+        data.account_id,
+        data.worker_id
+      );
     }
 
     const jid = remoteJid(data.message?.key);
@@ -5199,7 +6428,7 @@ export class MessageUpsertConsume {
       this.isLikelyOwnAccountName(nameFromMessage, viewAccountName?.name)
         ? null
         : nameFromMessage;
-    const messageDate = new Date().toISOString();
+    const messageDate = this.resolvePersistedMessageDate(data);
 
     const content = this.buildMessageContent(data);
     const messageText = extractMessageTextFromContent(content);
@@ -5289,7 +6518,31 @@ export class MessageUpsertConsume {
     const chatWithProtocol =
       await this.chatService.ensureProtocolForNewChat(inputChatMessage);
 
-    await this.saveChatWithCaches(chatWithProtocol);
+    const initialLifecycleEvents = [
+      'chat.created' as const,
+      ...(chatWithProtocol.status === EChatStatus.queue
+        ? (['chat.queued'] as const)
+        : chatWithProtocol.status === EChatStatus.in_chat
+          ? (['chat.attended'] as const)
+          : chatWithProtocol.status === EChatStatus.closed
+            ? (['chat.closed'] as const)
+            : isChatbotStatus(chatWithProtocol.status)
+              ? (['chat.automation.started'] as const)
+              : (['chat.status.changed'] as const)),
+      ...(chatWithProtocol.protocol_start?.length
+        ? (['chat.protocol.updated'] as const)
+        : []),
+    ];
+    await this.saveChatWithCaches(chatWithProtocol, {
+      eventTypes: initialLifecycleEvents,
+      idempotencyKey: `chat-created:${chatWithProtocol.chat_id}`,
+      source: data.source_provider ?? 'message_upsert',
+      previousChat: null,
+      actor: data.message?.key?.fromMe
+        ? { type: 'system' }
+        : { type: 'customer' },
+      changes: { initial_status: chatWithProtocol.status },
+    });
     this.logLifecycle(data, {
       stage: 'message_upsert.chat.create_success',
       decision: 'create_chat',
@@ -5324,6 +6577,7 @@ export class MessageUpsertConsume {
       if (!parsed) return null;
 
       parsed.has_quoted = !!parsed.has_quoted;
+      ensureInboundEventId(parsed);
 
       return parsed;
     } catch {
@@ -5419,59 +6673,106 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const canExecuteFlow = await this.acquireAutomationSendAttempt(
+    const automationAttempt = await this.acquireAutomationSendAttempt(
       data,
       'chatbot_flow'
     );
-    if (!canExecuteFlow) {
+    if (automationAttempt.status === 'completed') {
       this.logLifecycle(data, {
         stage: 'message_upsert.chatbot.skip',
         decision: 'automation_dedupe',
         outcome: 'skipped',
-        reason: 'chatbot_flow_dedupe_not_acquired',
+        reason: 'chatbot_flow_already_completed',
         chatbot_id: chatbotId,
         chat_id: chat.chat_id,
       });
       return;
     }
 
-    if (options?.beforeExecute) {
-      await options.beforeExecute(chat);
-    }
+    const executeAutomation = async (
+      assertActive: KafkaDispatchGuard,
+      useLeaseFences: boolean
+    ) => {
+      if (options?.beforeExecute) {
+        await assertActive();
+        await options.beforeExecute(chat);
+        if (useLeaseFences) {
+          await assertActive();
+        }
+      }
 
-    if (
-      !getChat &&
-      data.webhook_message_type === 'chatbot' &&
-      data.webhook_chatbot_id
-    ) {
-      await this.chatbotFlowRunnerService.clearFlowCacheForChat(
-        chat.account.id,
-        chat.worker.id,
+      if (
+        !getChat &&
+        data.webhook_message_type === 'chatbot' &&
+        data.webhook_chatbot_id
+      ) {
+        if (useLeaseFences) {
+          await assertActive();
+        }
+        await this.chatbotFlowRunnerService.clearFlowCacheForChat(
+          chat.account.id,
+          chat.worker.id,
+          chat.chat_id
+        );
+        if (useLeaseFences) {
+          await assertActive();
+        }
+      }
+
+      const executionId = this.getAutomationOutboundMessageId(
+        data,
+        'chatbot_flow',
         chat.chat_id
+      );
+      if (!executionId) {
+        throw new AutomationSendSourceIdentityUnavailableError(
+          'chatbot_flow',
+          data.worker_id
+        );
+      }
+
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chatbot.execute',
+        decision: 'execute_chatbot',
+        outcome: 'started',
+        chatbot_id: chatbotId,
+        chat_id: chat.chat_id,
+      });
+      await assertActive();
+      const result = await this.chatbotFlowRunnerService.execute(
+        t,
+        data,
+        chat,
+        chatbotId,
+        undefined,
+        {
+          executionId,
+          requireHandled: true,
+          assertActive,
+        }
+      );
+      await assertActive();
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chatbot.execute',
+        decision: 'execute_chatbot',
+        outcome: 'completed',
+        chatbot_id: chatbotId,
+        chat_id: chat.chat_id,
+      });
+      return result;
+    };
+
+    if (automationAttempt.protocol === 'legacy') {
+      return executeAutomation(
+        getKafkaDispatchGuard() ?? (() => undefined),
+        false
       );
     }
 
-    this.logLifecycle(data, {
-      stage: 'message_upsert.chatbot.execute',
-      decision: 'execute_chatbot',
-      outcome: 'started',
-      chatbot_id: chatbotId,
-      chat_id: chat.chat_id,
-    });
-    const result = await this.chatbotFlowRunnerService.execute(
-      t,
-      data,
-      chat,
-      chatbotId
+    return this.runAutomationSendAttempt(
+      automationAttempt.claim,
+      (assertActive) => executeAutomation(assertActive, true)
     );
-    this.logLifecycle(data, {
-      stage: 'message_upsert.chatbot.execute',
-      decision: 'execute_chatbot',
-      outcome: 'completed',
-      chatbot_id: chatbotId,
-      chat_id: chat.chat_id,
-    });
-    return result;
   }
 
   private resolveInitialStatusForNewChat(
@@ -5523,6 +6824,8 @@ export class MessageUpsertConsume {
       const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
 
       if (phoneAndDdi) {
+        const chatBeforeContactHydration =
+          this.cloneChatWebhookState(createChat);
         const ignoreResult = await this.ensureContactForChat(
           createChat,
           data,
@@ -5538,7 +6841,20 @@ export class MessageUpsertConsume {
             closed_at: new Date().toISOString(),
           };
 
-          await this.saveChatWithCaches(closedChat);
+          await this.saveChatWithCaches(closedChat, {
+            eventTypes: [
+              ...this.resolveContactHydrationEvents(
+                chatBeforeContactHydration,
+                closedChat
+              ),
+              'chat.closed',
+            ],
+            idempotencyKey: `chat-closed:${closedChat.chat_id}:${closedChat.closed_at}`,
+            source: data.source_provider ?? 'message_upsert',
+            previousChat: chatBeforeContactHydration,
+            actor: { type: 'system' },
+            changes: { reason: 'contact_ignore' },
+          });
           await this.attendanceInactivityService.cancelInactivityTrackingForEndedAttendance(
             createChat
           );
@@ -5551,6 +6867,25 @@ export class MessageUpsertConsume {
             chat_id: createChat.chat_id,
           });
           return;
+        }
+
+        const contactHydrationEvents = this.resolveContactHydrationEvents(
+          chatBeforeContactHydration,
+          createChat
+        );
+        if (contactHydrationEvents.length > 0) {
+          await this.saveChatWithCaches(createChat, {
+            eventTypes: contactHydrationEvents,
+            idempotencyKey: `chat-contact-hydrated:${createChat.chat_id}:${data.message?.key?.id ?? createChat.contact?.id ?? 'contact'}`,
+            source: data.source_provider ?? 'message_upsert',
+            previousChat: chatBeforeContactHydration,
+            actor: { type: 'system' },
+            changes: {
+              contact_id: createChat.contact?.id ?? null,
+              previous_status: chatBeforeContactHydration.status,
+              status: createChat.status,
+            },
+          });
         }
       }
 
@@ -5658,7 +6993,8 @@ export class MessageUpsertConsume {
         : null;
 
     const canResetByStatus =
-      !hasTransfer || currentStatusAfterTransfer === EChatStatus.in_chat;
+      createMessageResult?.effectsApplied === true &&
+      (!hasTransfer || currentStatusAfterTransfer === EChatStatus.in_chat);
 
     if (
       wasInChat &&
@@ -5739,30 +7075,167 @@ export class MessageUpsertConsume {
     chat: IChat,
     data: IUpsertMessage
   ): Promise<IChat | null> {
-    if (data.transfer_sector_id) {
-      this.logLifecycle(data, {
-        stage: 'message_upsert.transfer.sector_start',
-        decision: 'transfer_sector',
-        outcome: 'started',
-        chat_id: chat.chat_id,
-        transfer_sector_id: data.transfer_sector_id,
-        transfer_user_id: data.transfer_sector_user_id,
-      });
-      return this.transferToSector(t, chat, data);
+    if (!data.transfer_sector_id && !data.transfer_user_id) {
+      return null;
     }
 
-    if (data.transfer_user_id) {
-      this.logLifecycle(data, {
-        stage: 'message_upsert.transfer.user_start',
-        decision: 'transfer_user',
-        outcome: 'started',
-        chat_id: chat.chat_id,
-        transfer_user_id: data.transfer_user_id,
-      });
-      return this.transferToUser(t, chat, data);
+    const revision = this.resolveInboundTransferRevision(data);
+    const lockKey = `message-upsert:transfer:${data.account_id}:${chat.chat_id}:${revision.eventId}`;
+
+    return withLock(
+      this.redis,
+      lockKey,
+      async () => {
+        const currentChat =
+          (await this.chatService.findChatByChatId(
+            data.account_id,
+            chat.chat_id
+          )) ?? chat;
+
+        if (data.transfer_sector_id) {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.transfer.sector_start',
+            decision: 'transfer_sector',
+            outcome: 'started',
+            chat_id: currentChat.chat_id,
+            transfer_sector_id: data.transfer_sector_id,
+            transfer_user_id: data.transfer_sector_user_id,
+          });
+          return this.transferToSector(t, currentChat, data, revision);
+        }
+
+        this.logLifecycle(data, {
+          stage: 'message_upsert.transfer.user_start',
+          decision: 'transfer_user',
+          outcome: 'started',
+          chat_id: currentChat.chat_id,
+          transfer_user_id: data.transfer_user_id,
+        });
+        return this.transferToUser(t, currentChat, data, revision);
+      },
+      { ttlMs: 30_000, retryMs: 50, maxWaitMs: 45_000 }
+    );
+  }
+
+  private resolveInboundTransferRevision(
+    data: IUpsertMessage
+  ): IInboundTransferRevision {
+    const eventId =
+      ensureInboundEventId(data) ??
+      this.getOutboundWebhookMutationOccurrenceId(data);
+    if (!eventId) {
+      throw new Error(
+        `Chat transfer requires a durable inbound event identity: ${data.account_id}:${data.worker_id}`
+      );
     }
 
-    return null;
+    const epochMillis = this.getUpsertMessageTimestampMs(data);
+    if (epochMillis === null) {
+      throw new Error(
+        `Chat transfer requires an immutable inbound event timestamp: ${eventId}`
+      );
+    }
+
+    return {
+      eventId,
+      epochMillis,
+    };
+  }
+
+  private isInboundTransferAlreadyApplied(
+    chat: IChat,
+    user: IChat['user'] | null,
+    sector: IChat['sector'] | null,
+    revision: IInboundTransferRevision
+  ): boolean {
+    const revisionMatches =
+      chat.meta?.assignment_event_id === revision.eventId ||
+      chat.meta?.status_event_id === revision.eventId;
+
+    return (
+      revisionMatches &&
+      (chat.user?.id ?? null) === (user?.id ?? null) &&
+      (chat.sector?.id ?? null) === (sector?.id ?? null)
+    );
+  }
+
+  private async alreadyAppliedInboundTransfer(
+    chat: IChat,
+    user: IChat['user'] | null,
+    sector: IChat['sector'] | null,
+    revision: IInboundTransferRevision
+  ): Promise<IChatTransferPersistenceResult | null> {
+    const currentChat =
+      (await this.chatService.findChatByChatId(
+        chat.account.id,
+        chat.chat_id
+      )) ?? chat;
+
+    return this.isInboundTransferAlreadyApplied(
+      currentChat,
+      user,
+      sector,
+      revision
+    )
+      ? {
+          chat: currentChat,
+          applied: false,
+          alreadyApplied: true,
+          superseded: false,
+        }
+      : null;
+  }
+
+  private isInboundTransferSuperseded(
+    chat: IChat,
+    revision: IInboundTransferRevision,
+    domains: readonly InboundTransferRevisionDomain[]
+  ): boolean {
+    const revisions = domains.map((domain) =>
+      domain === 'assignment'
+        ? {
+            epoch: chat.meta?.assignment_epoch,
+            eventId: chat.meta?.assignment_event_id,
+          }
+        : {
+            epoch: chat.meta?.status_epoch,
+            eventId: chat.meta?.status_event_id,
+          }
+    );
+
+    return revisions.some(({ epoch, eventId }) => {
+      if (typeof epoch !== 'number' || !Number.isFinite(epoch)) {
+        return false;
+      }
+      if (epoch > revision.epochMillis) {
+        return true;
+      }
+      if (epoch < revision.epochMillis || !eventId) {
+        return false;
+      }
+      return eventId.localeCompare(revision.eventId) >= 0;
+    });
+  }
+
+  private async supersededInboundTransfer(
+    chat: IChat,
+    revision: IInboundTransferRevision,
+    domains: readonly InboundTransferRevisionDomain[]
+  ): Promise<IChatTransferPersistenceResult | null> {
+    const currentChat =
+      (await this.chatService.findChatByChatId(
+        chat.account.id,
+        chat.chat_id
+      )) ?? chat;
+
+    return this.isInboundTransferSuperseded(currentChat, revision, domains)
+      ? {
+          chat: currentChat,
+          applied: false,
+          alreadyApplied: false,
+          superseded: true,
+        }
+      : null;
   }
 
   private async listTransferNotificationCandidateUserIds(input: {
@@ -5812,6 +7285,7 @@ export class MessageUpsertConsume {
         targetSectorId: input.sector?.id ?? null,
       });
 
+    await this.assertKafkaDispatchActive();
     await this.pushNotificationService.sendNotificationForChatTransfer({
       chat: input.chat,
       actorUserId: '',
@@ -5822,10 +7296,112 @@ export class MessageUpsertConsume {
     });
   }
 
+  private async persistAndConfirmHumanTransfer(
+    chat: IChat,
+    user: IChat['user'] | null,
+    sector: IChat['sector'] | null,
+    data: IUpsertMessage,
+    revision: IInboundTransferRevision
+  ): Promise<IChatTransferPersistenceResult> {
+    const alreadyApplied = await this.alreadyAppliedInboundTransfer(
+      chat,
+      user,
+      sector,
+      revision
+    );
+    if (alreadyApplied) {
+      return alreadyApplied;
+    }
+
+    const updated = await this.chatService.updateChatUserAndSector(
+      chat.chat_id,
+      user,
+      sector,
+      revision.epochMillis,
+      revision.eventId,
+      {
+        eventTypes: ['chat.transferred'],
+        idempotencyKey: this.scopeOutboundWebhookMutationKey(
+          `chat-transfer:${chat.chat_id}`,
+          data
+        ),
+        source: data.source_provider ?? 'message_upsert',
+        previousChat: chat,
+        actor: { type: 'automation' },
+        changes: {
+          target_user_id: user?.id ?? null,
+          target_sector_id: sector?.id ?? null,
+        },
+      }
+    );
+
+    if (!updated) {
+      const concurrentReplay = await this.alreadyAppliedInboundTransfer(
+        chat,
+        user,
+        sector,
+        revision
+      );
+      if (concurrentReplay) {
+        return concurrentReplay;
+      }
+      const superseded = await this.supersededInboundTransfer(chat, revision, [
+        'assignment',
+      ]);
+      if (superseded) {
+        return superseded;
+      }
+      throw new Error(
+        `Chat transfer persistence was not confirmed: ${chat.chat_id}`
+      );
+    }
+
+    const confirmedChat = await this.chatService.findChatByChatId(
+      chat.account.id,
+      chat.chat_id
+    );
+    const expectedUserId = user?.id ?? null;
+    const expectedSectorId = sector?.id ?? null;
+    const confirmedUserId = confirmedChat?.user?.id ?? null;
+    const confirmedSectorId = confirmedChat?.sector?.id ?? null;
+
+    if (
+      !confirmedChat ||
+      confirmedChat.meta?.assignment_event_id !== revision.eventId ||
+      confirmedUserId !== expectedUserId ||
+      confirmedSectorId !== expectedSectorId
+    ) {
+      if (
+        confirmedChat &&
+        this.isInboundTransferSuperseded(confirmedChat, revision, [
+          'assignment',
+        ])
+      ) {
+        return {
+          chat: confirmedChat,
+          applied: false,
+          alreadyApplied: false,
+          superseded: true,
+        };
+      }
+      throw new Error(
+        `Chat transfer snapshot was not confirmed: ${chat.chat_id}`
+      );
+    }
+
+    return {
+      chat: confirmedChat,
+      applied: true,
+      alreadyApplied: false,
+      superseded: false,
+    };
+  }
+
   private async transferToSector(
     t: TFunction<'translation', undefined>,
     chat: IChat,
-    data: IUpsertMessage
+    data: IUpsertMessage,
+    transferRevision = this.resolveInboundTransferRevision(data)
   ): Promise<IChat | null> {
     if (!data.transfer_sector_id) {
       return null;
@@ -5870,6 +7446,24 @@ export class MessageUpsertConsume {
       }
     }
 
+    const alreadyApplied = await this.alreadyAppliedInboundTransfer(
+      chat,
+      user,
+      sector,
+      transferRevision
+    );
+    if (alreadyApplied) {
+      return alreadyApplied.chat;
+    }
+    const superseded = await this.supersededInboundTransfer(
+      chat,
+      transferRevision,
+      isChatbotStatus(chat.status) ? ['status', 'assignment'] : ['assignment']
+    );
+    if (superseded) {
+      return superseded.chat;
+    }
+
     let notificationChat: IChat = {
       ...chat,
       user,
@@ -5883,23 +7477,72 @@ export class MessageUpsertConsume {
         user,
         sector,
         secondaryUsers: [],
+        outboundWebhook: {
+          eventTypes: [
+            'chat.transferred',
+            'chat.automation.finished',
+            'chat.queued',
+          ],
+          idempotencyKey: this.scopeOutboundWebhookMutationKey(
+            `chat-transfer:${chat.chat_id}`,
+            data
+          ),
+          source: data.source_provider ?? 'message_upsert',
+          previousChat: chat,
+          actor: { type: 'automation' },
+          changes: {
+            target_user_id: user?.id ?? null,
+            target_sector_id: sector.id,
+            status: EChatStatus.queue,
+          },
+        },
+        eventEpochMillis: transferRevision.epochMillis,
+        eventId: transferRevision.eventId,
       });
 
-      if (handoff.chat) {
-        notificationChat = handoff.chat;
+      if (!handoff.chat) {
+        throw new Error(
+          `Chat transfer persistence was not confirmed: ${chat.chat_id}`
+        );
       }
+
+      if (!handoff.applied && !handoff.alreadyHuman) {
+        const concurrentSuperseded = await this.supersededInboundTransfer(
+          handoff.chat,
+          transferRevision,
+          ['status', 'assignment']
+        );
+        if (concurrentSuperseded) {
+          return concurrentSuperseded.chat;
+        }
+        throw new Error(
+          `Chat transfer persistence was not confirmed: ${chat.chat_id}`
+        );
+      }
+
+      notificationChat = handoff.chat;
 
       await this.chatbotFlowRunnerService.clearFlowCacheForChat(
         chat.account.id,
         chat.worker.id,
         chat.chat_id
       );
+
+      if (!handoff.applied && handoff.alreadyHuman) {
+        return notificationChat;
+      }
     } else {
-      await this.chatService.updateChatUserAndSector(
-        chat.chat_id,
+      const persistence = await this.persistAndConfirmHumanTransfer(
+        chat,
         user,
-        sector
+        sector,
+        data,
+        transferRevision
       );
+      notificationChat = persistence.chat;
+      if (!persistence.applied) {
+        return notificationChat;
+      }
     }
 
     await this.notifyChatTransfer({
@@ -5922,7 +7565,8 @@ export class MessageUpsertConsume {
   private async transferToUser(
     t: TFunction<'translation', undefined>,
     chat: IChat,
-    data: IUpsertMessage
+    data: IUpsertMessage,
+    transferRevision = this.resolveInboundTransferRevision(data)
   ): Promise<IChat | null> {
     if (!data.transfer_user_id) {
       return null;
@@ -5950,6 +7594,24 @@ export class MessageUpsertConsume {
       photo: userData.photo ?? null,
     };
 
+    const alreadyApplied = await this.alreadyAppliedInboundTransfer(
+      chat,
+      user,
+      null,
+      transferRevision
+    );
+    if (alreadyApplied) {
+      return alreadyApplied.chat;
+    }
+    const superseded = await this.supersededInboundTransfer(
+      chat,
+      transferRevision,
+      isChatbotStatus(chat.status) ? ['status', 'assignment'] : ['assignment']
+    );
+    if (superseded) {
+      return superseded.chat;
+    }
+
     let notificationChat: IChat = {
       ...chat,
       user,
@@ -5963,19 +7625,72 @@ export class MessageUpsertConsume {
         user,
         sector: null,
         secondaryUsers: [],
+        outboundWebhook: {
+          eventTypes: [
+            'chat.transferred',
+            'chat.automation.finished',
+            'chat.queued',
+          ],
+          idempotencyKey: this.scopeOutboundWebhookMutationKey(
+            `chat-transfer:${chat.chat_id}`,
+            data
+          ),
+          source: data.source_provider ?? 'message_upsert',
+          previousChat: chat,
+          actor: { type: 'automation' },
+          changes: {
+            target_user_id: user.id,
+            target_sector_id: null,
+            status: EChatStatus.queue,
+          },
+        },
+        eventEpochMillis: transferRevision.epochMillis,
+        eventId: transferRevision.eventId,
       });
 
-      if (handoff.chat) {
-        notificationChat = handoff.chat;
+      if (!handoff.chat) {
+        throw new Error(
+          `Chat transfer persistence was not confirmed: ${chat.chat_id}`
+        );
       }
+
+      if (!handoff.applied && !handoff.alreadyHuman) {
+        const concurrentSuperseded = await this.supersededInboundTransfer(
+          handoff.chat,
+          transferRevision,
+          ['status', 'assignment']
+        );
+        if (concurrentSuperseded) {
+          return concurrentSuperseded.chat;
+        }
+        throw new Error(
+          `Chat transfer persistence was not confirmed: ${chat.chat_id}`
+        );
+      }
+
+      notificationChat = handoff.chat;
 
       await this.chatbotFlowRunnerService.clearFlowCacheForChat(
         chat.account.id,
         chat.worker.id,
         chat.chat_id
       );
+
+      if (!handoff.applied && handoff.alreadyHuman) {
+        return notificationChat;
+      }
     } else {
-      await this.chatService.updateChatUserAndSector(chat.chat_id, user, null);
+      const persistence = await this.persistAndConfirmHumanTransfer(
+        chat,
+        user,
+        null,
+        data,
+        transferRevision
+      );
+      notificationChat = persistence.chat;
+      if (!persistence.applied) {
+        return notificationChat;
+      }
     }
 
     await this.notifyChatTransfer({
@@ -6068,6 +7783,150 @@ export class MessageUpsertConsume {
     return value > 1_000_000_000_000 ? value : value * 1000;
   }
 
+  private hasCoherentLegacyOfficialInboundMetadata(
+    data: IUpsertMessage
+  ): boolean {
+    if (this.isOfficialWhatsappOutboundOrEcho(data) || data.source_provider) {
+      return false;
+    }
+
+    const official = data.content?.official;
+    if (official?.provider !== 'meta_whatsapp') {
+      return false;
+    }
+
+    const envelopeMessageId = this.toNonEmptyString(data.message?.key?.id);
+    const metadataMessageId = this.toNonEmptyString(official.message_id);
+    const rawMessageId = this.toNonEmptyString(official.raw?.id);
+
+    if (
+      !envelopeMessageId?.startsWith('wamid.') ||
+      !rawMessageId?.startsWith('wamid.') ||
+      envelopeMessageId !== rawMessageId
+    ) {
+      return false;
+    }
+
+    return !metadataMessageId || metadataMessageId === envelopeMessageId;
+  }
+
+  private isOfficialWhatsappUpsert(data: IUpsertMessage): boolean {
+    if (data.source_provider === 'official_whatsapp') {
+      return true;
+    }
+
+    return this.hasCoherentLegacyOfficialInboundMetadata(data);
+  }
+
+  private isOfficialWhatsappOutboundOrEcho(data: IUpsertMessage): boolean {
+    return (
+      data.message?.key?.fromMe === true ||
+      data.content?.official?.echo === true
+    );
+  }
+
+  private getOfficialProviderTimestampMs(data: IUpsertMessage): number | null {
+    if (
+      !this.isOfficialWhatsappOutboundOrEcho(data) &&
+      this.isOfficialWhatsappUpsert(data) &&
+      data.content?.official
+    ) {
+      // The official webhook mapper historically synthesized the envelope
+      // timestamp with Date.now() when Meta omitted message.timestamp. Only
+      // the raw provider field is immutable evidence for an inbound message;
+      // accepting the envelope here would make a malformed old replay look
+      // fresh.
+      return normalizeOfficialWhatsappProviderTimestampMs(
+        data.content?.official?.raw?.timestamp
+      );
+    }
+
+    const candidates = [
+      data.content?.official?.raw?.timestamp,
+      data.message?.messageTimestamp,
+    ]
+      .map((candidate) =>
+        normalizeOfficialWhatsappProviderTimestampMs(candidate)
+      )
+      .filter((timestampMs): timestampMs is number => timestampMs !== null);
+
+    return candidates.length > 0 ? Math.min(...candidates) : null;
+  }
+
+  private classifyOfficialWhatsappReplay(
+    data: IUpsertMessage
+  ): IOfficialWhatsappReplayClassification {
+    const isOfficialInbound =
+      !this.isOfficialWhatsappOutboundOrEcho(data) &&
+      this.isOfficialWhatsappUpsert(data);
+    if (!isOfficialInbound) {
+      return {
+        isOfficialInbound: false,
+        discard: false,
+        providerTimestampMs: null,
+        ageMs: null,
+      };
+    }
+
+    const freshness = classifyOfficialWhatsappProviderTimestampForEffects({
+      providerTimestamp: this.getOfficialProviderTimestampMs(data),
+      maxAgeMs: OFFICIAL_WHATSAPP_REPLAY_EFFECT_MAX_AGE_MS,
+      futureToleranceMs: OFFICIAL_WHATSAPP_PROVIDER_FUTURE_TOLERANCE_MS,
+    });
+    if (!freshness.accepted && freshness.reason === 'missing') {
+      // Meta message timestamps are the only immutable evidence that a
+      // physical webhook is current. Receipt, Kafka and redrive timestamps
+      // can all be renewed while replaying an old event, so fail closed.
+      return {
+        isOfficialInbound: true,
+        discard: true,
+        reason: 'official_message_timestamp_missing',
+        providerTimestampMs: null,
+        ageMs: null,
+      };
+    }
+
+    if (!freshness.accepted && freshness.reason === 'future') {
+      return {
+        isOfficialInbound: true,
+        discard: true,
+        reason: 'official_message_timestamp_future',
+        providerTimestampMs: freshness.providerTimestampMs,
+        ageMs: freshness.ageMs,
+      };
+    }
+
+    if (!freshness.accepted && freshness.reason === 'stale') {
+      return {
+        isOfficialInbound: true,
+        discard: true,
+        reason: data.consumer_redrive_attempt
+          ? 'official_stale_consumer_redrive'
+          : 'official_stale_webhook_replay',
+        providerTimestampMs: freshness.providerTimestampMs,
+        ageMs: freshness.ageMs,
+      };
+    }
+
+    return {
+      isOfficialInbound: true,
+      discard: false,
+      providerTimestampMs: freshness.providerTimestampMs,
+      ageMs: freshness.ageMs,
+    };
+  }
+
+  private resolvePersistedMessageDate(data: IUpsertMessage): string {
+    if (!this.isOfficialWhatsappUpsert(data)) {
+      return new Date().toISOString();
+    }
+
+    return resolveOfficialWhatsappInboundTimestamp({
+      providerTimestamp: this.getOfficialProviderTimestampMs(data) ?? undefined,
+      receivedAt: data.source_received_at,
+    });
+  }
+
   private getUpsertMessageTimestampMs(data: IUpsertMessage): number | null {
     const messageLike = data.message as
       | (IUpsertMessage['message'] & {
@@ -6084,6 +7943,7 @@ export class MessageUpsertConsume {
       messageLike?._data?.senderTimestampMs,
       messageLike?._data?.senderTimestamp,
       messageLike?._data?.latestEditSenderTimestampMs,
+      data.content?.official?.raw?.timestamp,
     ]
       .map((raw) => this.normalizeTimestampMs(raw))
       .filter((value): value is number => value !== null);
@@ -6301,6 +8161,11 @@ export class MessageUpsertConsume {
   }
 
   private getAutomationSourceMessageKey(data: IUpsertMessage): string | null {
+    const eventId = ensureInboundEventId(data);
+    if (eventId) {
+      return `event:${eventId}`;
+    }
+
     const messageId = this.toNonEmptyString(data.message?.key?.id);
     if (!messageId) {
       return null;
@@ -6324,32 +8189,271 @@ export class MessageUpsertConsume {
     return `${this.AUTOMATION_SEND_DEDUPE_PREFIX}:${data.account_id}:${data.worker_id}:${automationType}:${sourceMessageKey}`;
   }
 
+  private getAutomationLeaseKey(
+    data: IUpsertMessage,
+    automationType: 'chatbot_flow' | 'outside_hours',
+    sourceMessageKey: string
+  ): string {
+    return `${this.AUTOMATION_SEND_LEASE_PREFIX}:${data.account_id}:${data.worker_id}:${automationType}:${sourceMessageKey}`;
+  }
+
+  private getAutomationOutboundMessageId(
+    data: IUpsertMessage,
+    automationType: 'chatbot_flow' | 'outside_hours',
+    chatId: string
+  ): string | null {
+    const sourceMessageKey = this.getAutomationSourceMessageKey(data);
+    if (!sourceMessageKey) {
+      return null;
+    }
+
+    const digest = createHash('sha256')
+      .update(
+        [
+          this.AUTOMATION_OUTBOUND_IDENTITY_VERSION,
+          data.account_id.trim(),
+          data.worker_id.trim(),
+          chatId.trim(),
+          automationType,
+          sourceMessageKey,
+        ].join('\0')
+      )
+      .digest('hex');
+    const variant = (
+      (Number.parseInt(digest.slice(16, 17), 16) & 0x3) |
+      0x8
+    ).toString(16);
+
+    // UUIDv8-shaped operational ID derived only from the physical inbound
+    // event and the automation purpose. Content is deliberately excluded.
+    return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(
+      13,
+      16
+    )}-${variant}${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+  }
+
   private async acquireAutomationSendAttempt(
     data: IUpsertMessage,
     automationType: 'chatbot_flow' | 'outside_hours'
-  ): Promise<boolean> {
+  ): Promise<AutomationSendAcquireResult> {
     const sourceMessageKey = this.getAutomationSourceMessageKey(data);
     if (!sourceMessageKey) {
-      return false;
+      if (!this.AUTOMATION_SEND_LEASE_V2_ENABLED) {
+        return { status: 'completed' };
+      }
+      throw new AutomationSendSourceIdentityUnavailableError(
+        automationType,
+        data.worker_id
+      );
     }
 
-    const dedupeKey = this.getAutomationDedupeKey(
+    const completionKey = this.getAutomationDedupeKey(
       data,
       automationType,
       sourceMessageKey
     );
 
-    try {
-      const acquired = await this.redis.set(
-        dedupeKey,
-        '1',
-        'EX',
-        this.AUTOMATION_SEND_DEDUPE_TTL_SECONDS,
-        'NX'
+    const leaseKey = this.getAutomationLeaseKey(
+      data,
+      automationType,
+      sourceMessageKey
+    );
+
+    if (!this.AUTOMATION_SEND_LEASE_V2_ENABLED) {
+      const rawLegacyResult = await this.redis.eval(
+        ACQUIRE_LEGACY_AUTOMATION_SEND_READER_V2_SCRIPT,
+        2,
+        completionKey,
+        leaseKey,
+        this.AUTOMATION_SEND_COMPLETED_VALUE,
+        this.AUTOMATION_SEND_DEDUPE_TTL_SECONDS
       );
-      return acquired === 'OK';
-    } catch {
-      return false;
+      const legacyResult = String(rawLegacyResult);
+      if (legacyResult === 'acquired') {
+        return { status: 'acquired', protocol: 'legacy' };
+      }
+      if (legacyResult === 'completed') {
+        return { status: 'completed' };
+      }
+      if (legacyResult === 'in_progress') {
+        throw new AutomationSendInProgressError(automationType, data.worker_id);
+      }
+      throw new Error(
+        `Unexpected legacy automation send result: ${legacyResult}`
+      );
+    }
+
+    const ownerValue = JSON.stringify({
+      state: 'processing',
+      token: randomUUID(),
+    });
+    const rawResult = await this.redis.eval(
+      ACQUIRE_AUTOMATION_SEND_LEASE_SCRIPT,
+      2,
+      completionKey,
+      leaseKey,
+      ownerValue,
+      this.AUTOMATION_SEND_PROCESSING_TTL_SECONDS
+    );
+    const result = String(rawResult);
+
+    if (result === 'acquired') {
+      return {
+        status: 'acquired',
+        protocol: 'lease_v2',
+        claim: { completionKey, leaseKey, ownerValue },
+      };
+    }
+    if (result === 'completed') {
+      return { status: 'completed' };
+    }
+    if (result === 'in_progress') {
+      throw new AutomationSendInProgressError(automationType, data.worker_id);
+    }
+
+    throw new Error(`Unexpected automation send lease result: ${result}`);
+  }
+
+  private async releaseLegacyAutomationSendAttempt(
+    data: IUpsertMessage,
+    automationType: 'chatbot_flow' | 'outside_hours'
+  ): Promise<void> {
+    const sourceMessageKey = this.getAutomationSourceMessageKey(data);
+    if (!sourceMessageKey) {
+      return;
+    }
+
+    await this.redis.del(
+      this.getAutomationDedupeKey(data, automationType, sourceMessageKey)
+    );
+  }
+
+  private async heartbeatAutomationSendAttempt(
+    claim: IAutomationSendClaim
+  ): Promise<void> {
+    const refreshed = await this.redis.eval(
+      HEARTBEAT_AUTOMATION_SEND_LEASE_SCRIPT,
+      1,
+      claim.leaseKey,
+      claim.ownerValue,
+      this.AUTOMATION_SEND_PROCESSING_TTL_SECONDS
+    );
+    if (Number(refreshed) !== 1) {
+      throw new AutomationSendLeaseLostError(claim.leaseKey);
+    }
+  }
+
+  private async releaseAutomationSendAttempt(
+    claim: IAutomationSendClaim
+  ): Promise<boolean> {
+    const released = await this.redis.eval(
+      RELEASE_AUTOMATION_SEND_LEASE_SCRIPT,
+      1,
+      claim.leaseKey,
+      claim.ownerValue
+    );
+    return Number(released) === 1;
+  }
+
+  private async completeAutomationSendAttempt(
+    claim: IAutomationSendClaim
+  ): Promise<void> {
+    const completed = await this.redis.eval(
+      COMPLETE_AUTOMATION_SEND_LEASE_SCRIPT,
+      2,
+      claim.completionKey,
+      claim.leaseKey,
+      claim.ownerValue,
+      this.AUTOMATION_SEND_COMPLETED_VALUE,
+      this.AUTOMATION_SEND_DEDUPE_TTL_SECONDS
+    );
+    if (Number(completed) !== 1) {
+      throw new AutomationSendLeaseLostError(claim.leaseKey);
+    }
+  }
+
+  private async runAutomationSendAttempt<T>(
+    claim: IAutomationSendClaim,
+    operation: (assertActive: KafkaDispatchGuard) => Promise<T>
+  ): Promise<T> {
+    const upstreamAssertActive = getKafkaDispatchGuard();
+    let heartbeatFailure: Error | null = null;
+    let heartbeatInFlight: Promise<void> | null = null;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    let heartbeatStopped = false;
+
+    const stopHeartbeatTimer = (): void => {
+      heartbeatStopped = true;
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    };
+    const rememberHeartbeatFailure = (error: unknown): void => {
+      heartbeatFailure ??=
+        error instanceof Error
+          ? error
+          : new Error(`Automation send heartbeat failed: ${String(error)}`);
+      stopHeartbeatTimer();
+    };
+    const renewClaimWhileActive = async (): Promise<void> => {
+      if (heartbeatFailure !== null) {
+        throw heartbeatFailure;
+      }
+
+      try {
+        await upstreamAssertActive?.();
+        await this.heartbeatAutomationSendAttempt(claim);
+        await upstreamAssertActive?.();
+      } catch (error) {
+        rememberHeartbeatFailure(error);
+        throw (
+          heartbeatFailure ?? new AutomationSendLeaseLostError(claim.leaseKey)
+        );
+      }
+    };
+    const assertActive: KafkaDispatchGuard = renewClaimWhileActive;
+    const heartbeat = (): void => {
+      if (heartbeatStopped || heartbeatInFlight) {
+        return;
+      }
+
+      heartbeatInFlight = renewClaimWhileActive()
+        .catch(() => undefined)
+        .then(() => undefined)
+        .finally(() => {
+          heartbeatInFlight = null;
+        });
+    };
+    const stopHeartbeat = async (): Promise<void> => {
+      stopHeartbeatTimer();
+      await heartbeatInFlight;
+    };
+
+    try {
+      await assertActive();
+      heartbeatTimer = setInterval(
+        heartbeat,
+        this.AUTOMATION_SEND_PROCESSING_HEARTBEAT_INTERVAL_MS
+      );
+      heartbeatTimer.unref();
+
+      const result = await runWithKafkaDispatchGuard(assertActive, () =>
+        operation(assertActive)
+      );
+      await assertActive();
+      await stopHeartbeat();
+      if (heartbeatFailure !== null) {
+        throw heartbeatFailure;
+      }
+      await this.completeAutomationSendAttempt(claim);
+      return result;
+    } catch (error) {
+      await stopHeartbeat();
+      if (heartbeatFailure === null) {
+        await this.releaseAutomationSendAttempt(claim).catch(() => false);
+      }
+      throw error;
     }
   }
 
@@ -6357,7 +8461,8 @@ export class MessageUpsertConsume {
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
     chat: IChat,
-    message: string
+    message: string,
+    expectedStatusEventId?: string
   ): Promise<void> {
     if (
       chat.contact?.ignore === EContactIgnore.ignore_automation ||
@@ -6373,16 +8478,38 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const canSendOutsideHours = await this.acquireAutomationSendAttempt(
+    const outboundMessageId = this.getAutomationOutboundMessageId(
+      data,
+      'outside_hours',
+      chat.chat_id
+    );
+    if (!outboundMessageId) {
+      if (!this.AUTOMATION_SEND_LEASE_V2_ENABLED) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.outside_hours.skip',
+          decision: 'outbound_identity',
+          outcome: 'skipped',
+          reason: 'outside_hours_source_identity_unavailable',
+          chat_id: chat.chat_id,
+        });
+        return;
+      }
+      throw new AutomationSendSourceIdentityUnavailableError(
+        'outside_hours',
+        data.worker_id
+      );
+    }
+
+    const automationAttempt = await this.acquireAutomationSendAttempt(
       data,
       'outside_hours'
     );
-    if (!canSendOutsideHours) {
+    if (automationAttempt.status === 'completed') {
       this.logLifecycle(data, {
         stage: 'message_upsert.outside_hours.skip',
         decision: 'automation_dedupe',
         outcome: 'skipped',
-        reason: 'outside_hours_dedupe_not_acquired',
+        reason: 'outside_hours_already_completed',
         chat_id: chat.chat_id,
       });
       return;
@@ -6393,66 +8520,149 @@ export class MessageUpsertConsume {
       chat.chat_id
     );
 
-    const lock = await this.redis.set(
-      debounceKey,
-      '1',
-      'EX',
-      this.OUTSIDE_HOURS_DEBOUNCE_SECONDS,
-      'NX'
+    let legacyReleaseEligible = false;
+    let outboundDispatchStarted = false;
+    const sendAutomation = async (
+      assertActive: KafkaDispatchGuard,
+      useLeaseFences: boolean
+    ): Promise<void> => {
+      if (useLeaseFences) {
+        await assertActive();
+      }
+      const lock = await this.redis.set(
+        debounceKey,
+        '1',
+        'EX',
+        this.OUTSIDE_HOURS_DEBOUNCE_SECONDS,
+        'NX'
+      );
+
+      if (lock !== 'OK') {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.outside_hours.skip',
+          decision: 'outside_hours_debounce',
+          outcome: 'skipped',
+          reason: 'debounce_lock_not_acquired',
+          chat_id: chat.chat_id,
+        });
+        return;
+      }
+      legacyReleaseEligible = true;
+
+      try {
+        if (expectedStatusEventId) {
+          const currentChat = await this.chatService.findChatByChatId(
+            chat.account.id,
+            chat.chat_id
+          );
+          if (
+            !currentChat ||
+            currentChat.status !== EChatStatus.closed ||
+            currentChat.meta?.status_event_id !== expectedStatusEventId
+          ) {
+            this.logLifecycle(data, {
+              stage: 'message_upsert.outside_hours.skip',
+              decision: 'status_event_guard',
+              outcome: 'skipped',
+              reason: 'outside_hours_status_event_lost_ownership',
+              chat_id: chat.chat_id,
+              status_event_id: expectedStatusEventId,
+            });
+            return;
+          }
+        }
+
+        let protocol: string | null = null;
+        if (hasProtocolTag(message)) {
+          if (useLeaseFences) {
+            await assertActive();
+          }
+          protocol =
+            (await this.chatService.getOrCreateChatProtocol(
+              data.account_id,
+              chat.chat_id,
+              'protocol_start'
+            )) ||
+            this.chatService.getLatestProtocolByType(chat, 'protocol_start');
+          if (useLeaseFences) {
+            await assertActive();
+          }
+        }
+
+        const formattedMessage = replaceMessageTags({
+          message,
+          chat,
+          t,
+          protocol,
+        }).trim();
+
+        if (!formattedMessage) {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.outside_hours.skip',
+            decision: 'message_template',
+            outcome: 'skipped',
+            reason: 'formatted_message_empty',
+            chat_id: chat.chat_id,
+          });
+          return;
+        }
+
+        await assertActive();
+        outboundDispatchStarted = true;
+        const messageSent = await this.chatMessageService.sendMessage(t, {
+          chat,
+          accountId: data.account_id,
+          messageId: outboundMessageId,
+          type: EMessageType.text,
+          message: formattedMessage,
+          typeUser: ETypeUserChat.system,
+          ...(useLeaseFences ? { assertActive } : {}),
+        });
+        if (!messageSent) {
+          throw new Error('outside-hours message was not persisted');
+        }
+
+        this.logLifecycle(data, {
+          stage: 'message_upsert.outside_hours.send',
+          decision: 'send_outside_hours_message',
+          outcome: 'sent',
+          chat_id: chat.chat_id,
+        });
+      } catch (error) {
+        await this.redis.del(debounceKey).catch(() => 0);
+
+        this.logLifecycle(data, {
+          stage: 'message_upsert.outside_hours.send',
+          decision: 'send_outside_hours_message',
+          outcome: 'failed',
+          reason: error instanceof Error ? error.message : String(error),
+          chat_id: chat.chat_id,
+        });
+        throw error;
+      }
+    };
+
+    if (automationAttempt.protocol === 'legacy') {
+      try {
+        return await sendAutomation(
+          getKafkaDispatchGuard() ?? (() => undefined),
+          false
+        );
+      } catch (error) {
+        if (legacyReleaseEligible && !outboundDispatchStarted) {
+          await this.releaseLegacyAutomationSendAttempt(
+            data,
+            'outside_hours'
+          ).catch(() => undefined);
+        }
+        throw error;
+      }
+    }
+
+    return this.runAutomationSendAttempt(
+      automationAttempt.claim,
+      (assertActive) => sendAutomation(assertActive, true)
     );
-
-    if (lock !== 'OK') {
-      this.logLifecycle(data, {
-        stage: 'message_upsert.outside_hours.skip',
-        decision: 'outside_hours_debounce',
-        outcome: 'skipped',
-        reason: 'debounce_lock_not_acquired',
-        chat_id: chat.chat_id,
-      });
-      return;
-    }
-
-    let protocol: string | null = null;
-    if (hasProtocolTag(message)) {
-      protocol =
-        (await this.chatService.getOrCreateChatProtocol(
-          data.account_id,
-          chat.chat_id,
-          'protocol_start'
-        )) || this.chatService.getLatestProtocolByType(chat, 'protocol_start');
-    }
-
-    const formattedMessage = replaceMessageTags({
-      message,
-      chat,
-      t,
-      protocol,
-    }).trim();
-
-    if (!formattedMessage) {
-      this.logLifecycle(data, {
-        stage: 'message_upsert.outside_hours.skip',
-        decision: 'message_template',
-        outcome: 'skipped',
-        reason: 'formatted_message_empty',
-        chat_id: chat.chat_id,
-      });
-      return;
-    }
-
-    await this.chatMessageService.sendMessage(t, {
-      chat,
-      accountId: data.account_id,
-      type: EMessageType.text,
-      message: formattedMessage,
-      typeUser: ETypeUserChat.system,
-    });
-    this.logLifecycle(data, {
-      stage: 'message_upsert.outside_hours.send',
-      decision: 'send_outside_hours_message',
-      outcome: 'sent',
-      chat_id: chat.chat_id,
-    });
   }
 
   private async handleOutsideHoursMessageOnly(
@@ -6470,14 +8680,13 @@ export class MessageUpsertConsume {
     await this.createOrUpdateChatQueue(t, getChat, data);
 
     const currentChat =
-      getChat ||
       (await this.chatService.findChatByPhone(
         data.account_id,
         data.worker_id,
         phone,
         jid,
         jidAlt
-      ));
+      )) || getChat;
 
     if (!currentChat) {
       this.logLifecycle(data, {
@@ -6490,28 +8699,32 @@ export class MessageUpsertConsume {
       return;
     }
 
-    await this.sendOutsideHoursMessageWithDebounce(
-      t,
-      data,
-      currentChat,
-      outsideHoursContext.outside_hours_message
-    );
-
     if (
       outsideHoursContext.attendance_hours.message_only_destination_status ===
       'closed'
     ) {
-      await this.chatService.updateChatStatus(
-        currentChat.chat_id,
-        EChatStatus.closed,
-        undefined,
-        undefined,
-        new Date().toISOString()
-      );
-      await this.chatService.invalidateChatCache({
-        ...currentChat,
-        status: EChatStatus.closed,
+      await this.assertKafkaDispatchActive();
+      const finishScheduled =
+        await this.chatbotFlowRunnerService.finishOutsideHoursChat(
+          t,
+          currentChat,
+          outsideHoursContext.outside_hours_message
+        );
+
+      this.logLifecycle(data, {
+        stage: 'message_upsert.outside_hours.message_only',
+        decision: 'automatic_finish_outbox',
+        outcome: finishScheduled ? 'scheduled' : 'skipped',
+        reason: 'destination_status_closed',
+        chat_id: currentChat.chat_id,
+        current_status: currentChat.status,
+        target_status: EChatStatus.closed,
       });
+
+      if (!finishScheduled) {
+        return;
+      }
+
       this.logLifecycle(data, {
         stage: 'message_upsert.outside_hours.message_only',
         decision: 'outside_hours_destination',
@@ -6520,6 +8733,13 @@ export class MessageUpsertConsume {
         chat_id: currentChat.chat_id,
       });
     } else {
+      await this.sendOutsideHoursMessageWithDebounce(
+        t,
+        data,
+        currentChat,
+        outsideHoursContext.outside_hours_message
+      );
+
       let outsideHoursSector: IChat['sector'] | null = null;
       const outsideHoursSectorId =
         outsideHoursContext.attendance_hours.message_only_queue_sector_id;
@@ -6548,13 +8768,50 @@ export class MessageUpsertConsume {
         EChatStatus.queue,
         null,
         undefined,
-        null
+        null,
+        undefined,
+        undefined,
+        {
+          eventTypes: [
+            ...(isChatbotStatus(currentChat.status)
+              ? (['chat.automation.finished'] as const)
+              : []),
+            'chat.queued',
+          ],
+          idempotencyKey: this.scopeOutboundWebhookMutationKey(
+            `outside-hours-queue:${currentChat.chat_id}`,
+            data
+          ),
+          source: data.source_provider ?? 'message_upsert',
+          previousChat: currentChat,
+          actor: { type: 'automation' },
+          changes: {
+            previous_status: currentChat.status,
+            status: EChatStatus.queue,
+          },
+        }
       );
 
       await this.chatService.updateChatUserAndSector(
         currentChat.chat_id,
         null,
-        outsideHoursSector
+        outsideHoursSector,
+        undefined,
+        undefined,
+        {
+          eventTypes: ['chat.assignment.changed'],
+          idempotencyKey: this.scopeOutboundWebhookMutationKey(
+            `outside-hours-assignment:${currentChat.chat_id}:${outsideHoursSector?.id ?? 'unassigned'}`,
+            data
+          ),
+          source: data.source_provider ?? 'message_upsert',
+          previousChat: currentChat,
+          actor: { type: 'automation' },
+          changes: {
+            user_id: null,
+            sector_id: outsideHoursSector?.id ?? null,
+          },
+        }
       );
       await this.chatService.invalidateChatCache({
         ...currentChat,
@@ -6994,17 +9251,92 @@ export class MessageUpsertConsume {
     const content = this.buildMessageContent(data);
     const messageText = extractMessageTextFromContent(content);
 
-    const handled =
-      await this.activeWhatsappValidationService.handleIncomingMessage({
-        workerId: data.worker_id,
-        fromPhone: phone,
-        messageText,
+    const validationCode =
+      this.activeWhatsappValidationService.parseValidationText(messageText);
+    if (!validationCode) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.active_validation.skip',
+        decision: 'active_whatsapp_validation',
+        outcome: 'not_applicable',
+        reason: 'validation_code_not_found',
+        phone,
       });
+      return false;
+    }
+
+    const eventId = ensureInboundEventId(data);
+    if (!eventId) {
+      throw new Error('active_whatsapp_validation_event_id_missing');
+    }
+
+    const claim = await this.activeWhatsappValidationLedger.claim({
+      accountId: data.account_id,
+      workerId: data.worker_id,
+      eventId,
+    });
+    if (claim.status === 'error') {
+      throw new Error('active_whatsapp_validation_ledger_claim_failed');
+    }
+
+    if (claim.status === 'duplicate') {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.active_validation.duplicate',
+        decision: 'active_whatsapp_validation',
+        outcome: 'handled',
+        reason: `ledger_${claim.state}`,
+        phone,
+        event_id: eventId,
+      });
+      return true;
+    }
+
+    let handled: boolean;
+    try {
+      await this.assertKafkaDispatchActive();
+      handled =
+        await this.activeWhatsappValidationService.handleIncomingMessage({
+          workerId: data.worker_id,
+          fromPhone: phone,
+          messageText,
+        });
+    } catch (error) {
+      const transition =
+        await this.activeWhatsappValidationLedger.markAmbiguous(claim, error);
+      this.logLifecycle(data, {
+        stage: 'message_upsert.active_validation.error',
+        decision: 'active_whatsapp_validation',
+        outcome: 'failed_closed',
+        reason: `ledger_${transition}`,
+        phone,
+        event_id: eventId,
+      });
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+
+    if (handled) {
+      const transition =
+        await this.activeWhatsappValidationLedger.markHandled(claim);
+      if (transition !== 'transitioned') {
+        throw new Error(
+          `active_whatsapp_validation_ledger_handled_${transition}`
+        );
+      }
+    } else {
+      const transition =
+        await this.activeWhatsappValidationLedger.release(claim);
+      if (transition !== 'transitioned') {
+        throw new Error(
+          `active_whatsapp_validation_ledger_release_${transition}`
+        );
+      }
+    }
+
     this.logLifecycle(data, {
       stage: 'message_upsert.active_validation.result',
       decision: 'active_whatsapp_validation',
       outcome: handled ? 'handled' : 'not_handled',
       phone,
+      event_id: eventId,
     });
     return handled;
   }
@@ -7013,36 +9345,54 @@ export class MessageUpsertConsume {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.upsertMessage();
+    this.inboundMessageSpoolService.startMessageUpsertConsumerRedrive(
+      (payload) => this.redriveParkedConsumerMessage(topic, payload)
+    );
 
-    this.runner = new KafkaConsumerRunner<IUpsertMessage>({
-      kafka: this.kafka,
-      topic,
-      groupId: 'group-underchat-message-upsert',
-      parse: (message) => this.parseMessage(message.value),
-      onInvalidMessage: (message) =>
-        this.parkInvalidKafkaMessage(topic, message),
-      failOnInvalidMessageHookError: true,
-      resolveEntityKey: (data, message) =>
-        this.resolveUpsertKafkaKey(data, message),
-      preserveEntityOrder: true,
-      handle: (data, context) =>
-        this.processKafkaMessageInPartition(
-          t,
-          topic,
-          data,
-          context.partition,
-          context.offset,
-          context
-        ),
-      maxRetries: this.MAX_CONSECUTIVE_FAILURES,
-      retryDelaysMs: this.PROCESS_RETRY_DELAYS,
-      logger: console,
-    });
+    try {
+      this.runner = new KafkaConsumerRunner<IUpsertMessage>({
+        kafka: this.kafka,
+        topic,
+        groupId: SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS.messageUpsert,
+        parse: (message) => this.parseMessage(message.value),
+        onInvalidMessage: (message) =>
+          this.parkInvalidKafkaMessage(topic, message),
+        failOnInvalidMessageHookError: true,
+        resolveEntityKey: (data, message) =>
+          this.resolveUpsertKafkaKey(data, message),
+        preserveEntityOrder: true,
+        acquireEffectLease: (data) =>
+          this.runtimeFence.acquireEffectLease(data),
+        classifyEffectLeaseRejection: async (data) =>
+          (await this.runtimeFence.isCurrent(data)) ? 'retry' : 'terminal',
+        handle: (data, context) =>
+          this.processKafkaMessageInPartition(
+            t,
+            topic,
+            data,
+            context.partition,
+            context.offset,
+            context
+          ),
+        maxRetries: this.MAX_CONSECUTIVE_FAILURES,
+        retryDelaysMs: this.PROCESS_RETRY_DELAYS,
+        onDiscarded: (data, context, error, reason) =>
+          this.parkRetryableKafkaMessage(data, context, error, reason),
+        failOnDiscardedHookError: true,
+        logger: console,
+      });
 
-    await this.runner.start(() => {
-      this.isRunning = true;
-    });
-    this.consumer = this.runner.consumer;
+      await this.runner.start(() => {
+        this.isRunning = true;
+      });
+      this.consumer = this.runner.consumer;
+    } catch (error) {
+      this.runner = null;
+      this.consumer = null;
+      this.isRunning = false;
+      await this.inboundMessageSpoolService.stopMessageUpsertConsumerRedrive();
+      throw error;
+    }
   }
 
   private async processKafkaMessageInPartition(
@@ -7053,14 +9403,73 @@ export class MessageUpsertConsume {
     offset: number,
     context: KafkaConsumerRunnerContext<IUpsertMessage>
   ): Promise<void> {
-    await this.processMessageWithLifecycle(
-      t,
-      topic,
+    const assertEventActive = this.createEventDispatchGuard(
       data,
-      partition,
-      offset,
-      context
+      context.assertActive
     );
+
+    try {
+      await assertEventActive();
+      await runWithKafkaDispatchGuard(assertEventActive, () =>
+        this.processMessageWithLifecycle(
+          t,
+          topic,
+          data,
+          partition,
+          offset,
+          context
+        )
+      );
+    } catch (error) {
+      if (this.isAccountOrWorkerNotFoundError(error)) {
+        await this.discardTerminalMessage(
+          data,
+          error,
+          'account_or_worker_not_found',
+          partition,
+          offset,
+          'warn',
+          {
+            missing_account_id: error.accountId,
+            missing_worker_id: error.workerId,
+          }
+        );
+        return;
+      }
+
+      if (this.isUnsafePersistedMessageConflictError(error)) {
+        await this.discardTerminalMessage(
+          data,
+          error,
+          'idempotency_conflict_ownership_mismatch',
+          partition,
+          offset,
+          'error',
+          {
+            persisted_message_id: error.persistedMessageId,
+          }
+        );
+        return;
+      }
+
+      if (this.isStaleRuntimeFenceError(error)) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.consume.discard',
+          decision: 'runtime_fence',
+          outcome: 'discarded',
+          reason: 'stale_or_replaced_runtime_fence',
+          topic,
+          partition,
+          offset,
+          source_provider: data.source_provider,
+          runtime_generation: data.runtime_generation,
+          connection_epoch: data.connection_epoch,
+        });
+        return;
+      }
+
+      throw error;
+    }
   }
 
   private async processMessageWithLifecycle(
@@ -7093,6 +9502,7 @@ export class MessageUpsertConsume {
     );
 
     try {
+      await this.assertKafkaDispatchActive();
       const processed = await this.processKafkaUpsertOnce(
         t,
         data,
@@ -7104,8 +9514,15 @@ export class MessageUpsertConsume {
       if (!processed) {
         throw new Error('Message processing returned false');
       }
+      await this.assertKafkaDispatchActive();
     } catch (error) {
       clearTimeout(timeout);
+      if (
+        this.isStaleRuntimeFenceError(error) ||
+        this.isAccountOrWorkerNotFoundError(error)
+      ) {
+        throw error;
+      }
       await this.handleProcessRetry(
         data,
         partition,
@@ -7328,6 +9745,143 @@ export class MessageUpsertConsume {
     partition: number,
     offset: number
   ): Promise<boolean> {
+    const officialReplay =
+      Number(data.consumer_redrive_attempt) > 0
+        ? null
+        : this.classifyOfficialWhatsappReplay(data);
+    if (officialReplay?.discard && officialReplay.reason) {
+      const providerTimestamp = officialReplay.providerTimestampMs
+        ? new Date(officialReplay.providerTimestampMs).toISOString()
+        : null;
+      return this.discardTerminalMessage(
+        data,
+        new Error(officialReplay.reason),
+        officialReplay.reason,
+        partition,
+        offset,
+        'warn',
+        {
+          source_provider: data.source_provider ?? null,
+          provider_timestamp: providerTimestamp,
+          provider_timestamp_ms: officialReplay.providerTimestampMs,
+          age_ms: officialReplay.ageMs,
+          max_age_ms: OFFICIAL_WHATSAPP_REPLAY_EFFECT_MAX_AGE_MS,
+          future_tolerance_ms: OFFICIAL_WHATSAPP_PROVIDER_FUTURE_TOLERANCE_MS,
+          consumer_redrive_attempt: data.consumer_redrive_attempt ?? null,
+        }
+      );
+    }
+
+    const isWebhookIntegrationMessage =
+      data.source_provider === 'webhook' ||
+      data.webhook_message_type === 'message' ||
+      data.webhook_message_type === 'chatbot';
+    if (isWebhookIntegrationMessage) {
+      const revision = data.integration_entitlement_revision;
+      if (!revision) {
+        planEntitlementTelemetryStore.recordDecision(
+          'message_consumer',
+          'denied'
+        );
+        planEntitlementTelemetryStore.recordSuppression(
+          'message_consumer',
+          'legacy_revision_missing'
+        );
+        console.warn(
+          '[PlanEntitlementAudit] Message upsert event suppressed',
+          createPlanEntitlementAuditContext({
+            surface: 'message_consumer',
+            outcome: 'denied',
+            accountId: data.account_id,
+            planProductId: EPlanProduct.integration,
+            source: null,
+            eventId: data.message?.key.id,
+            reason: 'integration_entitlement_missing',
+          })
+        );
+        return this.discardTerminalMessage(
+          data,
+          new Error('Webhook message is missing its entitlement revision'),
+          'integration_entitlement_missing',
+          partition,
+          offset
+        );
+      }
+
+      if (!this.planEntitlementService) {
+        planEntitlementTelemetryStore.recordDecision(
+          'message_consumer',
+          'unavailable'
+        );
+        throw new Error('plan_entitlement_unavailable');
+      }
+
+      try {
+        const entitlement = await this.planEntitlementService.assertEntitled(
+          data.account_id,
+          EPlanProduct.integration,
+          { expectedRevision: revision }
+        );
+        planEntitlementTelemetryStore.recordDecision(
+          'message_consumer',
+          'allowed'
+        );
+        console.info(
+          '[PlanEntitlementAudit] Message upsert event admitted',
+          createPlanEntitlementAuditContext({
+            surface: 'message_consumer',
+            outcome: 'allowed',
+            accountId: data.account_id,
+            planProductId: EPlanProduct.integration,
+            revision: entitlement?.revision ?? revision,
+            source: entitlement?.source,
+            eventId: data.message?.key.id,
+          })
+        );
+      } catch (error) {
+        if (
+          error instanceof PlanEntitlementDeniedError ||
+          error instanceof PlanEntitlementRevisionMismatchError
+        ) {
+          planEntitlementTelemetryStore.recordDecision(
+            'message_consumer',
+            'denied'
+          );
+          planEntitlementTelemetryStore.recordSuppression(
+            'message_consumer',
+            error instanceof PlanEntitlementRevisionMismatchError
+              ? 'revision_mismatch'
+              : 'integration_entitlement_missing'
+          );
+          console.warn(
+            '[PlanEntitlementAudit] Message upsert event suppressed',
+            createPlanEntitlementAuditContext({
+              surface: 'message_consumer',
+              outcome: 'denied',
+              accountId: data.account_id,
+              planProductId: EPlanProduct.integration,
+              revision: error.entitlement.revision,
+              source: getPlanEntitlementAuditSource(error.entitlement),
+              eventId: data.message?.key.id,
+              reason: 'integration_entitlement_missing',
+            })
+          );
+          return this.discardTerminalMessage(
+            data,
+            error,
+            'integration_entitlement_missing',
+            partition,
+            offset
+          );
+        }
+        planEntitlementTelemetryStore.recordDecision(
+          'message_consumer',
+          'unavailable'
+        );
+        throw error;
+      }
+    }
+
     const discardReason = this.getDiscardUpsertReason(data);
     if (discardReason) {
       this.logLifecycle(data, {
@@ -7439,66 +9993,23 @@ export class MessageUpsertConsume {
     timeoutLogged: boolean,
     error: unknown
   ): Promise<void> {
-    const isLastAttempt = attempt >= maxAttempts;
     const isElasticReadOnly =
       this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(error);
     const lockTimeout = this.isLockAcquisitionTimeoutError(error);
-
-    if (!isLastAttempt && isElasticReadOnly) {
-      this.logLifecycle(data, {
-        stage: 'message_upsert.process.retry',
-        decision: 'process_message',
-        outcome: 'retrying',
-        reason: 'elastic_read_only_allow_delete',
-        level: 'error',
-        partition,
-        offset,
-        attempt,
-        max_attempts: maxAttempts,
-      });
-      throw error instanceof Error ? error : new Error(String(error));
-    }
-
-    if (isLastAttempt) {
-      const reason = isElasticReadOnly
+    const reason = this.isAccountOrWorkerNotFoundError(error)
+      ? 'account_or_worker_not_found'
+      : isElasticReadOnly
         ? 'elastic_read_only_allow_delete'
         : lockTimeout
           ? 'lock_acquisition_timeout'
-          : 'consecutive_failures_exhausted';
-      this.logLifecycle(data, {
-        stage: 'message_upsert.process.discard',
-        decision: 'process_message',
-        outcome: 'discarded',
-        reason,
-        level: 'error',
-        partition,
-        offset,
-        retry_count: attempt,
-        max_attempts: maxAttempts,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      await this.discardTerminalMessage(
-        data,
-        error,
-        reason,
-        partition,
-        offset,
-        'error',
-        {
-          retry_count: attempt,
-          max_attempts: maxAttempts,
-        }
-      );
-      return;
-    }
+          : 'message_processing_retry_exhausted';
     this.logLifecycle(data, {
       stage: timeoutLogged
         ? 'message_upsert.process.timeout_retry'
         : 'message_upsert.process.error',
       decision: 'process_message',
-      outcome: 'retrying',
-      reason: timeoutLogged ? 'timeout' : 'exception',
+      outcome: 'deferred',
+      reason,
       level: 'error',
       partition,
       offset,
@@ -7510,8 +10021,144 @@ export class MessageUpsertConsume {
     throw error instanceof Error ? error : new Error(String(error));
   }
 
+  private async parkRetryableKafkaMessage(
+    data: IUpsertMessage,
+    context: KafkaConsumerRunnerContext<IUpsertMessage>,
+    error: unknown,
+    runnerReason: KafkaConsumerRunnerDiscardReason
+  ): Promise<void> {
+    const reason = this.resolveConsumerParkingReason(error);
+    const kafkaKey =
+      context.kafkaKey || this.resolveUpsertKafkaKey(data, context.message);
+    const previousRedriveAttempt = Number(data.consumer_redrive_attempt);
+    const retryCount = Number.isSafeInteger(previousRedriveAttempt)
+      ? Math.max(context.attempt, previousRedriveAttempt + 1)
+      : context.attempt;
+
+    await this.inboundMessageSpoolService.parkConsumerMessage({
+      provider: 'message_upsert_consumer',
+      account_id: data.account_id,
+      worker_id: data.worker_id || 'message-upsert',
+      event_source: 'message_upsert_consume',
+      reason,
+      stage: 'message_upsert.consume.retry_parked',
+      parked_at: new Date().toISOString(),
+      next_attempt_at: Date.now() + MESSAGE_UPSERT_INITIAL_REDRIVE_DELAY_MS,
+      kafka_topic: context.topic,
+      kafka_key: kafkaKey,
+      dedupe_key: this.resolveConsumerParkingDedupeKey(data, context),
+      partition: context.partition,
+      offset: context.offset,
+      retry_count: retryCount,
+      error: error instanceof Error ? error.message : String(error),
+      upsert: data,
+      raw_meta: {
+        runner_discard_reason: runnerReason,
+        source_timestamp: context.message.timestamp,
+      },
+    });
+  }
+
+  private resolveConsumerParkingReason(error: unknown): string {
+    if (this.isAccountOrWorkerNotFoundError(error)) {
+      return 'account_or_worker_not_found';
+    }
+    if (this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(error)) {
+      return 'elastic_read_only_allow_delete';
+    }
+    if (this.isLockAcquisitionTimeoutError(error)) {
+      return 'lock_acquisition_timeout';
+    }
+    if (
+      error instanceof Error &&
+      error.message.startsWith(
+        'Persisted chat message was not found after conflict:'
+      )
+    ) {
+      return 'idempotency_conflict_visibility_lag';
+    }
+    return 'message_processing_retry_exhausted';
+  }
+
+  private resolveConsumerParkingDedupeKey(
+    data: IUpsertMessage,
+    context: Pick<
+      KafkaConsumerRunnerContext<IUpsertMessage>,
+      'topic' | 'partition' | 'offset'
+    >
+  ): string {
+    const eventIdentity =
+      ensureInboundEventId(data) ?? data.message?.key?.id?.trim();
+    const sourceIdentity = eventIdentity
+      ? `event\0${eventIdentity}`
+      : `kafka-offset\0${context.topic}\0${context.partition}\0${context.offset}`;
+    return createHash('sha256')
+      .update(`${data.account_id}\0${data.worker_id}\0${sourceIdentity}`)
+      .digest('hex');
+  }
+
+  private async redriveParkedConsumerMessage(
+    expectedTopic: string,
+    payload: IInboundMessageParkingPayload
+  ): Promise<InboundMessageParkingRedriveDisposition> {
+    if (
+      payload.provider !== 'message_upsert_consumer' ||
+      !payload.upsert ||
+      !MESSAGE_UPSERT_RECOVERABLE_PARKING_REASONS.has(payload.reason)
+    ) {
+      return 'ignored';
+    }
+
+    const storedTopic = payload.kafka_topic?.trim();
+    if (storedTopic && storedTopic !== expectedTopic) {
+      return 'ignored';
+    }
+
+    const redriveAttempt = Math.max(
+      1,
+      payload.retry_count ?? payload.upsert.consumer_redrive_attempt ?? 1
+    );
+    const redriveUpsert: IUpsertMessage = {
+      ...payload.upsert,
+      consumer_redrive_attempt: redriveAttempt,
+    };
+
+    if (!(await this.runtimeFence.isCurrent(redriveUpsert))) {
+      return 'discarded';
+    }
+
+    const lease = await this.runtimeFence.acquireEffectLease(redriveUpsert);
+    if (!lease) {
+      if (!(await this.runtimeFence.isCurrent(redriveUpsert))) {
+        return 'discarded';
+      }
+      throw new Error('message_upsert_redrive_runtime_lease_unavailable');
+    }
+
+    try {
+      lease.assertOwned();
+      await lease.assertOwnedRemote();
+      const kafkaKey =
+        payload.kafka_key?.trim() || this.resolveUpsertKafkaKey(redriveUpsert);
+      await this.streamProducerService.send(
+        expectedTopic,
+        redriveUpsert,
+        kafkaKey
+      );
+      return 'published';
+    } finally {
+      await lease.release().catch((error) => {
+        console.error('[MessageUpsert] Redrive runtime lease release failed:', {
+          worker_id: payload.worker_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+  }
+
   public async close(): Promise<void> {
     this.isRunning = false;
+    await this.inboundMessageSpoolService.stopMessageUpsertConsumerRedrive();
 
     if (this.runner) {
       await this.runner.close();
@@ -7530,13 +10177,20 @@ export class MessageUpsertConsume {
     return buildUpsertMessageKafkaKey(data, messageKey);
   }
 
-  private async saveChatWithCaches(chat: IChat): Promise<boolean> {
-    const result = await this.chatService.saveChat(chat);
+  private async saveChatWithCaches(
+    chat: IChat,
+    outboundWebhook?: ChatOutboundWebhookMutation
+  ): Promise<void> {
+    const result = await this.chatService.saveChat(chat, {
+      refresh: true,
+      outboundWebhook,
+    });
 
-    if (!result) {
-      await this.chatService.invalidateChatCache(chat);
+    if (result === true) {
+      return;
     }
 
-    return result ?? false;
+    await this.chatService.invalidateChatCache(chat);
+    throw new Error(`Chat persistence was not confirmed: ${chat.chat_id}`);
   }
 }

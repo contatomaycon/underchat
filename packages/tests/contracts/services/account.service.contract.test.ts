@@ -95,6 +95,7 @@ jest.mock(
 );
 
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { AccountService } from '@core/services/account.service';
 
 describe('AccountService', () => {
@@ -186,6 +187,14 @@ describe('AccountService', () => {
       scanStream: jest.fn(),
       del: jest.fn(async () => 0),
     };
+    const planEntitlementService = {
+      resolveAuthoritatively: jest.fn<
+        Promise<{ allowed: boolean; source: 'plan' | null }>,
+        []
+      >(async () => ({ allowed: true, source: 'plan' })),
+      installDenyFence: jest.fn(async () => undefined),
+      refreshAfterMutation: jest.fn(async () => ({ allowed: false })),
+    };
 
     const service = new AccountService(
       accountInfoViewerRepository as never,
@@ -210,7 +219,8 @@ describe('AccountService', () => {
       planAccountExclusiveCreatorRepository as never,
       planAccountExclusiveDeleterRepository as never,
       exclusivePlansListerRepository as never,
-      redis as never
+      redis as never,
+      planEntitlementService as never
     );
 
     return {
@@ -237,6 +247,7 @@ describe('AccountService', () => {
       planAccountExclusiveCreatorRepository,
       planAccountExclusiveDeleterRepository,
       exclusivePlansListerRepository,
+      planEntitlementService,
       redis,
     };
   };
@@ -265,6 +276,7 @@ describe('AccountService', () => {
       planAccountExclusiveCreatorRepository,
       planAccountExclusiveDeleterRepository,
       exclusivePlansListerRepository,
+      planEntitlementService,
     } = makeService();
 
     await expect(service.viewAccountInfoByAccountId('acc-1')).resolves.toEqual({
@@ -348,7 +360,7 @@ describe('AccountService', () => {
     ).toHaveBeenCalledWith('acc-1', 'prod-1');
     expect(
       accountPlanProductIdsListerRepository.listActivePlanProductIds
-    ).toHaveBeenCalledWith('acc-1');
+    ).toHaveBeenCalledWith('acc-1', {});
     expect(
       accountViewerExistsRepository.existsAccountById
     ).toHaveBeenCalledWith('acc-1');
@@ -418,6 +430,53 @@ describe('AccountService', () => {
     expect(
       accountUpdaterRepository.updateAccountStatusById
     ).toHaveBeenCalledWith('acc-1', EAccountStatus.blocked);
+    expect(planEntitlementService.installDenyFence).toHaveBeenCalledTimes(2);
+    expect(planEntitlementService.installDenyFence).toHaveBeenCalledWith(
+      'acc-1',
+      EPlanProduct.integration
+    );
+    expect(planEntitlementService.refreshAfterMutation).toHaveBeenCalledTimes(
+      2
+    );
+    expect(planEntitlementService.refreshAfterMutation).toHaveBeenCalledWith(
+      'acc-1',
+      EPlanProduct.integration
+    );
+  });
+
+  it('does not require a Redis deny fence for already-denied delete and block mutations', async () => {
+    const {
+      service,
+      accountDeleterRepository,
+      accountUpdaterRepository,
+      planEntitlementService,
+    } = makeService();
+    planEntitlementService.resolveAuthoritatively.mockResolvedValue({
+      allowed: false,
+      source: null,
+    });
+    planEntitlementService.installDenyFence.mockRejectedValue(
+      new Error('redis unavailable')
+    );
+
+    await expect(service.deleteAccountById('acc-1')).resolves.toBe(true);
+    await expect(
+      service.updateAccountStatusById('acc-1', EAccountStatus.blocked)
+    ).resolves.toBe(true);
+
+    expect(planEntitlementService.resolveAuthoritatively).toHaveBeenCalledTimes(
+      2
+    );
+    expect(planEntitlementService.installDenyFence).not.toHaveBeenCalled();
+    expect(accountDeleterRepository.deleteAccountById).toHaveBeenCalledWith(
+      'acc-1'
+    );
+    expect(
+      accountUpdaterRepository.updateAccountStatusById
+    ).toHaveBeenCalledWith('acc-1', EAccountStatus.blocked);
+    expect(planEntitlementService.refreshAfterMutation).toHaveBeenCalledTimes(
+      2
+    );
   });
 
   it('evaluates plan activity and blocked status across all branches', async () => {
@@ -522,6 +581,33 @@ describe('AccountService', () => {
       }
     );
     await expect(service.isAccountBlocked('acc-1')).resolves.toBe(false);
+  });
+
+  it('reconciles the denied epoch before and after unblocking an account', async () => {
+    const { service, accountUpdaterRepository, planEntitlementService } =
+      makeService();
+
+    await expect(
+      service.updateAccountStatusById('acc-1', EAccountStatus.active)
+    ).resolves.toBe(true);
+
+    expect(planEntitlementService.installDenyFence).not.toHaveBeenCalled();
+    expect(planEntitlementService.refreshAfterMutation).toHaveBeenCalledTimes(
+      2
+    );
+    expect(planEntitlementService.refreshAfterMutation).toHaveBeenNthCalledWith(
+      1,
+      'acc-1',
+      EPlanProduct.integration
+    );
+    expect(planEntitlementService.refreshAfterMutation).toHaveBeenNthCalledWith(
+      2,
+      'acc-1',
+      EPlanProduct.integration
+    );
+    expect(
+      accountUpdaterRepository.updateAccountStatusById
+    ).toHaveBeenCalledWith('acc-1', EAccountStatus.active);
   });
 
   it('clears all account sessions by scanning redis keys', async () => {

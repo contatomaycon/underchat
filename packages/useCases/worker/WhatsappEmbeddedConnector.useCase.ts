@@ -10,7 +10,11 @@ import {
   MetaWhatsappPhoneNumber,
 } from '@core/services/metaWhatsappEmbedded.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
-import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
+import {
+  ICreateWorkerWhatsappOfficialConnectionWithAccessMigrationResult,
+  OfficialWhatsappPhoneAlreadyConnectedError,
+  WorkerWhatsappOfficialConnectionRepository,
+} from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import { ConnectWhatsappEmbeddedRequest } from '@core/schema/worker/connectWhatsappEmbedded/request.schema';
 import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhatsappEmbedded/response.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -18,8 +22,13 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import {
+  chatAccountCentrifugo,
+  workerCentrifugoQueue,
+} from '@core/common/functions/centrifugoQueue';
 import { currentTime } from '@core/common/functions/currentTime';
+import { createUserAccessScopeCacheKey } from '@core/common/functions/createCacheKey';
+import Redis from 'ioredis';
 
 @injectable()
 export class WhatsappEmbeddedConnectorUseCase {
@@ -37,8 +46,49 @@ export class WhatsappEmbeddedConnectorUseCase {
     @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
     @inject(WorkerWhatsappOfficialConnectionRepository)
-    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository
+    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
+
+  private async synchronizeMigratedUserChannelAccess(
+    accountId: string,
+    migratedUserChannels: ReadonlyArray<{
+      user_id: string;
+      channels: ReadonlyArray<{ id: string; name: string }>;
+    }>
+  ): Promise<void> {
+    const migratedUserChannelsById = new Map(
+      migratedUserChannels.map((userChannels) => [
+        userChannels.user_id,
+        userChannels.channels,
+      ])
+    );
+
+    await Promise.all(
+      Array.from(migratedUserChannelsById).map(async ([userId, channels]) => {
+        try {
+          await this.redis.del(createUserAccessScopeCacheKey(userId));
+        } catch {
+          // A stale authorization scope expires quickly; connecting a channel
+          // must not fail because cache invalidation is temporarily unavailable.
+        }
+
+        try {
+          await this.centrifugoService.publishSub(
+            chatAccountCentrifugo(accountId),
+            {
+              event: 'user_channels_updated',
+              user_id: userId,
+              channels,
+            }
+          );
+        } catch {
+          // Best effort: a reconnect must not fail after the transaction has
+          // committed only because realtime notification is unavailable.
+        }
+      })
+    );
+  }
 
   private async validate(
     t: TFunction<'translation', undefined>,
@@ -160,28 +210,45 @@ export class WhatsappEmbeddedConnectorUseCase {
       token.access_token
     );
 
-    await this.workerWhatsappOfficialConnectionRepository.createWithWorker({
-      worker_whatsapp_official_connection_id: uuidv7(),
-      worker_id: workerId,
-      account_id: accountId,
-      server_id: null,
-      worker_status_id: EWorkerStatus.online,
-      worker_type_id: EWorkerType.whatsapp,
-      name,
-      number,
-      connection_date: connectedAt,
-      business_id: input.business_id ?? null,
-      waba_id: input.waba_id,
-      phone_number_id: phone.id,
-      display_phone_number: phone.display_phone_number,
-      verified_name: phone.verified_name,
-      access_token_encrypted: accessTokenEncrypted,
-      token_type: token.token_type,
-      expires_at: token.expires_at,
-      scope: token.scope,
-      api_version: config.api_version,
-      connected_at: connectedAt,
-    });
+    let created: ICreateWorkerWhatsappOfficialConnectionWithAccessMigrationResult;
+    try {
+      created =
+        await this.workerWhatsappOfficialConnectionRepository.createWithWorkerAndMigrateChannelAccess(
+          {
+            worker_whatsapp_official_connection_id: uuidv7(),
+            worker_id: workerId,
+            account_id: accountId,
+            server_id: null,
+            worker_status_id: EWorkerStatus.online,
+            worker_type_id: EWorkerType.whatsapp,
+            name,
+            number,
+            connection_date: connectedAt,
+            business_id: input.business_id ?? null,
+            waba_id: input.waba_id,
+            phone_number_id: phone.id,
+            display_phone_number: phone.display_phone_number,
+            verified_name: phone.verified_name,
+            access_token_encrypted: accessTokenEncrypted,
+            token_type: token.token_type,
+            expires_at: token.expires_at,
+            scope: token.scope,
+            api_version: config.api_version,
+            connected_at: connectedAt,
+          }
+        );
+    } catch (error) {
+      if (error instanceof OfficialWhatsappPhoneAlreadyConnectedError) {
+        throw new Error(t('whatsapp_official_phone_already_connected'));
+      }
+
+      throw error;
+    }
+
+    await this.synchronizeMigratedUserChannelAccess(
+      accountId,
+      created.migrated_user_channels
+    );
 
     const payload: IBaileysConnectionState = {
       code: ECodeMessage.connectionEstablished,

@@ -6,7 +6,10 @@
     "apps/mobile/**/*.ts",
     "apps/mobile/**/*.tsx",
     "apps/underchat_authenticator/**/*.ts",
+    "apps/underchat_chrome_extension/**/*.ts",
     "apps/public_api/src/**/*.ts",
+    "apps/public_docs/env.d.ts",
+    "apps/public_docs/docs/.vitepress/**/*.ts",
     "apps/schedule_api/src/**/*.ts",
     "apps/service_api/src/**/*.ts",
     "apps/web/src/**/*.ts",
@@ -20,6 +23,7 @@
     "packages/**/*.ts",
     "drizzle.config.ts",
     "jest.config.ts",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "scripts/worker-command-operational-barrier.ts"
   ]
 }

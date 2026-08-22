@@ -100,6 +100,9 @@ const selectCard = (card: ChannelTypeCard) => {
         <VIcon :icon="card.icon" size="28" />
       </span>
       <span class="channel-type-card__body">
+        <span v-if="card.featured" class="channel-type-card__badge">
+          {{ $t('channel_type_official_badge') }}
+        </span>
         <span class="channel-type-card__title">{{ card.title }}</span>
         <span class="channel-type-card__description">
           {{ card.description }}
@@ -116,51 +119,65 @@ const selectCard = (card: ChannelTypeCard) => {
 .channel-type-cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
 .channel-type-card {
   position: relative;
   display: flex;
-  min-block-size: 124px;
+  min-block-size: 136px;
   align-items: flex-start;
   gap: 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 8px;
+  border-radius: 17px;
   background: rgb(var(--v-theme-surface));
   color: rgb(var(--v-theme-on-surface));
   cursor: pointer;
   inline-size: 100%;
-  padding: 16px;
+  padding: 18px;
   text-align: start;
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
-    transform 160ms ease,
+    transform 220ms ease,
     background-color 160ms ease;
 }
 
 .channel-type-card:hover {
   border-color: rgba(var(--v-theme-primary), 0.42);
-  box-shadow: 0 10px 28px rgba(var(--v-theme-on-surface), 0.08);
-  transform: translateY(-1px);
+  box-shadow: 0 18px 42px rgba(var(--v-theme-on-surface), 0.1);
+  transform: translateY(-3px);
 }
 
 .channel-type-card--featured {
   grid-column: 1 / -1;
-  min-block-size: 118px;
+  min-block-size: 126px;
   background:
     linear-gradient(
       135deg,
-      rgba(37, 211, 102, 0.14),
-      rgba(var(--v-theme-surface), 1) 54%
+      rgba(37, 211, 102, 0.16),
+      rgba(var(--v-theme-surface), 1) 62%
     ),
     rgb(var(--v-theme-surface));
 }
 
+.channel-type-card--featured::before {
+  position: absolute;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #25d366, rgba(37, 211, 102, 0.24));
+  block-size: 4px;
+  content: '';
+  inline-size: 104px;
+  inset-block-start: 0;
+  inset-inline-start: 18px;
+}
+
 .channel-type-card--selected {
   border-color: rgb(var(--v-theme-primary));
-  box-shadow: 0 0 0 3px rgba(var(--v-theme-primary), 0.14);
+  background-color: rgba(var(--v-theme-primary), 0.025);
+  box-shadow:
+    0 0 0 4px rgba(var(--v-theme-primary), 0.11),
+    0 16px 38px rgba(var(--v-theme-primary), 0.09);
 }
 
 .channel-type-card--disabled {
@@ -173,9 +190,9 @@ const selectCard = (card: ChannelTypeCard) => {
   display: inline-grid;
   flex: 0 0 44px;
   place-items: center;
-  border-radius: 8px;
-  block-size: 44px;
-  inline-size: 44px;
+  border-radius: 13px;
+  block-size: 48px;
+  inline-size: 48px;
 }
 
 .channel-type-card--official .channel-type-card__icon {
@@ -200,16 +217,30 @@ const selectCard = (card: ChannelTypeCard) => {
   gap: 6px;
 }
 
+.channel-type-card__badge {
+  inline-size: fit-content;
+  border: 1px solid rgba(37, 211, 102, 0.24);
+  border-radius: 999px;
+  background: rgba(37, 211, 102, 0.09);
+  color: #159447;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  margin-block-end: 2px;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+
 .channel-type-card__title {
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: 0.98rem;
+  font-weight: 750;
   line-height: 1.25;
 }
 
 .channel-type-card__description {
   color: rgba(var(--v-theme-on-surface), 0.68);
-  font-size: 0.82rem;
-  line-height: 1.45;
+  font-size: 0.8rem;
+  line-height: 1.5;
 }
 
 .channel-type-card__check {
@@ -218,11 +249,12 @@ const selectCard = (card: ChannelTypeCard) => {
   place-items: center;
   border-radius: 999px;
   background: rgb(var(--v-theme-primary));
-  block-size: 24px;
+  block-size: 26px;
   color: rgb(var(--v-theme-on-primary));
-  inline-size: 24px;
-  inset-block-start: 12px;
-  inset-inline-end: 12px;
+  inline-size: 26px;
+  inset-block-start: 13px;
+  inset-inline-end: 13px;
+  box-shadow: 0 5px 12px rgba(var(--v-theme-primary), 0.28);
 }
 
 @media (max-width: 720px) {
@@ -232,6 +264,16 @@ const selectCard = (card: ChannelTypeCard) => {
 
   .channel-type-card--featured {
     grid-column: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .channel-type-card {
+    transition: none;
+  }
+
+  .channel-type-card:hover {
+    transform: none;
   }
 }
 </style>

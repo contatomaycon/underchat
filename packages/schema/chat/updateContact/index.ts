@@ -5,6 +5,7 @@ import {
   updateChatContactParamsRequestSchema,
   updateChatContactRequestSchema,
 } from './request.schema';
+import { chatMutationErrorResponseSchema } from '../mutationErrorResponse.schema';
 
 export const updateChatContactSchema = {
   description: 'Edita um contato existente para chat',
@@ -37,6 +38,7 @@ export const updateChatContactSchema = {
       },
       { description: 'Successful' }
     ),
+    400: chatMutationErrorResponseSchema('Bad Request'),
     401: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -55,6 +57,7 @@ export const updateChatContactSchema = {
       },
       { description: 'Forbidden' }
     ),
+    404: chatMutationErrorResponseSchema('Not Found'),
     500: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

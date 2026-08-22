@@ -1,9 +1,13 @@
 import type { Message } from '@wwebjs/whatsapp-web.js';
+import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import type { IWwebjsPinEventData } from '@core/common/interfaces/IWwebjsPinEventData';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { wwebjsEnvironment } from '@core/config/environments';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { extractWwebjsMessageId } from './wwebjsMessageId';
+import { isProviderAuxiliaryInvocationFenceError } from '@core/common/functions/providerAuxiliaryInvocation';
 
 const E2E_ENCRYPT_NOTIFICATION_TEXT =
   'As mensagens e chamadas são protegidas com criptografia de ponta a ponta. Ninguém fora desta conversa, nem mesmo o WhatsApp, pode ler ou ouvi-las.';
@@ -167,15 +171,7 @@ interface WwebjsTemplateEchoResolution {
 }
 
 function getMessageId(msg: Message): string | undefined {
-  if (!msg?.id) return undefined;
-  if (
-    typeof msg.id === 'object' &&
-    msg.id !== null &&
-    '_serialized' in msg.id
-  ) {
-    return (msg.id as { _serialized: string })._serialized;
-  }
-  return String(msg.id);
+  return extractWwebjsMessageId(msg);
 }
 
 function getNonEmptyString(value: unknown): string | undefined {
@@ -896,6 +892,106 @@ function buildTemplateContent(payload: WwebjsTemplatePayload): WwebjsContent {
   };
 }
 
+const SAFE_INCOMING_LOG_STRING_KEYS = new Set([
+  'stage',
+  'rawtype',
+  'rawsubtype',
+  'mappedtype',
+  'providerupserttype',
+  'status',
+  'decision',
+  'outcome',
+  'reason',
+]);
+
+function normalizeIncomingLogKey(key: string): string {
+  return key.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+}
+
+function hashIncomingLogIdentifier(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return `sha256:${createHash('sha256').update(value.trim()).digest('hex')}`;
+}
+
+function safeIncomingLogFieldNames(value: Record<string, unknown>): string[] {
+  return Object.keys(value)
+    .map((key) =>
+      /^[a-zA-Z0-9_.:-]{1,80}$/.test(key) ? key : '[invalid-field-name]'
+    )
+    .sort();
+}
+
+function isIncomingLogIdentifierKey(key: string): boolean {
+  const normalized = normalizeIncomingLogKey(key);
+  if (normalized === 'workerid' || normalized === 'accountid') return false;
+  return (
+    normalized === 'id' ||
+    normalized.endsWith('id') ||
+    normalized.endsWith('jid') ||
+    normalized.endsWith('key') ||
+    normalized === 'from' ||
+    normalized === 'to' ||
+    normalized === 'author' ||
+    normalized === 'participant'
+  );
+}
+
+function sanitizeIncomingLogValue(key: string, value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+
+  const normalizedKey = normalizeIncomingLogKey(key);
+  if (isIncomingLogIdentifierKey(key)) {
+    return hashIncomingLogIdentifier(value);
+  }
+  if (typeof value === 'boolean' || typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    if (
+      normalizedKey === 'workerid' ||
+      normalizedKey === 'accountid' ||
+      SAFE_INCOMING_LOG_STRING_KEYS.has(normalizedKey)
+    ) {
+      return value;
+    }
+    return { kind: 'string', bytes: Buffer.byteLength(value) };
+  }
+  if (Buffer.isBuffer(value) || ArrayBuffer.isView(value)) {
+    return { kind: 'binary', bytes: value.byteLength };
+  }
+  if (Array.isArray(value)) {
+    if (
+      normalizedKey.endsWith('fields') &&
+      value.every((item) => typeof item === 'string')
+    ) {
+      return value
+        .map((item) =>
+          /^[a-zA-Z0-9_.:-]{1,80}$/.test(item) ? item : '[invalid-field-name]'
+        )
+        .sort();
+    }
+    return { kind: 'array', count: value.length };
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return {
+      kind: 'object',
+      field_count: Object.keys(record).length,
+      fields: safeIncomingLogFieldNames(record),
+    };
+  }
+  return { kind: typeof value };
+}
+
+function sanitizeIncomingLogPayload(
+  value: Record<string, unknown>
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      sanitizeIncomingLogValue(key, item),
+    ])
+  );
+}
+
 function safeStringify(value: unknown, maxLength = 4000): string {
   try {
     const seen = new WeakSet<object>();
@@ -911,13 +1007,16 @@ function safeStringify(value: unknown, maxLength = 4000): string {
     return serialized.length > maxLength
       ? `${serialized.slice(0, maxLength)}...`
       : serialized;
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+  } catch {
+    return '{"error_code":"serialization_failed"}';
   }
 }
 
 function logWwebjsIncomingDebug(payload: Record<string, unknown>): void {
-  console.warn('[WWEBJS_INCOMING_DEBUG]', safeStringify(payload));
+  console.warn(
+    '[WWEBJS_INCOMING_DEBUG]',
+    safeStringify(sanitizeIncomingLogPayload(payload))
+  );
 }
 
 function getRawDataFieldNames(
@@ -934,7 +1033,10 @@ function hasRawDataRecord(
 }
 
 function logWwebjsIncomingSummary(payload: Record<string, unknown>): void {
-  console.info('[WWEBJS_INCOMING_SUMMARY]', safeStringify(payload));
+  console.info(
+    '[WWEBJS_INCOMING_SUMMARY]',
+    safeStringify(sanitizeIncomingLogPayload(payload))
+  );
 }
 
 function resolveWwebjsUpsertContent({
@@ -1224,23 +1326,7 @@ function resolvePinType(
 }
 
 function getSerializedId(value: unknown): string | undefined {
-  if (!value) return undefined;
-  if (typeof value === 'string') {
-    return getNonEmptyString(value);
-  }
-  if (typeof value !== 'object') return undefined;
-
-  const objectValue = value as Record<string, unknown>;
-  const directKeys = ['_serialized', 'id', 'stanzaId', 'stanzaID'];
-  for (const key of directKeys) {
-    const candidate = objectValue[key];
-    if (typeof candidate === 'string') {
-      const normalized = getNonEmptyString(candidate);
-      if (normalized) return normalized;
-    }
-  }
-
-  return undefined;
+  return extractWwebjsMessageId(value, { allowStanzaIdFallback: true });
 }
 
 function resolvePinParentMessageId(
@@ -2213,7 +2299,8 @@ function buildQuotedProtoMessageFromRaw(
 }
 
 async function buildQuotedContextInfo(
-  msg: Message
+  msg: Message,
+  invokeProvider?: <T>(invoke: () => Promise<T>) => Promise<T>
 ): Promise<Record<string, unknown> | undefined> {
   const rawData = getRawMessageData(msg);
   const rawQuotedId = getQuotedIdFromRaw(rawData);
@@ -2227,7 +2314,9 @@ async function buildQuotedContextInfo(
   }
 
   try {
-    const quoted = await msg.getQuotedMessage();
+    const quoted = await (invokeProvider
+      ? invokeProvider(() => msg.getQuotedMessage())
+      : msg.getQuotedMessage());
     if (quoted) {
       const stanzaId = getMessageId(quoted) ?? rawQuotedId;
       if (!stanzaId) return undefined;
@@ -2245,7 +2334,11 @@ async function buildQuotedContextInfo(
 
       return contextInfo;
     }
-  } catch {}
+  } catch (error) {
+    if (isProviderAuxiliaryInvocationFenceError(error)) {
+      throw error;
+    }
+  }
 
   if (!rawQuotedId) return undefined;
 
@@ -2272,7 +2365,8 @@ export async function wwebjsMessageToUpsert(
   msg: Message,
   resolvedJids?: WwebjsResolvedJids,
   pushName?: string,
-  pinEventData?: IWwebjsPinEventData
+  pinEventData?: IWwebjsPinEventData,
+  invokeProvider?: <T>(invoke: () => Promise<T>) => Promise<T>
 ): Promise<IUpsertMessage | null> {
   if (!msg?.id) return null;
 
@@ -2320,7 +2414,7 @@ export async function wwebjsMessageToUpsert(
     from: msg.from ?? null,
     to: msg.to ?? null,
     author: msg.author ?? null,
-    body_preview: rawBody.trim().slice(0, 500) || null,
+    body_bytes: Buffer.byteLength(rawBody),
     raw_data_fields: getRawDataFieldNames(rawData),
     has_interactive_message: hasRawDataRecord(rawData, 'interactiveMessage'),
     has_native_flow_message: hasRawDataRecord(rawData, 'nativeFlowMessage'),
@@ -2527,7 +2621,7 @@ export async function wwebjsMessageToUpsert(
     Object.assign(innerMessage, buildListResponseProtoMessage(listResponse));
   }
 
-  const quotedContextInfo = await buildQuotedContextInfo(msg);
+  const quotedContextInfo = await buildQuotedContextInfo(msg, invokeProvider);
   const forwardedContextInfo = buildForwardedContextInfo(msg);
   const adsContextInfo = buildAdsContextInfoFromRawData(rawData);
   const contextInfo = mergeContextInfo(

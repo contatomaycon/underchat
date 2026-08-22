@@ -56,6 +56,7 @@ const PROVIDER_CONCURRENCY: Record<MobilePushSubscriptionProvider, number> = {
 export class PushDeliveryQueueService {
   private interval: NodeJS.Timeout | null = null;
   private isDraining = false;
+  private onDrainError: (error: unknown) => void = () => undefined;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -69,15 +70,16 @@ export class PushDeliveryQueueService {
     private readonly pushSubscriptionDeleterRepository: PushSubscriptionDeleterRepository
   ) {}
 
-  start(): void {
+  start(onDrainError: (error: unknown) => void = () => undefined): void {
     if (this.interval) {
       return;
     }
 
+    this.onDrainError = onDrainError;
     this.interval = setInterval(() => {
-      void this.drain();
+      this.drainSafely();
     }, DRAIN_INTERVAL_MS);
-    void this.drain();
+    this.drainSafely();
   }
 
   stop(): void {
@@ -120,7 +122,7 @@ export class PushDeliveryQueueService {
   };
 
   drain = async (): Promise<void> => {
-    if (this.isDraining) {
+    if (this.isDraining || this.redis.status !== 'ready') {
       return;
     }
 
@@ -133,6 +135,16 @@ export class PushDeliveryQueueService {
       this.isDraining = false;
     }
   };
+
+  private drainSafely(): void {
+    void this.drain().catch((error: unknown) => {
+      try {
+        this.onDrainError(error);
+      } catch {
+        // A diagnostic callback must never terminate the queue worker.
+      }
+    });
+  }
 
   private async drainProvider(
     provider: MobilePushSubscriptionProvider

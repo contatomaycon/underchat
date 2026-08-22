@@ -5,12 +5,15 @@ import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
 import { useVoiceIaStore } from '@/@webcore/stores/voiceIa';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { VForm } from 'vuetify/components/VForm';
-import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { EAiAgentVoiceInputMode } from '@core/common/enums/EAiAgentVoiceInputMode';
 import { EAiAgentVoiceOutputMode } from '@core/common/enums/EAiAgentVoiceOutputMode';
 import { ListAiAgentTypeResponse } from '@core/schema/aiAgent/listAiAgentType/response.schema';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
+import {
+  getAiAgentProviderConfig,
+  isValidAiAgentBaseUrl,
+} from './aiAgentProviderCatalog';
 
 const aiAgentStore = useAiAgentStore();
 const voiceIaStore = useVoiceIaStore();
@@ -50,7 +53,6 @@ const isLoading = ref(false);
 const isApiKeyVisible = ref(false);
 const refForm = ref<VForm>();
 const types = ref<ListAiAgentTypeResponse[]>([]);
-const otherTypes = ref<ListAiAgentTypeResponse[]>([]);
 
 const nameRules = computed(() => [
   requiredValidator(name.value, t('name_required')),
@@ -60,91 +62,56 @@ const typeRules = computed(() => [
   requiredValidator(aiAgentTypeId.value, t('ai_agent_type_required')),
 ]);
 
+const isActive = computed(() => status.value === EAiAgentStatus.active);
+
+const baseUrlRules = computed(() => {
+  if (!isActive.value && !baseUrl.value.trim()) {
+    return [];
+  }
+
+  return [
+    requiredValidator(baseUrl.value, t('ai_agent_base_url_required')),
+    isValidAiAgentBaseUrl(baseUrl.value) || t('ai_agent_base_url_invalid'),
+  ];
+});
+
+const apiKeyRules = computed(() =>
+  isActive.value
+    ? [requiredValidator(apiKey.value, t('ai_agent_api_key_required'))]
+    : []
+);
+
+const modelRules = computed(() =>
+  isActive.value
+    ? [requiredValidator(model.value, t('ai_agent_model_required'))]
+    : []
+);
+
+const providerConfig = computed(() =>
+  getAiAgentProviderConfig(aiAgentTypeId.value)
+);
+
+const isEmbeddingRequired = computed(
+  () => isActive.value && (providerConfig.value?.requiresEmbedding ?? false)
+);
+
+const embeddingModelRules = computed(() =>
+  isEmbeddingRequired.value
+    ? [
+        requiredValidator(
+          embeddingModel.value,
+          t('ai_agent_embedding_model_required')
+        ),
+      ]
+    : []
+);
+
 const loadTypes = async () => {
   const result = await aiAgentStore.listAiAgentTypes();
   if (result) {
     types.value = result;
-    otherTypes.value = result.filter(
-      (type) =>
-        type.ai_agent_type_id !== EAiAgentType.gpt &&
-        type.ai_agent_type_id !== EAiAgentType.gemini &&
-        type.ai_agent_type_id !== EAiAgentType.deepseek
-    );
   }
 };
-
-const isGeminiSelected = computed(
-  () => aiAgentTypeId.value === EAiAgentType.gemini
-);
-const isGptSelected = computed(() => aiAgentTypeId.value === EAiAgentType.gpt);
-const isDeepSeekSelected = computed(
-  () => aiAgentTypeId.value === EAiAgentType.deepseek
-);
-
-const geminiChatModels = [
-  {
-    title: 'gemini-2.5-pro (raciocínio avançado)',
-    value: 'gemini-2.5-pro',
-  },
-  {
-    title: 'gemini-2.5-flash (recomendado - mais recente)',
-    value: 'gemini-2.5-flash',
-  },
-  {
-    title: 'gemini-2.5-flash-lite (variante menor)',
-    value: 'gemini-2.5-flash-lite',
-  },
-  { title: 'gemini-2.0-flash (2ª geração)', value: 'gemini-2.0-flash' },
-  { title: 'gemini-2.0-flash-001 (stable)', value: 'gemini-2.0-flash-001' },
-  {
-    title: 'gemini-2.0-flash-lite (variante menor)',
-    value: 'gemini-2.0-flash-lite',
-  },
-  {
-    title: 'gemini-2.0-flash-lite-001 (stable)',
-    value: 'gemini-2.0-flash-lite-001',
-  },
-];
-
-const geminiEmbeddingModels = [
-  {
-    title: 'gemini-embedding-001 (recomendado)',
-    value: 'gemini-embedding-001',
-  },
-  { title: 'embedding-001 (legacy)', value: 'embedding-001' },
-];
-
-const gptChatModels = [
-  { title: 'gpt-5.2 (mais recente)', value: 'gpt-5.2' },
-  { title: 'gpt-5.2-pro (mais preciso)', value: 'gpt-5.2-pro' },
-  { title: 'gpt-5.1', value: 'gpt-5.1' },
-  { title: 'gpt-5-pro', value: 'gpt-5-pro' },
-  { title: 'gpt-5', value: 'gpt-5' },
-  { title: 'gpt-5-mini (variante menor)', value: 'gpt-5-mini' },
-  { title: 'gpt-5-nano (mais econômico)', value: 'gpt-5-nano' },
-  { title: 'gpt-4.1', value: 'gpt-4.1' },
-  { title: 'gpt-4.1-mini', value: 'gpt-4.1-mini' },
-  { title: 'gpt-4.1-nano', value: 'gpt-4.1-nano' },
-  { title: 'gpt-4o', value: 'gpt-4o' },
-  { title: 'gpt-4o-mini', value: 'gpt-4o-mini' },
-  { title: 'gpt-4-turbo (legacy)', value: 'gpt-4-turbo' },
-  { title: 'gpt-4 (legacy)', value: 'gpt-4' },
-  { title: 'gpt-3.5-turbo (legacy)', value: 'gpt-3.5-turbo' },
-];
-
-const gptEmbeddingModels = [
-  {
-    title: 'text-embedding-3-small (recomendado)',
-    value: 'text-embedding-3-small',
-  },
-  { title: 'text-embedding-3-large', value: 'text-embedding-3-large' },
-  { title: 'text-embedding-ada-002 (legacy)', value: 'text-embedding-ada-002' },
-];
-
-const deepseekChatModels = [
-  { title: 'deepseek-chat (recomendado)', value: 'deepseek-chat' },
-  { title: 'deepseek-coder', value: 'deepseek-coder' },
-];
 
 const hasVoiceIaSelected = computed(() => !!voiceIaId.value);
 
@@ -178,41 +145,16 @@ const voiceOutputModeItems = computed(() => [
   },
 ]);
 
-const availableChatModels = computed(() => {
-  if (isGeminiSelected.value) {
-    return geminiChatModels;
-  }
-  if (isGptSelected.value) {
-    return gptChatModels;
-  }
-  if (isDeepSeekSelected.value) {
-    return deepseekChatModels;
-  }
-  return [];
-});
-
-const availableEmbeddingModels = computed(() => {
-  if (isGeminiSelected.value) {
-    return geminiEmbeddingModels;
-  }
-  if (isGptSelected.value) {
-    return gptEmbeddingModels;
-  }
-  return [];
-});
-
-const shouldUseSelectForModel = computed(
-  () =>
-    isGeminiSelected.value || isGptSelected.value || isDeepSeekSelected.value
+const availableChatModels = computed(
+  () => providerConfig.value?.chatModels ?? []
 );
 
-const shouldUseSelectForEmbeddingModel = computed(
-  () => isGeminiSelected.value || isGptSelected.value
+const availableEmbeddingModels = computed(
+  () => providerConfig.value?.embeddingModels ?? []
 );
 
 const shouldDisableBaseUrl = computed(
-  () =>
-    isGeminiSelected.value || isGptSelected.value || isDeepSeekSelected.value
+  () => providerConfig.value?.lockBaseUrl ?? false
 );
 
 const voiceIaOptions = computed(() => {
@@ -233,18 +175,7 @@ const voiceIaOptions = computed(() => {
   return [...currentOption, ...activeList];
 });
 
-const apiKeyLink = computed(() => {
-  if (isGeminiSelected.value) {
-    return 'https://aistudio.google.com/app/apikey?utm_source=chatgpt.com';
-  }
-  if (isGptSelected.value) {
-    return 'https://platform.openai.com/api-keys?utm_source=chatgpt.com';
-  }
-  if (isDeepSeekSelected.value) {
-    return 'https://platform.deepseek.com/api_keys';
-  }
-  return null;
-});
+const apiKeyLink = computed(() => providerConfig.value?.apiKeyUrl ?? null);
 
 const loadAiAgent = async () => {
   if (!aiAgentId.value) {
@@ -253,14 +184,39 @@ const loadAiAgent = async () => {
 
   const result = await aiAgentStore.viewAiAgent(aiAgentId.value);
   if (result) {
+    const config = getAiAgentProviderConfig(result.ai_agent_type_id);
+    const configuredBaseUrl = result.base_url?.trim() ?? '';
+
+    if (
+      !types.value.some(
+        (type) => type.ai_agent_type_id === result.ai_agent_type_id
+      )
+    ) {
+      types.value = [
+        ...types.value,
+        {
+          ai_agent_type_id: result.ai_agent_type_id,
+          name: result.ai_agent_type_name,
+        },
+      ];
+    }
+
     aiAgentTypeId.value = result.ai_agent_type_id;
     name.value = result.name;
-    baseUrl.value = result.base_url || '';
+    baseUrl.value = configuredBaseUrl || config?.baseUrl || '';
     apiKey.value = result.api_key || '';
-    model.value = result.model || '';
-    embeddingModel.value = result.embedding_model || '';
-    chunkSize.value = result.chunk_size || '';
-    chunkOverlap.value = result.chunk_overlap || '';
+    model.value =
+      result.model ||
+      (result.status === EAiAgentStatus.active
+        ? config?.defaultChatModel || ''
+        : '');
+    embeddingModel.value =
+      result.embedding_model ||
+      (result.status === EAiAgentStatus.active
+        ? config?.defaultEmbeddingModel || ''
+        : '');
+    chunkSize.value = result.chunk_size || '1200';
+    chunkOverlap.value = result.chunk_overlap || '200';
     status.value = result.status;
     systemPrompt.value = result.system_prompt ?? '';
     voiceIaId.value = result.voice_ia_id || null;
@@ -268,91 +224,6 @@ const loadAiAgent = async () => {
     voiceIaOutputMode.value = result.voice_ia_output_mode ?? null;
   }
 };
-
-watch(aiAgentTypeId, (newTypeId) => {
-  if (newTypeId === EAiAgentType.gpt) {
-    if (
-      !baseUrl.value ||
-      baseUrl.value === 'https://generativelanguage.googleapis.com/v1' ||
-      baseUrl.value === 'https://api.deepseek.com/v1'
-    ) {
-      baseUrl.value = 'https://api.openai.com/v1';
-    }
-    if (!model.value) {
-      model.value = 'gpt-4o';
-    }
-    if (!embeddingModel.value) {
-      embeddingModel.value = 'text-embedding-3-small';
-    }
-    if (!chunkSize.value) {
-      chunkSize.value = '1200';
-    }
-    if (!chunkOverlap.value) {
-      chunkOverlap.value = '200';
-    }
-  } else if (newTypeId === EAiAgentType.gemini) {
-    if (
-      !baseUrl.value ||
-      baseUrl.value === 'https://api.openai.com/v1' ||
-      baseUrl.value === 'https://api.deepseek.com/v1'
-    ) {
-      baseUrl.value = 'https://generativelanguage.googleapis.com/v1';
-    }
-    if (!model.value) {
-      model.value = 'gemini-2.5-flash';
-    }
-    if (!embeddingModel.value) {
-      embeddingModel.value = 'gemini-embedding-001';
-    }
-    if (!chunkSize.value) {
-      chunkSize.value = '1200';
-    }
-    if (!chunkOverlap.value) {
-      chunkOverlap.value = '200';
-    }
-  } else if (newTypeId === EAiAgentType.deepseek) {
-    if (
-      !baseUrl.value ||
-      baseUrl.value === 'https://api.openai.com/v1' ||
-      baseUrl.value === 'https://generativelanguage.googleapis.com/v1'
-    ) {
-      baseUrl.value = 'https://api.deepseek.com/v1';
-    }
-    if (!model.value) {
-      model.value = 'deepseek-chat';
-    }
-    embeddingModel.value = '';
-    if (!chunkSize.value) {
-      chunkSize.value = '1200';
-    }
-    if (!chunkOverlap.value) {
-      chunkOverlap.value = '200';
-    }
-  } else if (newTypeId && otherTypes.value.length > 0) {
-    const selectedType = types.value.find(
-      (type) => type.ai_agent_type_id === newTypeId
-    );
-    if (
-      selectedType &&
-      selectedType.name.toLowerCase() !== 'gpt' &&
-      selectedType.name.toLowerCase() !== 'gemini' &&
-      selectedType.name.toLowerCase() !== 'deepseek'
-    ) {
-      if (!baseUrl.value) {
-        baseUrl.value = '';
-      }
-      if (!embeddingModel.value) {
-        embeddingModel.value = '';
-      }
-      if (!chunkSize.value) {
-        chunkSize.value = '1200';
-      }
-      if (!chunkOverlap.value) {
-        chunkOverlap.value = '200';
-      }
-    }
-  }
-});
 
 watch(
   isVisible,
@@ -522,6 +393,7 @@ const handleUpdateAiAgent = async () => {
               <AppTextField
                 v-model="baseUrl"
                 :placeholder="$t('base_url_placeholder')"
+                :rules="baseUrlRules"
                 :disabled="isUpdating || isLoading || shouldDisableBaseUrl"
               />
             </VCol>
@@ -594,6 +466,7 @@ const handleUpdateAiAgent = async () => {
                 v-model="apiKey"
                 :type="isApiKeyVisible ? 'text' : 'password'"
                 :placeholder="$t('api_key_placeholder')"
+                :rules="apiKeyRules"
                 :disabled="isUpdating || isLoading"
                 :append-inner-icon="
                   isApiKeyVisible ? 'tabler-eye-off' : 'tabler-eye'
@@ -603,19 +476,16 @@ const handleUpdateAiAgent = async () => {
             </VCol>
             <VCol cols="12">
               <VLabel class="text-body-2 mb-1">{{ $t('model') }}:</VLabel>
-              <AppSelectSearch
-                v-if="shouldUseSelectForModel"
+              <AppCombobox
                 v-model="model"
                 :items="availableChatModels"
                 item-title="title"
                 item-value="value"
+                :return-object="false"
                 :placeholder="$t('model_placeholder')"
-                :disabled="isUpdating || isLoading"
-              />
-              <AppTextField
-                v-else
-                v-model="model"
-                :placeholder="$t('model_placeholder')"
+                :rules="modelRules"
+                :hint="$t('ai_agent_custom_model_hint')"
+                persistent-hint
                 :disabled="isUpdating || isLoading"
               />
             </VCol>
@@ -623,19 +493,20 @@ const handleUpdateAiAgent = async () => {
               <VLabel class="text-body-2 mb-1"
                 >{{ $t('embedding_model') }}:</VLabel
               >
-              <AppSelectSearch
-                v-if="shouldUseSelectForEmbeddingModel"
+              <AppCombobox
                 v-model="embeddingModel"
                 :items="availableEmbeddingModels"
                 item-title="title"
                 item-value="value"
+                :return-object="false"
                 :placeholder="$t('embedding_model_placeholder')"
-                :disabled="isUpdating || isLoading"
-              />
-              <AppTextField
-                v-else
-                v-model="embeddingModel"
-                :placeholder="$t('embedding_model_placeholder')"
+                :rules="embeddingModelRules"
+                :hint="
+                  isEmbeddingRequired
+                    ? $t('ai_agent_custom_embedding_model_hint')
+                    : $t('ai_agent_embedding_optional_hint')
+                "
+                persistent-hint
                 :disabled="isUpdating || isLoading"
               />
             </VCol>

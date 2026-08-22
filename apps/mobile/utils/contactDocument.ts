@@ -8,6 +8,11 @@ function onlyDigits(value: string | null | undefined): string {
   return value.replace(/\D/g, '');
 }
 
+export function normalizeCnpj(value: string | null | undefined): string {
+  if (!value) return '';
+  return value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+}
+
 export function formatCpf(value: string | null | undefined): string {
   const digits = onlyDigits(value).slice(0, 11);
   if (digits.length <= 3) return digits;
@@ -19,16 +24,16 @@ export function formatCpf(value: string | null | undefined): string {
 }
 
 export function formatCnpj(value: string | null | undefined): string {
-  const digits = onlyDigits(value).slice(0, 14);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
-  if (digits.length <= 8) {
-    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+  const clean = normalizeCnpj(value).slice(0, 14);
+  if (clean.length <= 2) return clean;
+  if (clean.length <= 5) return `${clean.slice(0, 2)}.${clean.slice(2)}`;
+  if (clean.length <= 8) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
   }
-  if (digits.length <= 12) {
-    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+  if (clean.length <= 12) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
   }
-  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
+  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
 }
 
 export function formatDocumentByType(
@@ -42,6 +47,11 @@ export function formatDocumentByType(
   }
   if (documentTypeId === CONTACT_DOCUMENT_TYPE.cnpj) {
     return formatCnpj(value);
+  }
+
+  const alphanumeric = normalizeCnpj(value);
+  if (/[A-Z]/.test(alphanumeric)) {
+    return formatCnpj(alphanumeric);
   }
 
   const digits = onlyDigits(value);
@@ -70,7 +80,11 @@ export function normalizeDocumentDigits(
     return digits.slice(0, 11);
   }
   if (documentTypeId === CONTACT_DOCUMENT_TYPE.cnpj) {
-    return digits.slice(0, 14);
+    return normalizeCnpj(value).slice(0, 14);
+  }
+  const alphanumeric = normalizeCnpj(value);
+  if (/[A-Z]/.test(alphanumeric)) {
+    return alphanumeric.slice(0, 14);
   }
   return digits.slice(0, 14);
 }
@@ -98,14 +112,14 @@ export function isValidCpf(value: string | null | undefined): boolean {
 }
 
 export function isValidCnpj(value: string | null | undefined): boolean {
-  const cnpj = onlyDigits(value);
-  if (cnpj.length !== 14) return false;
-  if (/^(\d)\1+$/.test(cnpj)) return false;
+  const cnpj = normalizeCnpj(value);
+  if (!/^[A-Z0-9]{12}\d{2}$/.test(cnpj)) return false;
+  if (/^(\d)\1{13}$/.test(cnpj)) return false;
 
   const calcDigit = (base: string, factors: number[]): number => {
     let total = 0;
     for (let i = 0; i < factors.length; i++) {
-      total += Number(base[i]) * factors[i];
+      total += (base.charCodeAt(i) - 48) * factors[i];
     }
     const remainder = total % 11;
     return remainder < 2 ? 0 : 11 - remainder;

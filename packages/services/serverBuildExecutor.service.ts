@@ -8,6 +8,10 @@ import {
 } from '@core/config/environments';
 import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
+import {
+  appendBuildWorkspaceStorageHint,
+  ensureBuildWorkspaceReady,
+} from '@core/common/functions/buildWorkspaceGuard';
 import { serverBuildCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { resolveServerBuildCommand } from '@core/common/functions/resolveServerBuildCommand';
 import { IRunServerBuildCommandOptions } from '@core/common/interfaces/IRunServerBuildCommandOptions';
@@ -15,6 +19,13 @@ import { IServerBuildCentrifugo } from '@core/common/interfaces/IServerBuildCent
 import { IServerBuildTarget } from '@core/common/interfaces/IServerBuildTarget';
 import { CentrifugoService } from './centrifugo.service';
 import { ServerBuildService } from './serverBuild.service';
+
+interface IBuildRuntime {
+  runtimeRoot: string;
+  dockerConfigDir: string;
+  kanikoWorkingDir: string;
+  commandEnv: NodeJS.ProcessEnv;
+}
 
 class BuildJobCanceledError extends Error {
   constructor(
@@ -48,6 +59,14 @@ export class ServerBuildExecutorService {
   private readonly buildEngine = buildEnvironment.buildEngine;
   private readonly kanikoExecutorPath =
     buildEnvironment.buildKanikoExecutorPath;
+  private readonly buildWorkspaceMinFreeBytes =
+    buildEnvironment.buildWorkspaceMinFreeBytes;
+  private readonly buildWorkspaceMinFreeInodes =
+    buildEnvironment.buildWorkspaceMinFreeInodes;
+  private readonly buildWorkspaceOrphanMaxAgeMs =
+    buildEnvironment.buildWorkspaceOrphanMaxAgeMs;
+  private readonly managedBuildPathPattern =
+    /^server-build-(?:runtime-)?[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}-(?:baileys|wwebjs|whatsmeow|balance_api)$/i;
   private readonly realtimeLogLineLimit = 2_000;
   private readonly realtimeLogBufferFlushThreshold = 8_000;
   private readonly realtimeLogBufferByStream = new Map<string, string>();
@@ -390,9 +409,18 @@ export class ServerBuildExecutorService {
     };
   }
 
-  private getRepositoryUrlWithToken(): string {
-    const encodedToken = encodeURIComponent(generalEnvironment.gitToken);
-    return `https://${encodedToken}@gitea.devunder.com/${generalEnvironment.gitRepo}.git`;
+  private getGitCommandEnv(): NodeJS.ProcessEnv {
+    const encodedCredentials = Buffer.from(
+      `${generalEnvironment.gitToken}:`
+    ).toString('base64');
+
+    return {
+      ...process.env,
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.extraHeader',
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${encodedCredentials}`,
+      GIT_TERMINAL_PROMPT: '0',
+    };
   }
 
   private getWorkspaceRootForJobItem(
@@ -406,18 +434,126 @@ export class ServerBuildExecutorService {
     );
   }
 
+  private getBuildRuntimeRootForJobItem(
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): string {
+    const workspaceParent = path.resolve(buildEnvironment.buildGitCloneDir);
+    return path.resolve(
+      workspaceParent,
+      `server-build-runtime-${serverBuildJobId}-${buildType}`
+    );
+  }
+
+  private assertManagedBuildPath(managedPath: string): void {
+    const workspaceParent = path.resolve(buildEnvironment.buildGitCloneDir);
+    const resolvedPath = path.resolve(managedPath);
+    const isDirectChild = path.dirname(resolvedPath) === workspaceParent;
+    const isKnownName = this.managedBuildPathPattern.test(
+      path.basename(resolvedPath)
+    );
+
+    if (!isDirectChild || !isKnownName) {
+      throw new Error(
+        `Refusing to remove unmanaged build path: ${managedPath}`
+      );
+    }
+  }
+
+  private removeManagedBuildPath(managedPath: string): void {
+    this.assertManagedBuildPath(managedPath);
+    fs.rmSync(managedPath, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    });
+  }
+
+  private cleanupManagedBuildPath(
+    managedPath: string | null,
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): void {
+    if (!managedPath) {
+      return;
+    }
+
+    try {
+      this.removeManagedBuildPath(managedPath);
+    } catch (error) {
+      this.publishCommandLog(
+        serverBuildJobId,
+        buildType,
+        'stderr',
+        `[cleanup] ${this.getErrorMessage(error)}`
+      );
+    }
+  }
+
+  private sweepOrphanedBuildPaths(
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): void {
+    const workspaceParent = path.resolve(buildEnvironment.buildGitCloneDir);
+    fs.mkdirSync(workspaceParent, { recursive: true });
+    const entries = fs.readdirSync(workspaceParent, { withFileTypes: true });
+    const cutoff = Date.now() - this.buildWorkspaceOrphanMaxAgeMs;
+
+    for (const entry of entries) {
+      if (
+        !entry.isDirectory() ||
+        !this.managedBuildPathPattern.test(entry.name)
+      ) {
+        continue;
+      }
+
+      const orphanPath = path.resolve(workspaceParent, entry.name);
+
+      try {
+        const stats = fs.lstatSync(orphanPath);
+        if (stats.isSymbolicLink() || stats.mtimeMs > cutoff) {
+          continue;
+        }
+
+        this.removeManagedBuildPath(orphanPath);
+        this.publishActionLog(
+          serverBuildJobId,
+          buildType,
+          `Removed stale build workspace ${entry.name}`
+        );
+      } catch (error) {
+        this.publishCommandLog(
+          serverBuildJobId,
+          buildType,
+          'stderr',
+          `[cleanup] Unable to remove stale workspace ${entry.name}: ${this.getErrorMessage(error)}`
+        );
+      }
+    }
+  }
+
   private async prepareWorkspaceFromGit(
     serverBuildJobId: string,
     buildType: EServerBuildType,
-    workspaceRoot: string
+    workspaceRoot: string,
+    runtimeRoot: string
   ): Promise<void> {
     const branch = generalEnvironment.gitBranch;
     const workspaceParent = path.dirname(workspaceRoot);
-    const repositoryUrl = this.getRepositoryUrlWithToken();
-    const repositoryUrlDisplay = `https://<token>@gitea.devunder.com/${generalEnvironment.gitRepo}.git`;
+    const repositoryUrlWithoutToken = `https://gitea.devunder.com/${generalEnvironment.gitRepo}.git`;
+    const gitCommandEnv = this.getGitCommandEnv();
 
-    fs.mkdirSync(workspaceParent, { recursive: true });
-    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    this.removeManagedBuildPath(workspaceRoot);
+    this.removeManagedBuildPath(runtimeRoot);
+    this.sweepOrphanedBuildPaths(serverBuildJobId, buildType);
+    ensureBuildWorkspaceReady({
+      workspaceParent,
+      minFreeBytes: this.buildWorkspaceMinFreeBytes,
+      minFreeInodes: this.buildWorkspaceMinFreeInodes,
+    });
+    fs.mkdirSync(workspaceRoot, { recursive: true, mode: 0o700 });
+    fs.chmodSync(workspaceRoot, 0o700);
 
     await this.runCommand(
       serverBuildJobId,
@@ -425,22 +561,21 @@ export class ServerBuildExecutorService {
       'git',
       [
         'clone',
+        '--progress',
+        '--depth',
+        '1',
         '--single-branch',
         '--branch',
         branch,
-        repositoryUrl,
+        '--filter=blob:none',
+        '--no-tags',
+        '--no-checkout',
+        repositoryUrlWithoutToken,
         workspaceRoot,
       ],
       {
         cwd: workspaceParent,
-        displayArgs: [
-          'clone',
-          '--single-branch',
-          '--branch',
-          branch,
-          repositoryUrlDisplay,
-          workspaceRoot,
-        ],
+        env: gitCommandEnv,
       }
     );
 
@@ -448,19 +583,79 @@ export class ServerBuildExecutorService {
       serverBuildJobId,
       buildType,
       'git',
-      ['pull', '--ff-only', 'origin', branch],
-      { cwd: workspaceRoot }
+      ['sparse-checkout', 'set', '--no-cone', '--stdin'],
+      {
+        cwd: workspaceRoot,
+        env: gitCommandEnv,
+        stdin: '/*\n!/atlas/seed/\n',
+      }
+    );
+
+    await this.runCommand(
+      serverBuildJobId,
+      buildType,
+      'git',
+      ['checkout', '--progress', '--force'],
+      { cwd: workspaceRoot, env: gitCommandEnv }
     );
   }
 
-  private cleanupWorkspace(workspaceRoot: string | null): void {
-    if (!workspaceRoot) {
+  private prepareBuildRuntime(runtimeRoot: string): IBuildRuntime {
+    this.removeManagedBuildPath(runtimeRoot);
+    ensureBuildWorkspaceReady({
+      workspaceParent: path.dirname(runtimeRoot),
+      minFreeBytes: this.buildWorkspaceMinFreeBytes,
+      minFreeInodes: this.buildWorkspaceMinFreeInodes,
+    });
+    fs.mkdirSync(runtimeRoot, { recursive: true, mode: 0o700 });
+    fs.chmodSync(runtimeRoot, 0o700);
+
+    const dockerConfigDir = path.join(runtimeRoot, 'docker');
+    const kanikoWorkingDir = path.join(runtimeRoot, 'kaniko');
+    fs.mkdirSync(dockerConfigDir, { recursive: true, mode: 0o700 });
+    fs.chmodSync(dockerConfigDir, 0o700);
+
+    return {
+      runtimeRoot,
+      dockerConfigDir,
+      kanikoWorkingDir,
+      commandEnv: {
+        ...process.env,
+        HOME: runtimeRoot,
+        DOCKER_CONFIG: dockerConfigDir,
+      },
+    };
+  }
+
+  private prepareKanikoRuntime(runtime: IBuildRuntime): void {
+    if (this.buildEngine !== 'kaniko') {
       return;
     }
 
-    try {
-      fs.rmSync(workspaceRoot, { recursive: true, force: true });
-    } catch {}
+    if (!fs.existsSync(this.kanikoExecutorPath)) {
+      throw new Error(
+        `Kaniko executor not found at ${this.kanikoExecutorPath}. Set BUILD_KANIKO_EXECUTOR_PATH correctly.`
+      );
+    }
+
+    fs.mkdirSync(runtime.kanikoWorkingDir, {
+      recursive: true,
+      mode: 0o700,
+    });
+    fs.chmodSync(runtime.kanikoWorkingDir, 0o700);
+
+    const sourceConfig = path.join(runtime.dockerConfigDir, 'config.json');
+    if (!fs.existsSync(sourceConfig)) {
+      throw new Error(`Docker login did not create ${sourceConfig}`);
+    }
+
+    const kanikoDockerDir = path.join(runtime.kanikoWorkingDir, '.docker');
+    fs.mkdirSync(kanikoDockerDir, { recursive: true, mode: 0o700 });
+    fs.chmodSync(kanikoDockerDir, 0o700);
+
+    const destinationConfig = path.join(kanikoDockerDir, 'config.json');
+    fs.copyFileSync(sourceConfig, destinationConfig);
+    fs.chmodSync(destinationConfig, 0o600);
   }
 
   private clearActiveProcess(
@@ -766,7 +961,7 @@ export class ServerBuildExecutorService {
   }
 
   private getBuildExecutionErrorMessage(error: unknown): string {
-    const errorMessage = this.getErrorMessage(error);
+    const errorMessage = appendBuildWorkspaceStorageHint(error);
 
     if (
       this.buildEngine === 'kaniko' &&
@@ -886,9 +1081,14 @@ export class ServerBuildExecutorService {
     );
 
     let workspaceRoot: string | null = null;
+    let runtimeRoot: string | null = null;
 
     try {
       workspaceRoot = this.getWorkspaceRootForJobItem(
+        serverBuildJobId,
+        buildType
+      );
+      runtimeRoot = this.getBuildRuntimeRootForJobItem(
         serverBuildJobId,
         buildType
       );
@@ -902,7 +1102,8 @@ export class ServerBuildExecutorService {
       await this.prepareWorkspaceFromGit(
         serverBuildJobId,
         buildType,
-        workspaceRoot
+        workspaceRoot,
+        runtimeRoot
       );
 
       const dockerfileAbsolutePath = path.resolve(
@@ -914,13 +1115,7 @@ export class ServerBuildExecutorService {
         throw new Error(`Dockerfile not found: ${dockerfileAbsolutePath}`);
       }
 
-      const dockerConfigDir = path.join(workspaceRoot, '.docker');
-      fs.mkdirSync(dockerConfigDir, { recursive: true });
-      const dockerCommandEnv: NodeJS.ProcessEnv = {
-        ...process.env,
-        HOME: workspaceRoot,
-        DOCKER_CONFIG: dockerConfigDir,
-      };
+      const buildRuntime = this.prepareBuildRuntime(runtimeRoot);
 
       await this.runCommand(
         serverBuildJobId,
@@ -936,7 +1131,7 @@ export class ServerBuildExecutorService {
         {
           cwd: workspaceRoot,
           stdin: `${buildEnvironment.harborPassword}\n`,
-          env: dockerCommandEnv,
+          env: buildRuntime.commandEnv,
         }
       );
 
@@ -945,26 +1140,7 @@ export class ServerBuildExecutorService {
         version
       );
 
-      if (
-        this.buildEngine === 'kaniko' &&
-        !fs.existsSync(this.kanikoExecutorPath)
-      ) {
-        throw new Error(
-          `Kaniko executor not found at ${this.kanikoExecutorPath}. Set BUILD_KANIKO_EXECUTOR_PATH correctly.`
-        );
-      }
-
-      if (this.buildEngine === 'kaniko') {
-        fs.mkdirSync('/tmp/kaniko', { recursive: true });
-
-        const kanikoDockerDir = '/tmp/kaniko/.docker';
-        fs.mkdirSync(kanikoDockerDir, { recursive: true });
-        const sourceConfig = path.join(dockerConfigDir, 'config.json');
-        const destConfig = path.join(kanikoDockerDir, 'config.json');
-        if (fs.existsSync(sourceConfig)) {
-          fs.copyFileSync(sourceConfig, destConfig);
-        }
-      }
+      this.prepareKanikoRuntime(buildRuntime);
 
       const buildCommand = resolveServerBuildCommand({
         buildEngine: this.buildEngine,
@@ -973,6 +1149,8 @@ export class ServerBuildExecutorService {
         dockerfileAbsolutePath,
         workspaceRoot,
         kanikoExecutorPath: this.kanikoExecutorPath,
+        kanikoWorkingDir: buildRuntime.kanikoWorkingDir,
+        kanikoIgnorePath: path.dirname(workspaceRoot),
       });
 
       await this.runCommand(
@@ -982,7 +1160,7 @@ export class ServerBuildExecutorService {
         buildCommand.args,
         {
           cwd: workspaceRoot,
-          env: dockerCommandEnv,
+          env: buildRuntime.commandEnv,
         }
       );
 
@@ -1034,7 +1212,8 @@ export class ServerBuildExecutorService {
     } finally {
       this.clearActiveProcess(serverBuildJobId, buildType);
       this.flushRealtimeOutputBuffersByExecution(serverBuildJobId, buildType);
-      this.cleanupWorkspace(workspaceRoot);
+      this.cleanupManagedBuildPath(runtimeRoot, serverBuildJobId, buildType);
+      this.cleanupManagedBuildPath(workspaceRoot, serverBuildJobId, buildType);
 
       const status =
         await this.serverBuildService.syncJobStatusFromItems(serverBuildJobId);

@@ -103,6 +103,24 @@ describe('ContactCreatorRepository', () => {
     );
   });
 
+  it('persists internal validation provenance without changing public fields', async () => {
+    const { repository, dbValues } = createRepository();
+
+    await repository.createContact({
+      account_id: 'acc-1',
+      name: 'Official contact',
+      is_valided: true,
+      validation_origin: 'official_assumed',
+    });
+
+    expect(dbValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        is_valided: true,
+        validation_origin: 'official_assumed',
+      })
+    );
+  });
+
   it('creates contact with labels and channels in a transaction', async () => {
     const {
       repository,
@@ -123,7 +141,7 @@ describe('ContactCreatorRepository', () => {
     expect(dbRw.transaction).toHaveBeenCalledTimes(1);
     expect(
       contactLabelTemplateCreatorRepository.createContactLabelTemplate
-    ).toHaveBeenCalledWith(transactionTx, 'contact-id', 'label-1');
+    ).toHaveBeenCalledWith(transactionTx, 'contact-id', 'label-1', 'acc-1');
     expect(
       contactChannelCreatorRepository.createContactChannelInTransaction
     ).toHaveBeenCalledWith(transactionTx, 'contact-id', 'channel-1', 'acc-1');
@@ -143,7 +161,7 @@ describe('ContactCreatorRepository', () => {
     ).resolves.toBeNull();
   });
 
-  it('creates contact with group and returns true', async () => {
+  it('creates contact with group and returns the durable contact id', async () => {
     const { repository, contactGroupAssignmentCreatorRepository } =
       createRepository();
     jest
@@ -156,14 +174,15 @@ describe('ContactCreatorRepository', () => {
         { account_id: 'acc-1', name: 'Contact Name' } as never,
         'group-1'
       )
-    ).resolves.toBe(true);
+    ).resolves.toBe('contact-id-from-create');
 
     expect(
       contactGroupAssignmentCreatorRepository.createContactGroupAssignment
     ).toHaveBeenCalledWith(
       expect.anything(),
       'group-1',
-      'contact-id-from-create'
+      'contact-id-from-create',
+      'acc-1'
     );
   });
 

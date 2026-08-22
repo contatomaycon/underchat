@@ -10,4 +10,12 @@ export default function healthRoutes(server: FastifyInstance) {
     schema: healthCheckSchema,
     handler: healthController.view,
   });
+  server.get('/health/live', {
+    schema: healthCheckSchema,
+    handler: healthController.live,
+  });
+  server.get('/health/ready', {
+    schema: healthCheckSchema,
+    handler: healthController.ready,
+  });
 }

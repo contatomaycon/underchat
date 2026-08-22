@@ -8,6 +8,8 @@ import { ConnectConfig } from 'ssh2';
 import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAllowed';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { v7 as uuidv7 } from 'uuid';
+import { EServerStatus } from '@core/common/enums/EServerStatus';
 
 @injectable()
 export class ServerCreatorUseCase {
@@ -74,16 +76,19 @@ export class ServerCreatorUseCase {
 
   async onServerCreated(
     t: TFunction<'translation', undefined>,
-    serverId: string
+    serverId: string,
+    installationId: string
   ): Promise<void> {
     try {
       const payload: CreateServerResponse = {
         server_id: serverId,
+        installation_id: installationId,
       };
 
       await this.streamProducerService.send(
         this.kafkaServiceQueueService.createServer(),
-        payload
+        payload,
+        serverId
       );
     } catch {
       throw new Error(t('kafka_error'));
@@ -102,7 +107,17 @@ export class ServerCreatorUseCase {
       throw new Error(t('server_creator_error'));
     }
 
-    await this.onServerCreated(t, serverId);
+    const installationId = uuidv7();
+    try {
+      await this.onServerCreated(t, serverId, installationId);
+    } catch (error) {
+      await this.serverService.updateServerStatusById(
+        serverId,
+        EServerStatus.error,
+        [EServerStatus.new]
+      );
+      throw error;
+    }
 
     return {
       server_id: serverId,

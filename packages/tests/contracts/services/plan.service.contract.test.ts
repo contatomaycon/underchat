@@ -63,8 +63,16 @@ jest.mock(
 jest.mock('@core/repositories/plan/OrderPaymentCreator.repository', () => ({
   OrderPaymentCreatorRepository: class {},
 }));
+jest.mock(
+  '@core/repositories/planEntitlement/PlanEntitlement.repository',
+  () => ({ PlanEntitlementRepository: class {} })
+);
+jest.mock('@core/services/planEntitlement.service', () => ({
+  PlanEntitlementService: class {},
+}));
 
 import { PlanService } from '@core/services/plan.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 describe('PlanService', () => {
   const makeService = () => {
@@ -138,6 +146,7 @@ describe('PlanService', () => {
       ),
       createAccountPayment: jest.fn(async () => 'ap-1'),
       createAccountPaymentCrossSells: jest.fn(async () => undefined),
+      createAccountPaymentWithCrossSells: jest.fn(async () => 'ap-atomic'),
       getPlan: jest.fn<Promise<any>, any[]>(async () => ({
         plan_id: 'p1',
         price: '100',
@@ -148,6 +157,18 @@ describe('PlanService', () => {
       getCurrentActivePlanAccount: jest.fn(async () => ({
         plan_account_id: 'pa1',
       })),
+    };
+    const planEntitlementRepository = {
+      findPlanItemContext: jest.fn(async () => ({
+        plan_id: 'p1',
+        plan_product_id: 'non-integration-product',
+      })),
+    };
+    const planEntitlementService = {
+      installDenyFencesForPlan: jest.fn(async () => undefined),
+      installDenyFencesForPlanItem: jest.fn(async () => undefined),
+      refreshAccountsForPlan: jest.fn(async () => []),
+      refreshAccountsForPlanItem: jest.fn(async () => []),
     };
 
     const service = new PlanService(
@@ -168,7 +189,9 @@ describe('PlanService', () => {
       upgradeDiscountCalculatorRepository as never,
       paymentService as never,
       crossSellListerRepository as never,
-      orderPaymentCreatorRepository as never
+      orderPaymentCreatorRepository as never,
+      planEntitlementRepository as never,
+      planEntitlementService as never
     );
 
     return {
@@ -191,6 +214,8 @@ describe('PlanService', () => {
       paymentService,
       crossSellListerRepository,
       orderPaymentCreatorRepository,
+      planEntitlementRepository,
+      planEntitlementService,
     };
   };
 
@@ -384,6 +409,21 @@ describe('PlanService', () => {
       })
     ).resolves.toBeUndefined();
 
+    await expect(
+      service.createAccountPaymentWithCrossSells({
+        payment: { accountId: 'acc-1' } as never,
+        addons: [],
+        billingPeriod: 'monthly',
+      })
+    ).resolves.toBe('ap-atomic');
+    expect(
+      orderPaymentCreatorRepository.createAccountPaymentWithCrossSells
+    ).toHaveBeenCalledWith({
+      payment: { accountId: 'acc-1' },
+      addons: [],
+      billingPeriod: 'monthly',
+    });
+
     await expect(service.getPlan('p1')).resolves.toEqual({
       plan_id: 'p1',
       price: '100',
@@ -400,5 +440,97 @@ describe('PlanService', () => {
         plan_account_id: 'pa1',
       }
     );
+  });
+
+  it('refreshes plan item entitlements only for Integration', async () => {
+    const { service, planItemCreatorRepository, planEntitlementService } =
+      makeService();
+
+    await service.createPlanItem({
+      plan_id: 'p1',
+      plan_product_id: 'non-integration-product',
+      quantity: 1,
+    });
+    expect(
+      planEntitlementService.refreshAccountsForPlanItem
+    ).not.toHaveBeenCalled();
+
+    await service.createPlanItem({
+      plan_id: 'p1',
+      plan_product_id: EPlanProduct.integration,
+      quantity: 1,
+    });
+    expect(
+      planEntitlementService.refreshAccountsForPlanItem
+    ).toHaveBeenCalledWith('pi1');
+    expect(planEntitlementService.refreshAccountsForPlan).toHaveBeenCalledWith(
+      'p1',
+      EPlanProduct.integration
+    );
+    expect(
+      planEntitlementService.refreshAccountsForPlan.mock.invocationCallOrder[0]
+    ).toBeLessThan(
+      planItemCreatorRepository.createPlanItem.mock.invocationCallOrder[1]
+    );
+  });
+
+  it('fences and reconciles Integration before deleting its plan item', async () => {
+    const {
+      service,
+      planItemDeleterRepository,
+      planEntitlementRepository,
+      planEntitlementService,
+    } = makeService();
+    planEntitlementRepository.findPlanItemContext.mockResolvedValueOnce({
+      plan_id: 'p1',
+      plan_product_id: EPlanProduct.integration,
+    });
+
+    await expect(service.deletePlanItem('pi1')).resolves.toBe(true);
+
+    expect(
+      planEntitlementService.installDenyFencesForPlanItem
+    ).toHaveBeenCalledWith('pi1');
+    expect(
+      planEntitlementService.refreshAccountsForPlanItem
+    ).toHaveBeenCalledWith('pi1');
+    expect(
+      planEntitlementService.installDenyFencesForPlanItem.mock
+        .invocationCallOrder[0]
+    ).toBeLessThan(
+      planItemDeleterRepository.deletePlanItemById.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('treats plan status as catalog visibility without changing runtime entitlement', async () => {
+    const { service, planUpdaterRepository, planEntitlementService } =
+      makeService();
+
+    await expect(
+      service.updatePlan('p1', { status: 'inactive' } as never)
+    ).resolves.toBe(true);
+    expect(planUpdaterRepository.updatePlan).toHaveBeenCalledWith('p1', {
+      status: 'inactive',
+    });
+    expect(
+      planEntitlementService.installDenyFencesForPlan
+    ).not.toHaveBeenCalled();
+    expect(
+      planEntitlementService.refreshAccountsForPlan
+    ).not.toHaveBeenCalled();
+
+    jest.clearAllMocks();
+    await expect(
+      service.updatePlan('p1', { status: 'active' } as never)
+    ).resolves.toBe(true);
+    expect(planUpdaterRepository.updatePlan).toHaveBeenCalledWith('p1', {
+      status: 'active',
+    });
+    expect(
+      planEntitlementService.installDenyFencesForPlan
+    ).not.toHaveBeenCalled();
+    expect(
+      planEntitlementService.refreshAccountsForPlan
+    ).not.toHaveBeenCalled();
   });
 });

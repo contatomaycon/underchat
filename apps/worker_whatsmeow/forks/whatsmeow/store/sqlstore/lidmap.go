@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/rs/zerolog"
 	"go.mau.fi/util/dbutil"
 	"go.mau.fi/util/exslices"
 
@@ -25,7 +24,10 @@ import (
 )
 
 type CachedLIDMap struct {
-	db *dbutil.Database
+	container  *Container
+	db         *dbutil.Database
+	sessionID  string
+	revisionID int64
 
 	pnToLIDCache map[string]string
 	lidToPNCache map[string]string
@@ -35,25 +37,37 @@ type CachedLIDMap struct {
 
 var _ store.LIDStore = (*CachedLIDMap)(nil)
 
-func NewCachedLIDMap(db *dbutil.Database) *CachedLIDMap {
+func NewCachedLIDMap(container *Container, sessionID string, revisionID int64) *CachedLIDMap {
 	return &CachedLIDMap{
-		db: db,
+		container:  container,
+		db:         container.db,
+		sessionID:  sessionID,
+		revisionID: revisionID,
 
 		pnToLIDCache: make(map[string]string),
 		lidToPNCache: make(map[string]string),
 	}
 }
 
+func (s *CachedLIDMap) doSessionOperation(ctx context.Context, fn func(context.Context) error) error {
+	return s.container.doSessionOperation(ctx, SessionScope{SessionID: s.sessionID, RevisionID: s.revisionID}, fn)
+}
+
+func (s *CachedLIDMap) doSessionMutation(ctx context.Context, fn func(context.Context) error) error {
+	return s.container.doSessionMutation(ctx, SessionScope{SessionID: s.sessionID, RevisionID: s.revisionID}, fn)
+}
+
 const (
-	deleteExistingLIDMappingQuery = `DELETE FROM whatsmeow_lid_map WHERE (lid<>$1 AND pn=$2)`
+	deleteExistingLIDMappingQuery = `DELETE FROM whatsapp_lid_map WHERE session_id=$1 AND revision_id=$2 AND lid<>$3 AND pn=$4`
 	putLIDMappingQuery            = `
-		INSERT INTO whatsmeow_lid_map (lid, pn)
-		VALUES ($1, $2)
-		ON CONFLICT (lid) DO UPDATE SET pn=excluded.pn WHERE whatsmeow_lid_map.pn<>excluded.pn
+		INSERT INTO whatsapp_lid_map (session_id, revision_id, lid, pn)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (session_id, revision_id, lid) DO UPDATE SET pn=excluded.pn
+		WHERE whatsapp_lid_map.pn<>excluded.pn
 	`
-	getLIDForPNQuery       = `SELECT lid FROM whatsmeow_lid_map WHERE pn=$1`
-	getPNForLIDQuery       = `SELECT pn FROM whatsmeow_lid_map WHERE lid=$1`
-	getAllLIDMappingsQuery = `SELECT lid, pn FROM whatsmeow_lid_map`
+	getLIDForPNQuery       = `SELECT lid FROM whatsapp_lid_map WHERE session_id=$1 AND revision_id=$2 AND pn=$3`
+	getPNForLIDQuery       = `SELECT pn FROM whatsapp_lid_map WHERE session_id=$1 AND revision_id=$2 AND lid=$3`
+	getAllLIDMappingsQuery = `SELECT lid, pn FROM whatsapp_lid_map WHERE session_id=$1 AND revision_id=$2`
 )
 
 var convertLIDRow = dbutil.ConvertRowFn[store.LIDMapping](func(rows dbutil.Scannable) (store.LIDMapping, error) {
@@ -71,8 +85,10 @@ var convertLIDRow = dbutil.ConvertRowFn[store.LIDMapping](func(rows dbutil.Scann
 func (s *CachedLIDMap) FillCache(ctx context.Context) error {
 	s.lidCacheLock.Lock()
 	defer s.lidCacheLock.Unlock()
-	res := convertLIDRow.NewRowIter(s.db.Query(ctx, getAllLIDMappingsQuery))
-	err := s.scanManyLids(res, nil)
+	err := s.doSessionOperation(ctx, func(txCtx context.Context) error {
+		res := convertLIDRow.NewRowIter(s.db.Query(txCtx, getAllLIDMappingsQuery, s.sessionID, s.revisionID))
+		return s.scanManyLids(res, nil)
+	})
 	s.cacheFilled = err == nil
 	return err
 }
@@ -101,7 +117,9 @@ func (s *CachedLIDMap) getLIDMapping(ctx context.Context, source types.JID, targ
 	}
 	s.lidCacheLock.Lock()
 	defer s.lidCacheLock.Unlock()
-	err := s.db.QueryRow(ctx, query, source.User).Scan(&targetUser)
+	err := s.doSessionOperation(ctx, func(txCtx context.Context) error {
+		return s.db.QueryRow(txCtx, query, s.sessionID, s.revisionID, source.User).Scan(&targetUser)
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		// continue with empty result
 	} else if err != nil {
@@ -165,31 +183,38 @@ func (s *CachedLIDMap) GetManyLIDsForPNs(ctx context.Context, pns []types.JID) (
 	s.lidCacheLock.Lock()
 	defer s.lidCacheLock.Unlock()
 
-	var res dbutil.RowIter[store.LIDMapping]
-	if s.db.Dialect == dbutil.Postgres && PostgresArrayWrapper != nil {
-		res = convertLIDRow.NewRowIter(s.db.Query(
-			ctx,
-			`SELECT lid, pn FROM whatsmeow_lid_map WHERE pn = ANY($1)`,
-			PostgresArrayWrapper(missingPNs),
-		))
-	} else {
-		placeholders := make([]string, len(missingPNs))
-		for i := range missingPNs {
-			placeholders[i] = fmt.Sprintf("$%d", i+1)
+	err := s.doSessionOperation(ctx, func(txCtx context.Context) error {
+		var res dbutil.RowIter[store.LIDMapping]
+		if s.db.Dialect == dbutil.Postgres && PostgresArrayWrapper != nil {
+			res = convertLIDRow.NewRowIter(s.db.Query(
+				txCtx,
+				`SELECT lid, pn FROM whatsapp_lid_map WHERE session_id=$1 AND revision_id=$2 AND pn = ANY($3)`,
+				s.sessionID,
+				s.revisionID,
+				PostgresArrayWrapper(missingPNs),
+			))
+		} else {
+			placeholders := make([]string, len(missingPNs))
+			for i := range missingPNs {
+				placeholders[i] = fmt.Sprintf("$%d", i+3)
+			}
+			args := make([]any, 0, len(missingPNs)+2)
+			args = append(args, s.sessionID, s.revisionID)
+			args = append(args, exslices.CastToAny(missingPNs)...)
+			res = convertLIDRow.NewRowIter(s.db.Query(
+				txCtx,
+				fmt.Sprintf(`SELECT lid, pn FROM whatsapp_lid_map WHERE session_id=$1 AND revision_id=$2 AND pn IN (%s)`, strings.Join(placeholders, ",")),
+				args...,
+			))
 		}
-		res = convertLIDRow.NewRowIter(s.db.Query(
-			ctx,
-			fmt.Sprintf(`SELECT lid, pn FROM whatsmeow_lid_map WHERE pn IN (%s)`, strings.Join(placeholders, ",")),
-			exslices.CastToAny(missingPNs)...,
-		))
-	}
-	err := s.scanManyLids(res, func(lid, pn string) {
-		for _, dev := range missingPNDevices[pn] {
-			lidDev := dev
-			lidDev.Server = types.HiddenUserServer
-			lidDev.User = lid
-			result[dev] = lidDev.ToNonAD()
-		}
+		return s.scanManyLids(res, func(lid, pn string) {
+			for _, dev := range missingPNDevices[pn] {
+				lidDev := dev
+				lidDev.Server = types.HiddenUserServer
+				lidDev.User = lid
+				result[dev] = lidDev.ToNonAD()
+			}
+		})
 	})
 	return result, err
 }
@@ -204,7 +229,7 @@ func (s *CachedLIDMap) PutLIDMapping(ctx context.Context, lid, pn types.JID) err
 	if ok && cachedLID == lid.User {
 		return nil
 	}
-	return s.db.DoTxn(ctx, nil, func(ctx context.Context) error {
+	return s.doSessionMutation(ctx, func(ctx context.Context) error {
 		return s.unlockedPutLIDMapping(ctx, lid, pn)
 	})
 }
@@ -214,10 +239,9 @@ func (s *CachedLIDMap) PutManyLIDMappings(ctx context.Context, mappings []store.
 	defer s.lidCacheLock.Unlock()
 	mappings = slices.DeleteFunc(mappings, func(mapping store.LIDMapping) bool {
 		if mapping.LID.Server != types.HiddenUserServer || mapping.PN.Server != types.DefaultUserServer {
-			zerolog.Ctx(ctx).Debug().
-				Stringer("entry_lid", mapping.LID).
-				Stringer("entry_pn", mapping.PN).
-				Msg("Ignoring invalid entry in PutManyLIDMappings")
+			s.container.logSessionDebug("debug", "lid_mapping_ignored", SessionScope{
+				SessionID: s.sessionID, RevisionID: s.revisionID,
+			}, map[string]any{"reason": "invalid_server"})
 			return true
 		}
 		cachedLID, ok := s.pnToLIDCache[mapping.PN.User]
@@ -230,7 +254,7 @@ func (s *CachedLIDMap) PutManyLIDMappings(ctx context.Context, mappings []store.
 	if len(mappings) == 0 {
 		return nil
 	}
-	return s.db.DoTxn(ctx, nil, func(ctx context.Context) error {
+	return s.doSessionMutation(ctx, func(ctx context.Context) error {
 		for _, mapping := range mappings {
 			err := s.unlockedPutLIDMapping(ctx, mapping.LID, mapping.PN)
 			if err != nil {
@@ -245,11 +269,11 @@ func (s *CachedLIDMap) unlockedPutLIDMapping(ctx context.Context, lid, pn types.
 	if lid.Server != types.HiddenUserServer || pn.Server != types.DefaultUserServer {
 		return fmt.Errorf("invalid PutLIDMapping call %s/%s", lid, pn)
 	}
-	_, err := s.db.Exec(ctx, deleteExistingLIDMappingQuery, lid.User, pn.User)
+	_, err := s.db.Exec(ctx, deleteExistingLIDMappingQuery, s.sessionID, s.revisionID, lid.User, pn.User)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(ctx, putLIDMappingQuery, lid.User, pn.User)
+	_, err = s.db.Exec(ctx, putLIDMappingQuery, s.sessionID, s.revisionID, lid.User, pn.User)
 	if err != nil {
 		return err
 	}
@@ -264,4 +288,18 @@ func (s *CachedLIDMap) unlockedPutLIDMapping(ctx context.Context, lid, pn types.
 		delete(s.lidToPNCache, oldLID)
 	}
 	return nil
+}
+
+// Invalidate clears all positive and negative cache entries. Callers must use
+// this on handoff, logout and lease loss before reusing a store instance.
+func (s *CachedLIDMap) Invalidate() {
+	s.lidCacheLock.Lock()
+	defer s.lidCacheLock.Unlock()
+	s.pnToLIDCache = make(map[string]string)
+	s.lidToPNCache = make(map[string]string)
+	s.cacheFilled = false
+}
+
+func (s *CachedLIDMap) InvalidateCaches() {
+	s.Invalidate()
 }

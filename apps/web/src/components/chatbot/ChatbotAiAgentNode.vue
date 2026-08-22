@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './chatbot-node-workbench.css';
 import { ref, watch, onMounted, nextTick, computed } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position, useVueFlow } from '@vue-flow/core';
@@ -341,7 +342,7 @@ const handleRemove = () => {
 </script>
 
 <template>
-  <div class="chatbot-ai-agent-node">
+  <div class="chatbot-ai-agent-node chatbot-workbench-node">
     <Handle
       id="target"
       type="target"
@@ -349,13 +350,18 @@ const handleRemove = () => {
       class="handle-target"
     />
 
-    <VCard class="ai-agent-card" elevation="2">
+    <VCard class="ai-agent-card chatbot-workbench-card" elevation="2">
       <VCardTitle
-        class="d-flex align-center justify-space-between pa-2 node-drag-handle"
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle chatbot-workbench-header"
       >
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-brain" color="primary" size="20" />
-          <span class="text-sm font-weight-medium">{{
+        <div class="d-flex align-center ga-2 chatbot-workbench-identity">
+          <VIcon
+            icon="tabler-brain"
+            color="primary"
+            size="20"
+            class="chatbot-workbench-icon"
+          />
+          <span class="text-sm font-weight-medium chatbot-workbench-title">{{
             t('chatbot_ai_agent')
           }}</span>
         </div>
@@ -364,12 +370,12 @@ const handleRemove = () => {
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
+      <VCardText class="pa-3 chatbot-workbench-body">
         <VLabel class="text-body-2 mb-1">{{
           t('chatbot_ai_agent_select')
         }}</VLabel>

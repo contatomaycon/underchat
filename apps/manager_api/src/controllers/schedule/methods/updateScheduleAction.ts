@@ -1,6 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { handleControllerError } from '@core/common/functions/handleControllerError';
+import { handleScheduleControllerError } from '@core/controllers/schedule/methods/handleScheduleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ScheduleActionUpdaterUseCase } from '@core/useCases/schedule/ScheduleActionUpdater.useCase';
@@ -30,7 +30,8 @@ export const updateScheduleAction = async (
       t,
       scheduleId,
       action,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.channels
     );
 
     if (response) {
@@ -46,6 +47,6 @@ export const updateScheduleAction = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    handleControllerError(error, reply, t);
+    handleScheduleControllerError(error, reply, t);
   }
 };

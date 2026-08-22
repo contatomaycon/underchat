@@ -1,8 +1,9 @@
 import * as schema from '@core/models';
 import { chatbot } from '@core/models';
+import { EChatbotStatus } from '@core/common/enums/EChatbotStatus';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { count, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 import { AccountQuantityProductViewerRepository } from '@core/repositories/account/AccountQuantityProductViewer.repository';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
@@ -20,7 +21,12 @@ export class DashboardChatbotsRepository {
         total: count(),
       })
       .from(chatbot)
-      .where(eq(chatbot.account_id, accountId))
+      .where(
+        and(
+          eq(chatbot.account_id, accountId),
+          eq(chatbot.status, EChatbotStatus.active)
+        )
+      )
       .execute();
 
     return result[0]?.total ?? 0;
@@ -32,7 +38,12 @@ export class DashboardChatbotsRepository {
         total: count(),
       })
       .from(chatbot)
-      .where(eq(chatbot.account_id, accountId))
+      .where(
+        and(
+          eq(chatbot.account_id, accountId),
+          eq(chatbot.status, EChatbotStatus.active)
+        )
+      )
       .execute();
 
     return result[0]?.total ?? 0;

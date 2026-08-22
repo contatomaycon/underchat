@@ -14,6 +14,7 @@ import { ServerBuildGenerateRequest } from '@core/schema/server/generateServerBu
 import { ServerBuildGenerateResponse } from '@core/schema/server/generateServerBuild/response.schema';
 import { PairServerBuildResponse } from '@core/schema/server/pairServerBuild/response.schema';
 import { DeleteServerBuildResponse } from '@core/schema/server/deleteServerBuild/response.schema';
+import { DeleteServerBuildVersionResponse } from '@core/schema/server/deleteServerBuildVersion/response.schema';
 import { RetryServerBuildRequest } from '@core/schema/server/retryServerBuild/request.schema';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
@@ -426,6 +427,49 @@ export const useServerBuildStore = defineStore('serverBuild', {
             message =
               error.response?.data?.message ??
               this.i18n.global.t('build_delete_conflict');
+          } else {
+            message = error.response?.data?.message ?? message;
+          }
+        }
+
+        this.showSnackbar(message, EColor.error);
+        this.loading = false;
+        return false;
+      }
+    },
+
+    async deleteBuildVersion(serverBuildVersionId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<
+          IApiResponse<DeleteServerBuildVersionResponse>
+        >(`/server/build/version/${serverBuildVersionId}`);
+
+        this.loading = false;
+
+        const data = response.data;
+        if (!data?.status || !data?.data) {
+          this.showSnackbar(
+            data?.message ?? this.i18n.global.t('build_remove_version_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('build_remove_version_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let message = this.i18n.global.t('build_remove_version_error');
+        if (error instanceof AxiosError) {
+          if (error.response?.status === 409) {
+            message =
+              error.response?.data?.message ??
+              this.i18n.global.t('build_remove_version_conflict');
           } else {
             message = error.response?.data?.message ?? message;
           }

@@ -4,6 +4,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
+import { normalizeWhatsappConnectionStatus } from '@core/common/functions/whatsappConnectionStatus';
 
 function optionalNumber(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value) && value !== 0) {
@@ -57,6 +58,9 @@ export function protoToConnectionState(
   }
   if (proto.connection_attempt_id) {
     state.connection_attempt_id = proto.connection_attempt_id;
+  }
+  if (proto.authorized_connection_epoch) {
+    state.authorized_connection_epoch = proto.authorized_connection_epoch;
   }
   if (proto.debug_trace_id) {
     state.debug_trace_id = proto.debug_trace_id;
@@ -117,6 +121,15 @@ export function protoToConnectionState(
   if (proto.last_probe_at) {
     state.last_probe_at = proto.last_probe_at;
   }
+  const connectionStatus = normalizeWhatsappConnectionStatus(
+    proto.connection_status
+  );
+  if (connectionStatus) {
+    state.connection_status = connectionStatus;
+  }
+  if (proto.connection_status_source_id) {
+    state.connection_status_source_id = proto.connection_status_source_id;
+  }
 
   const time = optionalNumber(proto.time);
   const secondsUntilNextAttempt = optionalNumber(
@@ -171,6 +184,7 @@ export function connectionStateToProto(
     attempt: state.attempt ?? 0,
     max_attempts: state.max_attempts ?? 0,
     connection_attempt_id: state.connection_attempt_id ?? '',
+    authorized_connection_epoch: state.authorized_connection_epoch ?? '',
     debug_trace_id: state.debug_trace_id ?? '',
     qr_pending: state.qr_pending ?? false,
     qr_generated_at: state.qr_generated_at ?? '',
@@ -193,5 +207,7 @@ export function connectionStateToProto(
     degraded_reason: state.degraded_reason ?? '',
     last_probe_at: state.last_probe_at ?? '',
     probe_latency_ms: state.probe_latency_ms ?? 0,
+    connection_status: state.connection_status,
+    connection_status_source_id: state.connection_status_source_id ?? '',
   };
 }

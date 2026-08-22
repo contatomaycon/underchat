@@ -11,6 +11,18 @@ import {
 } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
+import { exportCanonicalSessionProjection } from '@wwebjs/whatsapp-web.js/src/session/CanonicalSessionBridge.js';
+import {
+  buildSecureSessionPackage,
+  extractWhatsAppWebAuthDump,
+  readWhatsAppPageContext,
+  readWhatsAppReadiness,
+  targetProviderForWorkerType,
+  type WhatsAppPageContext,
+  type WhatsAppWebAuthDump,
+  type WwebjsCanonicalProjection,
+} from '@underchat/whatsapp-web-session-browser';
+
 import {
   AuthenticatorApiClient,
   type AuthenticatorActionResult,
@@ -30,6 +42,8 @@ declare const __UNDERCHAT_AUTHENTICATOR_CHANNEL__: string;
 const appMainDir = import.meta.dirname;
 const WHATSAPP_WEB_ORIGIN = 'https://web.whatsapp.com';
 const WWEBJS_PROFILE_MAX_BYTES = 80 * 1024 * 1024;
+const WWEBJS_CANONICAL_MAX_BYTES = 64 * 1024 * 1024;
+const WWEBJS_CANONICAL_MAX_RECORDS = 200_000;
 const WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS = 45_000;
 const WWEBJS_PROFILE_INCLUDE_ROOT_ENTRIES = new Set([
   'Cookies',
@@ -61,15 +75,8 @@ const CONTROLLED_BROWSER_TARGET_TIMEOUT_MS = 45_000;
 const CONTROLLED_BROWSER_HANDOFF_TIMEOUT_MS = 10 * 60_000;
 const CONTROLLED_BROWSER_HANDOFF_POLL_MS = 2_000;
 const CONTROLLED_BROWSER_STABLE_WINDOW_MS = 30_000;
+const CONTROLLED_BROWSER_CLOSE_CDP_TIMEOUT_MS = 2_000;
 const CONTROLLED_BROWSER_EXIT_TIMEOUT_MS = 6_000;
-const CONTROLLED_BROWSER_PROVIDER_MAP: Record<
-  string,
-  SecureSessionPackage['target_provider']
-> = {
-  '019a930d-c6f6-766d-9c84-53307d4159a1': 'baileys',
-  '019a930d-c6f6-766d-9c84-62b9c3e7d1f0': 'wwebjs',
-  'e80ad183-2b46-4628-9105-a036f2d28720': 'whatsmeow',
-};
 const SECURE_SESSION_TERMINAL_STATUSES = new Set([
   'connected_confirmed',
   'failed',
@@ -129,57 +136,7 @@ type CdpEvaluationResult<T = unknown> = {
     value?: T;
   };
 };
-type ControlledBrowserPageContext = {
-  href: string;
-  indexedDbNames: string[];
-  userAgent: string;
-  webVersion?: string;
-};
-type BufferJsonWrapper = {
-  data: string;
-  type: 'Buffer';
-};
-type WhatsAppWebExtractedCreds = {
-  account: {
-    accountSignature: string;
-    accountSignatureKey: string;
-    details: string;
-    deviceSignature: string;
-  };
-  advSecretKey: string | null;
-  firstUnuploadedPreKeyId: number;
-  me: {
-    id: string;
-    lid?: string;
-    name?: string | null;
-    username?: string | null;
-  };
-  nextPreKeyId: number;
-  noiseKey: {
-    private: string;
-    public: string;
-  };
-  platform: 'web';
-  registrationId: number;
-  signedIdentityKey: {
-    private: string;
-    public: string;
-  };
-  signedPreKey: {
-    keyId: number;
-    keyPair: {
-      private: string;
-      public: string;
-    };
-    signature: string;
-  };
-};
-type WhatsAppWebAuthDump = {
-  _debug?: JsonRecord[];
-  appStateSyncKeyCount: number;
-  appStateVersionCount: number;
-  creds: WhatsAppWebExtractedCreds;
-};
+type ControlledBrowserPageContext = WhatsAppPageContext;
 type WhatsAppReadinessSnapshot = {
   authenticated: boolean;
   hasBlockingLoginUi: boolean;
@@ -611,104 +568,6 @@ function assertSecureSessionStillActive(): void {
   }
 }
 
-const CONTROLLED_BROWSER_READINESS_SCRIPT = String.raw`
-(() => {
-  function hasWhatsAppSyncBlockingText() {
-    const text = document.body && document.body.innerText ? document.body.innerText : '';
-    if (!text) return false;
-    return [
-      /mantenha\s+o\s+app\s+aberto\s+nos\s+dois\s+dispositivos/i,
-      /keep\s+(?:the\s+)?app\s+open\s+on\s+both\s+devices/i,
-      /keep\s+whatsapp\s+open\s+on\s+both\s+devices/i,
-      /sincronizando\s+(?:suas\s+)?mensagens/i,
-      /syncing\s+(?:your\s+)?messages/i,
-      /carregando\s+(?:suas\s+)?mensagens/i,
-      /loading\s+(?:your\s+)?messages/i
-    ].some(function(pattern) { return pattern.test(text); });
-  }
-
-  if (!location.origin.startsWith('https://web.whatsapp.com')) {
-    return {
-      authenticated: false,
-      hasBlockingLoginUi: false,
-      hasChatUi: false,
-      readyForHandoff: false,
-      reason: 'not_whatsapp_web',
-      syncing: false
-    };
-  }
-
-  const blockingSelectors = [
-    'canvas[aria-label*="Scan"]',
-    '[data-testid="qrcode"]',
-    '[data-ref] canvas',
-    'input[name="phone"]'
-  ];
-  const hasBlockingLoginUi = blockingSelectors.some(function(selector) {
-    return document.querySelector(selector);
-  });
-  const hasSyncBlockingText = hasWhatsAppSyncBlockingText();
-  const selectors = [
-    '#side',
-    '[data-testid="chat-list"]',
-    '[data-testid="conversation-list"]',
-    '[data-testid="conversation-panel-wrapper"]',
-    '[aria-label="Chat list"]',
-    '[aria-label="Lista de conversas"]',
-    '[contenteditable="true"][role="textbox"]'
-  ];
-  const hasChatUi = selectors.some(function(selector) {
-    return document.querySelector(selector);
-  });
-  const authenticated = !hasBlockingLoginUi && hasChatUi;
-  const readyForHandoff = authenticated && !hasSyncBlockingText;
-  const reason = hasBlockingLoginUi
-    ? 'login_required'
-    : hasSyncBlockingText
-      ? 'whatsapp_web_syncing'
-      : hasChatUi
-        ? 'ready_for_handoff'
-        : 'waiting_for_chat_ui';
-
-  return {
-    authenticated,
-    hasBlockingLoginUi,
-    hasChatUi,
-    readyForHandoff,
-    reason,
-    syncing: authenticated && hasSyncBlockingText
-  };
-})()
-`;
-
-const CONTROLLED_BROWSER_PAGE_CONTEXT_SCRIPT = String.raw`
-(async () => {
-  const indexedDbNames =
-    typeof indexedDB.databases === 'function'
-      ? await indexedDB
-          .databases()
-          .then(function(databases) {
-            return databases
-              .map(function(database) { return database.name; })
-              .filter(function(name) { return Boolean(name); });
-          })
-          .catch(function() { return []; })
-      : [];
-  const versionSource = [
-    document.querySelector('meta[name="version"]') &&
-      document.querySelector('meta[name="version"]').getAttribute('content'),
-    document.documentElement.getAttribute('data-app-version')
-  ].find(function(value) { return value && value.trim(); });
-
-  return {
-    href: location.href,
-    indexedDbNames,
-    userAgent: navigator.userAgent,
-    webVersion: versionSource ? versionSource.trim() : undefined
-  };
-})()
-`;
-
 async function runControlledBrowserSecureSession(): Promise<AuthenticatorActionResult> {
   const pairing = currentPairing;
   if (!pairing || pairing.context.mode !== 'secure') {
@@ -763,14 +622,14 @@ async function runControlledBrowserSecureSession(): Promise<AuthenticatorActionR
     );
     let uploadPackage = sessionPackage;
 
-    if (shouldIncludeWwebjsProfile(sessionPackage.target_provider)) {
-      await closeControlledBrowserProcess(
-        instance,
-        'controlled_browser_profile_export'
-      );
-      pageSession.close();
-      pageSession = null;
+    await closeControlledBrowserProcess(
+      instance,
+      'controlled_browser_session_captured'
+    );
+    pageSession.close();
+    pageSession = null;
 
+    if (shouldIncludeWwebjsProfile(sessionPackage.target_provider)) {
       const wwebjsLocalAuthFiles =
         await collectControlledBrowserWwebjsLocalAuthProfileFiles(
           instance.profileRoot,
@@ -1183,13 +1042,13 @@ async function waitForControlledBrowserHandoffReady(
   let lastReportedStatus: string | null = null;
 
   while (Date.now() - startedAt <= CONTROLLED_BROWSER_HANDOFF_TIMEOUT_MS) {
-    const evaluatedReadiness =
-      await evaluateCdpExpression<WhatsAppReadinessSnapshot>(
-        pageSession,
-        CONTROLLED_BROWSER_READINESS_SCRIPT,
-        WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
-        'Não foi possível verificar o estado do WhatsApp Web no Google Chrome.'
-      );
+    const evaluatedReadiness = await evaluateCdpFunction(
+      pageSession,
+      readWhatsAppReadiness,
+      [],
+      WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
+      'Não foi possível verificar o estado do WhatsApp Web no Google Chrome.'
+    );
     lastReadiness = normalizeWhatsAppReadinessSnapshot(evaluatedReadiness);
 
     if (lastReadiness.readyForHandoff) {
@@ -1268,87 +1127,85 @@ async function collectControlledBrowserSecureSessionPackage(
 ): Promise<SecureSessionPackage> {
   const targetProvider = getControlledBrowserTargetProvider();
   const pageContext = normalizeControlledBrowserPageContext(
-    await evaluateCdpExpression<ControlledBrowserPageContext>(
+    await evaluateCdpFunction(
       pageSession,
-      CONTROLLED_BROWSER_PAGE_CONTEXT_SCRIPT,
+      readWhatsAppPageContext,
+      [],
       WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
       'Não foi possível ler o contexto do WhatsApp Web no Google Chrome.'
     )
   );
-  const needsWhatsAppWebCreds = targetProvider !== 'wwebjs';
-  const authDump = needsWhatsAppWebCreds
-    ? normalizeWhatsAppWebAuthDump(
-        await evaluateCdpExpression<unknown>(
-          pageSession,
-          EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT,
-          WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
-          'Tempo excedido ao extrair credenciais do WhatsApp Web no Google Chrome.'
-        )
-      )
-    : null;
+  const authDump = normalizeWhatsAppWebAuthDump(
+    await evaluateCdpFunction(
+      pageSession,
+      extractWhatsAppWebAuthDump,
+      [],
+      WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
+      'Tempo excedido ao extrair a sessão canônica do WhatsApp Web no Google Chrome.'
+    )
+  );
 
-  if (needsWhatsAppWebCreds && !authDump) {
+  if (!authDump) {
     throw new Error(
       'O Google Chrome autenticou, mas não retornou o pacote de credenciais do WhatsApp Web.'
     );
   }
 
+  const wwebjsCanonicalProjection =
+    targetProvider === 'wwebjs'
+      ? ((await evaluateCdpFunction(
+          pageSession,
+          exportCanonicalSessionProjection,
+          [
+            {
+              capturedAdvSecret: authDump.creds.advSecretKey,
+              maxBytes: WWEBJS_CANONICAL_MAX_BYTES,
+              maxRecords: WWEBJS_CANONICAL_MAX_RECORDS,
+            },
+          ],
+          WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
+          'Tempo excedido ao gerar a projeção canônica do WWebJS no Google Chrome.'
+        )) as WwebjsCanonicalProjection)
+      : undefined;
+
   logEvent(
     'secure_session.controlled_browser.package.collect.done',
     currentPairing?.context,
     {
-      auth_dump: authDump ? summarizeAuthDump(authDump) : null,
+      auth_dump: summarizeAuthDump(authDump),
       browser_kind: instance.kind,
+      canonical_projection_complete:
+        wwebjsCanonicalProjection?.complete ?? null,
       indexed_db_count: pageContext.indexedDbNames.length,
       target_provider: targetProvider,
     }
   );
 
-  const payload: JsonRecord = {
-    controlled_browser: {
-      kind: instance.kind,
-      name: instance.name,
-      version: instance.version ?? null,
+  const sessionPackage = buildSecureSessionPackage({
+    authDump,
+    pageContext,
+    sourceClient: {
+      kind: 'underchat_authenticator',
+      platform: process.platform,
+      version: app.getVersion(),
     },
-    href: pageContext.href,
-    indexed_db_names: pageContext.indexedDbNames,
-    user_agent: pageContext.userAgent,
-  };
-
-  if (authDump) {
-    payload.whatsapp_web_creds = authDump.creds;
-    payload.whatsapp_web_session_summary = {
-      app_state_sync_key_count: authDump.appStateSyncKeyCount,
-      app_state_version_count: authDump.appStateVersionCount,
-      has_account: Boolean(authDump.creds.account.accountSignatureKey),
-      has_lid: Boolean(authDump.creds.me.lid),
-      has_me: Boolean(authDump.creds.me.id),
-      has_noise_key: Boolean(authDump.creds.noiseKey.private),
-      has_signed_identity_key: Boolean(
-        authDump.creds.signedIdentityKey.private
-      ),
-      has_signed_pre_key: Boolean(authDump.creds.signedPreKey.signature),
-      registration_id_present: authDump.creds.registrationId > 0,
-    };
-  }
-
-  if (authDump && (targetProvider === 'baileys' || targetProvider === 'auto')) {
-    payload.baileys_multi_file_auth_state = {
-      files: {
-        'creds.json': JSON.stringify(createBaileysCredsFile(authDump.creds)),
-      },
-      source: 'whatsapp_web_creds',
-    };
-  }
+    targetProvider,
+    wwebjsCanonicalProjection,
+  });
+  const payload = isRecord(sessionPackage.payload)
+    ? sessionPackage.payload
+    : {};
 
   return {
-    account_hint: authDump?.creds.me.id,
-    created_at: new Date().toISOString(),
-    format_version: 'underchat-wa-web-session-v1',
-    payload,
-    source: 'whatsapp_web',
-    target_provider: targetProvider,
-    web_version: pageContext.webVersion,
+    ...sessionPackage,
+    payload: {
+      ...payload,
+      controlled_browser: {
+        kind: instance.kind,
+        name: instance.name,
+        version: instance.version ?? null,
+      },
+    },
   };
 }
 
@@ -1422,12 +1279,7 @@ function shouldIncludeWwebjsProfile(
 }
 
 function getControlledBrowserTargetProvider(): SecureSessionPackage['target_provider'] {
-  const workerTypeId = currentPairing?.session?.worker_type_id;
-  if (!workerTypeId) {
-    return 'auto';
-  }
-
-  return CONTROLLED_BROWSER_PROVIDER_MAP[workerTypeId] ?? 'auto';
+  return targetProviderForWorkerType(currentPairing?.session?.worker_type_id);
 }
 
 function normalizeControlledBrowserPageContext(
@@ -1514,112 +1366,6 @@ function normalizeWhatsAppWebAuthDump(
   return value as WhatsAppWebAuthDump;
 }
 
-function createBaileysCredsFile(creds: WhatsAppWebExtractedCreds): JsonRecord {
-  const accountSignatureKey = base64ToBytes(creds.account.accountSignatureKey);
-  const signalIdentities =
-    accountSignatureKey && creds.me.lid
-      ? [
-          {
-            identifier: {
-              deviceId: 0,
-              name: creds.me.lid,
-            },
-            identifierKey: bufferWrap(
-              bytesToBase64Required(
-                prefixSignalPublicKey(accountSignatureKey),
-                'account signature key'
-              )
-            ),
-          },
-        ]
-      : [];
-
-  return {
-    account: {
-      accountSignature: bufferWrap(creds.account.accountSignature),
-      accountSignatureKey: bufferWrap(creds.account.accountSignatureKey),
-      details: bufferWrap(creds.account.details),
-      deviceSignature: bufferWrap(creds.account.deviceSignature),
-    },
-    accountSettings: {
-      unarchiveChats: false,
-    },
-    accountSyncCounter: 0,
-    advSecretKey: creds.advSecretKey ?? '',
-    firstUnuploadedPreKeyId: creds.firstUnuploadedPreKeyId,
-    me: creds.me,
-    nextPreKeyId: creds.nextPreKeyId,
-    noiseKey: {
-      private: bufferWrap(creds.noiseKey.private),
-      public: bufferWrap(creds.noiseKey.public),
-    },
-    pairingEphemeralKeyPair: {
-      private: bufferWrap(creds.noiseKey.private),
-      public: bufferWrap(creds.noiseKey.public),
-    },
-    platform: creds.platform,
-    processedHistoryMessages: [],
-    registered: true,
-    registrationId: creds.registrationId,
-    signalIdentities,
-    signedIdentityKey: {
-      private: bufferWrap(creds.signedIdentityKey.private),
-      public: bufferWrap(creds.signedIdentityKey.public),
-    },
-    signedPreKey: {
-      keyId: creds.signedPreKey.keyId,
-      keyPair: {
-        private: bufferWrap(creds.signedPreKey.keyPair.private),
-        public: bufferWrap(creds.signedPreKey.keyPair.public),
-      },
-      signature: bufferWrap(creds.signedPreKey.signature),
-    },
-  };
-}
-
-function base64ToBytes(value: string): Uint8Array | null {
-  const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/');
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
-    return null;
-  }
-
-  try {
-    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-    return Uint8Array.from(Buffer.from(padded, 'base64'));
-  } catch {
-    return null;
-  }
-}
-
-function bytesToBase64Required(
-  value: Uint8Array | null,
-  label: string
-): string {
-  if (!value) {
-    throw new Error(`Não foi possível converter ${label} para base64.`);
-  }
-
-  return Buffer.from(value).toString('base64');
-}
-
-function prefixSignalPublicKey(value: Uint8Array): Uint8Array {
-  if (value.length === 33) {
-    return value;
-  }
-
-  const output = new Uint8Array(value.length + 1);
-  output[0] = 5;
-  output.set(value, 1);
-  return output;
-}
-
-function bufferWrap(base64: string): BufferJsonWrapper {
-  return {
-    data: base64,
-    type: 'Buffer',
-  };
-}
-
 async function cleanupActiveControlledBrowser(reason: string): Promise<void> {
   const instance = activeControlledBrowser;
   if (!instance) {
@@ -1669,11 +1415,17 @@ async function closeControlledBrowserProcess(
   );
 
   const browserCdpUrl = `ws://127.0.0.1:${instance.debugPort}${instance.webSocketPath}`;
-  const browserSession = await CdpSession.connect(browserCdpUrl).catch(
-    () => null
-  );
+  const browserSession = await withTimeout(
+    CdpSession.connect(browserCdpUrl),
+    CONTROLLED_BROWSER_CLOSE_CDP_TIMEOUT_MS,
+    'Tempo esgotado ao conectar ao Chrome para encerrá-lo.'
+  ).catch(() => null);
   if (browserSession) {
-    await browserSession.send('Browser.close').catch(() => undefined);
+    await withTimeout(
+      browserSession.send('Browser.close'),
+      CONTROLLED_BROWSER_CLOSE_CDP_TIMEOUT_MS,
+      'Tempo esgotado ao solicitar o encerramento do Chrome.'
+    ).catch(() => undefined);
     browserSession.close();
   }
 
@@ -1682,8 +1434,13 @@ async function closeControlledBrowserProcess(
     CONTROLLED_BROWSER_EXIT_TIMEOUT_MS
   );
   if (!exited) {
-    instance.child.kill();
-    await waitForChildExit(instance.child, 2_000);
+    instance.child.kill('SIGKILL');
+    const forceExited = await waitForChildExit(instance.child, 2_000);
+    if (!forceExited) {
+      throw new Error(
+        'Não foi possível encerrar o Chrome antes de transferir a sessão.'
+      );
+    }
   }
 
   logEvent(
@@ -1781,6 +1538,30 @@ async function evaluateCdpExpression<T>(
   }
 
   return response.result?.value as T;
+}
+
+async function evaluateCdpFunction<TArgs extends unknown[], TResult>(
+  session: CdpSession,
+  pageFunction: (...args: TArgs) => TResult,
+  args: TArgs,
+  timeoutMs: number,
+  timeoutMessage: string
+): Promise<Awaited<TResult>> {
+  const serializedArgs = args.map((argument) => {
+    const serialized = JSON.stringify(argument);
+    if (serialized === undefined) {
+      throw new Error('cdp_function_argument_not_serializable');
+    }
+    return serialized;
+  });
+  const expression = `(${pageFunction.toString()})(${serializedArgs.join(',')})`;
+
+  return evaluateCdpExpression<Awaited<TResult>>(
+    session,
+    expression,
+    timeoutMs,
+    timeoutMessage
+  );
 }
 
 function describeCdpException(exceptionDetails: unknown): string {
@@ -2279,552 +2060,6 @@ function summarizeAuthDump(dump: unknown): Record<string, unknown> {
     registration_id_present: typeof creds.registrationId === 'number',
   };
 }
-
-const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
-(async () => {
-  const extractionDebug = [];
-
-  function isRecord(value) {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-  }
-
-  function pushDebug(event, details) {
-    extractionDebug.push({
-      details: details || {},
-      event
-    });
-  }
-
-  function summarizeRecordKeys(value) {
-    return isRecord(value) ? Object.keys(value).slice(0, 40).sort() : [];
-  }
-
-  function summarizePair(pair) {
-    return pair
-      ? {
-          priv_len: pair.private ? pair.private.length : 0,
-          pub_len: pair.public ? pair.public.length : 0,
-          plausible: isPlausibleNoiseKeyPair(pair.private, pair.public)
-        }
-      : null;
-  }
-
-  function bytesToBase64(value) {
-    const bytes = toUint8(value);
-    if (!bytes) return null;
-    let binary = '';
-    const step = 0x8000;
-    for (let index = 0; index < bytes.length; index += step) {
-      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(index, index + step)));
-    }
-    return btoa(binary);
-  }
-
-  function bytesToBase64Required(value, label) {
-    const base64 = bytesToBase64(value);
-    if (!base64) throw new Error('Não foi possível converter ' + label + ' para base64.');
-    return base64;
-  }
-
-  function toUint8(value) {
-    if (!value) return null;
-    if (value instanceof Uint8Array) return value;
-    if (value instanceof ArrayBuffer) return new Uint8Array(value);
-    if (ArrayBuffer.isView(value)) {
-      return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    }
-    if (typeof value === 'string') {
-      const base64Bytes = base64ToBytes(value);
-      if (base64Bytes) return base64Bytes;
-      return Uint8Array.from(value, function(char) { return char.charCodeAt(0); });
-    }
-    if (isRecord(value) && value.type === 'Buffer' && typeof value.data === 'string') {
-      try {
-        return Uint8Array.from(atob(value.data), function(char) { return char.charCodeAt(0); });
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  function base64ToBytes(value) {
-    const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/');
-    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) return null;
-    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-    try {
-      return Uint8Array.from(atob(padded), function(char) { return char.charCodeAt(0); });
-    } catch {
-      return null;
-    }
-  }
-
-  function getPath(value, path) {
-    let current = value;
-    for (const key of path) {
-      if (!isRecord(current)) return undefined;
-      current = current[key];
-    }
-    return current;
-  }
-
-  function toUint8FromPaths(value, paths) {
-    for (const path of paths) {
-      const bytes = toUint8(getPath(value, path));
-      if (bytes) return bytes;
-    }
-    return null;
-  }
-
-  function toPositiveInteger(value) {
-    const numeric = typeof value === 'number' ? value : Number(value);
-    return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
-  }
-
-  function normalizeOptionalString(value) {
-    return typeof value === 'string' && value.trim() ? value.trim() : null;
-  }
-
-  function openIndexedDb(name) {
-    return new Promise(function(resolve, reject) {
-      const request = indexedDB.open(name);
-      request.onsuccess = function() { resolve(request.result); };
-      request.onerror = function() { reject(request.error || new Error('indexeddb_open_failed:' + name)); };
-    });
-  }
-
-  function getAllFromIndexedDbStore(database, storeName) {
-    return new Promise(function(resolve, reject) {
-      try {
-        if (!database.objectStoreNames.contains(storeName)) {
-          resolve([]);
-          return;
-        }
-        const transaction = database.transaction(storeName, 'readonly');
-        const request = transaction.objectStore(storeName).getAll();
-        request.onsuccess = function() { resolve(Array.isArray(request.result) ? request.result : []); };
-        request.onerror = function() { reject(request.error || new Error('indexeddb_get_all_failed:' + storeName)); };
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  async function getAllFromFirstStore(database, storeNames) {
-    for (const storeName of storeNames) {
-      const rows = await getAllFromIndexedDbStore(database, storeName);
-      if (rows.length > 0) return rows;
-    }
-    return [];
-  }
-
-  function createSignalMetaMap(rows) {
-    const metaMap = {};
-    for (const row of rows) {
-      if (!isRecord(row)) continue;
-      const key = normalizeOptionalString(row.key);
-      if (!key) continue;
-      metaMap[key] = row.value;
-    }
-    return metaMap;
-  }
-
-  async function decryptRegistrationMaterial(value) {
-    if (!isRecord(value)) return null;
-    const encrypted = toUint8(value.value);
-    if (!value.encKey || !encrypted) return null;
-    const decrypted = await crypto.subtle.decrypt(
-      { counter: new Uint8Array(16), length: 128, name: 'AES-CTR' },
-      value.encKey,
-      new Uint8Array(encrypted)
-    );
-    return new Uint8Array(decrypted);
-  }
-
-  function unwrapModule(moduleValue) {
-    return moduleValue && moduleValue.default ? moduleValue.default : moduleValue;
-  }
-
-  function getWaModule(name) {
-    try {
-      if (typeof window.require === 'function') {
-        return unwrapModule(window.require(name));
-      }
-    } catch {}
-
-    try {
-      if (typeof require === 'function') {
-        return unwrapModule(require(name));
-      }
-    } catch {}
-
-    try {
-      if (typeof window.__d === 'function') {
-        let captured;
-        const sentinel = '__underchatWaProbe_' + Math.random().toString(36).slice(2);
-        window.__d(sentinel, [name], function(_target, _exports, _module, parentRequire) {
-          if (typeof parentRequire === 'function') captured = unwrapModule(parentRequire(name));
-        });
-        if (!captured && typeof window.__d.require === 'function') {
-          captured = unwrapModule(window.__d.require(name));
-        }
-        if (captured) return captured;
-      }
-    } catch {}
-
-    return null;
-  }
-
-  async function getRegistrationInfoViaInternalModule() {
-    const moduleValue = getWaModule('WAWebSignalStoreApi');
-    const signalStore = isRecord(moduleValue) ? moduleValue.waSignalStore : null;
-    const getter = isRecord(signalStore) ? signalStore.getRegistrationInfo : null;
-    if (typeof getter !== 'function') return null;
-    try {
-      return await getter();
-    } catch {
-      return null;
-    }
-  }
-
-  async function getNoiseInfoViaInternalModule() {
-    const moduleValue = getWaModule('WAWebUserPrefsInfoStore');
-    pushDebug('noise.module.lookup', {
-      module_present: isRecord(moduleValue),
-      module_keys: summarizeRecordKeys(moduleValue)
-    });
-
-    const containers = [];
-    if (isRecord(moduleValue)) {
-      containers.push({ label: 'module', value: moduleValue });
-      if (isRecord(moduleValue.waNoiseInfo)) {
-        containers.push({ label: 'module.waNoiseInfo', value: moduleValue.waNoiseInfo });
-      }
-      if (isRecord(moduleValue.default)) {
-        containers.push({ label: 'module.default', value: moduleValue.default });
-      }
-      if (isRecord(moduleValue.default) && isRecord(moduleValue.default.waNoiseInfo)) {
-        containers.push({ label: 'module.default.waNoiseInfo', value: moduleValue.default.waNoiseInfo });
-      }
-    }
-
-    for (const candidate of containers) {
-      const container = candidate.value;
-      pushDebug('noise.container.inspect', {
-        label: candidate.label,
-        keys: summarizeRecordKeys(container)
-      });
-      const directPair = normalizeNoiseKeyPair(container);
-      if (directPair) {
-        pushDebug('noise.source.selected', {
-          source: candidate.label,
-          pair: summarizePair(directPair)
-        });
-        return directPair;
-      }
-
-      for (const field of ['noiseInfo', 'staticKeyPair', 'keyPair', 'value']) {
-        const fieldPair = normalizeNoiseKeyPair(container[field]);
-        if (fieldPair) {
-          pushDebug('noise.source.selected', {
-            source: candidate.label + '.' + field,
-            pair: summarizePair(fieldPair)
-          });
-          return fieldPair;
-        }
-      }
-
-      for (const methodName of ['getUnlockedNoiseInfo', 'getNoiseInfo', 'get', 'getNoiseInfoStore']) {
-        const getter = container[methodName];
-        if (typeof getter !== 'function') {
-          pushDebug('noise.method.missing', {
-            container: candidate.label,
-            method: methodName
-          });
-          continue;
-        }
-        try {
-          const value = await getter.call(container);
-          const pair = normalizeNoiseKeyPair(value);
-          pushDebug('noise.method.result', {
-            container: candidate.label,
-            method: methodName,
-            pair: summarizePair(pair),
-            value_keys: summarizeRecordKeys(value)
-          });
-          if (pair) return pair;
-        } catch (error) {
-          pushDebug('noise.method.error', {
-            container: candidate.label,
-            method: methodName,
-            reason: error && error.message ? String(error.message) : String(error)
-          });
-        }
-      }
-    }
-
-    return getNoiseInfoFromLocalStorage();
-  }
-
-  function normalizeNoiseKeyPair(value) {
-    if (!isRecord(value)) return null;
-
-    const candidates = [
-      value,
-      value.staticKeyPair,
-      value.keyPair,
-      value.noiseKey,
-      value.noiseInfo,
-      value.value,
-      value.data
-    ];
-
-    for (const candidate of candidates) {
-      if (!isRecord(candidate)) continue;
-      const publicKey = toUint8FromPaths(candidate, [
-        ['pubKey'],
-        ['publicKey'],
-        ['public'],
-        ['pub']
-      ]);
-      const privateKey = toUint8FromPaths(candidate, [
-        ['privKey'],
-        ['privateKey'],
-        ['private'],
-        ['priv']
-      ]);
-      if (publicKey && privateKey) {
-        pushDebug('noise.pair.candidate', {
-          pair: summarizePair({ private: privateKey, public: publicKey })
-        });
-        if (!isPlausibleNoiseKeyPair(privateKey, publicKey)) {
-          continue;
-        }
-        return { private: privateKey, public: publicKey };
-      }
-    }
-
-    return null;
-  }
-
-  function isPlausibleNoiseKeyPair(privateKey, publicKey) {
-    return privateKey.length === 32 && (publicKey.length === 32 || publicKey.length === 33);
-  }
-
-  function getNoiseInfoFromLocalStorage() {
-    for (const key of ['WANoiseInfo', 'NOISE_INFO', 'MD_NOISE_KEYS']) {
-      const value = readLocalStorageJson(key);
-      pushDebug('noise.local_storage.inspect', {
-        key,
-        keys: summarizeRecordKeys(value),
-        present: value !== null,
-        type: Array.isArray(value) ? 'array' : typeof value
-      });
-      const pair = normalizeNoiseKeyPair(value);
-      if (pair) {
-        pushDebug('noise.source.selected', {
-          source: 'localStorage.' + key,
-          pair: summarizePair(pair)
-        });
-        return pair;
-      }
-    }
-
-    return null;
-  }
-
-  async function getAdvSecretKeyBase64() {
-    const moduleValue = getWaModule('WAWebUserPrefsMultiDevice');
-    const getter = isRecord(moduleValue) ? moduleValue.getADVSecretKey : null;
-    if (typeof getter !== 'function') return null;
-    try {
-      const value = await getter();
-      if (typeof value === 'string') return value;
-      return bytesToBase64(value);
-    } catch {
-      return null;
-    }
-  }
-
-  async function getModelTableRows(moduleName, tableGetterName) {
-    const moduleValue = getWaModule(moduleName);
-    const getter = isRecord(moduleValue) ? moduleValue[tableGetterName] : null;
-    if (typeof getter !== 'function') return [];
-    try {
-      const table = getter();
-      const all = isRecord(table) ? table.all : null;
-      if (typeof all !== 'function') return [];
-      const rows = await all();
-      return Array.isArray(rows) ? rows : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function getLatestSignedPreKey(rows) {
-    const candidates = [];
-    for (const row of rows) {
-      if (!isRecord(row)) continue;
-      const keyPair = isRecord(row.keyPair) ? row.keyPair : null;
-      const keyId = toPositiveInteger(row.keyId);
-      const publicKey = keyPair ? toUint8FromPaths(keyPair, [['pubKey'], ['publicKey'], ['public']]) : null;
-      const privateKey = keyPair ? toUint8FromPaths(keyPair, [['privKey'], ['privateKey'], ['private']]) : null;
-      const signature = toUint8(row.signature);
-      if (!keyId || !publicKey || !privateKey || !signature) continue;
-      candidates.push({
-        keyId,
-        keyPair: {
-          private: bytesToBase64Required(privateKey, 'signed pre-key private'),
-          public: bytesToBase64Required(publicKey, 'signed pre-key public')
-        },
-        signature: bytesToBase64Required(signature, 'signed pre-key signature')
-      });
-    }
-    candidates.sort(function(left, right) { return left.keyId - right.keyId; });
-    return candidates[candidates.length - 1] || null;
-  }
-
-  function extractAdvAccount(value) {
-    if (!isRecord(value)) return null;
-    const accountSignature = bytesToBase64(value.accountSignature);
-    const accountSignatureKey = bytesToBase64(value.accountSignatureKey);
-    const details = bytesToBase64(value.details);
-    const deviceSignature = bytesToBase64(value.deviceSignature);
-    if (!accountSignature || !accountSignatureKey || !details || !deviceSignature) return null;
-    return { accountSignature, accountSignatureKey, details, deviceSignature };
-  }
-
-  function readLocalStorageJson(key) {
-    const value = localStorage.getItem(key);
-    if (value === null) return null;
-    try {
-      return JSON.parse(value);
-    } catch {
-      return value;
-    }
-  }
-
-  function widValueToString(value) {
-    if (typeof value === 'string') return value;
-    if (!isRecord(value)) return null;
-    return (
-      normalizeOptionalString(value._serialized) ||
-      normalizeOptionalString(value.serialized) ||
-      normalizeOptionalString(value.id) ||
-      normalizeOptionalString(value.user)
-    );
-  }
-
-  function widToJid(value) {
-    const wid = widValueToString(value);
-    if (!wid) return null;
-    const atIndex = wid.lastIndexOf('@');
-    const head = atIndex >= 0 ? wid.slice(0, atIndex) : wid;
-    const server = atIndex >= 0 ? wid.slice(atIndex + 1) : 's.whatsapp.net';
-    const colonIndex = head.indexOf(':');
-    const userAndAgent = colonIndex >= 0 ? head.slice(0, colonIndex) : head;
-    const device = colonIndex >= 0 ? Number(head.slice(colonIndex + 1)) : 0;
-    const dotIndex = userAndAgent.indexOf('.');
-    const user = dotIndex >= 0 ? userAndAgent.slice(0, dotIndex) : userAndAgent;
-    if (!user || !Number.isFinite(device)) return null;
-    return user + ':' + device + '@' + server;
-  }
-
-  function readMeFromModules() {
-    const connModel = getWaModule('WAWebConnModel');
-    const conn = isRecord(connModel) ? connModel.Conn : null;
-    if (!isRecord(conn)) return { id: null, lid: null };
-    return {
-      id: widToJid(conn.wid || conn.me || conn.meUser),
-      lid: widToJid(conn.lid || conn.meLid || conn.lidWid)
-    };
-  }
-
-  if (!location.origin.startsWith('https://web.whatsapp.com')) {
-    throw new Error('A janela atual não está no WhatsApp Web.');
-  }
-
-  const signalDb = await openIndexedDb('signal-storage');
-  let metaRows = [];
-  let signedPreKeyRows = [];
-  try {
-    metaRows = await getAllFromFirstStore(signalDb, ['signal-meta-store']);
-    signedPreKeyRows = await getAllFromFirstStore(signalDb, ['signed-prekey-store', 'signed-pre-key-store']);
-  } finally {
-    signalDb.close();
-  }
-
-  const metaMap = createSignalMetaMap(metaRows);
-  const registrationInfo = await getRegistrationInfoViaInternalModule();
-  const staticPublicKey =
-    (await decryptRegistrationMaterial(metaMap.signal_static_pubkey)) ||
-    toUint8FromPaths(registrationInfo, [
-      ['identityKeyPair', 'pubKey'],
-      ['identityKeyPair', 'publicKey'],
-      ['identityKeyPair', 'public']
-    ]);
-  const staticPrivateKey =
-    (await decryptRegistrationMaterial(metaMap.signal_static_privkey)) ||
-    toUint8FromPaths(registrationInfo, [
-      ['identityKeyPair', 'privKey'],
-      ['identityKeyPair', 'privateKey'],
-      ['identityKeyPair', 'private']
-    ]);
-  const noise = await getNoiseInfoViaInternalModule();
-  const signedPreKey = getLatestSignedPreKey(signedPreKeyRows);
-  const account = extractAdvAccount(metaMap.adv_signed_identity);
-  const registrationId =
-    toPositiveInteger(metaMap.signal_reg_id) ||
-    toPositiveInteger(getPath(registrationInfo, ['registrationId'])) ||
-    toPositiveInteger(getPath(registrationInfo, ['regId']));
-  const moduleMe = readMeFromModules();
-  const meId = widToJid(readLocalStorageJson('last-wid-md')) || moduleMe.id;
-  const meLid = widToJid(readLocalStorageJson('WALid')) || moduleMe.lid;
-  const meDisplayName = normalizeOptionalString(readLocalStorageJson('me-display-name'));
-
-  if (!registrationId) throw new Error('Não foi possível extrair o registrationId da sessão.');
-  if (!noise) throw new Error('Não foi possível extrair a noise key da sessão.');
-  if (!staticPublicKey || !staticPrivateKey) throw new Error('Não foi possível extrair a identity key da sessão.');
-  if (!signedPreKey) throw new Error('Não foi possível extrair a signed pre-key da sessão.');
-  if (!account) throw new Error('Não foi possível extrair a identidade ADV da sessão.');
-  if (!meId) throw new Error('Não foi possível identificar o JID conectado.');
-
-  const syncKeyRows = await getModelTableRows('WAWebSchemaSyncKeys', 'getSyncKeysTable');
-  const versionRows = await getModelTableRows('WAWebSchemaCollectionVersion', 'getCollectionVersionTable');
-  const preKeyId =
-    toPositiveInteger(metaMap.signal_prekey_id) ||
-    toPositiveInteger(metaMap.signal_pre_key_id) ||
-    signedPreKey.keyId + 1;
-
-  return {
-    _debug: extractionDebug,
-    appStateSyncKeyCount: syncKeyRows.length,
-    appStateVersionCount: versionRows.length,
-    creds: {
-      account,
-      advSecretKey: await getAdvSecretKeyBase64(),
-      firstUnuploadedPreKeyId: preKeyId,
-      me: Object.assign(
-        { id: meId },
-        meLid ? { lid: meLid } : {},
-        meDisplayName ? { name: meDisplayName } : {}
-      ),
-      nextPreKeyId: preKeyId,
-      noiseKey: {
-        private: bytesToBase64Required(noise.private, 'noise private key'),
-        public: bytesToBase64Required(noise.public, 'noise public key')
-      },
-      platform: 'web',
-      registrationId,
-      signedIdentityKey: {
-        private: bytesToBase64Required(staticPrivateKey, 'identity private key'),
-        public: bytesToBase64Required(staticPublicKey, 'identity public key')
-      },
-      signedPreKey
-    }
-  };
-})()
-`;
 
 async function collectProfileEntryFiles(input: {
   budget: { totalBytes: number };

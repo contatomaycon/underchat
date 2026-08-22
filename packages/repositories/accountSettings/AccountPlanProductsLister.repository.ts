@@ -40,7 +40,10 @@ export class AccountPlanProductsListerRepository {
     accountId: string,
     planProductId: string
   ): Promise<number> => {
-    if (planProductId === EPlanProduct.internal_chat) {
+    if (
+      planProductId === EPlanProduct.internal_chat ||
+      planProductId === EPlanProduct.integration
+    ) {
       return 1;
     }
     if (planProductId === EPlanProduct.worker) {
@@ -227,7 +230,9 @@ export class AccountPlanProductsListerRepository {
     const results: ListAccountPlanProductsResponse[] = [];
 
     for (const [planProductId, product] of productsMap) {
-      const isBooleanProduct = planProductId === EPlanProduct.internal_chat;
+      const isBooleanProduct =
+        planProductId === EPlanProduct.internal_chat ||
+        planProductId === EPlanProduct.integration;
       const quantityPlan = isBooleanProduct
         ? product.quantity_plan > 0
           ? 1

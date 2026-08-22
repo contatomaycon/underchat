@@ -4,22 +4,54 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
 import type {
+  Assignment,
   KafkaConsumer,
+  LibrdKafkaError,
   Producer,
   ConsumerGlobalConfig,
   ConsumerTopicConfig,
 } from 'node-rdkafka';
 import { rdkafka } from '@core/common/vendors/nodeRdkafka';
+import {
+  buildServiceApiKafkaConsumerClientId,
+  isServiceApiKafkaBootstrapCutoverEnabled,
+} from '@core/common/functions/serviceApiKafkaCutoverIdentity';
+import { resolveKafkaSecurityConfig } from '@core/common/functions/kafkaSecurityConfig';
+import { SERVICE_API_WHATSAPP_CONSUMER_GROUPS } from '@core/common/functions/serviceApiWhatsappConsumerBindings';
+
+/**
+ * `latest-on-assignment` remains in the type only for legacy contract tests.
+ * Non-test runtimes coerce it to `committed`; one-time high-watermark bootstrap
+ * is performed exclusively by ServiceApiKafkaCutoverBarrier.
+ */
+export type KafkaConsumerStartPosition = 'committed' | 'latest-on-assignment';
+
+export interface KafkaConsumerCreateOptions {
+  startPosition?: KafkaConsumerStartPosition;
+  onPartitionsAssigned?: (assignments: Assignment[]) => void;
+  onPartitionsRevoked?: (assignments: Assignment[]) => void;
+  onRebalanceError?: (error: unknown) => void;
+}
 
 export interface KafkaClient {
-  createConsumer: (groupId: string) => KafkaConsumer;
+  createConsumer: (
+    groupId: string,
+    options?: KafkaConsumerCreateOptions
+  ) => KafkaConsumer;
   createProducer: () => Producer;
   getBroker: () => string;
 }
 
-class KafkaStreamsClient implements KafkaClient {
+// librdkafka's stable sentinel for "the next record appended to the partition".
+const KAFKA_OFFSET_END = -1;
+const serviceApiWhatsappConsumerGroups = new Set<string>(
+  SERVICE_API_WHATSAPP_CONSUMER_GROUPS
+);
+
+export class KafkaStreamsClient implements KafkaClient {
   private readonly broker: string;
   private readonly clientId: string;
+  private readonly consumerClientId: string;
   private readonly username: string | undefined;
   private readonly password: string | undefined;
   private readonly securityProtocol: string;
@@ -39,10 +71,12 @@ class KafkaStreamsClient implements KafkaClient {
     queueBufferingMaxMs: number,
     batchNumMessages: number,
     queueBufferingMaxMessages: number,
-    queueBufferingMaxKbytes: number
+    queueBufferingMaxKbytes: number,
+    consumerClientId?: string
   ) {
     this.broker = broker;
     this.clientId = clientId;
+    this.consumerClientId = consumerClientId?.trim() || clientId;
     this.username = username;
     this.password = password;
     this.securityProtocol = securityProtocol;
@@ -99,38 +133,89 @@ class KafkaStreamsClient implements KafkaClient {
   }
 
   private getSecurityConfig(): Record<string, string | boolean> {
-    const protocol = this.securityProtocol.toLowerCase();
-
-    const config: Record<string, string | boolean> = {
-      'security.protocol': protocol,
-    };
-
-    if (
-      protocol !== 'plaintext' &&
-      this.saslMechanism &&
-      this.username &&
-      this.password
-    ) {
-      config['sasl.mechanism'] = this.saslMechanism;
-      config['sasl.username'] = this.username;
-      config['sasl.password'] = this.password;
-    }
-
-    if (protocol === 'sasl_ssl' || protocol === 'ssl') {
-      config['enable.ssl.certificate.verification'] = false;
-    }
-
-    return config;
+    return resolveKafkaSecurityConfig({
+      protocol: this.securityProtocol,
+      saslMechanism: this.saslMechanism,
+      username: this.username,
+      password: this.password,
+      caLocation: kafkaEnvironment.sslCaLocation,
+    });
   }
 
-  createConsumer(groupId: string): KafkaConsumer {
+  createConsumer(
+    groupId: string,
+    options: KafkaConsumerCreateOptions = {}
+  ): KafkaConsumer {
     const securityConfig = this.getSecurityConfig();
     const metadataConfig = this.getMetadataConfig();
+    const requestedStartPosition = options.startPosition ?? 'committed';
+    const startPosition =
+      requestedStartPosition === 'latest-on-assignment' &&
+      process.env.NODE_ENV !== 'test'
+        ? 'committed'
+        : requestedStartPosition;
+
+    const rebalanceCallback = function (
+      this: KafkaConsumer,
+      error: LibrdKafkaError,
+      assignments: Assignment[]
+    ): void {
+      try {
+        if (error.code === rdkafka.CODES.ERRORS.ERR__ASSIGN_PARTITIONS) {
+          const targetAssignments =
+            startPosition === 'latest-on-assignment'
+              ? assignments.map((assignment) => ({
+                  topic: assignment.topic,
+                  partition: assignment.partition,
+                  offset: KAFKA_OFFSET_END,
+                }))
+              : assignments;
+
+          // Installing a custom rebalance callback transfers assignment
+          // responsibility from librdkafka to the application. Committed
+          // consumers must therefore assign the broker-provided offsets
+          // unchanged: replacing them with OFFSET_END would silently discard
+          // backlog, while omitting assign() would leave the member idle.
+          if (this.rebalanceProtocol() === 'COOPERATIVE') {
+            this.incrementalAssign(targetAssignments);
+          } else {
+            this.assign(targetAssignments);
+          }
+          options.onPartitionsAssigned?.(targetAssignments);
+          return;
+        }
+
+        if (error.code === rdkafka.CODES.ERRORS.ERR__REVOKE_PARTITIONS) {
+          // Fence application work before relinquishing native ownership.
+          options.onPartitionsRevoked?.(assignments);
+          if (this.rebalanceProtocol() === 'COOPERATIVE') {
+            this.incrementalUnassign(assignments);
+          } else {
+            this.unassign();
+          }
+          return;
+        }
+
+        options.onRebalanceError?.(error);
+      } catch (rebalanceError) {
+        options.onRebalanceError?.(rebalanceError);
+      }
+    };
 
     const baseConfig: ConsumerGlobalConfig = {
       'group.id': groupId,
+      'client.id': this.consumerClientId,
       'metadata.broker.list': this.broker,
       'enable.auto.commit': false,
+      'allow.auto.create.topics': true,
+      // Offsets are committed explicitly only after the runner has completed
+      // work. Never let librdkafka stage an implicit fallback.
+      'enable.auto.offset.store': false,
+      // Keep one interoperable eager protocol across Node and WhatsMeow
+      // (kafka-go). Every rebalance revokes the old assignment before the
+      // replacement member resumes the coordinator-provided committed offset.
+      'partition.assignment.strategy': 'range',
+      rebalance_cb: rebalanceCallback,
 
       // Session e heartbeat - otimizado para detecção rápida de falhas
       'session.timeout.ms': 10000,
@@ -172,11 +257,15 @@ class KafkaStreamsClient implements KafkaClient {
       'metadata.broker.list': this.broker,
     };
 
-    const opicConf: ConsumerTopicConfig = {
-      'auto.offset.reset': 'earliest',
+    const topicConf: ConsumerTopicConfig = {
+      'auto.offset.reset':
+        startPosition === 'latest-on-assignment' ||
+        serviceApiWhatsappConsumerGroups.has(groupId)
+          ? 'latest'
+          : 'earliest',
     };
 
-    return new rdkafka.KafkaConsumer(consumerConfig, opicConf);
+    return new rdkafka.KafkaConsumer(consumerConfig, topicConf);
   }
 
   private getProducerConfig(): Record<string, string | number | boolean> {
@@ -202,10 +291,16 @@ class KafkaStreamsClient implements KafkaClient {
       // API e metadata
       'api.version.request': true,
       'api.version.request.timeout.ms': 10000,
+      // Local/dev clusters rely on the broker-side auto-create setting during
+      // bootstrap; explicit provisioning paths still reconcile topic topology.
+      'allow.auto.create.topics': true,
       ...metadataConfig,
 
       // Idempotência e ordering
       'enable.idempotence': true,
+      // Keep the durability contract explicit even though librdkafka also
+      // derives acks=all when idempotence is enabled.
+      acks: -1,
       'max.in.flight.requests.per.connection': 5,
 
       // Compressão - snappy é ideal para baixa latência
@@ -248,9 +343,18 @@ const kafkaPlugin: FastifyPluginAsync<KafkaPluginOptions> = async (
     'Kafka plugin inicializando'
   );
 
+  const clientId = `client-${module}`;
+  const consumerClientId =
+    module === ERouteModule.service &&
+    isServiceApiKafkaBootstrapCutoverEnabled()
+      ? buildServiceApiKafkaConsumerClientId(
+          clientId,
+          process.env.SERVICE_API_KAFKA_CUTOVER_TOKEN
+        )
+      : clientId;
   const kafka = new KafkaStreamsClient(
     kafkaEnvironment.kafkaBroker,
-    `client-${module}`,
+    clientId,
     kafkaEnvironment.kafkaUsername,
     kafkaEnvironment.kafkaPassword,
     kafkaEnvironment.securityProtocol,
@@ -258,7 +362,8 @@ const kafkaPlugin: FastifyPluginAsync<KafkaPluginOptions> = async (
     kafkaEnvironment.queueBufferingMaxMs,
     kafkaEnvironment.batchNumMessages,
     kafkaEnvironment.queueBufferingMaxMessages,
-    kafkaEnvironment.queueBufferingMaxKbytes
+    kafkaEnvironment.queueBufferingMaxKbytes,
+    consumerClientId
   );
 
   container.register('Kafka', { useValue: kafka });

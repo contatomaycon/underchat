@@ -9,7 +9,15 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { CentrifugoService } from '@core/services/centrifugo.service';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+
+interface PublishQrCodeAttemptFailedOptions {
+  attempt: number;
+  maxAttempts: number;
+  reason: string;
+  degradedReason?: string;
+}
 
 @singleton()
 export class WorkerConnectionStatusWwebjsConsume {
@@ -48,6 +56,46 @@ export class WorkerConnectionStatusWwebjsConsume {
     this.wwebjsService.cancelConnectionAttempt();
   }
 
+  async publishQrCodeAttemptFailed(
+    request: StatusConnectionWorkerRequest,
+    options: PublishQrCodeAttemptFailedOptions
+  ): Promise<IBaileysConnectionState> {
+    const payload: IBaileysConnectionState = {
+      status: EBaileysConnectionStatus.disconnected,
+      code: ECodeMessage.connectionClosed,
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      account_id: wwebjsEnvironment.wwebjsAccountId,
+      worker_type_id: EWorkerType.wwebjs,
+      worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: request.connection_attempt_id,
+      authorized_connection_epoch: request.authorized_connection_epoch,
+      debug_trace_id: request.debug_trace_id,
+      runtime_generation:
+        request.runtime_generation ?? wwebjsEnvironment.runtimeGeneration,
+      warm_pool_id: request.warm_pool_id,
+      qr_pending: false,
+      attempt: options.attempt,
+      max_attempts: options.maxAttempts,
+      reason: options.reason,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
+      provider_state: 'disconnected',
+      degraded_reason: options.degradedReason ?? options.reason,
+      retryable: true,
+    };
+
+    // The durable manager projection is the terminal-state commit point. A
+    // caller must not ACK its source delivery if this write fails.
+    await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
+    await this.centrifugoService
+      .publishSub(workerCentrifugoQueue(payload.account_id), payload)
+      .catch(() => undefined);
+
+    return payload;
+  }
+
   private async handleConnectionStatus(
     data: StatusConnectionWorkerRequest
   ): Promise<IBaileysConnectionState> {
@@ -63,16 +111,24 @@ export class WorkerConnectionStatusWwebjsConsume {
       return this.handleDisponible(data);
     }
 
-    return this.currentState(ECodeMessage.awaitConnection);
+    return this.currentState(ECodeMessage.awaitConnection, data);
   }
 
   private async handleOnline(
     data: StatusConnectionWorkerRequest
   ): Promise<IBaileysConnectionState> {
-    this.stopConnectionRetry();
+    const isExplicitQrRequest =
+      data.type === EBaileysConnectionType.qrcode && data.qr_pending === true;
 
     if (this.wwebjsService.isConnected()) {
+      this.stopConnectionRetry();
       return this.publishConnectedStatus(data);
+    }
+
+    if (isExplicitQrRequest) {
+      this.stopConnectionRetry();
+    } else if (this.activeConnectionRequest) {
+      return this.currentState(this.wwebjsService.getCode());
     }
 
     const currentCode = this.wwebjsService.getCode();
@@ -81,26 +137,25 @@ export class WorkerConnectionStatusWwebjsConsume {
       currentCode === ECodeMessage.loggedOut;
     let shouldResetStaleSessionForQr = false;
 
-    if (this.wwebjsService.hasSession() && !isSessionInvalid) {
+    const hasDurableSession =
+      this.wwebjsService.hasSession() && !isSessionInvalid;
+
+    if (hasDurableSession && isExplicitQrRequest) {
       await this.waitForReconnection(3000, 500);
       if (this.wwebjsService.isConnected()) {
         return this.publishConnectedStatus(data);
       }
 
-      shouldResetStaleSessionForQr =
-        data.type === EBaileysConnectionType.qrcode && data.qr_pending === true;
-      if (shouldResetStaleSessionForQr) {
-        await this.wwebjsService.disconnect({
-          initial_connection: true,
-          disconnected_user: false,
-          preserve_session: false,
-          remove_session: true,
-        });
-      }
-    }
-
-    if (this.activeConnectionRequest) {
-      return this.currentState(currentCode);
+      shouldResetStaleSessionForQr = true;
+      await this.wwebjsService.disconnect({
+        initial_connection: true,
+        disconnected_user: false,
+        preserve_session: false,
+        remove_session: true,
+        connection_attempt_id: data.connection_attempt_id,
+        runtime_generation: data.runtime_generation,
+        debug_trace_id: data.debug_trace_id,
+      });
     }
 
     const currentStatus = this.wwebjsService.getStatus();
@@ -117,7 +172,7 @@ export class WorkerConnectionStatusWwebjsConsume {
       pairingInProgress
     ) {
       this.wwebjsService.republishLastState();
-      return this.currentState(currentCode);
+      return this.currentState(currentCode, data);
     }
 
     if (
@@ -125,6 +180,11 @@ export class WorkerConnectionStatusWwebjsConsume {
       hasActiveSocket &&
       awaitingQrRead
     ) {
+      if (!isExplicitQrRequest) {
+        this.wwebjsService.republishLastState();
+        return this.currentState(currentCode, data);
+      }
+
       return this.connectWithService(data, {
         fromDisconnectRestart: false,
         requestedByUser: true,
@@ -136,6 +196,11 @@ export class WorkerConnectionStatusWwebjsConsume {
       currentStatus === EBaileysConnectionStatus.connecting &&
       hasActiveSocket
     ) {
+      if (!isExplicitQrRequest) {
+        this.wwebjsService.republishLastState();
+        return this.currentState(currentCode, data);
+      }
+
       return this.connectWithService(data, {
         fromDisconnectRestart: false,
         requestedByUser: true,
@@ -144,20 +209,37 @@ export class WorkerConnectionStatusWwebjsConsume {
       });
     }
 
+    if (hasDurableSession && !isExplicitQrRequest) {
+      return this.startConnectionRecovery(data);
+    }
+
     if (isSessionInvalid) {
       await this.wwebjsService.disconnect({
         initial_connection: true,
         disconnected_user: false,
         preserve_session: false,
         remove_session: true,
+        connection_attempt_id: data.connection_attempt_id,
+        runtime_generation: data.runtime_generation,
+        debug_trace_id: data.debug_trace_id,
       });
     }
 
     return this.connectWithService(data, {
       fromDisconnectRestart: isSessionInvalid || shouldResetStaleSessionForQr,
-      requestedByUser: true,
+      requestedByUser: isExplicitQrRequest,
       allowRestore: !(isSessionInvalid || shouldResetStaleSessionForQr),
     });
+  }
+
+  private startConnectionRecovery(
+    data: StatusConnectionWorkerRequest
+  ): IBaileysConnectionState {
+    this.activeConnectionRequest = { ...data };
+    this.connectionRetryAttempt = 0;
+    this.restartAfterDisconnect = false;
+    void this.runConnectionAttempt();
+    return this.currentState(this.wwebjsService.getCode(), data);
   }
 
   private handleRecreating(
@@ -165,9 +247,12 @@ export class WorkerConnectionStatusWwebjsConsume {
   ): IBaileysConnectionState {
     this.wwebjsService.reconnect({
       initial_connection: true,
+      connection_attempt_id: data.connection_attempt_id,
+      authorized_connection_epoch: data.authorized_connection_epoch,
+      runtime_generation: data.runtime_generation,
       debug_trace_id: data.debug_trace_id,
     });
-    return this.currentState(ECodeMessage.awaitConnection);
+    return this.currentState(ECodeMessage.awaitConnection, data);
   }
 
   private async handleDisponible(
@@ -180,6 +265,10 @@ export class WorkerConnectionStatusWwebjsConsume {
       initial_connection: true,
       disconnected_user: true,
       preserve_session: !removeSession,
+      connection_attempt_id: data.connection_attempt_id,
+      authorized_connection_epoch: data.authorized_connection_epoch,
+      runtime_generation: data.runtime_generation,
+      debug_trace_id: data.debug_trace_id,
     });
 
     const workerId = wwebjsEnvironment.wwebjsWorkerId;
@@ -192,16 +281,27 @@ export class WorkerConnectionStatusWwebjsConsume {
       code: ECodeMessage.connectionClosed,
       disconnected_user: true,
       worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: data.connection_attempt_id,
+      authorized_connection_epoch: data.authorized_connection_epoch,
+      runtime_generation: data.runtime_generation,
       debug_trace_id: data.debug_trace_id,
     };
 
-    await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
+    // The manager owns the durable terminal projection for explicit session
+    // removal. Do not race its disconnect tombstone with a duplicate event.
+    if (!removeSession) {
+      await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
+        payload
+      );
+    }
 
     if (!removeSession) {
       const defaultConnectionRequest: StatusConnectionWorkerRequest = {
         worker_id: workerId,
         status: EWorkerStatus.online,
         type: EBaileysConnectionType.qrcode,
+        connection_attempt_id: data.connection_attempt_id,
+        runtime_generation: data.runtime_generation,
         debug_trace_id: data.debug_trace_id,
       };
 
@@ -235,6 +335,8 @@ export class WorkerConnectionStatusWwebjsConsume {
       type: data.type as EBaileysConnectionType,
       phone_connection: data.phone_connection,
       connection_attempt_id: data.connection_attempt_id,
+      authorized_connection_epoch: data.authorized_connection_epoch,
+      runtime_generation: data.runtime_generation,
       debug_trace_id: data.debug_trace_id,
     });
   }
@@ -258,9 +360,17 @@ export class WorkerConnectionStatusWwebjsConsume {
   }
 
   private handoffToServiceReconnect(): void {
+    const request = this.activeConnectionRequest;
     this.stopConnectionRetry();
     this.wwebjsService.clearUserRequestedDisconnect();
-    this.wwebjsService.reconnect({ initial_connection: true });
+    this.wwebjsService.reconnect({
+      initial_connection: true,
+      connection_attempt_id: request?.connection_attempt_id,
+      authorized_connection_epoch: request?.authorized_connection_epoch,
+      runtime_generation:
+        request?.runtime_generation ?? wwebjsEnvironment.runtimeGeneration,
+      debug_trace_id: request?.debug_trace_id,
+    });
   }
 
   private publishConnectionAttempt(attempt: number): void {
@@ -273,12 +383,19 @@ export class WorkerConnectionStatusWwebjsConsume {
       max_attempts: this.connectionRetryMinAttempts,
       connection_attempt_id:
         this.activeConnectionRequest?.connection_attempt_id,
+      authorized_connection_epoch:
+        this.activeConnectionRequest?.authorized_connection_epoch,
+      runtime_generation:
+        this.activeConnectionRequest?.runtime_generation ??
+        wwebjsEnvironment.runtimeGeneration,
       debug_trace_id: this.activeConnectionRequest?.debug_trace_id,
     };
 
-    void this.centrifugoService
-      .publishSub(workerCentrifugoQueue(payload.account_id), payload)
-      .catch(() => {});
+    void (
+      this.balanceWorkerStatusGrpcClientService.publishWorkerRuntimeEvent?.(
+        payload
+      ) ?? Promise.resolve()
+    ).catch(() => {});
   }
 
   private isAwaitingUserAction(code: ECodeMessage): boolean {
@@ -297,20 +414,39 @@ export class WorkerConnectionStatusWwebjsConsume {
       connection_attempt_id:
         request?.connection_attempt_id ??
         this.activeConnectionRequest?.connection_attempt_id,
+      authorized_connection_epoch:
+        request?.authorized_connection_epoch ??
+        this.activeConnectionRequest?.authorized_connection_epoch,
       debug_trace_id:
         request?.debug_trace_id ?? this.activeConnectionRequest?.debug_trace_id,
+      runtime_generation:
+        request?.runtime_generation ??
+        this.activeConnectionRequest?.runtime_generation ??
+        wwebjsEnvironment.runtimeGeneration,
     });
   }
 
-  private currentState(code: ECodeMessage): IBaileysConnectionState {
+  private currentState(
+    code: ECodeMessage,
+    request?: StatusConnectionWorkerRequest
+  ): IBaileysConnectionState {
     return {
       status: this.wwebjsService.getStatus(),
       code,
       worker_id: wwebjsEnvironment.wwebjsWorkerId,
       account_id: wwebjsEnvironment.wwebjsAccountId,
       connection_attempt_id:
+        request?.connection_attempt_id ??
         this.activeConnectionRequest?.connection_attempt_id,
-      debug_trace_id: this.activeConnectionRequest?.debug_trace_id,
+      authorized_connection_epoch:
+        request?.authorized_connection_epoch ??
+        this.activeConnectionRequest?.authorized_connection_epoch,
+      runtime_generation:
+        request?.runtime_generation ??
+        this.activeConnectionRequest?.runtime_generation ??
+        wwebjsEnvironment.runtimeGeneration,
+      debug_trace_id:
+        request?.debug_trace_id ?? this.activeConnectionRequest?.debug_trace_id,
     };
   }
 
@@ -390,11 +526,14 @@ export class WorkerConnectionStatusWwebjsConsume {
         initial_connection: true,
         allow_restore: !skipRestore,
         force_new: fromDisconnectRestart,
-        requested_by_user: !fromDisconnectRestart,
+        requested_by_user:
+          request.qr_pending === true && !fromDisconnectRestart,
         from_disconnect_restart: fromDisconnectRestart,
         type: request.type as EBaileysConnectionType,
         phone_connection: request.phone_connection,
         connection_attempt_id: request.connection_attempt_id,
+        authorized_connection_epoch: request.authorized_connection_epoch,
+        runtime_generation: request.runtime_generation,
         debug_trace_id: request.debug_trace_id,
       })
       .then((state) => {

@@ -12,10 +12,15 @@ describe('ContactGroupUpdaterRepository', () => {
     const repository = new ContactGroupUpdaterRepository({} as never);
 
     await expect(
-      repository.updateContactGroupById(tx as never, 'cg-1', {
-        name: 'VIP',
-        description: 'd',
-      } as never)
+      repository.updateContactGroupById(
+        tx as never,
+        'cg-1',
+        {
+          name: 'VIP',
+          description: 'd',
+        } as never,
+        'account-1'
+      )
     ).resolves.toBe(true);
     expect(set).toHaveBeenCalledWith({ name: 'VIP', description: 'd' });
   });
@@ -30,9 +35,14 @@ describe('ContactGroupUpdaterRepository', () => {
     const repository = new ContactGroupUpdaterRepository({} as never);
 
     await expect(
-      repository.updateContactGroupById(tx as never, 'cg-1', {
-        name: 'VIP',
-      } as never)
+      repository.updateContactGroupById(
+        tx as never,
+        'cg-1',
+        {
+          name: 'VIP',
+        } as never,
+        'account-1'
+      )
     ).resolves.toBe(false);
   });
 });

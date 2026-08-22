@@ -7,6 +7,7 @@ import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EAiAgentPermissions } from '@core/common/enums/EPermissions/aiAgent';
+import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
 import { useVoiceIaStore } from '@/@webcore/stores/voiceIa';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
@@ -87,6 +88,10 @@ const itemsPerPage = ref([
 
 const isDialogDeleterShow = ref(false);
 const aiAgentToDelete = ref<string | null>(null);
+const aiAgentPlanBlockAction = ref<{
+  aiAgentId: string;
+  action: 'block' | 'unblock';
+} | null>(null);
 
 const isDialogEditAiAgentShow = ref(false);
 const isAddAiAgentVisible = ref(false);
@@ -160,6 +165,60 @@ const handleDelete = async () => {
   }
 
   aiAgentToDelete.value = null;
+};
+
+const isAiAgentBlockedByPlan = (item: ListAiAgentResponse): boolean =>
+  item.status !== EAiAgentStatus.active;
+
+const isDialogAiAgentPlanBlockShow = computed({
+  get: () => aiAgentPlanBlockAction.value !== null,
+  set: (value: boolean) => {
+    if (!value) {
+      aiAgentPlanBlockAction.value = null;
+    }
+  },
+});
+
+const aiAgentPlanBlockDialogTitle = computed(() => {
+  const action = aiAgentPlanBlockAction.value?.action ?? 'block';
+
+  return `${t(action)} ${t('ai_agent')}`;
+});
+
+const aiAgentPlanBlockDialogMessage = computed(() => {
+  const action = aiAgentPlanBlockAction.value?.action ?? 'block';
+
+  return t(
+    action === 'block'
+      ? 'block_ai_agent_confirmation'
+      : 'unblock_ai_agent_confirmation'
+  );
+});
+
+const openAiAgentPlanBlockDialog = (item: ListAiAgentResponse) => {
+  aiAgentPlanBlockAction.value = {
+    aiAgentId: item.ai_agent_id,
+    action: isAiAgentBlockedByPlan(item) ? 'unblock' : 'block',
+  };
+};
+
+const handleAiAgentPlanBlock = async () => {
+  if (!aiAgentPlanBlockAction.value) {
+    return;
+  }
+
+  const { aiAgentId, action } = aiAgentPlanBlockAction.value;
+  const result =
+    action === 'block'
+      ? await aiAgentStore.blockAiAgent(aiAgentId)
+      : await aiAgentStore.unblockAiAgent(aiAgentId);
+
+  if (result) {
+    await aiAgentStore.listAiAgents(query.value);
+    await aiAgentStore.fetchAiAgentConfig();
+  }
+
+  aiAgentPlanBlockAction.value = null;
 };
 
 const openEditDialog = (id: string) => {
@@ -300,7 +359,7 @@ watch(
 
           <template #item.status="{ item }">
             <VChip
-              :color="item.status === 'active' ? 'success' : 'error'"
+              :color="isAiAgentBlockedByPlan(item) ? 'error' : 'success'"
               size="small"
             >
               {{ $t(item.status) }}
@@ -369,6 +428,28 @@ watch(
                 />
               </IconBtn>
 
+              <IconBtn v-if="$canPermission(permissionsEdit)">
+                <VTooltip
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
+                  <span>
+                    {{
+                      `${$t(isAiAgentBlockedByPlan(item) ? 'unblock' : 'block')} ${$t('ai_agent')}`
+                    }}
+                  </span>
+                </VTooltip>
+                <VIcon
+                  :icon="
+                    isAiAgentBlockedByPlan(item)
+                      ? 'tabler-lock-open'
+                      : 'tabler-lock'
+                  "
+                  @click="openAiAgentPlanBlockDialog(item)"
+                />
+              </IconBtn>
+
               <IconBtn v-if="$canPermission(permissionsDelete)">
                 <VTooltip
                   location="top"
@@ -406,6 +487,14 @@ watch(
         :title="$t('delete') + ' ' + $t('ai_agent')"
         :message="$t('delete_ai_agent_confirmation')"
         @confirm="handleDelete"
+      />
+
+      <VDialogHandler
+        v-if="isDialogAiAgentPlanBlockShow"
+        v-model="isDialogAiAgentPlanBlockShow"
+        :title="aiAgentPlanBlockDialogTitle"
+        :message="aiAgentPlanBlockDialogMessage"
+        @confirm="handleAiAgentPlanBlock"
       />
 
       <AppEditAiAgent

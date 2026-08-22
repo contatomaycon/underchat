@@ -9,7 +9,9 @@ jest.mock('@core/useCases/config/ChannelRecreator.useCase', () => ({
 
 import { ChannelsRecreatorAllUseCase } from '@core/useCases/config/ChannelsRecreatorAll.useCase';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerSessionStorage } from '@core/common/enums/EWorkerSessionStorage';
 import { WorkerRecreateServerSlotLease } from '@core/services/workerRecreateServerSlot.service';
+import { KafkaConsumerDispatchRevokedError } from '@core/common/exceptions/KafkaConsumerDispatchRevokedError';
 
 function createSlotService(slotCount = 2) {
   const activeByServer = new Map<string, number>();
@@ -26,6 +28,7 @@ function createSlotService(slotCount = 2) {
     activeByServer,
     maxActiveByServer,
     getSlotCount: jest.fn(() => slotCount),
+    getReservationTtlMs: jest.fn(() => 120_000),
     buildToken: jest.fn((workerId: string) => `${workerId}:slot-token`),
     acquire: jest.fn(async (serverId: string, token: string) => {
       const active = (activeByServer.get(serverId) ?? 0) + 1;
@@ -104,6 +107,7 @@ describe('ChannelsRecreatorAllUseCase', () => {
     await expect(
       useCase.execute(jest.fn() as never, {
         status: EWorkerStatus.error,
+        session_storage: EWorkerSessionStorage.postgres,
         name: 'Channel',
         number: '5511999999999',
       })
@@ -116,6 +120,7 @@ describe('ChannelsRecreatorAllUseCase', () => {
     ).toHaveBeenCalledWith({
       status: EWorkerStatus.error,
       type: undefined,
+      session_storage: EWorkerSessionStorage.postgres,
       account: undefined,
       name: 'Channel',
       number: '5511999999999',
@@ -159,7 +164,7 @@ describe('ChannelsRecreatorAllUseCase', () => {
       success: 2,
       errors: 1,
     });
-    expect(slotService.release).toHaveBeenCalledTimes(1);
+    expect(slotService.release).toHaveBeenCalledTimes(3);
   });
 
   it('limits recreate scheduling to two active slots per server', async () => {
@@ -190,5 +195,127 @@ describe('ChannelsRecreatorAllUseCase', () => {
 
     expect(slotService.maxActiveByServer.get('srv-1')).toBeLessThanOrEqual(2);
     expect(slotService.maxActiveByServer.get('srv-2')).toBeLessThanOrEqual(2);
+  });
+
+  it('passes the active Kafka assignment guard through slot acquisition and release waiting', async () => {
+    const configService = {
+      listAllNonDeletedChannelRecreateTargets: jest.fn(async () => [
+        { worker_id: 'w1', server_id: 'srv-1' },
+      ]),
+    };
+    const channelRecreatorUseCase = {
+      execute: jest.fn(
+        async (
+          _t: unknown,
+          _workerId: string,
+          _trace: unknown,
+          options?: { onLifecycleEnqueued?: () => void }
+        ) => {
+          options?.onLifecycleEnqueued?.();
+          return true;
+        }
+      ),
+    };
+    const slotService = createSlotService(1);
+    const useCase = new ChannelsRecreatorAllUseCase(
+      configService as never,
+      channelRecreatorUseCase as never,
+      slotService as never
+    );
+    const assertActive = jest.fn();
+
+    await expect(
+      useCase.execute(jest.fn() as never, {}, { assertActive })
+    ).resolves.toEqual({
+      success: 1,
+      errors: 0,
+    });
+
+    expect(slotService.acquire).toHaveBeenCalledWith('srv-1', 'w1:slot-token', {
+      assertActive,
+      reservation: true,
+      ttlMs: 120_000,
+    });
+    expect(slotService.waitForRelease).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serverId: 'srv-1',
+        token: 'w1:slot-token',
+      }),
+      { assertActive }
+    );
+    expect(assertActive).toHaveBeenCalled();
+  });
+
+  it('releases an unused reservation immediately when an existing lifecycle was only resumed', async () => {
+    const configService = {
+      listAllNonDeletedChannelRecreateTargets: jest.fn(async () => [
+        { worker_id: 'w1', server_id: 'srv-1' },
+      ]),
+    };
+    const channelRecreatorUseCase = {
+      execute: jest.fn(async () => ({
+        queued: true,
+        reason: 'recreate_already_running',
+      })),
+    };
+    const slotService = createSlotService(1);
+    const useCase = new ChannelsRecreatorAllUseCase(
+      configService as never,
+      channelRecreatorUseCase as never,
+      slotService as never
+    );
+
+    await expect(useCase.execute(jest.fn() as never, {})).resolves.toEqual({
+      success: 1,
+      errors: 0,
+    });
+
+    expect(slotService.release).toHaveBeenCalledTimes(1);
+    expect(slotService.waitForRelease).not.toHaveBeenCalled();
+  });
+
+  it('propagates assignment revocation without releasing a transferred slot', async () => {
+    const configService = {
+      listAllNonDeletedChannelRecreateTargets: jest.fn(async () => [
+        { worker_id: 'w1', server_id: 'srv-1' },
+      ]),
+    };
+    const channelRecreatorUseCase = {
+      execute: jest.fn(
+        async (
+          _t: unknown,
+          _workerId: string,
+          _trace: unknown,
+          options?: { onLifecycleEnqueued?: () => void }
+        ) => {
+          options?.onLifecycleEnqueued?.();
+          return true;
+        }
+      ),
+    };
+    const slotService = createSlotService(1);
+    const revoked = new KafkaConsumerDispatchRevokedError();
+    let active = true;
+    slotService.waitForRelease.mockImplementationOnce(async () => {
+      active = false;
+      throw revoked;
+    });
+    const assertActive = jest.fn(() => {
+      if (!active) {
+        throw revoked;
+      }
+    });
+    const useCase = new ChannelsRecreatorAllUseCase(
+      configService as never,
+      channelRecreatorUseCase as never,
+      slotService as never
+    );
+
+    await expect(
+      useCase.execute(jest.fn() as never, {}, { assertActive })
+    ).rejects.toBe(revoked);
+
+    expect(channelRecreatorUseCase.execute).toHaveBeenCalledTimes(1);
+    expect(slotService.release).not.toHaveBeenCalled();
   });
 });

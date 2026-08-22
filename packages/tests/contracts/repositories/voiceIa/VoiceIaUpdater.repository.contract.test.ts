@@ -20,6 +20,7 @@ describe('VoiceIaUpdaterRepository', () => {
     const result = (repository as any).updateInput({
       name: 'Updated',
       voice_ia_type: EVoiceIaType.gpt,
+      model_id: 'tts-1',
       speed: '0.9',
       api_key: undefined,
     });
@@ -27,6 +28,7 @@ describe('VoiceIaUpdaterRepository', () => {
     expect(result).toEqual({
       name: 'Updated',
       voice_ia_type: EVoiceIaType.gpt,
+      model_id: 'tts-1',
       speed: '0.9',
     });
   });

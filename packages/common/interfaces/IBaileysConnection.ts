@@ -12,5 +12,8 @@ export interface IBaileysConnection {
   preserve_session?: boolean;
   remove_session?: boolean;
   connection_attempt_id?: string;
+  /** Manager-owned epoch authorized for this exact connection attempt. */
+  authorized_connection_epoch?: string;
   debug_trace_id?: string;
+  runtime_generation?: number;
 }

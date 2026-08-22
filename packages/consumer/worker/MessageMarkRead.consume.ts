@@ -1,6 +1,4 @@
 import { singleton, inject } from 'tsyringe';
-import type { KafkaConsumer } from 'node-rdkafka';
-import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 import { BaileysIncomingMessageService } from '@core/services/baileys/methods/incoming.service';
@@ -10,21 +8,12 @@ import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpda
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import type { WAMessageKey } from '@whiskeysockets/baileys';
 import Redis from 'ioredis';
-import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
-import type { IUpsertMessageKey } from '@core/common/interfaces/IUpsertMessage';
-
-type MarkReadKey = IUpsertMessageKey & {
-  remote_jid?: string | null;
-};
+import type { IWhatsappRuntimeFence } from '@core/services/whatsappRuntimeFence.service';
+import { ensureMessageStatusEventId } from '@core/common/functions/messageStatusIdentity';
 
 @singleton()
 export class MessageMarkReadConsume {
-  private consumer: KafkaConsumer | null = null;
-  private runner: KafkaConsumerRunner<IMessageMarkRead> | null = null;
-  private isRunning = false;
-
   constructor(
-    @inject('Kafka') private readonly kafka: KafkaClient,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(BaileysIncomingMessageService)
@@ -53,45 +42,15 @@ export class MessageMarkReadConsume {
     }
   }
 
-  public async execute(): Promise<void> {
-    if (this.consumer && this.isRunning) return;
-
-    const topic = this.kafkaServiceQueueService.markMessageRead();
-    this.runner = new KafkaConsumerRunner<IMessageMarkRead>({
-      kafka: this.kafka,
-      topic,
-      groupId: `group-underchat-mark-read-${baileysEnvironment.baileysWorkerId}`,
-      parse: (message) => this.parseMessage(message.value),
-      resolveEntityKey: (data) => this.resolveEntityKey(data),
-      handle: (data) => this.processMarkRead(data),
-      onInvalidMessage: () => {
-        console.warn('Skipping invalid message mark read payload');
-      },
-      onFailed: (payload, _context, error) => {
-        console.error('Error marking messages as read:', {
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          error,
-        });
-      },
-      maxRetries: 3,
-      retryDelaysMs: [1000, 5000],
-      logger: console,
-    });
-
-    await this.runner.start(() => {
-      this.isRunning = true;
-    });
-    this.consumer = this.runner.consumer;
-  }
-
-  public async close(): Promise<void> {
-    this.isRunning = false;
-    if (this.runner) {
-      await this.runner.close();
-      this.runner = null;
-    }
-    this.consumer = null;
+  public async handleJetStreamCommand(
+    payload: unknown,
+    assertActive: () => void
+  ): Promise<void> {
+    const data = this.parseMessage(
+      Buffer.from(JSON.stringify(payload), 'utf8')
+    );
+    if (!data) throw new Error('worker_command_mark_read_payload_invalid');
+    await this.processMarkRead(data, { assertActive });
   }
 
   private async isMarkAsReadEnabled(workerId: string): Promise<boolean> {
@@ -104,7 +63,23 @@ export class MessageMarkReadConsume {
     }
   }
 
-  private async processMarkRead(data: IMessageMarkRead): Promise<void> {
+  private connectionScopesMatch(
+    expected: IWhatsappRuntimeFence,
+    current: IWhatsappRuntimeFence | null
+  ): boolean {
+    return (
+      current !== null &&
+      current.worker_id === expected.worker_id &&
+      current.runtime_generation === expected.runtime_generation &&
+      current.connection_epoch === expected.connection_epoch &&
+      current.source_provider === expected.source_provider
+    );
+  }
+
+  private async processMarkRead(
+    data: IMessageMarkRead,
+    context: { assertActive: () => void }
+  ): Promise<void> {
     if (data.worker_id !== baileysEnvironment.baileysWorkerId) {
       return;
     }
@@ -114,9 +89,34 @@ export class MessageMarkReadConsume {
       return;
     }
 
+    const connectionScope =
+      await this.baileysIncomingMessageService.captureActiveConnectionScope();
+    if (
+      !connectionScope ||
+      connectionScope.worker_id !== data.worker_id ||
+      connectionScope.source_provider !== 'baileys'
+    ) {
+      return;
+    }
+
+    context.assertActive();
+    const currentScope =
+      await this.baileysIncomingMessageService.captureActiveConnectionScope();
+    context.assertActive();
+    if (!this.connectionScopesMatch(connectionScope, currentScope)) {
+      return;
+    }
     await this.baileysIncomingMessageService.markRead(
       data.keys as WAMessageKey[]
     );
+
+    context.assertActive();
+    const publishScope =
+      await this.baileysIncomingMessageService.captureActiveConnectionScope();
+    context.assertActive();
+    if (!this.connectionScopesMatch(connectionScope, publishScope)) {
+      return;
+    }
 
     await Promise.all(
       data.keys.map(async (key) => {
@@ -124,45 +124,31 @@ export class MessageMarkReadConsume {
 
         const statusUpdate: IMessageStatusUpdate = {
           account_id: data.account_id,
+          worker_id: connectionScope.worker_id,
+          source_provider: connectionScope.source_provider,
+          runtime_generation: connectionScope.runtime_generation,
+          connection_epoch: connectionScope.connection_epoch,
           message_id: key.id,
           patch: { is_seen: true },
           key: key as WAMessageKey,
         };
+        ensureMessageStatusEventId(statusUpdate);
 
         const kafkaKey = MessageStatusService.statusKafkaKey(
           data.account_id,
-          key.id
+          key.id,
+          connectionScope.worker_id
         );
 
+        context.assertActive();
         await this.streamProducerService.send(
           this.kafkaServiceQueueService.updateMessageStatus(),
           statusUpdate,
-          kafkaKey
+          kafkaKey,
+          undefined,
+          context.assertActive
         );
       })
     );
-  }
-
-  private resolveEntityKey(data: IMessageMarkRead): string {
-    const jids = this.resolveJids(data.keys);
-    return `${data.account_id}:${data.worker_id}:${jids.join(',') || 'unknown-chat'}`;
-  }
-
-  private resolveJids(keys: IUpsertMessageKey[]): string[] {
-    return Array.from(
-      new Set(
-        keys
-          .map((key) => {
-            const typedKey = key as MarkReadKey;
-            return (
-              typedKey.remoteJid ??
-              typedKey.remoteJidAlt ??
-              typedKey.remote_jid ??
-              null
-            );
-          })
-          .filter((jid): jid is string => Boolean(jid))
-      )
-    ).sort();
   }
 }

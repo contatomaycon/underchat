@@ -19,6 +19,8 @@ import { upsertAiAgentHumanTransfer } from './methods/upsertAiAgentHumanTransfer
 import { listAiAgentHumanTransferSectors } from './methods/listAiAgentHumanTransferSectors';
 import { listAiAgentHumanTransferSectorUsers } from './methods/listAiAgentHumanTransferSectorUsers';
 import { listAiAgentHumanTransferSectorUsersBySectorIds } from './methods/listAiAgentHumanTransferSectorUsersBySectorIds';
+import { blockAiAgent } from './methods/blockAiAgent';
+import { unblockAiAgent } from './methods/unblockAiAgent';
 
 @injectable()
 class AiAgentController {
@@ -44,6 +46,8 @@ class AiAgentController {
     listAiAgentHumanTransferSectorUsers;
   public listAiAgentHumanTransferSectorUsersBySectorIds =
     listAiAgentHumanTransferSectorUsersBySectorIds;
+  public blockAiAgent = blockAiAgent;
+  public unblockAiAgent = unblockAiAgent;
 }
 
 export default AiAgentController;

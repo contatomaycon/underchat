@@ -1,4 +1,5 @@
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { officialWindowSchema } from '@core/schema/chat/officialWindow.schema';
 import { Static, Type } from '@sinclair/typebox';
 
 export const accountSchema = Type.Object({
@@ -9,6 +10,8 @@ export const accountSchema = Type.Object({
 export const workerSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
+  type_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  is_official: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
 });
 
 export const sectorSchema = Type.Object({
@@ -48,6 +51,9 @@ export const startChatWithContactResultSchema = Type.Object({
   date: Type.String(),
   started_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   closed_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  official_window: Type.Optional(
+    Type.Union([officialWindowSchema, Type.Null()])
+  ),
 });
 
 export type StartChatWithContactResult = Static<

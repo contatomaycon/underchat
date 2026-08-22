@@ -64,7 +64,15 @@ COPY --from=deps /app/node_modules/ .
 COPY --from=pruned /app/out/full/ .
 COPY packages ./packages
 
-RUN pnpm build:service
+RUN rm -rf /app/apps/service_api/dist && \
+    pnpm build:service && \
+    node /app/apps/service_api/scripts/assertMessageUpsertArtifact.mjs \
+      /app/apps/service_api/dist/packages/consumer/message/MessageUpsert.consume.js \
+      /app/apps/service_api/dist/packages/consumer/webhook/OfficialWhatsappWebhook.consume.js && \
+    MESSAGE_UPSERT_SHA256="$(sha256sum /app/apps/service_api/dist/packages/consumer/message/MessageUpsert.consume.js | cut -d ' ' -f 1)" && \
+    OFFICIAL_WEBHOOK_SHA256="$(sha256sum /app/apps/service_api/dist/packages/consumer/webhook/OfficialWhatsappWebhook.consume.js | cut -d ' ' -f 1)" && \
+    printf '%s  /app/packages/consumer/message/MessageUpsert.consume.js\n%s  /app/packages/consumer/webhook/OfficialWhatsappWebhook.consume.js\n' \
+      "$MESSAGE_UPSERT_SHA256" "$OFFICIAL_WEBHOOK_SHA256" > /service-message-upsert.sha256
 RUN mkdir -p /build_locales
 
 COPY packages/plugins/i18next/locales /build_locales
@@ -83,6 +91,7 @@ COPY --from=builder /app/apps/service_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/service_api/package*.json ./apps/service_api
+COPY --from=builder /service-message-upsert.sha256 /usr/local/share/underchat/service-message-upsert.sha256
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 COPY --from=builder /app/packages/proto ./packages/proto
 COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
@@ -169,11 +178,12 @@ RUN mkdir -p /home/pptruser/Downloads \
     /tmp/.cache \
     /tmp/.local/share/applications \
     /tmp/.local/share/mime \
-    /tmp/kaniko \
+    /var/tmp/underchat-build-source \
     /app && \
-    chown -R pptruser:pptruser /home/pptruser /tmp/.chrome-user-data /tmp/.chrome-crashpad /tmp/kaniko /app && \
+    chown -R pptruser:pptruser /home/pptruser /tmp/.chrome-user-data /tmp/.chrome-crashpad /var/tmp/underchat-build-source /app && \
     chmod -R 1777 /tmp/.chrome-user-data /tmp/.chrome-crashpad /tmp/.config /tmp/.cache /tmp/.local && \
-    chmod -R 755 /home/pptruser/.local/share
+    chmod -R 755 /home/pptruser/.local/share && \
+    chmod 700 /var/tmp/underchat-build-source
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
@@ -195,4 +205,4 @@ EXPOSE 3004
 
 WORKDIR /app/apps/service_api
 
-CMD ["node", "src/index.js"]
+CMD ["sh", "-c", "sha256sum -c /usr/local/share/underchat/service-message-upsert.sha256 && exec node src/index.js"]

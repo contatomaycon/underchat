@@ -83,6 +83,7 @@ export class RoleListerRepository {
         permission_role_id: permissionRole.permission_role_id,
         name: permissionRole.name,
         description: permissionRole.description,
+        status: permissionRole.status,
         account: {
           id: account.account_id,
           name: account.name,
@@ -116,6 +117,7 @@ export class RoleListerRepository {
       permission_role_id: role.permission_role_id,
       name: role.name,
       description: role.description,
+      status: role.status,
       account: role.account,
       created_at: role.created_at,
     })) as ListRoleResponse[];

@@ -11,15 +11,25 @@ export class ContactGroupDeleterUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    contactGroupId: string
+    contactGroupId: string,
+    accountId: string,
+    actorUserId?: string
   ): Promise<boolean> {
     const contactGroupExists =
-      await this.contactGroupService.existsContactGroupById(contactGroupId);
+      await this.contactGroupService.existsContactGroupById(
+        contactGroupId,
+        accountId
+      );
 
     if (!contactGroupExists) {
       throw new Error(t('contact_group_not_found'));
     }
 
-    return this.contactGroupService.deleteContactGroup(t, contactGroupId);
+    return this.contactGroupService.deleteContactGroup(
+      t,
+      contactGroupId,
+      accountId,
+      actorUserId
+    );
   }
 }

@@ -8,6 +8,7 @@ import ChannelsTab from './config/channels-tab.vue';
 import CreditCardTab from './config/creditcard-tab.vue';
 import S3BackupTab from './config/s3-backup-tab.vue';
 import WhatsappEmbeddedTab from './config/whatsapp-embedded-tab.vue';
+import DownloadArtifactsTab from './config/download-artifacts-tab.vue';
 
 definePage({
   meta: {
@@ -49,6 +50,9 @@ watch(tab, (v) => {
         <VTab value="whatsapp-embedded" prepend-icon="mdi-whatsapp">{{
           $t('whatsapp_embedded')
         }}</VTab>
+        <VTab value="download-artifacts" prepend-icon="tabler-download">{{
+          $t('download_artifacts')
+        }}</VTab>
       </VTabs>
     </VCardText>
 
@@ -71,6 +75,9 @@ watch(tab, (v) => {
         </VWindowItem>
         <VWindowItem value="whatsapp-embedded">
           <WhatsappEmbeddedTab />
+        </VWindowItem>
+        <VWindowItem value="download-artifacts">
+          <DownloadArtifactsTab />
         </VWindowItem>
       </VWindow>
     </VCardText>

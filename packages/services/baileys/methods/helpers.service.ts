@@ -14,21 +14,57 @@ import { BaileysConnectionService } from './connection.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
-import { webcrypto as nodeCrypto } from 'node:crypto';
+import { createHash, webcrypto as nodeCrypto } from 'node:crypto';
 import { BaileysDeliveryConfirmationService } from './deliveryConfirmation.service';
-import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { TypingSimulationRuntimeService } from '@core/services/typingSimulationRuntime.service';
 import { baileysEnvironment } from '@core/config/environments';
 import { ITypingSimulationConfig } from '@core/common/interfaces/ITypingSimulationConfig';
 import {
   defaultTypingSimulationConfig,
+  resolveTypingSimulationMaxDelayMs,
   typingSimulationDelayMultiplier,
 } from '@core/common/functions/typingSimulationConfig';
+import {
+  BaileysSendMessageTimeoutError,
+  invokeBaileysProviderSendWithTimeout,
+  resolveBaileysSendMessageTimeoutMs,
+} from '../util/providerSendTimeout';
+import type { IProviderInvocationBoundary } from '@core/common/interfaces/IProviderInvocationBoundary';
+import {
+  ITypingSimulationControl,
+  runTypingSimulationBestEffort,
+  TypingSimulationSingleFlight,
+} from '@core/common/functions/typingSimulationExecution';
+import {
+  ProviderInvocationInFlightError,
+  ProviderInvocationSingleFlight,
+} from '@core/common/functions/providerInvocationSingleFlight';
+import {
+  invokeProviderAuxiliaryWithTimeout,
+  ProviderAuxiliaryInvocationTimeoutError,
+  resolveProviderAuxiliaryTimeoutMs,
+} from '@core/common/functions/providerAuxiliaryInvocation';
+import { workerErrorDiagnostics } from '@core/common/functions/workerErrorDiagnostics';
+import { BaileysProviderProtocolFailureError } from '../util/providerOperationFailure';
+
+function hashBaileysSendLogIdentifier(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return `sha256:${createHash('sha256').update(value.trim()).digest('hex')}`;
+}
 
 @injectable()
 export class BaileysHelpersService {
-  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 1;
   private readonly SEND_CONFIRMATION_TIMEOUT_MS = 20_000;
+  private readonly SEND_MESSAGE_TIMEOUT_MS =
+    resolveBaileysSendMessageTimeoutMs();
+  private readonly TYPING_SIMULATION_MAX_DELAY_MS =
+    resolveTypingSimulationMaxDelayMs();
+  private readonly AUXILIARY_PROVIDER_TIMEOUT_MS =
+    resolveProviderAuxiliaryTimeoutMs();
+  private readonly typingSimulationSingleFlight =
+    new TypingSimulationSingleFlight();
+  private readonly providerInvocationSingleFlight =
+    new ProviderInvocationSingleFlight();
 
   constructor(
     @inject(BaileysConnectionService)
@@ -42,7 +78,8 @@ export class BaileysHelpersService {
   async send(
     address: string,
     content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: IProviderInvocationBoundary
   ): Promise<WAMessage | undefined> {
     const sock = this.socket();
     this.assertSocketReadyForSend(sock);
@@ -60,75 +97,271 @@ export class BaileysHelpersService {
     }
 
     if (shouldSimulateTyping) {
-      const typingConfig = await this.getTypingSimulationConfig();
-      if (typingConfig.enabled) {
-        await this.simulateHumanTyping(jid, content, typingConfig.speed);
-      }
+      await this.runTypingSimulationBestEffort(async (control) => {
+        control.checkpoint();
+        const typingConfig = await this.getTypingSimulationConfig();
+        control.checkpoint();
+        if (typingConfig.enabled) {
+          await this.simulateHumanTyping(
+            jid,
+            content,
+            typingConfig.speed,
+            control
+          );
+        }
+      }, beforeProviderInvoke);
     }
 
-    const result = await this.sendOnce(sock, jid, content, options);
+    const result = await this.sendOnce(
+      sock,
+      jid,
+      content,
+      options,
+      beforeProviderInvoke
+    );
     const messageId = result?.key?.id;
     if (!messageId) {
-      throw new Error(`Failed to send message to ${jid}: missing key.id`);
+      const error = new BaileysProviderProtocolFailureError(
+        'Failed to send message: missing key.id'
+      );
+      this.reportOutboundProtocolFailure(sock, error);
+      throw error;
     }
+    this.connection.reportOutboundSendSuccess?.(sock);
 
     if (isEditMessage) {
       return result;
     }
 
-    const outcome = await this.deliveryConfirmation.waitForOutcome(
-      messageId,
-      this.SEND_CONFIRMATION_TIMEOUT_MS
-    );
+    // `sock.sendMessage` resolving with a provider message ID is the durable
+    // acceptance boundary. Delivery confirmation is useful telemetry, but it
+    // must not hold that result hostage or turn an accepted send into a retry.
+    void this.observeDeliveryConfirmation(messageId);
+    return result;
+  }
 
-    if (outcome === 'sent') {
-      return result;
+  private async observeDeliveryConfirmation(messageId: string): Promise<void> {
+    try {
+      const outcome = await this.deliveryConfirmation.waitForOutcome(
+        messageId,
+        this.SEND_CONFIRMATION_TIMEOUT_MS
+      );
+      if (outcome !== 'sent') {
+        console.warn(
+          '[BaileysSend] delivery_confirmation_unconfirmed_after_provider_accept',
+          {
+            message_id_hash: hashBaileysSendLogIdentifier(messageId),
+            outcome: outcome === 'failed' ? 'failed' : 'timeout',
+          }
+        );
+      }
+    } catch (error) {
+      console.warn(
+        '[BaileysSend] delivery_confirmation_observation_failed_after_provider_accept',
+        {
+          message_id_hash: hashBaileysSendLogIdentifier(messageId),
+          ...workerErrorDiagnostics(error),
+        }
+      );
     }
-
-    const lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
-    const confirmationError =
-      outcome === 'failed'
-        ? new Error(`Message delivery failed acknowledgement for ${messageId}`)
-        : new Error(`Message delivery confirmation timeout for ${messageId}`);
-
-    throw new MessageDeliveryConfirmationFailedError({
-      maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
-      lastMessageId: messageId,
-      lastOutcome,
-      cause: confirmationError,
-    });
   }
 
   private async sendOnce(
     sock: WASocket,
     jid: string,
     content: AnyMessageContent,
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: IProviderInvocationBoundary
   ): Promise<WAMessage> {
     if (this.isAudioViewOnceMessage(content)) {
       const result = await this.sendAudioViewOnceMessage(
         sock,
         jid,
         content,
-        options
+        options,
+        beforeProviderInvoke
       );
 
       if (!result) {
-        throw new Error(
+        const error = new BaileysProviderProtocolFailureError(
           `Failed to send message to ${jid}: result is undefined`
         );
+        this.reportOutboundProtocolFailure(sock, error);
+        throw error;
       }
 
       return result;
     }
 
-    const result = await sock.sendMessage(jid, content, options);
+    const result = await this.invokeOutboundProvider(
+      sock,
+      'send_message',
+      beforeProviderInvoke,
+      () => sock.sendMessage(jid, content, options)
+    );
 
     if (!result) {
-      throw new Error(`Failed to send message to ${jid}: result is undefined`);
+      const error = new BaileysProviderProtocolFailureError(
+        `Failed to send message to ${jid}: result is undefined`
+      );
+      this.reportOutboundProtocolFailure(sock, error);
+      throw error;
     }
 
     return result;
+  }
+
+  private async invokeOutboundProvider<T>(
+    sock: WASocket,
+    operation: 'relay_message' | 'send_message',
+    beforeProviderInvoke: IProviderInvocationBoundary | undefined,
+    invoke: () => Promise<T>
+  ): Promise<T> {
+    const lease = this.providerInvocationSingleFlight.acquire(sock);
+    if (!lease) {
+      const stalled = this.providerInvocationSingleFlight.isStalled(sock);
+      if (stalled) {
+        this.connection.ensureOutboundSendRecovery?.(sock);
+      }
+      throw new ProviderInvocationInFlightError(
+        stalled ? 'stalled' : 'capacity'
+      );
+    }
+
+    try {
+      await beforeProviderInvoke?.();
+    } catch (error) {
+      lease.releaseBeforeStart();
+      throw error;
+    }
+
+    try {
+      beforeProviderInvoke?.assertActive?.();
+      if (this.connection.getSocket() !== sock) {
+        throw new Error(
+          'Baileys connection unavailable: provider socket was replaced'
+        );
+      }
+      this.assertSocketReadyForSend(sock);
+    } catch (error) {
+      lease.releaseBeforeStart();
+      await beforeProviderInvoke?.onStartRejected?.(error);
+      throw error;
+    }
+
+    let failureReported = false;
+    const providerCall = lease.start(invoke);
+    void providerCall.catch((error: unknown) => {
+      if (!failureReported) {
+        failureReported = true;
+        if (this.connection.reportOutboundSendFailure?.(sock, error) === true) {
+          lease.markStalled();
+        }
+      }
+    });
+
+    try {
+      return await invokeBaileysProviderSendWithTimeout({
+        invoke: () => providerCall,
+        operation,
+        timeoutMs: this.SEND_MESSAGE_TIMEOUT_MS,
+      });
+    } catch (error) {
+      if (error instanceof BaileysSendMessageTimeoutError && !failureReported) {
+        failureReported = true;
+        lease.markStalled();
+        this.connection.reportOutboundSendFailure?.(sock, error, {
+          timedOut: true,
+        });
+      }
+      throw error;
+    }
+  }
+
+  private async invokeAuxiliaryProvider<T>(
+    sock: WASocket,
+    operation: string,
+    beforeProviderInvoke: IProviderInvocationBoundary | undefined,
+    invoke: () => Promise<T>,
+    timeoutMs = this.AUXILIARY_PROVIDER_TIMEOUT_MS
+  ): Promise<T> {
+    const providerLease = this.providerInvocationSingleFlight.acquire(sock);
+    if (!providerLease) {
+      const stalled = this.providerInvocationSingleFlight.isStalled(sock);
+      if (stalled) {
+        this.connection.ensureOutboundSendRecovery?.(sock);
+      }
+      throw new ProviderInvocationInFlightError(
+        stalled ? 'stalled' : 'capacity'
+      );
+    }
+
+    try {
+      await beforeProviderInvoke?.();
+    } catch (error) {
+      providerLease.releaseBeforeStart();
+      throw error;
+    }
+
+    try {
+      beforeProviderInvoke?.assertActive?.();
+      if (this.connection.getSocket() !== sock) {
+        throw new Error(
+          'Baileys connection unavailable: provider socket was replaced'
+        );
+      }
+      this.assertSocketReadyForSend(sock);
+    } catch (error) {
+      providerLease.releaseBeforeStart();
+      await beforeProviderInvoke?.onStartRejected?.(error);
+      throw error;
+    }
+
+    let failureReported = false;
+    const providerCall = providerLease.start(invoke);
+    void providerCall.catch((error: unknown) => {
+      if (!failureReported) {
+        failureReported = true;
+        if (this.connection.reportOutboundSendFailure?.(sock, error) === true) {
+          providerLease.markStalled();
+        }
+      }
+    });
+
+    try {
+      return await invokeProviderAuxiliaryWithTimeout({
+        provider: 'baileys',
+        operation,
+        timeoutMs,
+        invoke: () => providerCall,
+      });
+    } catch (error) {
+      if (error instanceof ProviderAuxiliaryInvocationTimeoutError) {
+        providerLease.markStalled();
+        if (!failureReported) {
+          failureReported = true;
+          const recoveryStarted = this.connection.reportOutboundSendFailure?.(
+            sock,
+            error,
+            {
+              timedOut: true,
+            }
+          );
+          if (recoveryStarted !== true) {
+            this.connection.ensureOutboundSendRecovery?.(sock);
+          }
+        } else {
+          this.connection.ensureOutboundSendRecovery?.(sock);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private reportOutboundProtocolFailure(sock: WASocket, error: Error): void {
+    if (this.connection.reportOutboundSendFailure?.(sock, error) === true) {
+      this.providerInvocationSingleFlight.markStalled(sock);
+    }
   }
 
   private async getTypingSimulationConfig(): Promise<ITypingSimulationConfig> {
@@ -138,7 +371,9 @@ export class BaileysHelpersService {
         baileysEnvironment.baileysAccountId
       );
     } catch (error) {
-      console.error('[BaileysTypingSimulation] config unavailable', { error });
+      console.error('[BaileysTypingSimulation] config unavailable', {
+        ...workerErrorDiagnostics(error),
+      });
 
       return defaultTypingSimulationConfig();
     }
@@ -147,46 +382,95 @@ export class BaileysHelpersService {
   private async simulateHumanTyping(
     jid: string,
     content: AnyMessageContent,
-    speed = 50
+    speed = 50,
+    control?: ITypingSimulationControl
   ) {
     const sock = this.socket();
     if (!sock.user?.id) {
       return;
     }
+    const checkpoint = (): void => control?.checkpoint();
+    const sleep = (ms: number): Promise<void> =>
+      control?.sleep(ms) ?? this.sleep(ms);
 
     const text = this.extractText(content);
     const durationMs =
       this.estimateTypingMs(text) * typingSimulationDelayMultiplier(speed);
 
     const preThink = this.rand(100, 450);
-    await this.sleep(preThink);
+    await sleep(preThink);
 
     const start = Date.now();
-    await sock.sendPresenceUpdate('composing', jid);
+    let presenceActive = false;
+    try {
+      checkpoint();
+      await sock.sendPresenceUpdate('composing', jid);
+      presenceActive = true;
 
-    while (Date.now() - start < durationMs) {
-      const elapsed = Date.now() - start;
-      const remaining = durationMs - elapsed;
+      while (Date.now() - start < durationMs) {
+        const elapsed = Date.now() - start;
+        const remaining = durationMs - elapsed;
 
-      const baseTick = this.rand(600, 1200);
-      const tick = Math.min(baseTick, remaining);
-      await this.sleep(tick);
+        const baseTick = this.rand(600, 1200);
+        const tick = Math.min(baseTick, remaining);
+        await sleep(tick);
 
-      if (Date.now() - start < durationMs) {
-        if (this.rngFloat() < 0.12) {
-          await sock.sendPresenceUpdate('paused', jid);
-          const thinkPause = this.rand(250, 750);
-          await this.sleep(thinkPause);
-          await sock.sendPresenceUpdate('composing', jid);
-        } else {
-          await sock.sendPresenceUpdate('composing', jid);
+        if (Date.now() - start < durationMs) {
+          if (this.rngFloat() < 0.12) {
+            checkpoint();
+            await sock.sendPresenceUpdate('paused', jid);
+            presenceActive = false;
+            const thinkPause = this.rand(250, 750);
+            await sleep(thinkPause);
+            checkpoint();
+            await sock.sendPresenceUpdate('composing', jid);
+            presenceActive = true;
+          } else {
+            checkpoint();
+            await sock.sendPresenceUpdate('composing', jid);
+            presenceActive = true;
+          }
         }
       }
-    }
 
-    const windDown = this.rand(75, 250);
-    await this.sleep(windDown);
-    await sock.sendPresenceUpdate('paused', jid);
+      const windDown = this.rand(75, 250);
+      await sleep(windDown);
+    } finally {
+      if (presenceActive && (control?.canCleanupPresence() ?? true)) {
+        try {
+          await sock.sendPresenceUpdate('paused', jid);
+        } catch {}
+      }
+    }
+  }
+
+  private async runTypingSimulationBestEffort(
+    simulate: (control: ITypingSimulationControl) => Promise<void>,
+    beforeProviderInvoke?: IProviderInvocationBoundary
+  ): Promise<void> {
+    await runTypingSimulationBestEffort({
+      timeoutMs: this.TYPING_SIMULATION_MAX_DELAY_MS,
+      providerReserveMs: this.SEND_MESSAGE_TIMEOUT_MS,
+      beforeProviderInvoke,
+      singleFlight: this.typingSimulationSingleFlight,
+      simulate,
+      onDeadline: ({ timeoutMs, durationMs }) => {
+        console.warn('[BaileysTypingSimulation] deadline exceeded', {
+          timeout_ms: timeoutMs,
+          duration_ms: durationMs,
+        });
+      },
+      onFailure: (error) => {
+        console.warn('[BaileysTypingSimulation] failed before send', {
+          ...workerErrorDiagnostics(error),
+        });
+      },
+      onSingleFlightSkipped: () => {
+        console.warn(
+          '[BaileysTypingSimulation] skipped while previous operation is still pending'
+        );
+      },
+    });
   }
 
   private socket(): WASocket {
@@ -215,7 +499,8 @@ export class BaileysHelpersService {
       audio: WAMediaUpload;
       viewOnce: true;
     },
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ): Promise<WAMessage> {
     const ownJid = sock.user?.id;
     if (!ownJid) {
@@ -245,10 +530,17 @@ export class BaileysHelpersService {
       contextInfo,
     };
 
-    const generatedMediaMessage = await generateWAMessageContent(mediaContent, {
-      upload: sock.waUploadToServer,
-      mediaUploadTimeoutMs: options?.mediaUploadTimeoutMs,
-    });
+    const generatedMediaMessage = await this.invokeAuxiliaryProvider(
+      sock,
+      'prepare_view_once_audio',
+      undefined,
+      () =>
+        generateWAMessageContent(mediaContent, {
+          upload: sock.waUploadToServer,
+          mediaUploadTimeoutMs: options?.mediaUploadTimeoutMs,
+        }),
+      this.SEND_MESSAGE_TIMEOUT_MS
+    );
 
     const audioMessageWithViewOnce = proto.Message.AudioMessage.fromObject({
       ...generatedMediaMessage.audioMessage,
@@ -277,12 +569,19 @@ export class BaileysHelpersService {
         'Failed to send view-once audio: message payload missing'
       );
     }
+    const relayPayload = fullMessage.message;
 
-    await sock.relayMessage(jid, fullMessage.message, {
-      messageId: fullMessage.key.id ?? undefined,
-      useCachedGroupMetadata: options?.useCachedGroupMetadata,
-      statusJidList: options?.statusJidList,
-    });
+    await this.invokeOutboundProvider(
+      sock,
+      'relay_message',
+      beforeProviderInvoke,
+      () =>
+        sock.relayMessage(jid, relayPayload, {
+          messageId: fullMessage.key.id ?? undefined,
+          useCachedGroupMetadata: options?.useCachedGroupMetadata,
+          statusJidList: options?.statusJidList,
+        })
+    );
 
     return fullMessage;
   }
@@ -338,7 +637,12 @@ export class BaileysHelpersService {
 
     for (let i = 0; i < candidates.length; i++) {
       const candidate = candidates[i];
-      const resp = await sock.onWhatsApp(onlyDigits(candidate));
+      const resp = await this.invokeAuxiliaryProvider(
+        sock,
+        'resolve_jid',
+        undefined,
+        () => sock.onWhatsApp(onlyDigits(candidate))
+      );
       const item = resp?.[0];
       const jid = item?.jid ? normalizeJid(item.jid) : undefined;
 
@@ -350,8 +654,8 @@ export class BaileysHelpersService {
     return { exists: false as const, jid: undefined };
   }
 
-  private sleep(ms: number) {
-    return new Promise((r) => setTimeout(r, ms));
+  private sleep(ms: number): Promise<void> {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
   }
 
   private rngFloat() {
@@ -440,25 +744,58 @@ export class BaileysHelpersService {
     return ownJid;
   }
 
-  async updateProfileName(name: string): Promise<void> {
+  async updateProfileName(
+    name: string,
+    beforeProviderInvoke?: IProviderInvocationBoundary
+  ): Promise<void> {
     const sock = this.socket();
-    await sock.updateProfileName(name);
+    await this.invokeAuxiliaryProvider(
+      sock,
+      'update_profile_name',
+      beforeProviderInvoke,
+      () => sock.updateProfileName(name)
+    );
   }
 
-  async updateProfileStatus(status: string): Promise<void> {
+  async updateProfileStatus(
+    status: string,
+    beforeProviderInvoke?: IProviderInvocationBoundary
+  ): Promise<void> {
     const sock = this.socket();
-    await sock.updateProfileStatus(status);
+    await this.invokeAuxiliaryProvider(
+      sock,
+      'update_profile_status',
+      beforeProviderInvoke,
+      () => sock.updateProfileStatus(status)
+    );
   }
 
-  async removeProfilePicture(jid: string): Promise<void> {
+  async removeProfilePicture(
+    jid: string,
+    beforeProviderInvoke?: IProviderInvocationBoundary
+  ): Promise<void> {
     const sock = this.socket();
-    await sock.removeProfilePicture(jid);
+    await this.invokeAuxiliaryProvider(
+      sock,
+      'remove_profile_picture',
+      beforeProviderInvoke,
+      () => sock.removeProfilePicture(jid)
+    );
   }
 
-  async updateProfilePicture(photoUrl: string): Promise<void> {
+  async updateProfilePicture(
+    photoUrl: string,
+    beforeProviderInvoke?: IProviderInvocationBoundary
+  ): Promise<void> {
     const sock = this.socket();
     const ownJid = this.getOwnJid();
-    await sock.updateProfilePicture(ownJid, { url: photoUrl });
+    await this.invokeAuxiliaryProvider(
+      sock,
+      'update_profile_picture',
+      beforeProviderInvoke,
+      () => sock.updateProfilePicture(ownJid, { url: photoUrl }),
+      this.SEND_MESSAGE_TIMEOUT_MS
+    );
   }
 
   addOwnJidToStatusList(statusJidList: string[]): string[] {

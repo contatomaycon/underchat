@@ -59,6 +59,13 @@ func (cli *Client) SendFBMessage(
 	} else if len(extra) == 1 {
 		req = extra[0]
 	}
+	if !req.PreResolvedRecipientPN.IsEmpty() {
+		err = fmt.Errorf(
+			"%w: PreResolvedRecipientPN is only supported by SendMessage",
+			ErrInvalidPreResolvedRecipientPN,
+		)
+		return
+	}
 	var subproto waMsgApplication.MessageApplication_SubProtocolPayload
 	subproto.FutureProof = waCommon.FutureProofBehavior_PLACEHOLDER.Enum()
 	switch typedMsg := message.(type) {

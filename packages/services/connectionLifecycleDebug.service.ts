@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
 import { inject, injectable } from 'tsyringe';
+import { sanitizeConnectionFlowFields } from '@core/common/functions/connectionFlowConsoleLog';
 
 const DEBUG_GLOBAL_SEQUENCE_KEY = 'connection:lifecycle:debug:seq:global';
 const DEBUG_TRACE_SEQUENCE_PREFIX = 'connection:lifecycle:debug:seq:trace';
@@ -27,7 +28,10 @@ let localGlobalSequence = 0;
 const localTraceSequences = new Map<string, number>();
 
 export function isConnectionLifecycleDebugEnabled(): boolean {
-  return process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED === 'true';
+  return (
+    process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED === 'true' ||
+    process.env.WHATSAPP_SESSION_DEBUG_ENABLED === 'true'
+  );
 }
 
 export function createConnectionLifecycleDebugTraceId(prefix = 'conn'): string {
@@ -79,7 +83,11 @@ export class ConnectionLifecycleDebugService {
 
   private normalizeTraceId(traceId: unknown): string {
     if (typeof traceId === 'string' && traceId.trim()) {
-      return traceId.trim();
+      const candidate = traceId.trim();
+      if (/^[A-Za-z][A-Za-z0-9_.:-]{0,159}$/.test(candidate)) {
+        return candidate;
+      }
+      return `trace_sha256_${createHash('sha256').update(candidate).digest('hex')}`;
     }
 
     return 'no-trace';
@@ -113,143 +121,9 @@ export class ConnectionLifecycleDebugService {
   private sanitizeContext(
     context: ConnectionLifecycleDebugContext
   ): Record<string, unknown> {
-    const sanitized = this.sanitizeObject(context, 0);
+    const sanitized = sanitizeConnectionFlowFields(context);
     delete sanitized.trace_id;
     return sanitized;
-  }
-
-  private sanitizeObject(
-    input: Record<string, unknown>,
-    depth: number
-  ): Record<string, unknown> {
-    if (depth > 5) {
-      return {};
-    }
-
-    const output: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(input)) {
-      if (this.isQrKey(key)) {
-        Object.assign(output, this.safeQrMetadata(value));
-        continue;
-      }
-
-      if (this.isPairingKey(key)) {
-        Object.assign(output, this.safePairingMetadata(value));
-        continue;
-      }
-
-      if (this.isPasskeyPublicKey(key)) {
-        Object.assign(
-          output,
-          this.safeStringMetadata('passkey_public_key', value)
-        );
-        continue;
-      }
-
-      if (this.isPasskeySecretKey(key)) {
-        Object.assign(output, this.safeStringMetadata('passkey_secret', value));
-        continue;
-      }
-
-      const sanitizedValue = this.sanitizeValue(value, depth + 1);
-      if (sanitizedValue !== undefined) {
-        output[key] = sanitizedValue;
-      }
-    }
-
-    return output;
-  }
-
-  private sanitizeValue(value: unknown, depth: number): unknown {
-    if (value === undefined) {
-      return undefined;
-    }
-
-    if (value === null) {
-      return null;
-    }
-
-    if (
-      typeof value === 'string' ||
-      typeof value === 'number' ||
-      typeof value === 'boolean'
-    ) {
-      return value;
-    }
-
-    if (Array.isArray(value)) {
-      return value.slice(0, 20).map((item) => this.sanitizeValue(item, depth));
-    }
-
-    if (value instanceof Error) {
-      return {
-        name: value.name,
-        message: value.message,
-      };
-    }
-
-    if (typeof value === 'object') {
-      return this.sanitizeObject(value as Record<string, unknown>, depth);
-    }
-
-    return String(value);
-  }
-
-  private isQrKey(key: string): boolean {
-    return ['qr', 'qrcode', 'qr_code', 'qrCode'].includes(key);
-  }
-
-  private isPairingKey(key: string): boolean {
-    return ['pairing_code', 'pairingCode'].includes(key);
-  }
-
-  private isPasskeyPublicKey(key: string): boolean {
-    return ['passkey_public_key', 'passkeyPublicKey'].includes(key);
-  }
-
-  private isPasskeySecretKey(key: string): boolean {
-    return [
-      'passkey_response',
-      'passkeyResponse',
-      'passkey_confirmation_code',
-      'passkeyConfirmationCode',
-      'rawId',
-      'clientDataJSON',
-      'authenticatorData',
-      'signature',
-      'userHandle',
-      'credential_id',
-      'webauthn_assertion',
-    ].includes(key);
-  }
-
-  private safeQrMetadata(value: unknown): Record<string, unknown> {
-    return this.safeStringMetadata('qr', value);
-  }
-
-  private safePairingMetadata(value: unknown): Record<string, unknown> {
-    return this.safeStringMetadata('pairing_code', value);
-  }
-
-  private safeStringMetadata(
-    prefix: 'qr' | 'pairing_code' | 'passkey_public_key' | 'passkey_secret',
-    value: unknown
-  ): Record<string, unknown> {
-    const raw =
-      typeof value === 'string'
-        ? value
-        : value === undefined || value === null
-          ? ''
-          : JSON.stringify(value);
-    return {
-      [`has_${prefix}`]: raw.length > 0,
-      [`${prefix}_length`]: raw.length,
-      [`${prefix}_sha256_12`]: raw ? this.hash12(raw) : undefined,
-    };
-  }
-
-  private hash12(value: string): string {
-    return createHash('sha256').update(value).digest('hex').slice(0, 12);
   }
 
   private stabilizePayload(

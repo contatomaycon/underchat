@@ -26,6 +26,7 @@ import { serverBuildCancelSchema } from '@core/schema/server/cancelServerBuild';
 import { serverBuildDefaultSchema } from '@core/schema/server/setServerBuildDefault';
 import { retryServerBuildSchema } from '@core/schema/server/retryServerBuild';
 import { deleteServerBuildSchema } from '@core/schema/server/deleteServerBuild';
+import { deleteServerBuildVersionSchema } from '@core/schema/server/deleteServerBuildVersion';
 import { pairServerBuildSchema } from '@core/schema/server/pairServerBuild';
 
 export default function serverRoutes(server: FastifyInstance) {
@@ -124,6 +125,15 @@ export default function serverRoutes(server: FastifyInstance) {
   server.post('/server/build/retry', {
     schema: retryServerBuildSchema,
     handler: serverController.retryServerBuild,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverBuildEditPermissions),
+    ],
+  });
+
+  server.delete('/server/build/version/:server_build_version_id', {
+    schema: deleteServerBuildVersionSchema,
+    handler: serverController.deleteServerBuildVersion,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, serverBuildEditPermissions),

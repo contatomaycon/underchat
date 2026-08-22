@@ -1,5 +1,26 @@
 import { injectable } from 'tsyringe';
 import { downloadMediaBuffer } from '@core/common/functions/downloadMediaBuffer';
+import { assertOfficialWhatsappInteractivePayload } from '@core/common/functions/officialWhatsappInteractiveValidation';
+
+function readBoundedTimeoutMs(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const parsed = Number.parseInt(process.env[name] ?? '', 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, parsed));
+}
+
+export const META_WHATSAPP_GRAPH_REQUEST_TIMEOUT_MS = readBoundedTimeoutMs(
+  'META_WHATSAPP_GRAPH_REQUEST_TIMEOUT_MS',
+  45_000,
+  1_000,
+  5 * 60_000
+);
 
 interface MetaGraphErrorResponse {
   error?: {
@@ -24,6 +45,18 @@ export class MetaGraphApiError extends Error {
   }
 }
 
+export class MetaGraphRequestTimeoutError extends Error {
+  readonly operation: string;
+  readonly timeoutMs: number;
+
+  constructor(operation: string, timeoutMs: number) {
+    super(`Meta Graph ${operation} timed out after ${timeoutMs}ms`);
+    this.name = 'MetaGraphRequestTimeoutError';
+    this.operation = operation;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 export const isMetaPermissionsError = (error: unknown): boolean => {
   if (error instanceof MetaGraphApiError) {
     return error.code === 200;
@@ -34,6 +67,17 @@ export const isMetaPermissionsError = (error: unknown): boolean => {
     /(?:\(#200\)|code\s*200).*permissions?\s+error/i.test(error.message)
   );
 };
+
+/**
+ * Meta returns this pair when the persisted token no longer has access to the
+ * requested WABA or phone-number asset. It is distinct from an invalid
+ * template or a temporary Graph failure: reconnecting the channel with the
+ * business that owns the number is required.
+ */
+export const isMetaObjectAccessError = (error: unknown): boolean =>
+  error instanceof MetaGraphApiError &&
+  error.code === 100 &&
+  error.errorSubcode === 33;
 
 export const isMetaSmbDeregisterUnsupportedError = (error: unknown): boolean =>
   error instanceof Error &&
@@ -46,6 +90,32 @@ interface MetaTokenResponse extends MetaGraphErrorResponse {
   token_type?: string;
   expires_in?: number;
   scope?: string;
+}
+
+interface MetaDebugTokenResponse extends MetaGraphErrorResponse {
+  data?: {
+    app_id?: string;
+    type?: string;
+    is_valid?: boolean;
+    issued_at?: number;
+    expires_at?: number;
+    data_access_expires_at?: number;
+    scopes?: string[];
+    granular_scopes?: Array<{
+      scope?: string;
+      target_ids?: string[];
+    }>;
+  };
+}
+
+interface MetaWabaSubscription {
+  whatsapp_business_api_data?: {
+    id?: string;
+  };
+}
+
+interface MetaWabaSubscriptionsResponse extends MetaGraphErrorResponse {
+  data?: MetaWabaSubscription[];
 }
 
 interface MetaPhoneNumber {
@@ -168,12 +238,15 @@ export interface MetaTemplateComponent {
   buttons?: MetaTemplateButton[];
 }
 
+export type MetaWhatsappTemplateParameterFormat = 'POSITIONAL' | 'NAMED';
+
 interface MetaMessageTemplate {
   id?: string;
   name?: string;
   language?: string;
   status?: string;
   category?: string;
+  parameter_format?: MetaWhatsappTemplateParameterFormat;
   components?: MetaTemplateComponent[];
 }
 
@@ -239,15 +312,21 @@ export interface MetaWhatsappContactMessage {
 
 export type MetaWhatsappInteractiveMessage = Record<string, unknown>;
 
-export type MetaWhatsappTemplateComponentParameter = {
-  type: 'text';
-  text: string;
-};
+export type MetaWhatsappTemplateComponentParameter =
+  | {
+      type: 'text';
+      text: string;
+      parameter_name?: string;
+    }
+  | {
+      type: 'payload';
+      payload: string;
+    };
 
 export type MetaWhatsappTemplateMessageComponent = {
   type: 'header' | 'body' | 'button';
   parameters?: MetaWhatsappTemplateComponentParameter[];
-  sub_type?: 'url';
+  sub_type?: 'url' | 'quick_reply';
   index?: string;
 };
 
@@ -257,6 +336,7 @@ export interface MetaWhatsappApprovedTemplate {
   language: string;
   status: 'APPROVED';
   category: string | null;
+  parameter_format?: MetaWhatsappTemplateParameterFormat;
   components: MetaTemplateComponent[];
 }
 
@@ -287,6 +367,31 @@ export interface MetaWhatsappToken {
   token_type: string | null;
   expires_at: string | null;
   scope: string | null;
+}
+
+export const META_WHATSAPP_REQUIRED_SCOPES = [
+  'business_management',
+  'whatsapp_business_management',
+  'whatsapp_business_messaging',
+] as const;
+
+export interface MetaWhatsappAccessTokenDetails {
+  app_id: string | null;
+  type: string | null;
+  is_valid: boolean;
+  issued_at: number | null;
+  expires_at: number | null;
+  data_access_expires_at: number | null;
+  scopes: string[];
+  granular_scopes: Array<{
+    scope: string;
+    target_ids: string[];
+  }>;
+}
+
+export interface MetaWhatsappWebhookSubscriptionDiagnostic {
+  subscribed: boolean;
+  subscription_count: number;
 }
 
 export interface MetaWhatsappPhoneNumber {
@@ -509,6 +614,33 @@ export class MetaWhatsappEmbeddedService {
     return payload;
   }
 
+  private async withGraphRequestDeadline<T>(
+    operation: string,
+    action: (signal: AbortSignal) => Promise<T>
+  ): Promise<T> {
+    const controller = new AbortController();
+    const timeoutError = new MetaGraphRequestTimeoutError(
+      operation,
+      META_WHATSAPP_GRAPH_REQUEST_TIMEOUT_MS
+    );
+    const timer = setTimeout(() => {
+      controller.abort(timeoutError);
+    }, META_WHATSAPP_GRAPH_REQUEST_TIMEOUT_MS);
+    timer.unref();
+
+    try {
+      return await action(controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted) {
+        const reason = controller.signal.reason;
+        throw reason instanceof Error ? reason : timeoutError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async exchangeCode(input: {
     apiVersion: string;
     appId: string;
@@ -520,7 +652,10 @@ export class MetaWhatsappEmbeddedService {
     url.searchParams.set('client_secret', input.appSecret);
     url.searchParams.set('code', input.code);
 
-    const response = await fetch(url);
+    const response = await this.withGraphRequestDeadline(
+      'authorization code exchange',
+      (signal) => fetch(url, { signal })
+    );
     const payload = await this.parseGraphResponse<MetaTokenResponse>(response);
 
     if (!payload.access_token) {
@@ -536,6 +671,66 @@ export class MetaWhatsappEmbeddedService {
       token_type: payload.token_type ?? null,
       expires_at: expiresAt,
       scope: payload.scope ?? null,
+    };
+  }
+
+  async debugAccessToken(input: {
+    apiVersion: string;
+    accessToken: string;
+    appId: string;
+    appSecret: string;
+  }): Promise<MetaWhatsappAccessTokenDetails> {
+    const url = new URL(this.graphUrl(input.apiVersion, 'debug_token'));
+    url.searchParams.set('input_token', input.accessToken);
+
+    const response = await this.withGraphRequestDeadline(
+      'access token diagnostic',
+      (signal) =>
+        fetch(url, {
+          headers: this.authorizationHeader(
+            `${input.appId}|${input.appSecret}`
+          ),
+          signal,
+        })
+    );
+    const payload =
+      await this.parseGraphResponse<MetaDebugTokenResponse>(response);
+    const data = payload.data;
+
+    return {
+      app_id: this.nullableString(data?.app_id),
+      type: this.nullableString(data?.type),
+      is_valid: data?.is_valid === true,
+      issued_at: typeof data?.issued_at === 'number' ? data.issued_at : null,
+      expires_at: typeof data?.expires_at === 'number' ? data.expires_at : null,
+      data_access_expires_at:
+        typeof data?.data_access_expires_at === 'number'
+          ? data.data_access_expires_at
+          : null,
+      scopes: Array.isArray(data?.scopes)
+        ? data.scopes.filter(
+            (scope): scope is string => typeof scope === 'string'
+          )
+        : [],
+      granular_scopes: Array.isArray(data?.granular_scopes)
+        ? data.granular_scopes.flatMap((item) => {
+            if (typeof item.scope !== 'string') {
+              return [];
+            }
+
+            return [
+              {
+                scope: item.scope,
+                target_ids: Array.isArray(item.target_ids)
+                  ? item.target_ids.filter(
+                      (targetId): targetId is string =>
+                        typeof targetId === 'string'
+                    )
+                  : [],
+              },
+            ];
+          })
+        : [],
     };
   }
 
@@ -570,9 +765,14 @@ export class MetaWhatsappEmbeddedService {
     );
     url.searchParams.set('fields', 'id,display_phone_number,verified_name');
     url.searchParams.set('limit', '100');
-    url.searchParams.set('access_token', input.accessToken);
-
-    const response = await fetch(url);
+    const response = await this.withGraphRequestDeadline(
+      'phone number list',
+      (signal) =>
+        fetch(url, {
+          headers: this.authorizationHeader(input.accessToken),
+          signal,
+        })
+    );
     const payload =
       await this.parseGraphResponse<MetaPhoneNumbersResponse>(response);
 
@@ -611,9 +811,14 @@ export class MetaWhatsappEmbeddedService {
     );
     url.searchParams.set('limit', '100');
 
-    const response = await fetch(url, {
-      headers: this.authorizationHeader(input.accessToken),
-    });
+    const response = await this.withGraphRequestDeadline(
+      'detailed phone number list',
+      (signal) =>
+        fetch(url, {
+          headers: this.authorizationHeader(input.accessToken),
+          signal,
+        })
+    );
     const payload =
       await this.parseGraphResponse<MetaDetailedPhoneNumbersResponse>(response);
 
@@ -655,9 +860,14 @@ export class MetaWhatsappEmbeddedService {
       ].join(',')
     );
 
-    const response = await fetch(url, {
-      headers: this.authorizationHeader(input.accessToken),
-    });
+    const response = await this.withGraphRequestDeadline(
+      'phone number health',
+      (signal) =>
+        fetch(url, {
+          headers: this.authorizationHeader(input.accessToken),
+          signal,
+        })
+    );
     const payload =
       await this.parseGraphResponse<MetaWhatsappDetailedPhoneNumber>(response);
     const summary = this.normalizeDetailedPhoneNumber(
@@ -702,9 +912,14 @@ export class MetaWhatsappEmbeddedService {
       ].join(',')
     );
 
-    const response = await fetch(url, {
-      headers: this.authorizationHeader(input.accessToken),
-    });
+    const response = await this.withGraphRequestDeadline(
+      'WABA health',
+      (signal) =>
+        fetch(url, {
+          headers: this.authorizationHeader(input.accessToken),
+          signal,
+        })
+    );
     const payload =
       await this.parseGraphResponse<MetaWabaHealthResponse>(response);
 
@@ -743,9 +958,14 @@ export class MetaWhatsappEmbeddedService {
       `analytics.start(${input.start}).end(${input.end}).granularity(DAY).phone_numbers([])`
     );
 
-    const response = await fetch(url, {
-      headers: this.authorizationHeader(input.accessToken),
-    });
+    const response = await this.withGraphRequestDeadline(
+      'message analytics',
+      (signal) =>
+        fetch(url, {
+          headers: this.authorizationHeader(input.accessToken),
+          signal,
+        })
+    );
     const payload =
       await this.parseGraphResponse<MetaWabaAnalyticsResponse>(response);
     const dataPoints =
@@ -782,9 +1002,14 @@ export class MetaWhatsappEmbeddedService {
       `conversation_analytics.start(${input.start}).end(${input.end}).granularity(DAILY).conversation_directions(["business_initiated","user_initiated"]).dimensions(["conversation_type","conversation_direction"])`
     );
 
-    const response = await fetch(url, {
-      headers: this.authorizationHeader(input.accessToken),
-    });
+    const response = await this.withGraphRequestDeadline(
+      'conversation analytics',
+      (signal) =>
+        fetch(url, {
+          headers: this.authorizationHeader(input.accessToken),
+          signal,
+        })
+    );
     const payload =
       await this.parseGraphResponse<MetaConversationAnalyticsResponse>(
         response
@@ -831,16 +1056,23 @@ export class MetaWhatsappEmbeddedService {
             this.graphUrl(input.apiVersion, `${input.wabaId}/message_templates`)
           );
 
+      if (url.origin !== 'https://graph.facebook.com') {
+        throw new Error('Invalid Meta Graph pagination URL');
+      }
+
       if (!nextUrl) {
         url.searchParams.set(
           'fields',
-          'id,name,language,status,category,components'
+          'id,name,language,status,category,parameter_format,components'
         );
         url.searchParams.set('limit', '100');
-        url.searchParams.set('access_token', input.accessToken);
       }
 
-      const response: Response = await fetch(url);
+      url.searchParams.delete('access_token');
+
+      const response: Response = await fetch(url, {
+        headers: this.authorizationHeader(input.accessToken),
+      });
       const payload: MetaMessageTemplatesResponse =
         await this.parseGraphResponse<MetaMessageTemplatesResponse>(response);
 
@@ -859,6 +1091,10 @@ export class MetaWhatsappEmbeddedService {
           language: template.language,
           status: 'APPROVED',
           category: template.category ?? null,
+          ...(template.parameter_format === 'NAMED' ||
+          template.parameter_format === 'POSITIONAL'
+            ? { parameter_format: template.parameter_format }
+            : {}),
           components: template.components ?? [],
         });
       }
@@ -999,24 +1235,29 @@ export class MetaWhatsappEmbeddedService {
     formData.set('type', input.mimetype);
     formData.set('file', file, input.filename);
 
-    const response = await fetch(
-      this.graphUrl(input.apiVersion, `${input.phoneNumberId}/media`),
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${input.accessToken}`,
-        },
-        body: formData,
+    return this.withGraphRequestDeadline('media upload', async (signal) => {
+      const response = await fetch(
+        this.graphUrl(input.apiVersion, `${input.phoneNumberId}/media`),
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${input.accessToken}`,
+          },
+          body: formData,
+          signal,
+        }
+      );
+      const payload =
+        await this.parseGraphResponse<MetaWhatsappMediaUploadResponse>(
+          response
+        );
+
+      if (!payload.id) {
+        throw new Error('Meta Graph API did not return a media id');
       }
-    );
-    const payload =
-      await this.parseGraphResponse<MetaWhatsappMediaUploadResponse>(response);
 
-    if (!payload.id) {
-      throw new Error('Meta Graph API did not return a media id');
-    }
-
-    return payload.id;
+      return payload.id;
+    });
   }
 
   async sendImageMessage(input: {
@@ -1205,6 +1446,8 @@ export class MetaWhatsappEmbeddedService {
     interactive: MetaWhatsappInteractiveMessage;
     contextMessageId?: string | null;
   }): Promise<MetaWhatsappMessageSendResult> {
+    assertOfficialWhatsappInteractivePayload(input.interactive);
+
     return this.sendWhatsappMessage({
       apiVersion: input.apiVersion,
       accessToken: input.accessToken,
@@ -1297,28 +1540,41 @@ export class MetaWhatsappEmbeddedService {
     phoneNumberId: string;
     body: Record<string, unknown>;
   }): Promise<MetaWhatsappMessageSendResult> {
-    const response = await fetch(
-      this.graphUrl(input.apiVersion, `${input.phoneNumberId}/messages`),
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${input.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(input.body),
-      }
-    );
-    const payload =
-      await this.parseGraphResponse<MetaWhatsappMessageSendResponse>(response);
-    const message = payload.messages?.[0] ?? null;
-    const contact = payload.contacts?.[0] ?? null;
+    return this.withGraphRequestDeadline('message send', async (signal) => {
+      const response = await fetch(
+        this.graphUrl(input.apiVersion, `${input.phoneNumberId}/messages`),
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${input.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(input.body),
+          signal,
+        }
+      );
+      const payload =
+        await this.parseGraphResponse<MetaWhatsappMessageSendResponse>(
+          response
+        );
+      const message = payload.messages?.[0] ?? null;
+      const contact = payload.contacts?.[0] ?? null;
+      const messageId =
+        typeof message?.id === 'string' ? message.id.trim() : '';
 
-    return {
-      message_id: message?.id ?? null,
-      contact_wa_id: contact?.wa_id ?? null,
-      message_status: message?.message_status ?? null,
-      raw: payload,
-    };
+      if (!messageId) {
+        throw new Error(
+          'Meta Graph API accepted the request without returning a message id'
+        );
+      }
+
+      return {
+        message_id: messageId,
+        contact_wa_id: contact?.wa_id ?? null,
+        message_status: message?.message_status ?? null,
+        raw: payload,
+      };
+    });
   }
 
   async getMediaUrl(input: {
@@ -1329,21 +1585,23 @@ export class MetaWhatsappEmbeddedService {
     const url = new URL(this.graphUrl(input.apiVersion, input.mediaId));
     url.searchParams.set('access_token', input.accessToken);
 
-    const response = await fetch(url);
-    const payload =
-      await this.parseGraphResponse<MetaWhatsappMediaResponse>(response);
+    return this.withGraphRequestDeadline('media URL lookup', async (signal) => {
+      const response = await fetch(url, { signal });
+      const payload =
+        await this.parseGraphResponse<MetaWhatsappMediaResponse>(response);
 
-    if (!payload.url) {
-      throw new Error('Meta Graph API did not return a media URL');
-    }
+      if (!payload.url) {
+        throw new Error('Meta Graph API did not return a media URL');
+      }
 
-    return {
-      id: payload.id ?? input.mediaId,
-      url: payload.url,
-      mime_type: payload.mime_type ?? null,
-      sha256: payload.sha256 ?? null,
-      file_size: payload.file_size ?? null,
-    };
+      return {
+        id: payload.id ?? input.mediaId,
+        url: payload.url,
+        mime_type: payload.mime_type ?? null,
+        sha256: payload.sha256 ?? null,
+        file_size: payload.file_size ?? null,
+      };
+    });
   }
 
   async downloadMedia(input: {
@@ -1352,34 +1610,37 @@ export class MetaWhatsappEmbeddedService {
     filename?: string | null;
     mimetype?: string | null;
   }): Promise<MetaWhatsappDownloadedMedia> {
-    const response = await fetch(input.url, {
-      headers: {
-        Authorization: `Bearer ${input.accessToken}`,
-      },
+    return this.withGraphRequestDeadline('media download', async (signal) => {
+      const response = await fetch(input.url, {
+        headers: {
+          Authorization: `Bearer ${input.accessToken}`,
+        },
+        signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Meta media download failed: ${response.status} ${response.statusText}`
+        );
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const mimetype =
+        input.mimetype ??
+        response.headers.get('content-type') ??
+        'application/octet-stream';
+      const filename =
+        input.filename?.trim() ||
+        `meta-whatsapp-media-${Date.now()}.${this.extensionFromMime(mimetype)}`;
+
+      return {
+        buffer,
+        mimetype,
+        filename,
+        size: buffer.byteLength,
+      };
     });
-
-    if (!response.ok) {
-      throw new Error(
-        `Meta media download failed: ${response.status} ${response.statusText}`
-      );
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const mimetype =
-      input.mimetype ??
-      response.headers.get('content-type') ??
-      'application/octet-stream';
-    const filename =
-      input.filename?.trim() ||
-      `meta-whatsapp-media-${Date.now()}.${this.extensionFromMime(mimetype)}`;
-
-    return {
-      buffer,
-      mimetype,
-      filename,
-      size: buffer.byteLength,
-    };
   }
 
   private extensionFromMime(mimetype: string): string {
@@ -1496,19 +1757,55 @@ export class MetaWhatsappEmbeddedService {
     return payload.success !== false;
   }
 
+  async viewWabaWebhookSubscription(input: {
+    apiVersion: string;
+    accessToken: string;
+    wabaId: string;
+    appId: string;
+  }): Promise<MetaWhatsappWebhookSubscriptionDiagnostic> {
+    const url = new URL(
+      this.graphUrl(input.apiVersion, `${input.wabaId}/subscribed_apps`)
+    );
+
+    const response = await this.withGraphRequestDeadline(
+      'WABA webhook subscription diagnostic',
+      (signal) =>
+        fetch(url, {
+          headers: this.authorizationHeader(input.accessToken),
+          signal,
+        })
+    );
+    const payload =
+      await this.parseGraphResponse<MetaWabaSubscriptionsResponse>(response);
+    const subscriptions = payload.data ?? [];
+
+    return {
+      subscribed: subscriptions.some(
+        (subscription) =>
+          subscription.whatsapp_business_api_data?.id === input.appId
+      ),
+      subscription_count: subscriptions.length,
+    };
+  }
+
   async subscribeWabaApp(input: {
     apiVersion: string;
     accessToken: string;
     wabaId: string;
   }): Promise<boolean> {
-    const response = await fetch(
-      this.graphUrl(input.apiVersion, `${input.wabaId}/subscribed_apps`),
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${input.accessToken}`,
-        },
-      }
+    const response = await this.withGraphRequestDeadline(
+      'WABA webhook subscription',
+      (signal) =>
+        fetch(
+          this.graphUrl(input.apiVersion, `${input.wabaId}/subscribed_apps`),
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${input.accessToken}`,
+            },
+            signal,
+          }
+        )
     );
     const payload =
       await this.parseGraphResponse<MetaSuccessResponse>(response);

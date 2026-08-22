@@ -40,10 +40,15 @@ import { ServerWebViewerRepository } from '@core/repositories/server/ServerWebVi
 import { ServerSshListerRepository } from '@core/repositories/server/ServerSshLister.repository';
 import { IListerServerSsh } from '@core/common/interfaces/IListerServerSsh';
 import { currentTime } from '@core/common/functions/currentTime';
-import { statusServerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import {
+  statusServerCentrifugoQueue,
+  serverSshCentrifugoQueue,
+} from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class ServerService {
+  private installLogIndexPromise: Promise<boolean> | null = null;
+
   constructor(
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
@@ -162,7 +167,8 @@ export class ServerService {
 
   updateServerStatusById = async (
     serverId: string,
-    status: EServerStatus
+    status: EServerStatus,
+    expectedStatuses?: readonly EServerStatus[]
   ): Promise<boolean> => {
     const date = currentTime();
 
@@ -172,15 +178,29 @@ export class ServerService {
       last_sync: date,
     };
 
-    await this.centrifugoService.publish(
-      statusServerCentrifugoQueue(),
-      statusServerCentrifugo
-    );
+    const updated =
+      await this.serverStatusUpdaterRepository.updateServerStatusById(
+        serverId,
+        status,
+        expectedStatuses,
+        date
+      );
 
-    return this.serverStatusUpdaterRepository.updateServerStatusById(
-      serverId,
-      status
-    );
+    if (!updated) {
+      return false;
+    }
+
+    await this.centrifugoService
+      .publish(statusServerCentrifugoQueue(), statusServerCentrifugo)
+      .catch(() => undefined);
+
+    return true;
+  };
+
+  viewServerStatusByIdAuthoritative = async (
+    serverId: string
+  ): Promise<EServerStatus | null> => {
+    return this.serverStatusUpdaterRepository.viewServerStatusById(serverId);
   };
 
   deleteServerById = async (serverId: string): Promise<boolean> => {
@@ -323,23 +343,71 @@ export class ServerService {
   updateLogInstallServerBulk = async (
     documents: IServerSshCentrifugo[]
   ): Promise<boolean> => {
-    const mappings = serverInstallMappings();
-    const result = await this.elasticDatabaseService.indices(
-      EElasticIndex.install_server,
-      mappings
-    );
+    if (!this.installLogIndexPromise) {
+      this.installLogIndexPromise = this.elasticDatabaseService.indices(
+        EElasticIndex.install_server,
+        serverInstallMappings()
+      );
+    }
+
+    let result: boolean;
+
+    try {
+      result = await this.installLogIndexPromise;
+    } catch (error) {
+      // A transient Elasticsearch failure must not poison every later flush.
+      // Resetting the shared promise lets the next live batch retry the index.
+      this.installLogIndexPromise = null;
+      throw error;
+    }
 
     if (!result || documents.length === 0) {
+      if (!result) {
+        this.installLogIndexPromise = null;
+      }
       return false;
     }
 
+    const documentsWithIds = documents.map((document) => ({
+      ...document,
+      event_id: document.event_id ?? uuidv7(),
+    }));
+
     const bulkResult = await this.elasticDatabaseService.bulkCreateIdempotent(
       EElasticIndex.install_server,
-      documents,
-      () => uuidv7()
+      documentsWithIds,
+      (document) => document.event_id
     );
 
     return bulkResult.created > 0 || bulkResult.conflicts > 0;
+  };
+
+  recordLogInstallServerBulk = async (
+    documents: IServerSshCentrifugo[]
+  ): Promise<IServerSshCentrifugo[]> => {
+    const documentsWithIds = documents.map((document) => ({
+      ...document,
+      event_id: document.event_id ?? uuidv7(),
+    }));
+    let persistenceError: unknown;
+
+    try {
+      await this.updateLogInstallServerBulk(documentsWithIds);
+    } catch (error) {
+      persistenceError = error;
+    }
+
+    await Promise.allSettled(
+      documentsWithIds.map((document) =>
+        this.centrifugoService.publish(serverSshCentrifugoQueue(), document)
+      )
+    );
+
+    if (persistenceError) {
+      throw persistenceError;
+    }
+
+    return documentsWithIds;
   };
 
   deleteLogInstallServer = async (serverId: string): Promise<boolean> => {

@@ -5,6 +5,11 @@ import type {
   ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { useI18n } from 'vue-i18n';
+import {
+  fillOfficialTemplateText,
+  type OfficialTemplateVariable,
+  type OfficialTemplateVariableValue,
+} from '@/utils/officialTemplate';
 
 type OfficialMetadata = NonNullable<ContentMessageChat['official']>;
 type OfficialDisplay = NonNullable<OfficialMetadata['display']>;
@@ -13,9 +18,6 @@ type OfficialSection = NonNullable<OfficialDisplay['sections']>[number];
 type OfficialCard = NonNullable<OfficialDisplay['cards']>[number];
 type VisibleOfficialAction = OfficialAction & { safe_url: string | null };
 type OfficialTemplate = NonNullable<ContentMessageChat['official_template']>;
-type OfficialTemplateVariable = NonNullable<
-  OfficialTemplate['variables']
->[number];
 
 type OfficialListOptionSection = Omit<OfficialSection, 'rows'> & {
   rows: OfficialAction[];
@@ -217,43 +219,6 @@ function formatValue(value: unknown): string {
   }
 }
 
-function templateVariableKey(
-  componentType: OfficialTemplateVariable['component_type'],
-  index: number,
-  buttonIndex?: number | null
-): string {
-  if (componentType === 'BUTTON') {
-    return `${componentType}:${buttonIndex ?? 0}:${index}`;
-  }
-
-  return `${componentType}:${index}`;
-}
-
-function buildTemplateVariableValueMap(
-  template: OfficialTemplate
-): Map<string, string> {
-  const valueMap = new Map<string, string>();
-
-  for (const variable of template.variables ?? []) {
-    const value = variable.value?.trim();
-    if (!value) {
-      continue;
-    }
-
-    valueMap.set(variable.key, value);
-    valueMap.set(
-      templateVariableKey(
-        variable.component_type,
-        variable.index,
-        variable.button_index ?? null
-      ),
-      value
-    );
-  }
-
-  return valueMap;
-}
-
 function fillTemplateText(
   text: string | null | undefined,
   componentType: OfficialTemplateVariable['component_type'],
@@ -264,11 +229,17 @@ function fillTemplateText(
     return text;
   }
 
-  const valueMap = buildTemplateVariableValueMap(template);
+  const variables = (template.variables ?? []).map((variable) => ({
+    ...variable,
+    value: formatValue(variable.value),
+  })) as OfficialTemplateVariableValue[];
 
-  return text.replace(/\{\{\s*(\d+)\s*\}\}/gu, (match, index: string) => {
-    const key = templateVariableKey(componentType, Number(index), buttonIndex);
-    return valueMap.get(key) ?? match;
+  return fillOfficialTemplateText({
+    text,
+    componentType,
+    variables,
+    values: variables,
+    buttonIndex,
   });
 }
 
@@ -705,11 +676,15 @@ function closeOptionsDialog(): void {
   width: fit-content;
   max-width: min(100%, 336px);
   margin-block: 0;
+  --official-reply-title-color: rgba(var(--v-theme-on-surface), 0.92);
+  --official-reply-description-color: rgba(var(--v-theme-on-surface), 0.72);
   color: #111b21;
 }
 
 .official-card--outgoing {
   margin-left: auto;
+  --official-reply-title-color: #111b21;
+  --official-reply-description-color: #3b4a54;
 }
 
 .official-card--unsupported {
@@ -1128,7 +1103,7 @@ button.official-card__action--clickable {
 }
 
 .official-reply__title {
-  color: #111b21;
+  color: var(--official-reply-title-color);
   font-size: 0.9rem;
   font-weight: 650;
   line-height: 1.28;
@@ -1136,7 +1111,7 @@ button.official-card__action--clickable {
 
 .official-reply__description {
   margin-top: 3px;
-  color: #3b4a54;
+  color: var(--official-reply-description-color);
   font-size: 0.82rem;
   line-height: 1.3;
 }

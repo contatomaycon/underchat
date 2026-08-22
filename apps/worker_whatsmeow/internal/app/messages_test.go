@@ -544,15 +544,25 @@ func TestBuildOutgoingTextEditRejectsNonOwnMessage(t *testing.T) {
 	}
 }
 
-func TestChatMessageClaimIDPrefersHashForEdits(t *testing.T) {
-	got := chatMessageClaimID(ChatMessage{MessageID: "same-message-id", Hash: "edit-hash"})
-	if got != "hash:edit-hash" {
-		t.Fatalf("expected hash claim id, got %q", got)
+func TestChatMessageOperationIDPrefersHashForEdits(t *testing.T) {
+	got := chatMessageOperationID(ChatMessage{MessageID: "same-message-id", Hash: "edit-hash"})
+	if got != "edit-hash" {
+		t.Fatalf("expected hash operation id, got %q", got)
 	}
 
-	got = chatMessageClaimID(ChatMessage{MessageID: "message-id"})
-	if got != "message:message-id" {
-		t.Fatalf("expected message claim id, got %q", got)
+	got = chatMessageOperationID(ChatMessage{MessageID: "message-id"})
+	if got != "message-id" {
+		t.Fatalf("expected message operation id, got %q", got)
+	}
+
+	got = chatMessageOperationID(ChatMessage{
+		MessageID: "message-id",
+		ChatID:    "chat-1",
+		Hash:      "e68dc070f5ce0151f86c42da8479ed27f1826a967283b5fd0c21d2c0e488e1a4",
+		Account:   map[string]any{"id": "account-1"},
+	})
+	if got != "message-id" {
+		t.Fatalf("transport-generated hash must converge to message id, got %q", got)
 	}
 }
 

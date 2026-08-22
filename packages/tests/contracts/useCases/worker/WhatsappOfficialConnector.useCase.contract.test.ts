@@ -4,6 +4,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { OfficialWhatsappPhoneAlreadyConnectedError } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 
 const t = ((key: string) => key) as never;
 
@@ -233,5 +234,26 @@ describe('WhatsappOfficialConnectorUseCase', () => {
     expect(
       deps.officialConnectionRepository.createForExistingWorker
     ).not.toHaveBeenCalled();
+  });
+
+  it('returns the duplicate-phone message when another connection wins the race', async () => {
+    const { useCase, deps } = buildUseCase({
+      officialConnectionRepository: {
+        findActiveByWorkerId: jest.fn(async () => null),
+        findActiveByPhoneNumberId: jest.fn(async () => null),
+        createForExistingWorker: jest.fn(async () => {
+          throw new OfficialWhatsappPhoneAlreadyConnectedError();
+        }),
+      },
+    });
+
+    await expect(
+      useCase.execute(t, 'account-1', 'worker-1', request)
+    ).rejects.toThrow('whatsapp_official_phone_already_connected');
+
+    expect(
+      deps.officialConnectionRepository.createForExistingWorker
+    ).toHaveBeenCalledTimes(1);
+    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
   });
 });

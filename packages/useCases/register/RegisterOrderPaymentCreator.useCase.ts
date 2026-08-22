@@ -11,6 +11,7 @@ import { CreateUserRequest } from '@core/schema/user/createUser/request.schema';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import { IRegisterJwtPayload } from '@core/common/interfaces/IRegisterJwtPayload';
 import { EncryptService } from '@core/services/encrypt.service';
+import { CreditCardSourceSelectionError } from '@core/common/exceptions/UserCardError';
 
 @injectable()
 export class RegisterOrderPaymentCreatorUseCase {
@@ -159,6 +160,21 @@ export class RegisterOrderPaymentCreatorUseCase {
     };
   };
 
+  private readonly validateCreditCardSource = (
+    input: CreateRegisterOrderPaymentRequest
+  ): void => {
+    if (input.payment_method !== 'credit_card') {
+      return;
+    }
+
+    const hasSavedCreditCard = Boolean(input.credit_card_id);
+    const hasNewCreditCard = Boolean(input.new_card);
+
+    if (hasSavedCreditCard === hasNewCreditCard) {
+      throw new CreditCardSourceSelectionError();
+    }
+  };
+
   readonly execute = async (
     t: TFunction<'translation', undefined>,
     registerJwtData: IRegisterJwtPayload,
@@ -169,6 +185,8 @@ export class RegisterOrderPaymentCreatorUseCase {
     let createdAccountId: string | null = null;
 
     try {
+      this.validateCreditCardSource(input);
+
       this.validateRegisterContact(
         t,
         registerJwtData,

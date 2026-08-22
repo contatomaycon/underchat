@@ -1,3 +1,8 @@
+import {
+  sanitizeConnectionStatusLogContext,
+  sanitizeConnectionStatusLogLabel,
+} from './connectionStatusLogSanitizer';
+
 const TRACE_HEADER = 'x-connection-lifecycle-debug-trace-id';
 const localTraceSequences = new Map<string, number>();
 let localSequence = 0;
@@ -19,7 +24,8 @@ export interface ConnectionLifecycleDebugContext {
 }
 
 export const isConnectionLifecycleDebugEnabled = (): boolean =>
-  import.meta.env.VITE_CONNECTION_LIFECYCLE_DEBUG_ENABLED === 'true';
+  import.meta.env.VITE_CONNECTION_LIFECYCLE_DEBUG_ENABLED === 'true' ||
+  import.meta.env.WHATSAPP_SESSION_DEBUG_ENABLED === 'true';
 
 export const createConnectionLifecycleDebugTraceId = (
   prefix = 'web'
@@ -37,7 +43,9 @@ export const connectionLifecycleDebugHeaders = (
     return undefined;
   }
 
-  return { [TRACE_HEADER]: traceId };
+  return {
+    [TRACE_HEADER]: sanitizeConnectionStatusLogLabel(traceId, 'web-no-trace'),
+  };
 };
 
 export const logConnectionLifecycleDebug = (
@@ -48,7 +56,10 @@ export const logConnectionLifecycleDebug = (
     return;
   }
 
-  const traceId = context.trace_id || 'web-no-trace';
+  const traceId = sanitizeConnectionStatusLogLabel(
+    context.trace_id,
+    'web-no-trace'
+  );
   localSequence += 1;
   const traceSequence = (localTraceSequences.get(traceId) ?? 0) + 1;
   localTraceSequences.set(traceId, traceSequence);
@@ -62,7 +73,7 @@ export const logConnectionLifecycleDebug = (
     seq: localSequence,
     trace_seq: traceSequence,
     trace_id: traceId,
-    event,
+    event: sanitizeConnectionStatusLogLabel(event, 'web_debug_event'),
     layer: context.layer ?? 'web',
     timestamp: new Date().toISOString(),
     ...sanitizedContext,
@@ -74,134 +85,9 @@ export const logConnectionLifecycleDebug = (
 const sanitizeContext = (
   context: ConnectionLifecycleDebugContext
 ): Record<string, unknown> => {
-  const sanitized = sanitizeObject(context, 0);
+  const sanitized = sanitizeConnectionStatusLogContext(context);
   delete sanitized.trace_id;
   return sanitized;
-};
-
-const sanitizeObject = (
-  input: Record<string, unknown>,
-  depth: number
-): Record<string, unknown> => {
-  if (depth > 5) {
-    return {};
-  }
-
-  const output: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(input)) {
-    if (isQrKey(key)) {
-      Object.assign(output, qrMetadata(value));
-      continue;
-    }
-
-    if (isPairingKey(key)) {
-      Object.assign(output, pairingMetadata(value));
-      continue;
-    }
-
-    if (isPasskeyPublicKey(key)) {
-      Object.assign(output, stringMetadata('passkey_public_key', value));
-      continue;
-    }
-
-    if (isPasskeySecretKey(key)) {
-      Object.assign(output, stringMetadata('passkey_secret', value));
-      continue;
-    }
-
-    const sanitizedValue = sanitizeValue(value, depth + 1);
-    if (sanitizedValue !== undefined) {
-      output[key] = sanitizedValue;
-    }
-  }
-
-  return output;
-};
-
-const sanitizeValue = (value: unknown, depth: number): unknown => {
-  if (value === undefined || value === null) {
-    return value;
-  }
-
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.slice(0, 20).map((item) => sanitizeValue(item, depth));
-  }
-
-  if (value instanceof Error) {
-    return { name: value.name, message: value.message };
-  }
-
-  if (typeof value === 'object') {
-    return sanitizeObject(value as Record<string, unknown>, depth);
-  }
-
-  return String(value);
-};
-
-const isQrKey = (key: string): boolean =>
-  ['qr', 'qrcode', 'qr_code', 'qrCode'].includes(key);
-
-const isPairingKey = (key: string): boolean =>
-  ['pairing_code', 'pairingCode'].includes(key);
-
-const isPasskeyPublicKey = (key: string): boolean =>
-  ['passkey_public_key', 'passkeyPublicKey'].includes(key);
-
-const isPasskeySecretKey = (key: string): boolean =>
-  [
-    'passkey_response',
-    'passkeyResponse',
-    'passkey_confirmation_code',
-    'passkeyConfirmationCode',
-    'rawId',
-    'clientDataJSON',
-    'authenticatorData',
-    'signature',
-    'userHandle',
-    'credential_id',
-    'webauthn_assertion',
-  ].includes(key);
-
-const qrMetadata = (value: unknown): Record<string, unknown> => {
-  return stringMetadata('qr', value);
-};
-
-const pairingMetadata = (value: unknown): Record<string, unknown> => {
-  return stringMetadata('pairing_code', value);
-};
-
-const stringMetadata = (
-  prefix: 'qr' | 'pairing_code' | 'passkey_public_key' | 'passkey_secret',
-  value: unknown
-): Record<string, unknown> => {
-  const raw =
-    typeof value === 'string'
-      ? value
-      : value === undefined || value === null
-        ? ''
-        : JSON.stringify(value);
-  return {
-    [`has_${prefix}`]: raw.length > 0,
-    [`${prefix}_length`]: raw.length,
-    [`${prefix}_hash`]: raw ? hashString(raw) : undefined,
-  };
-};
-
-const hashString = (value: string): string => {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = Math.imul(31, hash) + value.charCodeAt(index);
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(16).slice(0, 12);
 };
 
 const stabilizePayload = (

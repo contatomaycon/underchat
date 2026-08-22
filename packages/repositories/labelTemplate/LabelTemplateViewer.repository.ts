@@ -13,16 +13,13 @@ export class LabelTemplateViewerRepository {
 
   viewLabelTemplateById = async (
     labelTemplateId: string,
-    accountId?: string
+    accountId: string
   ): Promise<ViewLabelTemplateResponse | null> => {
     const conditions = [
       eq(labelTemplate.label_template_id, labelTemplateId),
+      eq(labelTemplate.account_id, accountId),
       isNull(labelTemplate.deleted_at),
     ];
-
-    if (accountId) {
-      conditions.push(eq(labelTemplate.account_id, accountId));
-    }
 
     const result = await this.dbRo
       .select({
@@ -57,7 +54,7 @@ export class LabelTemplateViewerRepository {
 
   viewLabelTemplatesByIds = async (
     labelTemplateIds: string[],
-    accountId?: string
+    accountId: string
   ): Promise<ViewLabelTemplateResponse[]> => {
     if (labelTemplateIds.length === 0) {
       return [];
@@ -65,12 +62,9 @@ export class LabelTemplateViewerRepository {
 
     const conditions = [
       inArray(labelTemplate.label_template_id, labelTemplateIds),
+      eq(labelTemplate.account_id, accountId),
       isNull(labelTemplate.deleted_at),
     ];
-
-    if (accountId) {
-      conditions.push(eq(labelTemplate.account_id, accountId));
-    }
 
     const result = await this.dbRo
       .select({

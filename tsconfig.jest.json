@@ -9,7 +9,11 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["packages/**/*", "jest.config.ts"],
+  "include": [
+    "packages/**/*",
+    "scripts/kafka-clean-dead-resources.ts",
+    "jest.config.ts"
+  ],
   "exclude": [
     "node_modules",
     "dist",

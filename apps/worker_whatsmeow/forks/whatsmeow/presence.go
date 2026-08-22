@@ -67,6 +67,10 @@ func (cli *Client) SendPresence(ctx context.Context, state types.Presence) error
 	} else if len(cli.Store.PushName) == 0 && cli.MessengerConfig == nil {
 		return ErrNoPushName
 	}
+	binding := cli.currentSocketBinding()
+	if !cli.isCurrentSocketBinding(binding) {
+		return ErrNotConnected
+	}
 	if state == types.PresenceAvailable {
 		cli.sendActiveReceipts.CompareAndSwap(0, 1)
 	} else {
@@ -79,10 +83,22 @@ func (cli *Client) SendPresence(ctx context.Context, state types.Presence) error
 	if cli.MessengerConfig == nil {
 		attrs["name"] = cli.Store.PushName
 	}
-	return cli.sendNode(ctx, waBinary.Node{
+	err := cli.sendNodeOnSocket(ctx, binding, waBinary.Node{
 		Tag:   "presence",
 		Attrs: attrs,
 	})
+	if err != nil {
+		return err
+	}
+	if state == types.PresenceAvailable {
+		// Use the same generation as presence and bound the auxiliary telemetry
+		// write tightly so this method never inherits the general five-second
+		// heartbeat timeout.
+		heartbeatCtx, cancel := context.WithTimeout(ctx, unifiedSessionAuxiliarySendTimeout)
+		_ = cli.sendUnifiedSession(heartbeatCtx, binding)
+		cancel()
+	}
+	return nil
 }
 
 // SubscribePresence asks the WhatsApp servers to send presence updates of a specific user to this client.

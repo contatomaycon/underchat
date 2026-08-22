@@ -33,6 +33,8 @@ import { sessionLoginSchema } from '@core/schema/user/sessionLogin';
 import { viewAttendanceHoursSchema } from '@core/schema/user/viewAttendanceHours';
 import { updateAttendanceHoursSchema } from '@core/schema/user/updateAttendanceHours';
 import { viewAttendanceHoursStatusSchema } from '@core/schema/user/viewAttendanceHoursStatus';
+import { blockUserSchema } from '@core/schema/user/blockUser';
+import { unblockUserSchema } from '@core/schema/user/unblockUser';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -108,6 +110,28 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/user/:user_id/block', {
+    schema: blockUserSchema,
+    handler: userController.blockUser,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userUpdatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/user/:user_id/unblock', {
+    schema: unblockUserSchema,
+    handler: userController.unblockUser,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userUpdatePermissions),
       planGuard,
       planStatus,
     ],

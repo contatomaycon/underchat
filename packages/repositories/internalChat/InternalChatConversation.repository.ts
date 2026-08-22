@@ -15,6 +15,7 @@ import {
   count,
   desc,
   eq,
+  gt,
   ilike,
   inArray,
   isNull,
@@ -471,6 +472,37 @@ export class InternalChatConversationRepository {
         (row.role as EInternalChatConversationParticipantRole) ??
         EInternalChatConversationParticipantRole.member,
       unread_count: row.unread_count ?? 0,
+      closed_at: row.closed_at ?? null,
+    }));
+  }
+
+  async listParticipantUnreadStates(
+    conversationId: string
+  ): Promise<
+    Array<{ user_id: string; unread_count: number; closed_at: string | null }>
+  > {
+    const rows = await this.dbRw
+      .select({
+        user_id: internalChatConversationParticipant.user_id,
+        unread_count: internalChatConversationParticipant.unread_count,
+        closed_at: internalChatConversationParticipant.closed_at,
+      })
+      .from(internalChatConversationParticipant)
+      .where(
+        and(
+          eq(
+            internalChatConversationParticipant.internal_chat_conversation_id,
+            conversationId
+          ),
+          eq(internalChatConversationParticipant.is_active, true),
+          isNull(internalChatConversationParticipant.deleted_at)
+        )
+      )
+      .execute();
+
+    return rows.map((row) => ({
+      user_id: row.user_id,
+      unread_count: Math.max(0, Math.trunc(row.unread_count ?? 0)),
       closed_at: row.closed_at ?? null,
     }));
   }
@@ -996,6 +1028,44 @@ export class InternalChatConversationRepository {
       .execute();
 
     return Number(rows[0]?.unread_count ?? 0);
+  }
+
+  async listUnreadOpenConversationsForUser(
+    accountId: string,
+    userId: string
+  ): Promise<Array<{ conversation_id: string; unread_count: number }>> {
+    const rows = await this.dbRo
+      .select({
+        conversation_id:
+          internalChatConversationParticipant.internal_chat_conversation_id,
+        unread_count: internalChatConversationParticipant.unread_count,
+      })
+      .from(internalChatConversationParticipant)
+      .innerJoin(
+        internalChatConversation,
+        eq(
+          internalChatConversation.internal_chat_conversation_id,
+          internalChatConversationParticipant.internal_chat_conversation_id
+        )
+      )
+      .where(
+        and(
+          eq(internalChatConversationParticipant.account_id, accountId),
+          eq(internalChatConversationParticipant.user_id, userId),
+          eq(internalChatConversationParticipant.is_active, true),
+          isNull(internalChatConversationParticipant.closed_at),
+          isNull(internalChatConversationParticipant.deleted_at),
+          gt(internalChatConversationParticipant.unread_count, 0),
+          eq(internalChatConversation.account_id, accountId),
+          isNull(internalChatConversation.deleted_at)
+        )
+      )
+      .execute();
+
+    return rows.map((row) => ({
+      conversation_id: row.conversation_id,
+      unread_count: Math.max(0, Math.trunc(row.unread_count ?? 0)),
+    }));
   }
 
   private buildOpenConversationFilters(

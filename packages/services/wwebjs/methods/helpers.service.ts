@@ -4,23 +4,74 @@ import { WwebjsConnectionService } from './connection.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
-import { webcrypto as nodeCrypto } from 'node:crypto';
+import { createHash, webcrypto as nodeCrypto } from 'node:crypto';
 import { WwebjsDeliveryConfirmationService } from './deliveryConfirmation.service';
-import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { TypingSimulationRuntimeService } from '@core/services/typingSimulationRuntime.service';
 import { wwebjsEnvironment } from '@core/config/environments';
 import { ITypingSimulationConfig } from '@core/common/interfaces/ITypingSimulationConfig';
 import {
   defaultTypingSimulationConfig,
+  resolveTypingSimulationMaxDelayMs,
   typingSimulationDelayMultiplier,
 } from '@core/common/functions/typingSimulationConfig';
+import { extractWwebjsMessageId } from '../util/wwebjsMessageId';
+import type { IProviderInvocationBoundary } from '@core/common/interfaces/IProviderInvocationBoundary';
+import {
+  ITypingSimulationControl,
+  runTypingSimulationBestEffort,
+  TypingSimulationSingleFlight,
+} from '@core/common/functions/typingSimulationExecution';
+import {
+  ProviderInvocationInFlightError,
+  ProviderInvocationSingleFlight,
+} from '@core/common/functions/providerInvocationSingleFlight';
+import { resolveWwebjsSendMessageTimeoutMs } from '@core/services/wwebjs/util/providerSendTimeout';
+import {
+  invokeProviderAuxiliaryWithTimeout,
+  ProviderAuxiliaryInvocationTimeoutError,
+  resolveProviderAuxiliaryTimeoutMs,
+} from '@core/common/functions/providerAuxiliaryInvocation';
+import { downloadMediaBuffer } from '@core/common/functions/downloadMediaBuffer';
+import { workerErrorDiagnostics } from '@core/common/functions/workerErrorDiagnostics';
 
 const { MessageMedia } = whatsappWeb;
 
+function hashWwebjsLogIdentifier(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return `sha256:${createHash('sha256').update(value.trim()).digest('hex')}`;
+}
+
+class WwebjsSendMessageTimeoutError extends Error {
+  readonly code = 'WWEBJS_SEND_MESSAGE_TIMEOUT';
+
+  constructor(timeoutMs: number) {
+    super(`Wwebjs sendMessage timed out after ${timeoutMs}ms`);
+    this.name = 'WwebjsSendMessageTimeoutError';
+  }
+}
+
+export type WwebjsProviderInvocationBoundary = IProviderInvocationBoundary;
+export type WwebjsProviderLookupOperation =
+  | 'edit_delete_message_lookup'
+  | 'forward_destination_lookup'
+  | 'quoted_message_lookup'
+  | 'reaction_message_lookup';
+export type WwebjsProviderMutationOperation =
+  'delete_message' | 'edit_message' | 'forward_message' | 'react_message';
+
 @injectable()
 export class WwebjsHelpersService {
-  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 1;
   private readonly SEND_CONFIRMATION_TIMEOUT_MS = 20_000;
+  private readonly SEND_MESSAGE_TIMEOUT_MS =
+    resolveWwebjsSendMessageTimeoutMs();
+  private readonly TYPING_SIMULATION_MAX_DELAY_MS =
+    resolveTypingSimulationMaxDelayMs();
+  private readonly AUXILIARY_PROVIDER_TIMEOUT_MS =
+    resolveProviderAuxiliaryTimeoutMs();
+  private readonly typingSimulationSingleFlight =
+    new TypingSimulationSingleFlight();
+  private readonly providerInvocationSingleFlight =
+    new ProviderInvocationSingleFlight();
 
   constructor(
     @inject(WwebjsConnectionService)
@@ -42,33 +93,45 @@ export class WwebjsHelpersService {
   async sendMessage(
     jid: string,
     content: Parameters<Client['sendMessage']>[1],
-    options?: Parameters<Client['sendMessage']>[2]
+    options?: Parameters<Client['sendMessage']>[2],
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<Awaited<ReturnType<Client['sendMessage']>>> {
     if (this.shouldSimulateTyping(content, options)) {
-      const typingConfig = await this.getTypingSimulationConfig();
-      if (typingConfig.enabled) {
-        await this.simulateHumanTyping(
-          jid,
-          content,
-          options,
-          typingConfig.speed
-        );
-      }
+      await this.runTypingSimulationBestEffort(async (control) => {
+        control.checkpoint();
+        const typingConfig = await this.getTypingSimulationConfig();
+        control.checkpoint();
+        if (typingConfig.enabled) {
+          await this.simulateHumanTyping(
+            jid,
+            content,
+            options,
+            typingConfig.speed,
+            control
+          );
+        }
+      }, beforeProviderInvoke);
     }
 
-    return this.sendMessageWithConfirmation(jid, content, options);
+    return this.sendMessageWithConfirmation(
+      jid,
+      content,
+      options,
+      beforeProviderInvoke
+    );
   }
 
   private async sendMessageWithConfirmation(
     jid: string,
     content: Parameters<Client['sendMessage']>[1],
-    options?: Parameters<Client['sendMessage']>[2]
+    options?: Parameters<Client['sendMessage']>[2],
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<Awaited<ReturnType<Client['sendMessage']>>> {
     const startedAt = Date.now();
     const contentInfo = this.describeOutgoingContent(content, options);
     const optionsInfo = this.describeSendOptions(options);
     console.info('[WwebjsSend] send_start', {
-      jid,
+      jid_hash: hashWwebjsLogIdentifier(jid),
       content: contentInfo,
       options: optionsInfo,
     });
@@ -76,10 +139,16 @@ export class WwebjsHelpersService {
     const client = this.getClient();
     let sentMessage: Awaited<ReturnType<Client['sendMessage']>>;
     try {
-      sentMessage = await this.sendMessageRaw(client, jid, content, options);
+      sentMessage = await this.sendMessageRaw(
+        client,
+        jid,
+        content,
+        options,
+        beforeProviderInvoke
+      );
     } catch (error) {
       console.error('[WwebjsSend] send_failed_before_ack', {
-        jid,
+        jid_hash: hashWwebjsLogIdentifier(jid),
         content: contentInfo,
         options: optionsInfo,
         duration_ms: Date.now() - startedAt,
@@ -91,72 +160,84 @@ export class WwebjsHelpersService {
     const sentMessageId = this.extractMessageId(sentMessage);
     if (!sentMessageId) {
       console.error('[WwebjsSend] send_failed_without_message_id', {
-        jid,
+        jid_hash: hashWwebjsLogIdentifier(jid),
         content: contentInfo,
         options: optionsInfo,
         duration_ms: Date.now() - startedAt,
       });
-      throw new Error('Wwebjs send returned message without id');
+      const error = new Error('Wwebjs send returned message without id');
+      this.reportOutboundProtocolFailure(client, error);
+      throw error;
     }
+    this.connection.reportOutboundSendSuccess?.(client);
 
     console.info('[WwebjsSend] send_dispatched', {
-      jid,
-      message_id: sentMessageId,
+      jid_hash: hashWwebjsLogIdentifier(jid),
+      message_id_hash: hashWwebjsLogIdentifier(sentMessageId),
       content: contentInfo,
       options: optionsInfo,
       duration_ms: Date.now() - startedAt,
     });
 
     this.deliveryConfirmation.markSent(sentMessageId);
-    const outcome = await this.deliveryConfirmation.waitForOutcome(
-      sentMessageId,
-      this.SEND_CONFIRMATION_TIMEOUT_MS
-    );
-
-    if (outcome === 'sent') {
-      console.info('[WwebjsSend] send_ack_sent', {
-        jid,
-        message_id: sentMessageId,
-        content: contentInfo,
-        options: optionsInfo,
-        duration_ms: Date.now() - startedAt,
-      });
-      return sentMessage;
-    }
-
-    const lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
-    const confirmationError =
-      outcome === 'failed'
-        ? new Error(
-            `Message delivery failed acknowledgement for ${sentMessageId}`
-          )
-        : new Error(
-            `Message delivery confirmation timeout for ${sentMessageId}`
-          );
-
-    console.warn('[WwebjsSend] send_ack_not_confirmed', {
+    void this.observeDeliveryConfirmation({
       jid,
-      message_id: sentMessageId,
-      outcome: lastOutcome,
-      content: contentInfo,
-      options: optionsInfo,
-      duration_ms: Date.now() - startedAt,
-      error: this.describeError(confirmationError),
+      messageId: sentMessageId,
+      contentInfo,
+      optionsInfo,
+      startedAt,
     });
+    return sentMessage;
+  }
 
-    throw new MessageDeliveryConfirmationFailedError({
-      maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
-      lastMessageId: sentMessageId,
-      lastOutcome,
-      cause: confirmationError,
-    });
+  private async observeDeliveryConfirmation(input: {
+    jid: string;
+    messageId: string;
+    contentInfo: Record<string, unknown>;
+    optionsInfo: Record<string, unknown>;
+    startedAt: number;
+  }): Promise<void> {
+    try {
+      const outcome = await this.deliveryConfirmation.waitForOutcome(
+        input.messageId,
+        this.SEND_CONFIRMATION_TIMEOUT_MS
+      );
+      if (outcome === 'sent') {
+        console.info('[WwebjsSend] send_ack_sent', {
+          jid_hash: hashWwebjsLogIdentifier(input.jid),
+          message_id_hash: hashWwebjsLogIdentifier(input.messageId),
+          content: input.contentInfo,
+          options: input.optionsInfo,
+          duration_ms: Date.now() - input.startedAt,
+        });
+        return;
+      }
+      console.warn('[WwebjsSend] send_ack_not_confirmed', {
+        jid_hash: hashWwebjsLogIdentifier(input.jid),
+        message_id_hash: hashWwebjsLogIdentifier(input.messageId),
+        outcome: outcome === 'failed' ? 'failed' : 'timeout',
+        content: input.contentInfo,
+        options: input.optionsInfo,
+        duration_ms: Date.now() - input.startedAt,
+      });
+    } catch (error) {
+      console.warn('[WwebjsSend] send_ack_observation_failed', {
+        jid_hash: hashWwebjsLogIdentifier(input.jid),
+        message_id_hash: hashWwebjsLogIdentifier(input.messageId),
+        content: input.contentInfo,
+        options: input.optionsInfo,
+        duration_ms: Date.now() - input.startedAt,
+        error: this.describeError(error),
+      });
+    }
   }
 
   private async sendMessageRaw(
     client: Client,
     jid: string,
     content: Parameters<Client['sendMessage']>[1],
-    options?: Parameters<Client['sendMessage']>[2]
+    options?: Parameters<Client['sendMessage']>[2],
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<Awaited<ReturnType<Client['sendMessage']>>> {
     const normalizedJid = this.normalizeSendJidCandidate(jid);
     if (!normalizedJid) {
@@ -165,135 +246,337 @@ export class WwebjsHelpersService {
 
     const sendOptions = {
       ...(options ?? {}),
-      waitUntilMsgSent: true,
+      waitUntilMsgSent: false,
     } as Parameters<Client['sendMessage']>[2];
     const contentInfo = this.describeOutgoingContent(content, sendOptions);
     const optionsInfo = this.describeSendOptions(sendOptions);
 
-    const sendWithJid = (targetJid: string) =>
-      client.sendMessage(targetJid, content, sendOptions);
-
     console.info('[WwebjsSend] send_attempt', {
       attempt: 1,
-      original_jid: jid,
-      target_jid: normalizedJid,
+      original_jid_hash: hashWwebjsLogIdentifier(jid),
+      target_jid_hash: hashWwebjsLogIdentifier(normalizedJid),
       content: contentInfo,
       options: optionsInfo,
     });
 
-    return sendWithJid(normalizedJid).catch(async (firstError) => {
+    try {
+      return await this.invokeOutboundProvider(
+        client,
+        normalizedJid,
+        beforeProviderInvoke,
+        () => client.sendMessage(normalizedJid, content, sendOptions)
+      );
+    } catch (error) {
       console.warn('[WwebjsSend] send_attempt_failed', {
         attempt: 1,
-        original_jid: jid,
-        target_jid: normalizedJid,
+        original_jid_hash: hashWwebjsLogIdentifier(jid),
+        target_jid_hash: hashWwebjsLogIdentifier(normalizedJid),
         content: contentInfo,
         options: optionsInfo,
-        error: this.describeError(firstError),
+        error: this.describeError(error),
       });
+      console.error('[WwebjsSend] send_attempt_failed_terminal', {
+        attempt: 1,
+        original_jid_hash: hashWwebjsLogIdentifier(jid),
+        target_jid_hash: hashWwebjsLogIdentifier(normalizedJid),
+        content: contentInfo,
+        options: optionsInfo,
+        error: this.describeError(error),
+      });
+      throw error;
+    }
+  }
 
-      if (!this.shouldRetrySendWithAlternateJid(firstError)) {
-        console.error('[WwebjsSend] send_attempt_failed_terminal', {
-          attempt: 1,
-          original_jid: jid,
-          target_jid: normalizedJid,
-          content: contentInfo,
-          options: optionsInfo,
-          error: this.describeError(firstError),
-        });
-        throw firstError;
+  private async invokeOutboundProvider<T>(
+    client: Client,
+    jid: string,
+    beforeProviderInvoke: WwebjsProviderInvocationBoundary | undefined,
+    invoke: () => Promise<T>
+  ): Promise<T> {
+    const lease = this.providerInvocationSingleFlight.acquire(client);
+    if (!lease) {
+      const stalled = this.providerInvocationSingleFlight.isStalled(client);
+      if (stalled) {
+        this.connection.ensureOutboundSendRecovery?.(client);
       }
-
-      const candidates = await this.buildAlternateJidCandidates(
-        client,
-        normalizedJid
+      throw new ProviderInvocationInFlightError(
+        stalled ? 'stalled' : 'capacity'
       );
-      console.info('[WwebjsSend] send_retry_candidates', {
-        original_jid: jid,
-        failed_target_jid: normalizedJid,
-        candidates,
-      });
+    }
 
-      let lastError: unknown = firstError;
-      let attempt = 1;
+    try {
+      await beforeProviderInvoke?.();
+    } catch (error) {
+      lease.releaseBeforeStart();
+      throw error;
+    }
 
-      for (const candidate of candidates) {
-        if (candidate === normalizedJid) {
-          continue;
-        }
+    try {
+      beforeProviderInvoke?.assertActive?.();
+      if (
+        this.connection.connected === false ||
+        this.connection.getSocket() !== client
+      ) {
+        throw new Error(
+          'Wwebjs connection unavailable: provider client is no longer active'
+        );
+      }
+    } catch (error) {
+      lease.releaseBeforeStart();
+      await beforeProviderInvoke?.onStartRejected?.(error);
+      throw error;
+    }
 
-        attempt += 1;
-        console.info('[WwebjsSend] send_attempt', {
-          attempt,
-          original_jid: jid,
-          target_jid: candidate,
-          content: contentInfo,
-          options: optionsInfo,
-        });
-
-        try {
-          const result = await sendWithJid(candidate);
-          console.info('[WwebjsSend] send_attempt_succeeded', {
-            attempt,
-            original_jid: jid,
-            target_jid: candidate,
-          });
-          return result;
-        } catch (candidateError) {
-          lastError = candidateError;
-          console.warn('[WwebjsSend] send_attempt_failed', {
-            attempt,
-            original_jid: jid,
-            target_jid: candidate,
-            content: contentInfo,
-            options: optionsInfo,
-            error: this.describeError(candidateError),
-          });
-          if (!this.shouldRetrySendWithAlternateJid(candidateError)) {
-            console.error('[WwebjsSend] send_attempt_failed_terminal', {
-              attempt,
-              original_jid: jid,
-              target_jid: candidate,
-              content: contentInfo,
-              options: optionsInfo,
-              error: this.describeError(candidateError),
-            });
-            throw candidateError;
-          }
+    let failureReported = false;
+    const providerCall = lease.start(invoke);
+    void providerCall.catch((error: unknown) => {
+      if (!failureReported) {
+        failureReported = true;
+        if (
+          this.connection.reportOutboundSendFailure?.(client, error) === true
+        ) {
+          lease.markStalled();
         }
       }
+    });
 
-      console.error('[WwebjsSend] send_all_attempts_failed', {
-        original_jid: jid,
-        first_target_jid: normalizedJid,
-        candidates,
-        content: contentInfo,
-        options: optionsInfo,
-        error: this.describeError(lastError),
+    try {
+      return await this.invokeProviderSendWithTimeout({
+        invoke: () => providerCall,
+        jid,
       });
-      throw lastError instanceof Error
-        ? lastError
-        : new Error(String(lastError));
+    } catch (error) {
+      if (error instanceof WwebjsSendMessageTimeoutError && !failureReported) {
+        failureReported = true;
+        lease.markStalled();
+        this.connection.reportOutboundSendFailure?.(client, error, {
+          timedOut: true,
+        });
+      }
+      throw error;
+    }
+  }
+
+  private async invokeAuxiliaryProvider<T>(
+    client: Client,
+    operation: string,
+    beforeProviderInvoke: WwebjsProviderInvocationBoundary | undefined,
+    invoke: () => Promise<T>,
+    timeoutMs = this.AUXILIARY_PROVIDER_TIMEOUT_MS
+  ): Promise<T> {
+    const providerLease = this.providerInvocationSingleFlight.acquire(client);
+    if (!providerLease) {
+      const stalled = this.providerInvocationSingleFlight.isStalled(client);
+      if (stalled) {
+        this.connection.ensureOutboundSendRecovery?.(client);
+      }
+      throw new ProviderInvocationInFlightError(
+        stalled ? 'stalled' : 'capacity'
+      );
+    }
+
+    try {
+      await beforeProviderInvoke?.();
+    } catch (error) {
+      providerLease.releaseBeforeStart();
+      throw error;
+    }
+
+    try {
+      beforeProviderInvoke?.assertActive?.();
+      if (
+        this.connection.connected === false ||
+        this.connection.getSocket() !== client
+      ) {
+        throw new Error(
+          'Wwebjs connection unavailable: provider client is no longer active'
+        );
+      }
+    } catch (error) {
+      providerLease.releaseBeforeStart();
+      await beforeProviderInvoke?.onStartRejected?.(error);
+      throw error;
+    }
+
+    let failureReported = false;
+    const providerCall = providerLease.start(invoke);
+    void providerCall.catch((error: unknown) => {
+      if (!failureReported) {
+        failureReported = true;
+        if (
+          this.connection.reportOutboundSendFailure?.(client, error) === true
+        ) {
+          providerLease.markStalled();
+        }
+      }
+    });
+
+    try {
+      return await invokeProviderAuxiliaryWithTimeout({
+        provider: 'wwebjs',
+        operation,
+        timeoutMs,
+        invoke: () => providerCall,
+      });
+    } catch (error) {
+      if (error instanceof ProviderAuxiliaryInvocationTimeoutError) {
+        providerLease.markStalled();
+        if (!failureReported) {
+          failureReported = true;
+          const recoveryStarted = this.connection.reportOutboundSendFailure?.(
+            client,
+            error,
+            {
+              timedOut: true,
+            }
+          );
+          if (recoveryStarted !== true) {
+            this.connection.ensureOutboundSendRecovery?.(client);
+          }
+        } else {
+          this.connection.ensureOutboundSendRecovery?.(client);
+        }
+      }
+      throw error;
+    }
+  }
+
+  async invokeProviderLookup<T>(
+    client: Client,
+    operation: WwebjsProviderLookupOperation,
+    invoke: () => Promise<T>
+  ): Promise<T> {
+    const providerLease = this.providerInvocationSingleFlight.acquire(client);
+    if (!providerLease) {
+      const stalled = this.providerInvocationSingleFlight.isStalled(client);
+      if (stalled) {
+        this.connection.ensureOutboundSendRecovery?.(client);
+      }
+      throw new ProviderInvocationInFlightError(
+        stalled ? 'stalled' : 'capacity'
+      );
+    }
+    const providerCall = providerLease.start(invoke);
+    try {
+      return await invokeProviderAuxiliaryWithTimeout({
+        provider: 'wwebjs',
+        operation,
+        timeoutMs: this.AUXILIARY_PROVIDER_TIMEOUT_MS,
+        invoke: () => providerCall,
+      });
+    } catch (error) {
+      if (error instanceof ProviderAuxiliaryInvocationTimeoutError) {
+        providerLease.markStalled();
+        const recoveryStarted = this.connection.reportOutboundSendFailure?.(
+          client,
+          error,
+          { timedOut: true }
+        );
+        if (recoveryStarted !== true) {
+          this.connection.ensureOutboundSendRecovery?.(client);
+        }
+      }
+      throw error;
+    }
+  }
+
+  invokeProviderMutation<T>(
+    client: Client,
+    operation: WwebjsProviderMutationOperation,
+    beforeProviderInvoke: WwebjsProviderInvocationBoundary | undefined,
+    invoke: () => Promise<T>
+  ): Promise<T> {
+    return this.invokeAuxiliaryProvider(
+      client,
+      operation,
+      beforeProviderInvoke,
+      invoke,
+      this.SEND_MESSAGE_TIMEOUT_MS
+    );
+  }
+
+  private reportOutboundProtocolFailure(client: Client, error: Error): void {
+    if (this.connection.reportOutboundSendFailure?.(client, error) === true) {
+      this.providerInvocationSingleFlight.markStalled(client);
+    }
+  }
+
+  private invokeProviderSendWithTimeout<T>(input: {
+    invoke: () => Promise<T>;
+    jid: string;
+  }): Promise<T> {
+    const timeoutMs = this.SEND_MESSAGE_TIMEOUT_MS;
+    const startedAt = Date.now();
+
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        reject(new WwebjsSendMessageTimeoutError(timeoutMs));
+      }, timeoutMs);
+      timer.unref?.();
+
+      /*
+       * The provider call cannot be cancelled by whatsapp-web.js/Puppeteer.
+       * Keep explicit fulfillment and rejection handlers attached after our
+       * deadline so a late provider rejection never becomes unhandled.
+       */
+      let providerCall: Promise<T>;
+      try {
+        providerCall = input.invoke();
+      } catch (error) {
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+        return;
+      }
+
+      void providerCall.then(
+        (value) => {
+          if (settled) {
+            console.warn(
+              '[WwebjsSend] send_resolved_after_application_timeout',
+              {
+                jid_hash: hashWwebjsLogIdentifier(input.jid),
+                timeout_ms: timeoutMs,
+                duration_ms: Date.now() - startedAt,
+              }
+            );
+            return;
+          }
+
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error: unknown) => {
+          if (settled) {
+            console.warn(
+              '[WwebjsSend] send_rejected_after_application_timeout',
+              {
+                jid_hash: hashWwebjsLogIdentifier(input.jid),
+                timeout_ms: timeoutMs,
+                duration_ms: Date.now() - startedAt,
+                error: this.describeError(error),
+              }
+            );
+            return;
+          }
+
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        }
+      );
     });
   }
 
-  private describeError(error: unknown): {
-    name?: string;
-    message: string;
-    stack?: string;
-  } {
-    if (error instanceof Error) {
-      return {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      };
-    }
-
-    if (typeof error === 'string') {
-      return { message: error };
-    }
-
-    return { message: String(error ?? '') };
+  private describeError(error: unknown) {
+    return workerErrorDiagnostics(error);
   }
 
   private describeSendOptions(
@@ -329,6 +612,11 @@ export class WwebjsHelpersService {
 
       if (key === 'caption' && typeof value === 'string') {
         result.caption_length = value.length;
+        continue;
+      }
+
+      if (key === 'quotedMessageId') {
+        result.quoted_message_id_hash = hashWwebjsLogIdentifier(value);
         continue;
       }
 
@@ -430,153 +718,25 @@ export class WwebjsHelpersService {
     return normalized.length ? normalized : undefined;
   }
 
-  private addJidCandidate(candidates: Set<string>, raw: unknown): void {
-    if (typeof raw !== 'string') {
-      return;
-    }
-
-    const normalized = this.normalizeSendJidCandidate(raw);
-    if (!normalized) {
-      return;
-    }
-
-    candidates.add(normalized);
-
-    if (!normalized.includes('@')) {
-      const digits = onlyDigits(normalized);
-      if (digits) {
-        candidates.add(`${digits}@c.us`);
-        candidates.add(`${digits}@s.whatsapp.net`);
-      }
-      return;
-    }
-
-    if (normalized.endsWith('@s.whatsapp.net')) {
-      candidates.add(normalized.replace(/@s\.whatsapp\.net$/, '@c.us'));
-    } else if (normalized.endsWith('@c.us')) {
-      candidates.add(normalized.replace(/@c\.us$/, '@s.whatsapp.net'));
-    }
-  }
-
-  private isUserJid(jid: string): boolean {
-    return (
-      jid.endsWith('@s.whatsapp.net') ||
-      jid.endsWith('@c.us') ||
-      jid.endsWith('@lid')
-    );
-  }
-
-  private shouldRetrySendWithAlternateJid(error: unknown): boolean {
-    const message =
-      error instanceof Error
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : String(error ?? '');
-    return /No LID for user/i.test(message) || /invalid wid/i.test(message);
-  }
-
-  private isLidJid(jid: string): boolean {
-    return jid.endsWith('@lid');
-  }
-
-  private orderAlternateCandidates(
-    candidates: string[],
-    primaryJid: string
-  ): string[] {
-    const unique = Array.from(
-      new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))
-    );
-    const withoutPrimary = unique.filter(
-      (candidate) => candidate !== primaryJid
-    );
-    const lidCandidates = withoutPrimary.filter((candidate) =>
-      this.isLidJid(candidate)
-    );
-    const otherCandidates = withoutPrimary.filter(
-      (candidate) => !this.isLidJid(candidate)
-    );
-
-    return [primaryJid, ...lidCandidates, ...otherCandidates];
-  }
-
-  private async buildAlternateJidCandidates(
-    client: Client,
-    jid: string
-  ): Promise<string[]> {
-    const candidates = new Set<string>();
-    this.addJidCandidate(candidates, jid);
-
-    if (!this.isUserJid(jid)) {
-      return Array.from(candidates);
-    }
-
-    const getContactLidAndPhone = (
-      client as unknown as {
-        getContactLidAndPhone?: (
-          userIds: string[] | string
-        ) => Promise<
-          | Array<{ lid?: string; pn?: string }>
-          | { lid?: string; pn?: string }
-          | null
-        >;
-      }
-    ).getContactLidAndPhone;
-
-    if (typeof getContactLidAndPhone === 'function') {
-      for (const candidate of Array.from(candidates)) {
-        if (!this.isUserJid(candidate)) {
-          continue;
-        }
-        try {
-          const resolved = await getContactLidAndPhone.call(client, [
-            candidate,
-          ]);
-          const first = Array.isArray(resolved) ? resolved[0] : resolved;
-          if (first && typeof first === 'object') {
-            this.addJidCandidate(candidates, (first as { lid?: unknown }).lid);
-            this.addJidCandidate(candidates, (first as { pn?: unknown }).pn);
-          }
-        } catch {}
-      }
-    }
-
-    return this.orderAlternateCandidates(Array.from(candidates), jid);
-  }
-
   private extractMessageId(
     message: Awaited<ReturnType<Client['sendMessage']>>
   ): string | undefined {
-    if (!message || typeof message !== 'object') {
-      return undefined;
-    }
-
-    const messageId = (message as { id?: unknown }).id;
-    if (!messageId) {
-      return undefined;
-    }
-
-    if (
-      typeof messageId === 'object' &&
-      messageId !== null &&
-      '_serialized' in (messageId as object)
-    ) {
-      const serialized = (messageId as { _serialized?: unknown })._serialized;
-      return typeof serialized === 'string' ? serialized : undefined;
-    }
-
-    return String(messageId);
+    return extractWwebjsMessageId(message);
   }
 
   private async simulateHumanTyping(
     jid: string,
     content: Parameters<Client['sendMessage']>[1],
     options?: Parameters<Client['sendMessage']>[2],
-    speed = 50
+    speed = 50,
+    control?: ITypingSimulationControl
   ): Promise<void> {
     if (!jid) {
       return;
     }
+    const checkpoint = (): void => control?.checkpoint();
+    const sleep = (ms: number): Promise<void> =>
+      control?.sleep(ms) ?? this.sleep(ms);
 
     const client = this.getClient();
 
@@ -587,11 +747,13 @@ export class WwebjsHelpersService {
         })
       | null = null;
 
+    checkpoint();
     try {
       chat = await client.getChatById(jid);
     } catch {
       return;
     }
+    checkpoint();
 
     if (!chat) {
       return;
@@ -613,45 +775,83 @@ export class WwebjsHelpersService {
       this.estimateTypingMs(text) * typingSimulationDelayMultiplier(speed);
 
     const preThink = this.rand(100, 450);
-    await this.sleep(preThink);
+    await sleep(preThink);
 
     const start = Date.now();
+    let presenceActive = false;
+    checkpoint();
     try {
       await sendStateTyping();
+      presenceActive = true;
     } catch {
       return;
     }
 
-    while (Date.now() - start < durationMs) {
-      const elapsed = Date.now() - start;
-      const remaining = durationMs - elapsed;
-      const baseTick = this.rand(600, 1200);
-      const tick = Math.min(baseTick, remaining);
+    try {
+      while (Date.now() - start < durationMs) {
+        const elapsed = Date.now() - start;
+        const remaining = durationMs - elapsed;
+        const baseTick = this.rand(600, 1200);
+        const tick = Math.min(baseTick, remaining);
 
-      await this.sleep(tick);
+        await sleep(tick);
 
-      if (Date.now() - start < durationMs) {
-        try {
+        if (Date.now() - start < durationMs) {
           if (this.rngFloat() < 0.12) {
+            checkpoint();
             await clearState();
+            presenceActive = false;
             const thinkPause = this.rand(250, 750);
-            await this.sleep(thinkPause);
+            await sleep(thinkPause);
+            checkpoint();
             await sendStateTyping();
+            presenceActive = true;
           } else {
+            checkpoint();
             await sendStateTyping();
+            presenceActive = true;
           }
-        } catch {
-          break;
         }
       }
+
+      const windDown = this.rand(75, 250);
+      await sleep(windDown);
+    } finally {
+      if (presenceActive && (control?.canCleanupPresence() ?? true)) {
+        try {
+          await clearState();
+        } catch {}
+      }
     }
+  }
 
-    const windDown = this.rand(75, 250);
-    await this.sleep(windDown);
-
-    try {
-      await clearState();
-    } catch {}
+  private async runTypingSimulationBestEffort(
+    simulate: (control: ITypingSimulationControl) => Promise<void>,
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
+  ): Promise<void> {
+    await runTypingSimulationBestEffort({
+      timeoutMs: this.TYPING_SIMULATION_MAX_DELAY_MS,
+      providerReserveMs: this.SEND_MESSAGE_TIMEOUT_MS,
+      beforeProviderInvoke,
+      singleFlight: this.typingSimulationSingleFlight,
+      simulate,
+      onDeadline: ({ timeoutMs, durationMs }) => {
+        console.warn('[WwebjsTypingSimulation] deadline exceeded', {
+          timeout_ms: timeoutMs,
+          duration_ms: durationMs,
+        });
+      },
+      onFailure: (error) => {
+        console.warn('[WwebjsTypingSimulation] failed before send', {
+          ...workerErrorDiagnostics(error),
+        });
+      },
+      onSingleFlightSkipped: () => {
+        console.warn(
+          '[WwebjsTypingSimulation] skipped while previous operation is still pending'
+        );
+      },
+    });
   }
 
   private async getTypingSimulationConfig(): Promise<ITypingSimulationConfig> {
@@ -661,7 +861,9 @@ export class WwebjsHelpersService {
         wwebjsEnvironment.wwebjsAccountId
       );
     } catch (error) {
-      console.error('[WwebjsTypingSimulation] config unavailable', { error });
+      console.error('[WwebjsTypingSimulation] config unavailable', {
+        ...workerErrorDiagnostics(error),
+      });
 
       return defaultTypingSimulationConfig();
     }
@@ -819,7 +1021,12 @@ export class WwebjsHelpersService {
       return { exists: false };
     }
 
-    const onWhatsAppResults = await client.onWhatsApp(candidates);
+    const onWhatsAppResults = await this.invokeAuxiliaryProvider(
+      client,
+      'resolve_jid',
+      undefined,
+      () => client.onWhatsApp(candidates)
+    );
 
     for (let i = 0; i < candidates.length; i++) {
       const item = onWhatsAppResults?.[i];
@@ -833,29 +1040,63 @@ export class WwebjsHelpersService {
     return { exists: false };
   }
 
-  async updateProfileName(name: string): Promise<void> {
+  async updateProfileName(
+    name: string,
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
+  ): Promise<void> {
     const client = this.getClient();
-    await client.setDisplayName(name);
+    await this.invokeAuxiliaryProvider(
+      client,
+      'update_profile_name',
+      beforeProviderInvoke,
+      () => client.setDisplayName(name)
+    );
   }
 
-  async updateProfileStatus(status: string): Promise<void> {
+  async updateProfileStatus(
+    status: string,
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
+  ): Promise<void> {
     const client = this.getClient();
-    await client.setStatus(status);
+    await this.invokeAuxiliaryProvider(
+      client,
+      'update_profile_status',
+      beforeProviderInvoke,
+      () => client.setStatus(status)
+    );
   }
 
-  async removeProfilePicture(): Promise<void> {
+  async removeProfilePicture(
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
+  ): Promise<void> {
     const client = this.getClient();
-    await client.deleteProfilePicture();
+    await this.invokeAuxiliaryProvider(
+      client,
+      'remove_profile_picture',
+      beforeProviderInvoke,
+      () => client.deleteProfilePicture()
+    );
   }
 
-  async updateProfilePicture(photoUrl: string): Promise<void> {
-    if (!MessageMedia?.fromUrl) {
-      throw new Error('MessageMedia.fromUrl unavailable in wwebjs module');
-    }
-
+  async updateProfilePicture(
+    photoUrl: string,
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
+  ): Promise<void> {
     const client = this.getClient();
-    const media = await MessageMedia.fromUrl(photoUrl);
-    await client.setProfilePicture(media);
+    const downloaded = await downloadMediaBuffer(photoUrl);
+    const media = new MessageMedia(
+      downloaded.contentType?.trim() || 'image/jpeg',
+      downloaded.buffer.toString('base64'),
+      downloaded.filename?.trim() || 'profile.jpg',
+      downloaded.contentLength ?? downloaded.buffer.byteLength
+    );
+    await this.invokeAuxiliaryProvider(
+      client,
+      'update_profile_picture',
+      beforeProviderInvoke,
+      () => client.setProfilePicture(media),
+      this.SEND_MESSAGE_TIMEOUT_MS
+    );
   }
 
   addOwnJidToStatusList(statusJidList: string[]): string[] {

@@ -1,5 +1,6 @@
 import * as schema from '@core/models';
 import { permissionRole } from '@core/models';
+import { EPermissionRoleStatus } from '@core/common/enums/EPermissionRoleStatus';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -23,6 +24,7 @@ export class PermissionRoleAccountListerRepository {
       .where(
         and(
           eq(permissionRole.account_id, accountId),
+          eq(permissionRole.status, EPermissionRoleStatus.active),
           isNull(permissionRole.deleted_at)
         )
       )

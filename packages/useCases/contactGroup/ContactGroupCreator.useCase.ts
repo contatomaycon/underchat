@@ -19,7 +19,8 @@ export class ContactGroupCreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateContactGroupRequest,
-    accountId: string
+    accountId: string,
+    actorUserId?: string
   ): Promise<boolean> {
     const accountExists =
       await this.accountService.existsAccountById(accountId);
@@ -33,7 +34,8 @@ export class ContactGroupCreatorUseCase {
         if (!c?.contact_id) continue;
 
         const contactExists = await this.contactService.existsContactById(
-          c.contact_id
+          c.contact_id,
+          accountId
         );
 
         if (!contactExists) {
@@ -43,7 +45,12 @@ export class ContactGroupCreatorUseCase {
     }
 
     const contactGroupCreated =
-      await this.contactGroupService.createContactGroup(t, accountId, input);
+      await this.contactGroupService.createContactGroup(
+        t,
+        accountId,
+        input,
+        actorUserId
+      );
 
     if (!contactGroupCreated) {
       throw new Error(t('contact_group_creation_failed'));

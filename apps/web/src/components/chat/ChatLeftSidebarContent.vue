@@ -1,5 +1,13 @@
 <script lang="ts" setup>
-import { nextTick, computed, ref, watch, onMounted, onUnmounted } from 'vue';
+import {
+  nextTick,
+  computed,
+  ref,
+  shallowRef,
+  watch,
+  onMounted,
+  onUnmounted,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
@@ -29,19 +37,22 @@ import { EColor } from '@core/common/enums/EColor';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import { useTheme } from 'vuetify';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import ContactValidationBadge from '@/components/contact/ContactValidationBadge.vue';
+import { CONTACT_VALIDATION_STATUSES } from '@core/common/types/ContactValidationStatus';
 import {
   TransferWorker,
   TransferSector,
 } from '@core/schema/chat/listTransferOptions/response.schema';
-import type { OfficialOpeningContextResponse } from '@core/schema/chat/officialOpeningContext/response.schema';
-import type { IOfficialTemplateVariableValue } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 import {
   buildOfficialTemplatePreview,
   buildOfficialTemplateVariablePayload,
+  containsUnderchatVariableTag,
   createManualOfficialTemplateVariable,
   createOfficialTemplateOptions,
+  createOfficialTemplateVariableValueRecord,
   findOfficialTemplate,
   formatOfficialTemplateLanguage,
+  formatOfficialTemplateVariableLabel,
   refreshOfficialTemplateVariableKey,
 } from '@/utils/officialTemplate';
 import type {
@@ -54,6 +65,11 @@ import type { BulkActionChatRequest } from '@core/schema/chat/bulkAction/request
 import type { BulkActionChatResponse } from '@core/schema/chat/bulkAction/response.schema';
 import type { ChatNotificationSettingsData } from '@core/schema/chat/notificationSettings/response.schema';
 import type { ChatNotificationSettingsRequest } from '@core/schema/chat/notificationSettings/request.schema';
+import OfficialOpeningWindowCard from '@/components/chat/official/OfficialOpeningWindowCard.vue';
+import OfficialTemplateVariableField from '@/components/chat/official/OfficialTemplateVariableField.vue';
+import { useOfficialOpeningContext } from '@/composables/useOfficialOpeningContext';
+import { createUnderchatVariableCatalog } from '@/utils/underchatVariableCatalog';
+import { isOfficialWindowRefreshConflict } from '@/utils/apiError';
 
 type OpenChatOptions = {
   skipClearSummary?: boolean;
@@ -76,7 +92,7 @@ const props = defineProps<{
   search: string;
 }>();
 
-const { locale } = useI18n();
+const { locale, t } = useI18n();
 
 const chatStore = useChatStore();
 const channelsStore = useChannelsStore();
@@ -121,6 +137,8 @@ const isSelectChannelSectorModalOpen = ref(false);
 const selectedContactForChat = ref<ListChatContactsResponse | null>(null);
 const selectedWorkerId = ref<string | null>(null);
 const selectedSectorId = ref<string | null>(null);
+const isOpeningConversation = shallowRef(false);
+const isLoadingWorkerConfigForChat = shallowRef(false);
 const availableWorkers = ref<TransferWorker[]>([]);
 const availableSectors = ref<TransferSector[]>([]);
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(null);
@@ -262,15 +280,30 @@ const selectedOpenConversationWorkerOption = computed(
 const isSelectedWorkerOfficial = computed(
   () => selectedOpenConversationWorkerOption.value?.isOfficial === true
 );
-const officialOpeningContext = ref<OfficialOpeningContextResponse | null>(null);
-const isLoadingOfficialOpeningContext = ref(false);
-const officialOpeningError = ref<string | null>(null);
+const hasOfficialWorkerAvailable = computed(() =>
+  availableWorkerOptions.value.some((worker) => worker.isOfficial === true)
+);
+const {
+  context: officialOpeningContext,
+  window: officialOpeningWindow,
+  loading: isLoadingOfficialOpeningContext,
+  error: officialOpeningError,
+  load: loadOfficialOpeningContextForIdentity,
+  refresh: refreshOfficialOpeningContext,
+  reset: resetOfficialOpeningContext,
+} = useOfficialOpeningContext({
+  loadContext: (workerId, contactId) =>
+    chatStore.viewOfficialOpeningContext(workerId, contactId, { silent: true }),
+  loadingErrorMessage: () => t('official_templates_loading_error'),
+});
 const selectedOfficialTemplateKey = ref<string | null>(null);
 const officialTemplateVariableValues = ref<Record<string, string>>({});
 const manualOfficialTemplateVariables = ref<OfficialTemplateVariableValue[]>(
   []
 );
-let officialOpeningContextRequestId = 0;
+const openingUnderchatVariables = computed(() =>
+  createUnderchatVariableCatalog(t)
+);
 
 const officialTemplateOptions = computed(() =>
   createOfficialTemplateOptions(
@@ -303,10 +336,6 @@ const hasOfficialTemplateDetectedVariables = computed(
   () => officialTemplateDetectedVariableRows.value.length > 0
 );
 
-const formatOfficialTemplateVariableLabel = (
-  variable: Pick<OfficialTemplateVariable, 'component_type' | 'index'>
-) => `${variable.component_type} {{${variable.index}}}`;
-
 const officialTemplateVariableRows = computed<OfficialTemplateVariable[]>(() =>
   hasOfficialTemplateDetectedVariables.value
     ? officialTemplateDetectedVariableRows.value
@@ -319,22 +348,56 @@ const areOfficialTemplateVariablesValid = computed(() =>
   )
 );
 
+const requiresOfficialTemplate = computed(
+  () =>
+    isSelectedWorkerOfficial.value &&
+    officialOpeningContext.value?.requires_template === true
+);
+const isAwaitingOfficialContactReply = computed(
+  () =>
+    isSelectedWorkerOfficial.value &&
+    officialOpeningWindow.value?.state === 'awaiting_contact_reply'
+);
+const isOfficialSendUncertain = computed(
+  () =>
+    isSelectedWorkerOfficial.value &&
+    officialOpeningWindow.value?.state === 'send_uncertain'
+);
+const isOfficialOpeningBlocked = computed(
+  () => isAwaitingOfficialContactReply.value || isOfficialSendUncertain.value
+);
+
 const canShowSectorSelect = computed(
-  () => !isSelectedWorkerOfficial.value || !!selectedOfficialTemplate.value
+  () =>
+    !isSelectedWorkerOfficial.value ||
+    (!isOfficialOpeningBlocked.value &&
+      (officialOpeningContext.value?.requires_template === false ||
+        !!selectedOfficialTemplate.value))
 );
 
 const isOfficialOpeningReady = computed(() => {
   if (!isSelectedWorkerOfficial.value) return true;
+  if (
+    isLoadingOfficialOpeningContext.value ||
+    officialOpeningError.value ||
+    !officialOpeningContext.value
+  ) {
+    return false;
+  }
+  if (isOfficialOpeningBlocked.value) {
+    return false;
+  }
+  if (!requiresOfficialTemplate.value) {
+    return true;
+  }
+
   return Boolean(
-    selectedOfficialTemplate.value &&
-    !isLoadingOfficialOpeningContext.value &&
-    !officialOpeningError.value &&
-    areOfficialTemplateVariablesValid.value
+    selectedOfficialTemplate.value && areOfficialTemplateVariablesValid.value
   );
 });
 
 const officialTemplateSelectedVariableValues = computed<
-  IOfficialTemplateVariableValue[]
+  OfficialTemplateVariableValue[]
 >(() =>
   hasOfficialTemplateDetectedVariables.value
     ? buildOfficialTemplateVariablePayload(
@@ -345,6 +408,7 @@ const officialTemplateSelectedVariableValues = computed<
         key: variable.key,
         component_type: variable.component_type,
         index: variable.index,
+        parameter_name: variable.parameter_name ?? null,
         button_index: variable.button_index ?? null,
         value: officialTemplateVariableValues.value[variable.key]?.trim() ?? '',
       }))
@@ -356,6 +420,28 @@ const selectedOfficialTemplatePreview = computed(() =>
     officialTemplateVariableValues.value,
     officialTemplateVariableRows.value
   )
+);
+
+const hasOfficialTemplateRuntimeVariables = computed(() =>
+  Object.values(officialTemplateVariableValues.value).some((value) =>
+    containsUnderchatVariableTag(value)
+  )
+);
+
+const isOpenConversationFormBusy = computed(
+  () => isOpeningConversation.value || isLoadingWorkerConfigForChat.value
+);
+
+const openConversationActionLabel = computed(() =>
+  isOfficialOpeningBlocked.value
+    ? t(
+        isOfficialSendUncertain.value
+          ? 'official_opening_uncertain_action'
+          : 'official_opening_waiting_action'
+      )
+    : requiresOfficialTemplate.value
+      ? t('official_opening_send_and_open')
+      : t('open_conversation')
 );
 
 const addManualOfficialTemplateVariable = () => {
@@ -1729,7 +1815,8 @@ const loadChatContacts = async (chats: ChatExtrasSource[]) => {
   }
 
   const contactIdsToLoad = Array.from(contactIds).filter(
-    (contactId) => !chatStore.chatContacts[contactId]
+    (contactId) =>
+      !Object.prototype.hasOwnProperty.call(chatStore.chatContacts, contactId)
   );
 
   if (contactIdsToLoad.length === 0) {
@@ -3145,6 +3232,7 @@ const confirmValidateContact = async () => {
       accumulatedContacts.value[contactIndex] = {
         ...accumulatedContacts.value[contactIndex],
         is_valided: true,
+        validation_status: CONTACT_VALIDATION_STATUSES.validated,
       };
     }
   }
@@ -3247,6 +3335,7 @@ const performSearch = async (append = false) => {
 
   try {
     const filters = getChatUserFilters();
+    const statusSnapshotFence = chatStore.captureChatStatusSnapshotFence();
     const currentPage = append
       ? allChatsWithFiltersPagings.value.current_page
       : 1;
@@ -3284,45 +3373,19 @@ const performSearch = async (append = false) => {
         searchChatsCounts.value = result.counts;
       }
 
-      const queueChats: ListChatsResult[] = [];
-      const inChatChats: ListChatsResult[] = [];
-      const chatbotChats: ListChatsResult[] = [];
-      const scheduledChats: ListChatsResult[] = [];
-      const closedChats: ListChatsResult[] = [];
-
-      for (const chat of result.results) {
-        if (chat.status === EChatStatus.queue) {
-          queueChats.push(chat);
-        } else if (chat.status === EChatStatus.in_chat) {
-          inChatChats.push(chat);
-        } else if (
-          chat.status === EChatStatus.ura ||
-          chat.status === EChatStatus.ura_output ||
-          chat.status === EChatStatus.ura_webhook
-        ) {
-          chatbotChats.push(chat);
-        } else if (chat.status === EChatStatus.ura_schedule) {
-          scheduledChats.push(chat);
-        } else if (chat.status === EChatStatus.closed) {
-          closedChats.push(chat);
-        }
-      }
-
-      if (append) {
-        chatStore.listQueue.push(...queueChats);
-        chatStore.listInChat.push(...inChatChats);
-        chatStore.listChatbot.push(...chatbotChats);
-        chatStore.listScheduled.push(...scheduledChats);
-        listClosed.value.push(...closedChats);
-        chatStore.listClosed.push(...closedChats);
-      } else {
-        chatStore.listQueue = queueChats;
-        chatStore.listInChat = inChatChats;
-        chatStore.listChatbot = chatbotChats;
-        chatStore.listScheduled = scheduledChats;
-        listClosed.value = closedChats;
-        chatStore.listClosed = closedChats;
-      }
+      chatStore.updateListsByStatus(
+        [
+          EChatStatus.queue,
+          EChatStatus.in_chat,
+          EChatStatus.ura,
+          EChatStatus.ura_schedule,
+          EChatStatus.closed,
+        ],
+        result.results,
+        append,
+        statusSnapshotFence
+      );
+      listClosed.value = [...chatStore.listClosed];
 
       chatStore.queuePagings = {
         current_page: allChatsWithFiltersPagings.value.current_page,
@@ -3447,6 +3510,9 @@ watch(
 const loadTransferOptions = async () => {
   if (!chatStore.user?.account_id) return;
 
+  availableWorkers.value = [];
+  availableSectors.value = [];
+
   try {
     const result = await chatStore.listTransferOptions();
     if (result) {
@@ -3458,20 +3524,45 @@ const loadTransferOptions = async () => {
   }
 };
 
+let workerConfigRequestSequence = 0;
+
 const loadWorkerConfigForSelectedWorker = async () => {
-  if (!selectedWorkerId.value) {
-    workerConfigForChat.value = null;
+  const workerId = selectedWorkerId.value;
+  const requestId = ++workerConfigRequestSequence;
+  workerConfigForChat.value = null;
+
+  if (!workerId) {
+    isLoadingWorkerConfigForChat.value = false;
     return;
   }
 
+  isLoadingWorkerConfigForChat.value = true;
+
   try {
-    const config = await channelsStore.fetchWorkerConfigForChat(
-      selectedWorkerId.value
-    );
+    const config = await channelsStore.fetchWorkerConfigForChat(workerId);
+    if (
+      requestId !== workerConfigRequestSequence ||
+      selectedWorkerId.value !== workerId
+    ) {
+      return;
+    }
     workerConfigForChat.value = config;
   } catch (error) {
+    if (
+      requestId !== workerConfigRequestSequence ||
+      selectedWorkerId.value !== workerId
+    ) {
+      return;
+    }
     console.error('Error loading worker config:', error);
     workerConfigForChat.value = null;
+  } finally {
+    if (
+      requestId === workerConfigRequestSequence &&
+      selectedWorkerId.value === workerId
+    ) {
+      isLoadingWorkerConfigForChat.value = false;
+    }
   }
 };
 
@@ -3480,13 +3571,10 @@ watch(selectedWorkerId, () => {
 });
 
 const resetOfficialOpeningState = () => {
-  officialOpeningContextRequestId += 1;
-  officialOpeningContext.value = null;
-  officialOpeningError.value = null;
+  resetOfficialOpeningContext();
   selectedOfficialTemplateKey.value = null;
   officialTemplateVariableValues.value = {};
   manualOfficialTemplateVariables.value = [];
-  isLoadingOfficialOpeningContext.value = false;
 };
 
 const loadOfficialOpeningContext = async () => {
@@ -3499,50 +3587,25 @@ const loadOfficialOpeningContext = async () => {
     return;
   }
 
-  const requestId = ++officialOpeningContextRequestId;
-  officialOpeningContext.value = null;
-  officialOpeningError.value = null;
+  await loadOfficialOpeningContextForIdentity({
+    workerId: selectedWorkerId.value,
+    contactId: selectedContactForChat.value.contact_id,
+  });
+};
+
+watch(selectedWorkerId, () => {
   selectedOfficialTemplateKey.value = null;
   officialTemplateVariableValues.value = {};
   manualOfficialTemplateVariables.value = [];
   selectedSectorId.value = null;
-  isLoadingOfficialOpeningContext.value = true;
-
-  try {
-    const context = await chatStore.viewOfficialOpeningContext(
-      selectedWorkerId.value,
-      selectedContactForChat.value.contact_id
-    );
-
-    if (requestId !== officialOpeningContextRequestId) {
-      return;
-    }
-
-    officialOpeningContext.value = context;
-    if (!context) {
-      officialOpeningError.value = chatStore.i18n.global.t(
-        'official_templates_loading_error'
-      );
-    }
-  } catch {
-    if (requestId === officialOpeningContextRequestId) {
-      officialOpeningError.value = chatStore.i18n.global.t(
-        'official_templates_loading_error'
-      );
-    }
-  } finally {
-    if (requestId === officialOpeningContextRequestId) {
-      isLoadingOfficialOpeningContext.value = false;
-    }
-  }
-};
-
-watch(selectedWorkerId, () => {
   loadOfficialOpeningContext().catch(() => {});
 });
 
 watch(selectedOfficialTemplateKey, () => {
-  officialTemplateVariableValues.value = {};
+  officialTemplateVariableValues.value =
+    createOfficialTemplateVariableValueRecord(
+      selectedOfficialTemplate.value?.variables
+    );
   manualOfficialTemplateVariables.value = [];
   selectedSectorId.value = null;
 });
@@ -3567,7 +3630,14 @@ const handleContactClick = async (contact: ListChatContactsResponse) => {
     return;
   }
 
-  if (!contact.is_valided) {
+  selectedContactForChat.value = contact;
+  selectedWorkerId.value = null;
+  selectedSectorId.value = null;
+  resetOfficialOpeningState();
+
+  await loadTransferOptions();
+  if (!contact.is_valided && !hasOfficialWorkerAvailable.value) {
+    selectedContactForChat.value = null;
     chatStore.showSnackbar(
       chatStore.i18n.global.t('contact_must_be_validated'),
       EColor.warning
@@ -3575,12 +3645,6 @@ const handleContactClick = async (contact: ListChatContactsResponse) => {
     return;
   }
 
-  selectedContactForChat.value = contact;
-  selectedWorkerId.value = null;
-  selectedSectorId.value = null;
-  resetOfficialOpeningState();
-
-  await loadTransferOptions();
   if (availableWorkers.value.length === 1) {
     selectedWorkerId.value = availableWorkers.value[0]?.id ?? null;
   }
@@ -3589,6 +3653,10 @@ const handleContactClick = async (contact: ListChatContactsResponse) => {
 };
 
 const handleOpenConversation = async () => {
+  if (isOpeningConversation.value || isLoadingWorkerConfigForChat.value) {
+    return;
+  }
+
   if (!selectedContactForChat.value || !selectedWorkerId.value) {
     chatStore.showSnackbar(
       chatStore.i18n.global.t('select_channel_required'),
@@ -3605,16 +3673,33 @@ const handleOpenConversation = async () => {
     return;
   }
 
+  if (
+    !selectedContactForChat.value.is_valided &&
+    !isSelectedWorkerOfficial.value
+  ) {
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('contact_must_be_validated'),
+      EColor.warning
+    );
+    return;
+  }
+
   if (isSelectedWorkerOfficial.value && !isOfficialOpeningReady.value) {
     chatStore.showSnackbar(
-      chatStore.i18n.global.t('official_template_required_for_opening'),
+      chatStore.i18n.global.t(
+        isOfficialSendUncertain.value
+          ? 'official_window_uncertain_description'
+          : isAwaitingOfficialContactReply.value
+            ? 'official_window_awaiting_description'
+            : 'official_template_required_for_opening'
+      ),
       EColor.warning
     );
     return;
   }
 
   const officialTemplatePayload =
-    isSelectedWorkerOfficial.value && selectedOfficialTemplate.value
+    requiresOfficialTemplate.value && selectedOfficialTemplate.value
       ? {
           name: selectedOfficialTemplate.value.name,
           language: selectedOfficialTemplate.value.language,
@@ -3622,16 +3707,43 @@ const handleOpenConversation = async () => {
         }
       : null;
 
+  const openingContactId = selectedContactForChat.value.contact_id;
+  const openingWorkerId = selectedWorkerId.value;
+  const openingSectorId = selectedSectorId.value;
+  isOpeningConversation.value = true;
+
   try {
     const chat = await chatStore.startChatWithContact(
-      selectedContactForChat.value.contact_id,
-      selectedWorkerId.value,
-      selectedSectorId.value,
+      openingContactId,
+      openingWorkerId,
+      openingSectorId,
       officialTemplatePayload
     );
 
     if (!chat) {
       return;
+    }
+
+    if (
+      selectedContactForChat.value?.contact_id !== openingContactId ||
+      selectedWorkerId.value !== openingWorkerId
+    ) {
+      return;
+    }
+
+    const contactIndex = accumulatedContacts.value.findIndex(
+      (contact) =>
+        contact.contact_id === selectedContactForChat.value?.contact_id
+    );
+    if (contactIndex >= 0) {
+      const currentContact = accumulatedContacts.value[contactIndex];
+      accumulatedContacts.value[contactIndex] = {
+        ...currentContact,
+        is_valided: true,
+        validation_status: currentContact.is_valided
+          ? currentContact.validation_status
+          : CONTACT_VALIDATION_STATUSES.officialOnly,
+      };
     }
 
     isSelectChannelSectorModalOpen.value = false;
@@ -3648,12 +3760,29 @@ const handleOpenConversation = async () => {
       skipClearSummary: true,
       fallbackChat: chat,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    if (isOfficialWindowRefreshConflict(error)) {
+      selectedOfficialTemplateKey.value = null;
+      officialTemplateVariableValues.value = {};
+      manualOfficialTemplateVariables.value = [];
+      await refreshOfficialOpeningContext();
+      chatStore.showSnackbar(
+        t('official_opening_window_changed'),
+        EColor.warning
+      );
+      return;
+    }
     console.error('Error starting chat with contact:', error);
+  } finally {
+    isOpeningConversation.value = false;
   }
 };
 
 const handleCancelSelectChannelSector = () => {
+  if (isOpeningConversation.value) {
+    return;
+  }
+
   isSelectChannelSectorModalOpen.value = false;
   selectedContactForChat.value = null;
   selectedWorkerId.value = null;
@@ -4334,8 +4463,7 @@ defineExpose({
                 (isSelectChannelSectorModalOpen &&
                   selectedContactForChat?.contact_id === contact.contact_id),
               'contact-item--not-validated': !contact.is_valided,
-              'cursor-pointer': contact.is_valided,
-              'cursor-not-allowed': !contact.is_valided,
+              'cursor-pointer': true,
             }"
             @click="handleContactClick(contact)"
             @mouseenter="hoveredContactId = contact.contact_id"
@@ -4399,24 +4527,12 @@ defineExpose({
               </template>
 
               <template v-else>
-                <VChip
-                  v-if="contact.is_valided"
-                  size="x-small"
-                  color="success"
-                  variant="flat"
-                  class="contact-validation-chip contact-validation-chip--validated"
-                >
-                  <VIcon size="10" class="me-0">tabler-check</VIcon>
-                </VChip>
-                <VChip
-                  v-else
-                  size="x-small"
-                  color="error"
-                  variant="flat"
-                  class="contact-validation-chip contact-validation-chip--not-validated"
-                >
-                  <VIcon size="10" class="me-0">tabler-x</VIcon>
-                </VChip>
+                <ContactValidationBadge
+                  :validation-status="contact.validation_status"
+                  :is-validated="contact.is_valided"
+                  compact
+                  icon-only
+                />
               </template>
             </div>
           </li>
@@ -5457,24 +5573,40 @@ defineExpose({
     @cancel="handleCancelValidateContact"
   />
 
-  <VDialog v-model="isSelectChannelSectorModalOpen" max-width="600" persistent>
-    <VCard>
+  <VDialog
+    v-model="isSelectChannelSectorModalOpen"
+    max-width="720"
+    width="calc(100vw - 24px)"
+    persistent
+  >
+    <VCard
+      class="open-conversation-dialog"
+      aria-labelledby="open-conversation-dialog-title"
+    >
       <VCardTitle class="d-flex align-center justify-space-between">
-        <span>{{ $t('select_channel_sector') }}</span>
-        <IconBtn @click="handleCancelSelectChannelSector">
+        <span id="open-conversation-dialog-title">
+          {{ $t('select_channel_sector') }}
+        </span>
+        <IconBtn
+          :aria-label="$t('cancel')"
+          :disabled="isOpeningConversation"
+          @click="handleCancelSelectChannelSector"
+        >
           <VIcon>tabler-x</VIcon>
         </IconBtn>
       </VCardTitle>
 
       <VDivider />
 
-      <VCardText class="pt-6">
+      <VCardText class="open-conversation-dialog__body pt-6">
         <div class="mb-6">
           <VLabel class="text-body-2 mb-1">{{ $t('channel') }} *</VLabel>
           <AppSelectSearch
             v-model="selectedWorkerId"
             :items="availableWorkerOptions"
             :placeholder="$t('select_channel')"
+            :disabled="isOpenConversationFormBusy"
+            :loading="isLoadingWorkerConfigForChat"
             item-value="value"
             item-title="title"
           />
@@ -5511,26 +5643,20 @@ defineExpose({
           v-if="isSelectedWorkerOfficial"
           class="official-opening-panel mb-6"
         >
-          <div
-            v-if="isLoadingOfficialOpeningContext"
-            class="official-opening-loading"
-          >
-            <VProgressCircular indeterminate size="22" width="3" />
-            <span>{{ $t('official_templates_loading') }}</span>
-          </div>
+          <OfficialOpeningWindowCard
+            :window="officialOpeningWindow"
+            :requires-template="requiresOfficialTemplate"
+            :loading="isLoadingOfficialOpeningContext"
+            :error-message="officialOpeningError?.message"
+            :request-id="officialOpeningError?.requestId"
+            :disabled="isOpenConversationFormBusy"
+            @retry="refreshOfficialOpeningContext"
+          />
 
           <VAlert
-            v-else-if="officialOpeningError"
-            type="error"
-            variant="tonal"
-            density="compact"
-          >
-            {{ officialOpeningError }}
-          </VAlert>
-
-          <VAlert
-            v-else-if="
+            v-if="
               officialOpeningContext &&
+              requiresOfficialTemplate &&
               officialOpeningContext.templates.length === 0
             "
             type="warning"
@@ -5540,7 +5666,9 @@ defineExpose({
             {{ $t('official_templates_empty') }}
           </VAlert>
 
-          <template v-else-if="officialOpeningContext">
+          <template
+            v-else-if="officialOpeningContext && requiresOfficialTemplate"
+          >
             <VLabel class="text-body-2 mb-1">
               {{ $t('official_template_model') }} *
             </VLabel>
@@ -5548,6 +5676,7 @@ defineExpose({
               v-model="selectedOfficialTemplateKey"
               :items="officialTemplateOptions"
               :placeholder="$t('select_official_template')"
+              :disabled="isOpenConversationFormBusy"
               item-value="value"
               item-title="title"
             />
@@ -5585,13 +5714,13 @@ defineExpose({
                   <span class="official-template-variable-label">
                     {{ formatOfficialTemplateVariableLabel(variable) }}
                   </span>
-                  <VTextField
+                  <OfficialTemplateVariableField
                     v-model="officialTemplateVariableValues[variable.key]"
+                    :variables="openingUnderchatVariables"
+                    :disabled="isOpenConversationFormBusy"
                     :placeholder="
                       variable.sample || $t('template_variable_value')
                     "
-                    density="compact"
-                    variant="outlined"
                     hide-details="auto"
                   />
                 </div>
@@ -5604,6 +5733,7 @@ defineExpose({
                     size="small"
                     variant="outlined"
                     color="primary"
+                    :disabled="isOpenConversationFormBusy"
                     @click="addManualOfficialTemplateVariable"
                   >
                     <VIcon icon="tabler-plus" size="16" class="me-1" />
@@ -5625,6 +5755,7 @@ defineExpose({
                     density="compact"
                     variant="outlined"
                     hide-details
+                    :disabled="isOpenConversationFormBusy"
                     @update:model-value="
                       syncManualOfficialTemplateVariable(variableIndex)
                     "
@@ -5636,15 +5767,16 @@ defineExpose({
                     density="compact"
                     variant="outlined"
                     hide-details
+                    :disabled="isOpenConversationFormBusy"
                     @update:model-value="
                       syncManualOfficialTemplateVariable(variableIndex)
                     "
                   />
-                  <VTextField
+                  <OfficialTemplateVariableField
                     v-model="officialTemplateVariableValues[variable.key]"
+                    :variables="openingUnderchatVariables"
+                    :disabled="isOpenConversationFormBusy"
                     :placeholder="$t('template_variable_value')"
-                    density="compact"
-                    variant="outlined"
                     hide-details
                   />
                   <VBtn
@@ -5652,6 +5784,7 @@ defineExpose({
                     size="small"
                     variant="text"
                     color="error"
+                    :disabled="isOpenConversationFormBusy"
                     @click.stop="
                       removeManualOfficialTemplateVariable(variableIndex)
                     "
@@ -5666,8 +5799,19 @@ defineExpose({
                 class="official-template-preview"
               >
                 <div class="official-template-preview-top">
-                  <VIcon size="18">tabler-brand-whatsapp</VIcon>
-                  <span>{{ selectedOfficialTemplate.name }}</span>
+                  <div class="official-template-preview-name">
+                    <VIcon size="18">tabler-brand-whatsapp</VIcon>
+                    <span>{{ selectedOfficialTemplate.name }}</span>
+                  </div>
+                  <VChip
+                    v-if="hasOfficialTemplateRuntimeVariables"
+                    size="x-small"
+                    color="info"
+                    variant="tonal"
+                    prepend-icon="tabler-braces"
+                  >
+                    {{ $t('official_template_preview_runtime_variables') }}
+                  </VChip>
                 </div>
                 <div class="official-template-bubble">
                   <div
@@ -5719,6 +5863,7 @@ defineExpose({
             "
             :placeholder="$t('select_sector')"
             :clearable="true"
+            :disabled="isOpenConversationFormBusy"
             item-value="value"
             item-title="title"
           >
@@ -5753,6 +5898,7 @@ defineExpose({
         <VBtn
           variant="tonal"
           color="secondary"
+          :disabled="isOpeningConversation"
           @click="handleCancelSelectChannelSector"
         >
           {{ $t('cancel') }}
@@ -5760,14 +5906,15 @@ defineExpose({
         <VBtn
           :disabled="
             !selectedWorkerId ||
+            isOpenConversationFormBusy ||
             chatStore.loading ||
             cannotOpenConversation ||
             !isOfficialOpeningReady
           "
-          :loading="chatStore.loading"
+          :loading="isOpenConversationFormBusy"
           @click="handleOpenConversation"
         >
-          {{ $t('open_conversation') }}
+          {{ openConversationActionLabel }}
         </VBtn>
       </VCardText>
     </VCard>
@@ -6155,33 +6302,6 @@ defineExpose({
   }
 }
 
-.contact-validation-chip {
-  font-size: 0.5rem;
-  height: 16px;
-  min-width: 16px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 0.2s ease;
-
-  &--validated {
-    background-color: rgba(var(--v-theme-success), 0.12) !important;
-    color: rgb(var(--v-theme-success)) !important;
-  }
-
-  &--not-validated {
-    background-color: rgba(var(--v-theme-error), 0.12) !important;
-    color: rgb(var(--v-theme-error)) !important;
-  }
-
-  .v-icon {
-    font-size: 10px;
-    width: 10px;
-    height: 10px;
-  }
-}
-
 .contact-action-btn {
   opacity: 0;
   transition: opacity 0.2s ease;
@@ -6189,10 +6309,6 @@ defineExpose({
 
 .contact-item:hover .contact-action-btn {
   opacity: 1;
-}
-
-.contact-item:hover .contact-validation-chip {
-  opacity: 0;
 }
 
 .chat-filter-options {
@@ -6295,24 +6411,8 @@ defineExpose({
 }
 
 .official-opening-panel {
-  padding: 14px;
-  border: 1px solid rgba(var(--v-theme-success), 0.22);
-  border-radius: 8px;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(var(--v-theme-success), 0.08),
-      rgba(var(--v-theme-surface), 0.96)
-    ),
-    rgb(var(--v-theme-surface));
-}
-
-.official-opening-loading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: rgba(var(--v-theme-on-surface), 0.78);
-  font-size: 0.875rem;
+  display: grid;
+  gap: 12px;
 }
 
 .official-template-chips {
@@ -6365,28 +6465,36 @@ defineExpose({
 
 .official-template-preview {
   padding: 10px;
-  border-radius: 8px;
-  background: #e7f2eb;
-  border: 1px solid rgba(18, 105, 67, 0.14);
+  border: 1px solid rgba(var(--v-theme-success), 0.18);
+  border-radius: 10px;
+  background: rgba(var(--v-theme-success), 0.08);
 }
 
 .official-template-preview-top {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 8px;
-  color: #126943;
+  color: rgb(var(--v-theme-success));
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.official-template-preview-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .official-template-bubble {
   width: min(100%, 430px);
   padding: 10px 12px 8px;
   border-radius: 8px;
-  background: #fff;
-  color: #1f2a24;
-  box-shadow: 0 6px 18px rgba(23, 58, 41, 0.12);
+  background: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface));
+  box-shadow: 0 6px 18px rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .official-template-header {
@@ -6404,7 +6512,7 @@ defineExpose({
 
 .official-template-footer {
   margin-top: 8px;
-  color: rgba(31, 42, 36, 0.56);
+  color: rgba(var(--v-theme-on-surface), 0.56);
   font-size: 0.78rem;
   white-space: pre-wrap;
 }
@@ -6414,7 +6522,7 @@ defineExpose({
   gap: 6px;
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px solid rgba(18, 105, 67, 0.1);
+  border-top: 1px solid rgba(var(--v-theme-success), 0.12);
 }
 
 .official-template-button {
@@ -6423,9 +6531,28 @@ defineExpose({
   justify-content: center;
   gap: 6px;
   min-height: 30px;
-  color: #1677b8;
+  color: rgb(var(--v-theme-info));
   font-size: 0.86rem;
   font-weight: 600;
+}
+
+.open-conversation-dialog {
+  max-block-size: calc(100dvh - 24px);
+}
+
+.open-conversation-dialog__body {
+  overflow-y: auto;
+}
+
+@media (max-width: 600px) {
+  .official-template-manual-variable-row {
+    grid-template-columns: minmax(0, 1fr) 74px auto;
+  }
+
+  .official-template-manual-variable-row > :nth-child(3) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 
 .expand-enter-active,

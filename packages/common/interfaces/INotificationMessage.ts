@@ -1,5 +1,6 @@
 export interface INotificationMessage {
   id: string;
+  operation_id?: string;
   user_id?: string;
   notification_id: string;
   message_key: {

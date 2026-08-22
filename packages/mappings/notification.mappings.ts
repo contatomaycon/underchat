@@ -5,6 +5,9 @@ export const notificationMappings = () => {
         id: {
           type: 'keyword',
         },
+        operation_id: {
+          type: 'keyword',
+        },
         user_id: {
           type: 'keyword',
         },

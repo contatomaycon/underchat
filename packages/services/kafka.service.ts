@@ -1,153 +1,52 @@
-import { injectable, inject } from 'tsyringe';
-import type { AdminClient, LibrdKafkaError } from 'node-rdkafka';
+import { inject, injectable } from 'tsyringe';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
-import { kafkaEnvironment } from '@core/config/environments';
-import { toError, getErrorMessage } from '@core/common/functions/toError';
-import { rdkafka } from '@core/common/vendors/nodeRdkafka';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import {
+  durableWorkerIdFromKafkaTopic,
+  resolveKafkaTopicConfig,
+} from '@core/common/functions/kafkaTopicConfig';
 
+/**
+ * Generic topic provisioner used by control-plane processes.
+ *
+ * This service deliberately has no database or repository dependency. Durable
+ * per-worker topics are rejected here and can only be mutated through the
+ * Balance-only WorkerKafkaTopicAdminService.
+ */
 @injectable()
 export class KafkaService {
-  private readonly admin: AdminClient;
-
-  constructor(@inject('Kafka') private readonly kafka: KafkaClient) {
-    const protocol = kafkaEnvironment.securityProtocol.toLowerCase();
-
-    const config: Record<string, string | boolean> = {
-      'client.id': 'kafka-admin',
-      'metadata.broker.list': this.kafka.getBroker(),
-      'security.protocol': protocol,
-    };
-
-    if (protocol !== 'plaintext') {
-      const saslMechanism = kafkaEnvironment.saslMechanism;
-      const username = kafkaEnvironment.kafkaUsername;
-      const password = kafkaEnvironment.kafkaPassword;
-
-      if (saslMechanism && username && password) {
-        config['sasl.mechanism'] = saslMechanism;
-        config['sasl.username'] = username;
-        config['sasl.password'] = password;
-      }
-    }
-
-    if (protocol === 'sasl_ssl' || protocol === 'ssl') {
-      config['enable.ssl.certificate.verification'] = false;
-    }
-
-    this.admin = rdkafka.AdminClient.create(config);
-  }
-
-  private async createSingleTopic(
-    topic: string,
-    numPartitions: number,
-    replicationFactor: number,
-    timeoutMs: number
-  ): Promise<void> {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        (this.admin as any).createTopic(
-          {
-            topic,
-            num_partitions: numPartitions,
-            replication_factor: replicationFactor,
-          },
-          timeoutMs,
-          (err: LibrdKafkaError | null) => {
-            if (err) {
-              const errorMessage = getErrorMessage(err);
-              const errorCode = (err as any).code ?? (err as any).errno;
-
-              if (
-                errorCode === 36 ||
-                errorMessage.includes('Topic already exists') ||
-                errorMessage.includes('already exists')
-              ) {
-                resolve();
-                return;
-              }
-
-              reject(toError(err));
-              return;
-            }
-            resolve();
-          }
-        );
-      });
-    } catch (error) {
-      const errorMessage = getErrorMessage(error);
-      const errorCode = (error as any)?.code ?? (error as any)?.errno;
-
-      if (
-        errorCode === 36 ||
-        errorMessage.includes('Topic already exists') ||
-        errorMessage.includes('already exists')
-      ) {
-      } else {
-        throw error;
-      }
-    }
-  }
-
-  private isUnknownTopicOrPartitionError(err: unknown): boolean {
-    const errorMessage = getErrorMessage(err).toLowerCase();
-    const errorCode = (err as any)?.code ?? (err as any)?.errno;
-
-    if (errorCode === 3) {
-      return true;
-    }
-
-    return (
-      errorMessage.includes('this server does not host this topic-partition') ||
-      errorMessage.includes('unknown_topic_or_part') ||
-      errorMessage.includes('unknown topic or partition') ||
-      errorMessage.includes('unknown partition') ||
-      (errorMessage.includes('unknown') && errorMessage.includes('partition'))
-    );
-  }
-
-  private async deleteSingleTopic(
-    topic: string,
-    timeoutMs: number
-  ): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      (this.admin as any).deleteTopic(
-        topic,
-        timeoutMs,
-        (err: LibrdKafkaError | null) => {
-          if (err) {
-            if (this.isUnknownTopicOrPartitionError(err)) {
-              resolve();
-              return;
-            }
-
-            reject(toError(err));
-            return;
-          }
-          resolve();
-        }
-      );
-    });
-  }
+  constructor(@inject('Kafka') private readonly kafka: KafkaClient) {}
 
   async createTopics(
     topics: string[],
-    numPartitions = 1,
-    replicationFactor = 1,
+    numPartitions?: number,
+    replicationFactor?: number,
     timeoutMs = 30000
   ): Promise<void> {
     if (topics.length === 0) {
       return;
     }
 
+    const protectedTopic = topics.find((topic) =>
+      durableWorkerIdFromKafkaTopic(topic.trim())
+    );
+    if (protectedTopic) {
+      throw new Error(
+        `generic_durable_worker_topic_provisioning_disabled:${protectedTopic}`
+      );
+    }
+
     await Promise.all(
-      topics.map((topic) =>
-        this.createSingleTopic(
+      topics.map((topic) => {
+        const configuredTopology = resolveKafkaTopicConfig(topic);
+        return ensureKafkaTopic(
+          this.kafka,
           topic,
-          numPartitions,
-          replicationFactor,
+          numPartitions ?? configuredTopology.numPartitions,
+          replicationFactor ?? configuredTopology.replicationFactor,
           timeoutMs
-        )
-      )
+        );
+      })
     );
   }
 
@@ -156,12 +55,21 @@ export class KafkaService {
       return;
     }
 
-    await Promise.all(
-      topics.map((topic) => this.deleteSingleTopic(topic, 5000))
+    console.warn(
+      '[worker-kafka-topic-audit]',
+      JSON.stringify({
+        type: 'worker_kafka_topic_audit',
+        event: 'worker_topics.delete.admin_boundary_denied',
+        timestamp: new Date().toISOString(),
+        worker_id: null,
+        account_id: null,
+        operation: 'delete',
+        lifecycle_operation_id: null,
+        trace_id: null,
+        topics,
+        reason: 'runtime_generic_kafka_topic_deletion_disabled',
+      })
     );
-  }
-
-  async close(): Promise<void> {
-    (this.admin as any).disconnect();
+    throw new Error('runtime_generic_kafka_topic_deletion_disabled');
   }
 }

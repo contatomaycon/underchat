@@ -43,6 +43,7 @@ var (
 	ErrPairInvalidDeviceIdentityHMAC = errors.New("invalid device identity HMAC in pair success message")
 	ErrPairInvalidDeviceSignature    = errors.New("invalid device signature in pair success message")
 	ErrPairRejectedLocally           = errors.New("local PrePairCallback rejected pairing")
+	ErrPairAdvSecretUnavailable      = errors.New("pairing requires an extractable ADV secret")
 )
 
 // PairProtoError is included in an events.PairError if the pairing failed due to a protobuf error.
@@ -106,11 +107,12 @@ var (
 
 // Some errors that Client.SendMessage can return
 var (
-	ErrBroadcastListUnsupported = errors.New("sending to non-status broadcast lists is not yet supported")
-	ErrUnknownServer            = errors.New("can't send message to unknown server")
-	ErrRecipientADJID           = errors.New("message recipient must be a user JID with no device part")
-	ErrServerReturnedError      = errors.New("server returned error")
-	ErrInvalidInlineBotID       = errors.New("invalid inline bot ID")
+	ErrBroadcastListUnsupported      = errors.New("sending to non-status broadcast lists is not yet supported")
+	ErrUnknownServer                 = errors.New("can't send message to unknown server")
+	ErrRecipientADJID                = errors.New("message recipient must be a user JID with no device part")
+	ErrServerReturnedError           = errors.New("server returned error")
+	ErrInvalidInlineBotID            = errors.New("invalid inline bot ID")
+	ErrInvalidPreResolvedRecipientPN = errors.New("invalid pre-resolved recipient PN")
 )
 
 type DownloadHTTPError struct {

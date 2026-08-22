@@ -1,5 +1,5 @@
 import { pgTable, uuid, timestamp, index } from 'drizzle-orm/pg-core';
-import { planCrossSell, account } from '@core/models';
+import { planCrossSell, account, accountPayment } from '@core/models';
 import { relations } from 'drizzle-orm';
 
 export const planCrossSellAccount = pgTable(
@@ -12,6 +12,9 @@ export const planCrossSellAccount = pgTable(
     account_id: uuid()
       .references(() => account.account_id)
       .notNull(),
+    account_payment_id: uuid().references(
+      () => accountPayment.account_payment_id
+    ),
     created_at: timestamp('created_at', {
       mode: 'string',
       withTimezone: true,
@@ -31,6 +34,9 @@ export const planCrossSellAccount = pgTable(
       table.plan_cross_sell_id
     ),
     index('plan_cross_sell_account_account_id_idx').on(table.account_id),
+    index('plan_cross_sell_account_account_payment_id_idx').on(
+      table.account_payment_id
+    ),
     index('plan_cross_sell_account_deleted_at_idx').on(table.deleted_at),
     index('plan_cross_sell_account_cancellation_date_idx').on(
       table.cancellation_date
@@ -60,6 +66,10 @@ export const planCrossSellAccountRelations = relations(
     pac: one(account, {
       fields: [planCrossSellAccount.account_id],
       references: [account.account_id],
+    }),
+    payment: one(accountPayment, {
+      fields: [planCrossSellAccount.account_payment_id],
+      references: [accountPayment.account_payment_id],
     }),
   })
 );

@@ -1,10 +1,11 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { handleControllerError } from '@core/common/functions/handleControllerError';
+import { handleContactCreationControllerError } from '@core/common/functions/handleContactCreationControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { ContactCreatorUseCase } from '@core/useCases/contact/ContactCreator.useCase';
+import { resolveOutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 
 export const createContact = async (
   request: FastifyRequest<{
@@ -21,7 +22,9 @@ export const createContact = async (
       t,
       request.body,
       tokenJwtData.account_id,
-      allowedChannelIds
+      allowedChannelIds,
+      tokenJwtData.user_id,
+      resolveOutboundWebhookRequestSource(request.module)
     );
 
     if (response) {
@@ -37,6 +40,6 @@ export const createContact = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    handleControllerError(error, reply, t);
+    handleContactCreationControllerError(error, reply, t);
   }
 };

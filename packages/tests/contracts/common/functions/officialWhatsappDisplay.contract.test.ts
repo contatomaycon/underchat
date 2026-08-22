@@ -182,6 +182,63 @@ describe('officialWhatsappDisplay', () => {
     );
   });
 
+  it('fills named official template preview placeholders', () => {
+    const display = buildOfficialWhatsappDisplayFromTemplate({
+      name: 'service_update',
+      language: 'pt_BR',
+      parameter_format: 'NAMED',
+      preview: { body: 'Olá {{name}}, sua conta é {{account_name}}.' },
+      variables: [
+        {
+          key: 'BODY:name',
+          component_type: 'BODY',
+          index: 1,
+          parameter_name: 'name',
+          value: 'Maycon',
+        },
+        {
+          key: 'BODY:account_name',
+          component_type: 'BODY',
+          index: 2,
+          parameter_name: 'account_name',
+          value: 'UnderChat',
+        },
+      ],
+    });
+
+    expect(display).toEqual(
+      expect.objectContaining({
+        body: 'Olá Maycon, sua conta é UnderChat.',
+      })
+    );
+  });
+
+  it('keeps malformed brace-like text literal instead of inventing a Meta variable', () => {
+    const display = buildOfficialWhatsappDisplayFromTemplate({
+      name: 'followup_comercial',
+      language: 'pt_BR',
+      parameter_format: 'NAMED',
+      preview: {
+        body: 'Olá {{ Name }}, {{{name}}}, {{name}}} e {{ name }}.',
+      },
+      variables: [
+        {
+          key: 'BODY:name',
+          component_type: 'BODY',
+          index: 1,
+          parameter_name: 'name',
+          value: 'Maycon',
+        },
+      ],
+    });
+
+    expect(display).toEqual(
+      expect.objectContaining({
+        body: 'Olá {{ Name }}, {{{name}}}, {{name}}} e {{ name }}.',
+      })
+    );
+  });
+
   it('uses official display as text preview when regular message text is absent', () => {
     expect(
       extractMessageTextFromContent({

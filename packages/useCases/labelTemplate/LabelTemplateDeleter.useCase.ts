@@ -11,15 +11,22 @@ export class LabelTemplateDeleterUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    labelTemplateId: string
+    labelTemplateId: string,
+    accountId: string
   ): Promise<boolean> {
     const labelTemplateExists =
-      await this.labelTemplateService.existsLabelTemplateById(labelTemplateId);
+      await this.labelTemplateService.viewLabelTemplateById(
+        labelTemplateId,
+        accountId
+      );
 
     if (!labelTemplateExists) {
       throw new Error(t('label_template_not_found'));
     }
 
-    return this.labelTemplateService.deleteLabelTemplateById(labelTemplateId);
+    return this.labelTemplateService.deleteLabelTemplateById(
+      labelTemplateId,
+      accountId
+    );
   }
 }

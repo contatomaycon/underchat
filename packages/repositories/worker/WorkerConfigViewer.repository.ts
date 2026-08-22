@@ -1,12 +1,16 @@
 import * as schema from '@core/models';
-import { workerConfig, worker } from '@core/models';
+import {
+  workerConfig,
+  worker,
+  workerRuntime,
+  whatsappSessionLease,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq, and, isNull, asc } from 'drizzle-orm';
 import { IWorkerConfigValue } from '@core/common/interfaces/IWorkerConfigValue';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import {
   CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
@@ -15,6 +19,10 @@ import {
   normalizeChatbotWorkingHoursTimezone,
 } from '@core/common/functions/chatbotWorkingHours';
 import { IChatbotWorkingHoursRule } from '@core/common/interfaces/IChatbotWorkingHours';
+import {
+  effectiveWorkerOnlinePredicate,
+  liveWhatsappSessionLeaseJoinCondition,
+} from './workerEffectiveOnline.sql';
 
 @injectable()
 export class WorkerConfigViewerRepository {
@@ -361,11 +369,13 @@ export class WorkerConfigViewerRepository {
       })
       .from(workerConfig)
       .innerJoin(worker, eq(worker.worker_id, workerConfig.worker_id))
+      .leftJoin(workerRuntime, eq(workerRuntime.worker_id, worker.worker_id))
+      .leftJoin(whatsappSessionLease, liveWhatsappSessionLeaseJoinCondition())
       .where(
         and(
           eq(worker.account_id, accountId),
           isNull(worker.deleted_at),
-          eq(worker.worker_status_id, EWorkerStatus.online),
+          effectiveWorkerOnlinePredicate(),
           eq(workerConfig.worker_config_type_id, type)
         )
       )

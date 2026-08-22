@@ -11,6 +11,7 @@ const t = ((key: string) => key) as never;
 function makeUseCase(overrides?: {
   viewWebhookSecurityConfig?: jest.Mock;
   send?: jest.Mock;
+  recordOfficialWindow?: jest.Mock;
 }) {
   const whatsappEmbeddedService = {
     viewWebhookSecurityConfig:
@@ -28,11 +29,15 @@ function makeUseCase(overrides?: {
       () => 'official.whatsapp.webhook.event'
     ),
   };
+  const officialWindowRecorder = {
+    record: overrides?.recordOfficialWindow ?? jest.fn(async () => undefined),
+  };
 
   const useCase = new WhatsappEmbeddedWebhookUseCase(
     whatsappEmbeddedService as never,
     streamProducerService as never,
-    kafkaServiceQueueService as never
+    kafkaServiceQueueService as never,
+    officialWindowRecorder as never
   );
 
   return {
@@ -40,6 +45,7 @@ function makeUseCase(overrides?: {
     whatsappEmbeddedService,
     streamProducerService,
     kafkaServiceQueueService,
+    officialWindowRecorder,
   };
 }
 
@@ -65,7 +71,8 @@ describe('WhatsappEmbeddedWebhookUseCase', () => {
   });
 
   it('validates HMAC signature and publishes WhatsApp payload with phone key', async () => {
-    const { useCase, streamProducerService } = makeUseCase();
+    const { useCase, streamProducerService, officialWindowRecorder } =
+      makeUseCase();
     const body = {
       object: 'whatsapp_business_account',
       entry: [
@@ -106,6 +113,15 @@ describe('WhatsappEmbeddedWebhookUseCase', () => {
       }),
       'phone-number-1'
     );
+    expect(officialWindowRecorder.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: body,
+        received_at: expect.any(String),
+      })
+    );
+    expect(
+      officialWindowRecorder.record.mock.invocationCallOrder[0]
+    ).toBeLessThan(streamProducerService.send.mock.invocationCallOrder[0]);
   });
 
   it('rejects missing or invalid signatures before publishing', async () => {

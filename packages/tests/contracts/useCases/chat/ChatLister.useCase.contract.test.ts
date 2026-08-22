@@ -1,4 +1,10 @@
 import 'reflect-metadata';
+
+jest.mock('@whiskeysockets/baileys', () => ({
+  jidNormalizedUser: jest.fn((jid: string) => jid),
+  proto: {},
+}));
+
 import { ChatListerUseCase } from '@core/useCases/chat/ChatLister.useCase';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';

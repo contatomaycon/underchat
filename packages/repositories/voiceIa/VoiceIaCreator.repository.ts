@@ -5,7 +5,10 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
-import { EVoiceIaType } from '@core/common/enums/EVoiceIaType';
+import {
+  resolveVoiceIaType,
+  resolveVoiceIaModel,
+} from '@core/common/functions/voiceIaProviderConfiguration';
 
 @injectable()
 export class VoiceIaCreatorRepository {
@@ -18,6 +21,7 @@ export class VoiceIaCreatorRepository {
     accountId: string
   ): Promise<string | null> => {
     const voiceIaId = uuidv7();
+    const voiceIaType = resolveVoiceIaType(input.voice_ia_type);
 
     const result = await this.dbRw
       .insert(voiceIa)
@@ -25,10 +29,10 @@ export class VoiceIaCreatorRepository {
         voice_ia_id: voiceIaId,
         account_id: accountId,
         name: input.name,
-        voice_ia_type: input.voice_ia_type ?? EVoiceIaType.eleven_labs,
+        voice_ia_type: voiceIaType,
         api_key: input.api_key,
         voice_id: input.voice_id,
-        model_id: input.model_id ?? 'eleven_multilingual_v2',
+        model_id: resolveVoiceIaModel(voiceIaType, input.model_id),
         speed: input.speed ?? '1',
         stability: input.stability ?? '0.5',
         similarity_boost: input.similarity_boost ?? '0.75',

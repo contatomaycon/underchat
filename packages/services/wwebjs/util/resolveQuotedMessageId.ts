@@ -1,4 +1,6 @@
 import type { Client, Message } from '@wwebjs/whatsapp-web.js';
+import { extractWwebjsMessageId } from './wwebjsMessageId';
+import { isProviderAuxiliaryInvocationFenceError } from '@core/common/functions/providerAuxiliaryInvocation';
 
 export interface IWwebjsQuotedKeyInput {
   id: string;
@@ -9,10 +11,15 @@ export interface IWwebjsQuotedKeyInput {
   participant_alt?: string | null;
 }
 
+export type WwebjsProviderLookupInvoker = <T>(
+  invoke: () => Promise<T>
+) => Promise<T>;
+
 interface ParsedSerializedMessageId {
   fromMe: boolean;
   remoteJid: string;
   stanzaId: string;
+  participant?: string;
 }
 
 function getNonEmptyString(value: unknown): string | undefined {
@@ -34,13 +41,14 @@ function parseSerializedMessageId(
     return null;
   }
 
-  const [fromMeRaw, remoteJidRaw, ...stanzaParts] = parts;
+  const [fromMeRaw, remoteJidRaw, stanzaIdRaw, participantRaw] = parts;
   if (fromMeRaw !== 'true' && fromMeRaw !== 'false') {
     return null;
   }
 
   const remoteJid = getNonEmptyString(remoteJidRaw);
-  const stanzaId = getNonEmptyString(stanzaParts.join('_'));
+  const stanzaId = getNonEmptyString(stanzaIdRaw);
+  const participant = getNonEmptyString(participantRaw);
 
   if (!remoteJid || !stanzaId) {
     return null;
@@ -50,70 +58,25 @@ function parseSerializedMessageId(
     fromMe: fromMeRaw === 'true',
     remoteJid,
     stanzaId,
+    ...(participant ? { participant } : {}),
   };
 }
 
 function buildSerializedMessageId(
   fromMe: boolean,
   remoteJid: string,
-  stanzaId: string
+  stanzaId: string,
+  participant?: string
 ): string {
-  return `${fromMe}_${remoteJid}_${stanzaId}`;
+  return participant
+    ? `${fromMe}_${remoteJid}_${stanzaId}_${participant}`
+    : `${fromMe}_${remoteJid}_${stanzaId}`;
 }
 
 function getSerializedMessageIdFromMessage(
   message: Message | null | undefined | unknown
 ): string | undefined {
-  if (!message || typeof message !== 'object') {
-    return undefined;
-  }
-
-  const idValue = (message as { id?: unknown }).id;
-  if (!idValue) return undefined;
-
-  if (
-    typeof idValue === 'object' &&
-    idValue !== null &&
-    '_serialized' in idValue
-  ) {
-    return getNonEmptyString(
-      (idValue as { _serialized?: unknown })._serialized
-    );
-  }
-
-  if (
-    typeof idValue === 'object' &&
-    idValue !== null &&
-    'id' in (idValue as object)
-  ) {
-    const stanzaId = getNonEmptyString((idValue as { id?: unknown }).id);
-    const remoteRaw = (idValue as { remote?: unknown }).remote;
-    const remoteJid =
-      getNonEmptyString(remoteRaw) ??
-      (typeof remoteRaw === 'object' &&
-      remoteRaw !== null &&
-      '_serialized' in (remoteRaw as object)
-        ? getNonEmptyString(
-            (remoteRaw as { _serialized?: unknown })._serialized
-          )
-        : undefined);
-    const fromMe =
-      typeof (idValue as { fromMe?: unknown }).fromMe === 'boolean'
-        ? ((idValue as { fromMe?: boolean }).fromMe as boolean)
-        : typeof (message as { fromMe?: unknown }).fromMe === 'boolean'
-          ? ((message as { fromMe?: boolean }).fromMe as boolean)
-          : undefined;
-
-    if (stanzaId && remoteJid && typeof fromMe === 'boolean') {
-      return buildSerializedMessageId(fromMe, remoteJid, stanzaId);
-    }
-  }
-
-  if (typeof idValue === 'string') {
-    return getNonEmptyString(idValue);
-  }
-
-  return undefined;
+  return extractWwebjsMessageId(message);
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
@@ -194,10 +157,14 @@ function buildRemoteCandidates(
   return Array.from(remoteCandidates);
 }
 
-function buildParticipantCandidates(key: IWwebjsQuotedKeyInput): string[] {
+function buildParticipantCandidates(
+  key: IWwebjsQuotedKeyInput,
+  parsed: ParsedSerializedMessageId | null
+): string[] {
   const rawCandidates = uniqueStrings([
     key.participant ?? undefined,
     key.participant_alt ?? undefined,
+    parsed?.participant,
   ]);
 
   const participantCandidates = new Set<string>();
@@ -265,6 +232,12 @@ function extractFromMeFromMessage(message: unknown): boolean | undefined {
 }
 
 function extractParticipantFromMessage(message: unknown): string | undefined {
+  const serialized = getSerializedMessageIdFromMessage(message);
+  const parsed = serialized ? parseSerializedMessageId(serialized) : null;
+  if (parsed?.participant) {
+    return parsed.participant;
+  }
+
   if (!message || typeof message !== 'object') {
     return undefined;
   }
@@ -309,6 +282,7 @@ function buildQuotedMessageIdCandidates(
   const stanzaId = parsed?.stanzaId ?? rawId;
   const fromMeCandidates = buildFromMeCandidates(key, parsed);
   const remoteCandidates = buildRemoteCandidates(chatJid, key, parsed);
+  const participantCandidates = buildParticipantCandidates(key, parsed);
 
   const candidates = new Set<string>();
 
@@ -318,6 +292,16 @@ function buildQuotedMessageIdCandidates(
 
   for (const remoteJid of remoteCandidates) {
     for (const fromMeCandidate of fromMeCandidates) {
+      for (const participant of participantCandidates) {
+        candidates.add(
+          buildSerializedMessageId(
+            fromMeCandidate,
+            remoteJid,
+            stanzaId,
+            participant
+          )
+        );
+      }
       candidates.add(
         buildSerializedMessageId(fromMeCandidate, remoteJid, stanzaId)
       );
@@ -333,7 +317,8 @@ async function resolveByChatScan(
   client: Pick<Client, 'getChatById'>,
   chatJid: string,
   key: IWwebjsQuotedKeyInput,
-  candidates: string[]
+  candidates: string[],
+  invokeLookup?: WwebjsProviderLookupInvoker
 ): Promise<string | undefined> {
   const rawId = getNonEmptyString(key.id);
   if (!rawId) {
@@ -348,7 +333,9 @@ async function resolveByChatScan(
 
   const remoteCandidates = buildRemoteCandidates(chatJid, key, parsed);
   const fromMeCandidates = new Set(buildFromMeCandidates(key, parsed));
-  const participantCandidates = new Set(buildParticipantCandidates(key));
+  const participantCandidates = new Set(
+    buildParticipantCandidates(key, parsed)
+  );
   const serializedCandidates = new Set(candidates);
   serializedCandidates.add(rawId);
 
@@ -356,7 +343,9 @@ async function resolveByChatScan(
     let chatMessages: unknown[] = [];
 
     try {
-      const chat = await client.getChatById(remoteCandidate);
+      const chat = await (invokeLookup
+        ? invokeLookup(() => client.getChatById(remoteCandidate))
+        : client.getChatById(remoteCandidate));
       if (
         !chat ||
         typeof (chat as { fetchMessages?: unknown }).fetchMessages !==
@@ -365,14 +354,20 @@ async function resolveByChatScan(
         continue;
       }
 
-      chatMessages = await (
+      const fetchMessages = (
         chat as {
           fetchMessages: (searchOptions: {
             limit?: number;
           }) => Promise<unknown[]>;
         }
-      ).fetchMessages({ limit: 100 });
-    } catch {
+      ).fetchMessages.bind(chat);
+      chatMessages = await (invokeLookup
+        ? invokeLookup(() => fetchMessages({ limit: 100 }))
+        : fetchMessages({ limit: 100 }));
+    } catch (error) {
+      if (isProviderAuxiliaryInvocationFenceError(error)) {
+        throw error;
+      }
       continue;
     }
 
@@ -423,19 +418,26 @@ async function resolveByChatScan(
 export async function resolveQuotedMessageId(
   client: Pick<Client, 'getMessageById' | 'getChatById'>,
   chatJid: string,
-  key: IWwebjsQuotedKeyInput
+  key: IWwebjsQuotedKeyInput,
+  invokeLookup?: WwebjsProviderLookupInvoker
 ): Promise<string | undefined> {
   const candidates = buildQuotedMessageIdCandidates(chatJid, key);
 
   for (const candidate of candidates) {
     try {
-      const message = await client.getMessageById(candidate);
+      const message = await (invokeLookup
+        ? invokeLookup(() => client.getMessageById(candidate))
+        : client.getMessageById(candidate));
       const serialized = getSerializedMessageIdFromMessage(message);
       if (serialized) {
         return serialized;
       }
-    } catch {}
+    } catch (error) {
+      if (isProviderAuxiliaryInvocationFenceError(error)) {
+        throw error;
+      }
+    }
   }
 
-  return resolveByChatScan(client, chatJid, key, candidates);
+  return resolveByChatScan(client, chatJid, key, candidates, invokeLookup);
 }

@@ -27,12 +27,19 @@ import { createChatCacheKey } from '@core/common/functions/createCacheKey';
 import { isChatPrimary } from '@core/common/functions/chatParticipants';
 import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
+import { canUseChannelForTransferAndForwarding } from '@core/common/functions/transferAndForwardChannelAccess';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { PushNotificationService } from '@core/services/pushNotification.service';
+import { OperatorReplyPendingRedistributionTrackerService } from '@core/services/operatorReplyPendingRedistributionTracker.service';
 import { IUpsertMessageEnvelope } from '@core/common/interfaces/IUpsertMessage';
 import { isChatbotStatus } from '@core/common/functions/chatStatus';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
+import { v7 as uuidv7 } from 'uuid';
+import { withLock } from '@core/common/functions/withLock';
+import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
+import { ChatbotTransferService } from '@core/services/chatbotTransfer.service';
 
 type ChatbotTransferTarget = {
   chatbotId: string;
@@ -61,7 +68,11 @@ export class TransferChatUseCase {
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis,
     @inject(PushNotificationService)
-    private readonly pushNotificationService: PushNotificationService
+    private readonly pushNotificationService: PushNotificationService,
+    @inject(OperatorReplyPendingRedistributionTrackerService)
+    private readonly operatorReplyPendingRedistributionTracker: OperatorReplyPendingRedistributionTrackerService | null = null,
+    @inject(ChatbotTransferService)
+    private readonly chatbotTransferService: ChatbotTransferService | null = null
   ) {}
 
   private async loadUserAndSector(
@@ -109,6 +120,62 @@ export class TransferChatUseCase {
       id: worker.id,
       name: worker.name,
     };
+  }
+
+  private async withTargetChatIdentityGuard<T>(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chat: IChat,
+    targetWorker: IChat['worker'],
+    operation: () => Promise<T>
+  ): Promise<T> {
+    if (targetWorker.id === chat.worker.id) {
+      return operation();
+    }
+
+    const identity = {
+      phone: chat.phone,
+      remoteJid: chat.message_key?.remote_jid,
+      remoteJidAlt: chat.message_key?.remote_jid_alt,
+    };
+    const lockKey = buildChatIdentityLockKey(
+      accountId,
+      targetWorker.id,
+      identity
+    );
+
+    return withLock(
+      this.redis,
+      lockKey,
+      async (lockContext) => {
+        const existingTargetChat =
+          await this.chatService.findOpenChatByIdentity(
+            accountId,
+            targetWorker.id,
+            identity
+          );
+
+        lockContext.assertActive();
+
+        if (existingTargetChat && existingTargetChat.chat_id !== chat.chat_id) {
+          const sectorName = existingTargetChat.sector?.name;
+          if (sectorName) {
+            throw new Error(
+              t('chat_already_in_service_with_sector', {
+                sector: sectorName,
+              })
+            );
+          }
+
+          throw new Error(t('chat_already_in_service'));
+        }
+
+        const result = await operation();
+        lockContext.assertActive();
+        return result;
+      },
+      { ttlMs: 60_000, retryMs: 100, maxWaitMs: 90_000 }
+    );
   }
 
   private validateUserAndSector(
@@ -332,6 +399,87 @@ export class TransferChatUseCase {
     };
   }
 
+  private canonicalJson(value: unknown): string {
+    return JSON.stringify(value ?? null, (_key, nestedValue: unknown) => {
+      if (
+        nestedValue === null ||
+        Array.isArray(nestedValue) ||
+        typeof nestedValue !== 'object'
+      ) {
+        return nestedValue;
+      }
+
+      return Object.fromEntries(
+        Object.entries(nestedValue as Record<string, unknown>)
+          .filter(([, entry]) => entry !== undefined)
+          .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+      );
+    });
+  }
+
+  private isHumanTransferAlreadyApplied(
+    currentChat: IChat,
+    intendedChat: IChat
+  ): boolean {
+    const currentState = {
+      worker: currentChat.worker,
+      status: currentChat.status,
+      user: currentChat.user ?? null,
+      secondary_users: currentChat.secondary_users ?? [],
+      sector: currentChat.sector ?? null,
+      forward_to_output_chatbot: currentChat.forward_to_output_chatbot ?? null,
+      chatbot_transfer_id: currentChat.chatbot_transfer_id ?? null,
+      chatbot_schedule_id: currentChat.chatbot_schedule_id ?? null,
+      chatbot_webhook_id: currentChat.chatbot_webhook_id ?? null,
+    };
+    const intendedState = {
+      worker: intendedChat.worker,
+      status: intendedChat.status,
+      user: intendedChat.user ?? null,
+      secondary_users: intendedChat.secondary_users ?? [],
+      sector: intendedChat.sector ?? null,
+      forward_to_output_chatbot: intendedChat.forward_to_output_chatbot ?? null,
+      chatbot_transfer_id: intendedChat.chatbot_transfer_id ?? null,
+      chatbot_schedule_id: intendedChat.chatbot_schedule_id ?? null,
+      chatbot_webhook_id: intendedChat.chatbot_webhook_id ?? null,
+    };
+
+    return (
+      this.canonicalJson(currentState) === this.canonicalJson(intendedState)
+    );
+  }
+
+  private buildHumanTransferIdempotencyKey(input: {
+    chat: IChat;
+    targetWorkerId: string;
+    targetUserId?: string;
+    targetSectorId?: string;
+    keepInChat: boolean;
+  }): string {
+    // All concurrent retries that read the same aggregate revision must share
+    // the same journal intent. The assignment/status revision advances even
+    // when no endpoint is subscribed; the webhook marker is only a legacy
+    // fallback. A later, genuinely new transfer can therefore emit again.
+    const transferRevision =
+      input.chat.meta?.assignment_event_id ??
+      input.chat.meta?.status_event_id ??
+      input.chat.meta?.outbound_webhook_event_ids?.at(-1) ??
+      input.chat.started_at ??
+      input.chat.date ??
+      input.chat.chat_id;
+
+    return [
+      'chat-transfer',
+      input.chat.chat_id,
+      'human',
+      transferRevision,
+      input.targetWorkerId,
+      input.targetUserId ?? 'unassigned',
+      input.targetSectorId ?? 'unassigned',
+      input.keepInChat ? 'keep' : 'replace',
+    ].join(':');
+  }
+
   private validateChatbotTransferTarget(
     t: TFunction<'translation', undefined>,
     body: TransferChatBody
@@ -444,6 +592,7 @@ export class TransferChatUseCase {
     targetWorker: IChat['worker'];
     chatbotTarget: ChatbotTransferTarget;
     actorUserId: string;
+    webhookSource: OutboundWebhookRequestSource;
   }): Promise<{ chat_id: string; status: boolean }> {
     const {
       t,
@@ -454,6 +603,7 @@ export class TransferChatUseCase {
       targetWorker,
       chatbotTarget,
       actorUserId,
+      webhookSource,
     } = input;
     const chatbotId = body.chatbot_id;
     if (!chatbotId) {
@@ -465,17 +615,51 @@ export class TransferChatUseCase {
       targetWorker,
       chatbotTarget
     );
+    const transferRevision =
+      chat.meta?.assignment_event_id ??
+      chat.meta?.status_event_id ??
+      chat.meta?.outbound_webhook_event_ids?.at(-1) ??
+      chat.started_at ??
+      chat.date;
 
     const saved = await this.chatService.saveChat(updatedChat, {
       allowHumanToAutomation: true,
       refresh: true,
+      outboundWebhook: {
+        eventTypes: [
+          'chat.transferred',
+          ...(isChatbotStatus(chat.status)
+            ? []
+            : (['chat.automation.started'] as const)),
+        ],
+        idempotencyKey: `chat-transfer:${chat.chat_id}:chatbot:${chatbotId}:${transferRevision}`,
+        source: webhookSource,
+        previousChat: chat,
+        actor: { type: 'user', id: actorUserId },
+        changes: {
+          target_type: 'automation',
+          target_chatbot_id: chatbotId,
+          target_worker_id: targetWorker.id,
+          previous_status: chat.status,
+          status: updatedChat.status,
+        },
+      },
     });
     if (!saved) {
       throw new Error(t('chat_transfer_failed'));
     }
 
-    await this.chatService.clearChatSummary(params.chat_id, accountId);
+    await this.chatService.clearChatSummary(params.chat_id, accountId, {
+      operationId: uuidv7(),
+      enforceExpectedSummaryRevision: true,
+      expectedSummaryRevision: chat.summary?.revision ?? 0,
+      enforceExpectedLastMessageId: true,
+      expectedLastMessageId: chat.summary?.last_message_id ?? null,
+    });
     await this.invalidateTransferCache(accountId, chat, updatedChat);
+    await this.operatorReplyPendingRedistributionTracker?.handleChatTransition(
+      updatedChat
+    );
     await this.publishChatUpdate(updatedChat, accountId, actorUserId);
     await this.bootstrapChatbotTransfer(
       t,
@@ -704,7 +888,8 @@ export class TransferChatUseCase {
     actorUserId: string,
     permissionRoleId: string | null,
     actions: IJwtGroupHierarchy[],
-    userChannels: { id: string; name: string }[] = []
+    userChannels: { id: string; name: string }[] = [],
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<{ chat_id: string; status: boolean }> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -732,10 +917,6 @@ export class TransferChatUseCase {
       throw new Error(t('chat_only_primary_can_transfer'));
     }
 
-    if (body.user_id && chat.user?.id && body.user_id === chat.user.id) {
-      throw new Error(t('chat_cannot_transfer_to_current_primary'));
-    }
-
     this.validateChatbotTransferTarget(t, body);
 
     const requestedDisableSendMessageOnTransfer =
@@ -753,27 +934,77 @@ export class TransferChatUseCase {
       body
     );
 
-    if (channelIds.length > 0 && !channelIds.includes(targetWorker.id)) {
+    if (
+      !canUseChannelForTransferAndForwarding(
+        targetWorker.id,
+        userChannels,
+        actions
+      )
+    ) {
       throw new Error(t('chat_access_denied'));
     }
 
     if (body.chatbot_id) {
+      if (this.chatbotTransferService) {
+        const operationId = uuidv7();
+        const result = await this.chatbotTransferService.transfer({
+          t,
+          accountId,
+          chat,
+          targetWorkerId: targetWorker.id,
+          targetChatbotId: body.chatbot_id,
+          operationId,
+          eventEpochMillis: Date.now(),
+          source: webhookSource,
+          actor: { type: 'user', id: actorUserId },
+        });
+
+        if (!result.concurrentActivity) {
+          await this.chatbotFlowRunnerService.bootstrapTransferredChatbot(
+            t,
+            result.chat,
+            result.target.chatbotId,
+            operationId,
+            [chat.worker.id]
+          );
+        }
+
+        if (body.annotation?.trim()) {
+          await this.sendAnnotationMessage(
+            t,
+            accountId,
+            params.chat_id,
+            body.annotation
+          );
+        }
+
+        return { chat_id: params.chat_id, status: true };
+      }
+
       const chatbotTarget = await this.resolveChatbotTransferTarget(
         t,
         targetWorker.id,
         body.chatbot_id
       );
 
-      return this.executeChatbotTransfer({
+      return this.withTargetChatIdentityGuard(
         t,
         accountId,
-        params,
-        body,
         chat,
         targetWorker,
-        chatbotTarget,
-        actorUserId,
-      });
+        () =>
+          this.executeChatbotTransfer({
+            t,
+            accountId,
+            params,
+            body,
+            chat,
+            targetWorker,
+            chatbotTarget,
+            actorUserId,
+            webhookSource,
+          })
+      );
     }
 
     const isChannelChanged = targetWorker.id !== chat.worker.id;
@@ -840,34 +1071,101 @@ export class TransferChatUseCase {
       secondaryUsers
     );
 
+    // A client can retry after the first response was lost. Once the exact
+    // human target state is already durable, acknowledge it without appending
+    // another webhook marker or repeating protocols/notifications.
+    if (this.isHumanTransferAlreadyApplied(chat, updatedChat)) {
+      return { chat_id: params.chat_id, status: true };
+    }
+
+    if (body.user_id && chat.user?.id && body.user_id === chat.user.id) {
+      throw new Error(t('chat_cannot_transfer_to_current_primary'));
+    }
+
+    const humanTransferIdempotencyKey = this.buildHumanTransferIdempotencyKey({
+      chat,
+      targetWorkerId: targetWorker.id,
+      targetUserId: body.user_id,
+      targetSectorId: body.sector_id,
+      keepInChat,
+    });
+
     let persistedChat = updatedChat;
     let saved = false;
 
-    if (isChatbotStatus(chat.status)) {
-      const handoff = await this.chatService.transferAutomationChatToQueue({
-        accountId,
-        chat,
-        worker: targetWorker,
-        user: updatedChat.user ?? null,
-        sector: updatedChat.sector ?? null,
-        secondaryUsers: [],
-      });
-
-      saved = handoff.chat !== null;
-      persistedChat = handoff.chat ?? updatedChat;
-    } else {
-      saved = await this.chatService.saveChat(updatedChat, {
-        refresh: true,
-      });
-
-      if (saved) {
-        persistedChat =
-          (await this.chatService.findChatByChatId(
+    await this.withTargetChatIdentityGuard(
+      t,
+      accountId,
+      chat,
+      targetWorker,
+      async () => {
+        if (isChatbotStatus(chat.status)) {
+          const handoff = await this.chatService.transferAutomationChatToQueue({
             accountId,
-            params.chat_id
-          )) ?? updatedChat;
+            chat,
+            worker: targetWorker,
+            user: updatedChat.user ?? null,
+            sector: updatedChat.sector ?? null,
+            secondaryUsers: [],
+            outboundWebhook: {
+              eventTypes: [
+                'chat.transferred',
+                'chat.automation.finished',
+                'chat.queued',
+              ],
+              idempotencyKey: humanTransferIdempotencyKey,
+              source: webhookSource,
+              previousChat: chat,
+              actor: { type: 'user', id: actorUserId },
+              changes: {
+                target_type: body.user_id ? 'user' : 'sector',
+                target_user_id: body.user_id ?? null,
+                target_sector_id: body.sector_id ?? null,
+                target_worker_id: targetWorker.id,
+                previous_status: chat.status,
+                status: EChatStatus.queue,
+              },
+            },
+          });
+
+          saved = Boolean(handoff.chat && handoff.applied);
+          persistedChat = handoff.chat ?? updatedChat;
+        } else {
+          saved = await this.chatService.saveChat(updatedChat, {
+            refresh: true,
+            outboundWebhook: {
+              eventTypes: [
+                'chat.transferred',
+                ...(chat.status !== EChatStatus.queue
+                  ? (['chat.queued'] as const)
+                  : []),
+              ],
+              idempotencyKey: humanTransferIdempotencyKey,
+              source: webhookSource,
+              previousChat: chat,
+              actor: { type: 'user', id: actorUserId },
+              changes: {
+                target_type: body.user_id ? 'user' : 'sector',
+                target_user_id: body.user_id ?? null,
+                target_sector_id: body.sector_id ?? null,
+                target_worker_id: targetWorker.id,
+                keep_in_chat: body.keep_in_chat ?? false,
+                previous_status: chat.status,
+                status: updatedChat.status,
+              },
+            },
+          });
+
+          if (saved) {
+            persistedChat =
+              (await this.chatService.findChatByChatId(
+                accountId,
+                params.chat_id
+              )) ?? updatedChat;
+          }
+        }
       }
-    }
+    );
 
     if (!saved) {
       throw new Error(t('chat_transfer_failed'));
@@ -885,9 +1183,18 @@ export class TransferChatUseCase {
       );
     }
 
-    await this.chatService.clearChatSummary(params.chat_id, accountId);
+    await this.chatService.clearChatSummary(params.chat_id, accountId, {
+      operationId: uuidv7(),
+      enforceExpectedSummaryRevision: true,
+      expectedSummaryRevision: chat.summary?.revision ?? 0,
+      enforceExpectedLastMessageId: true,
+      expectedLastMessageId: chat.summary?.last_message_id ?? null,
+    });
 
     await this.invalidateTransferCache(accountId, chat, persistedChat);
+    await this.operatorReplyPendingRedistributionTracker?.handleChatTransition(
+      persistedChat
+    );
 
     const chatWithProtocol = await this.buildChatWithProtocol(
       persistedChat,

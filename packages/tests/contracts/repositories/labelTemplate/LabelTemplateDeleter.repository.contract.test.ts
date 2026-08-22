@@ -31,9 +31,9 @@ describe('LabelTemplateDeleterRepository', () => {
   it('sets deleted_at and returns true on success', async () => {
     const { repository, set } = createRepository(1);
 
-    await expect(repository.deleteLabelTemplateById('lt-1')).resolves.toBe(
-      true
-    );
+    await expect(
+      repository.deleteLabelTemplateById('lt-1', 'acc-1')
+    ).resolves.toBe(true);
     expect(set).toHaveBeenCalledWith({
       deleted_at: '2026-01-01T00:00:00.000Z',
     });
@@ -42,8 +42,8 @@ describe('LabelTemplateDeleterRepository', () => {
   it('returns false when no row is updated', async () => {
     const { repository } = createRepository(0);
 
-    await expect(repository.deleteLabelTemplateById('lt-1')).resolves.toBe(
-      false
-    );
+    await expect(
+      repository.deleteLabelTemplateById('lt-1', 'acc-1')
+    ).resolves.toBe(false);
   });
 });

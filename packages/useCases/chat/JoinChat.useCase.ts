@@ -1,6 +1,7 @@
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 import { UserService } from '@core/services/user.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import {
@@ -31,35 +32,6 @@ export class JoinChatUseCase {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  private buildUpdatedSecondaryUsers(
-    chat: IChat,
-    joiningUser: NonNullable<IChat['user']>
-  ): IChat['secondary_users'] {
-    const primaryUserId = chat.user?.id ?? null;
-    const byId = new Map<string, NonNullable<IChat['user']>>();
-
-    const existingSecondaryUsers = Array.isArray(chat.secondary_users)
-      ? chat.secondary_users
-      : [];
-
-    for (const secondaryUser of existingSecondaryUsers) {
-      if (!secondaryUser?.id || secondaryUser.id === primaryUserId) {
-        continue;
-      }
-      byId.set(secondaryUser.id, secondaryUser);
-    }
-
-    if (joiningUser.id !== primaryUserId) {
-      byId.set(joiningUser.id, joiningUser);
-    }
-
-    if (byId.size === 0) {
-      return [];
-    }
-
-    return Array.from(byId.values());
-  }
-
   private async publishChatUpdate(
     chat: IChat,
     accountId: string
@@ -86,7 +58,8 @@ export class JoinChatUseCase {
     userId: string,
     actions: IJwtGroupHierarchy[],
     userSectors: string[],
-    userChannels: { id: string; name: string }[] = []
+    userChannels: { id: string; name: string }[] = [],
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<IChat> {
     void body;
 
@@ -131,14 +104,29 @@ export class JoinChatUseCase {
       photo: userData.photo,
       entered_at: currentDate,
     };
+    const participantRevision =
+      chat.meta?.assignment_event_id ??
+      chat.meta?.outbound_webhook_event_ids?.at(-1) ??
+      chat.started_at ??
+      chat.date;
 
-    const updatedChat: IChat = {
-      ...chat,
-      secondary_users: this.buildUpdatedSecondaryUsers(chat, joiningUser),
-    };
-
-    const saved = await this.chatService.saveChat(updatedChat);
-    if (!saved) {
+    const updatedChat = await this.chatService.mutateSecondaryUserAtomically({
+      accountId,
+      chat,
+      operation: 'join',
+      user: joiningUser,
+      outboundWebhook: {
+        eventTypes: ['chat.joined'],
+        idempotencyKey: `chat-join:${chat.chat_id}:${userId}:${participantRevision}`,
+        source: webhookSource,
+        previousChat: chat,
+        actor: { type: 'user', id: userId },
+        changes: {
+          joined_user: joiningUser,
+        },
+      },
+    });
+    if (!updatedChat) {
       throw new Error(t('chat_join_failed'));
     }
 

@@ -248,4 +248,44 @@ describe('ContainerHealthService', () => {
       })
     );
   });
+
+  it('fails and destroys a Docker exec stream that never reaches end', async () => {
+    jest.useFakeTimers();
+    try {
+      const service = new ContainerHealthService();
+      const execStream = Object.assign(new EventEmitter(), {
+        destroy: jest.fn(),
+      });
+
+      (service as any).docker = {
+        getContainer: jest.fn(() => ({
+          exec: jest.fn(async () => ({
+            start: jest.fn(async () => execStream),
+            inspect: jest.fn(async () => ({ ExitCode: 0 })),
+          })),
+        })),
+        modem: {
+          demuxStream: jest.fn(),
+        },
+      };
+
+      const pending = (service as any).getHttpStatusCode(
+        'container-1',
+        'http://127.0.0.1'
+      );
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      await expect(pending).resolves.toEqual(
+        expect.objectContaining({
+          statusCode: '',
+          error: 'container_health_exec_stream_timeout',
+        })
+      );
+      expect(execStream.destroy).toHaveBeenCalledTimes(1);
+      expect(execStream.listenerCount('end')).toBe(0);
+      expect(execStream.listenerCount('error')).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

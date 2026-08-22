@@ -6,6 +6,8 @@ import { viewContactEmail } from './methods/viewContactEmail';
 import { viewContactDocument } from './methods/viewContactDocument';
 import { deleteContact } from './methods/deleteContact';
 import { bulkDeleteContact } from './methods/bulkDeleteContact';
+import { bulkUpdateContactLabels } from './methods/bulkUpdateContactLabels';
+import { bulkUpdateContactDetails } from './methods/bulkUpdateContactDetails';
 import { editContact } from './methods/editContact';
 import { createContact } from './methods/createContact';
 import { exportContact } from './methods/exportContact';
@@ -26,6 +28,8 @@ class ContactController {
   public viewContactDocument = viewContactDocument;
   public deleteContact = deleteContact;
   public bulkDeleteContact = bulkDeleteContact;
+  public bulkUpdateContactLabels = bulkUpdateContactLabels;
+  public bulkUpdateContactDetails = bulkUpdateContactDetails;
   public editContact = editContact;
   public createContact = createContact;
   public exportContact = exportContact;

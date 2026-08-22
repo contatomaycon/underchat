@@ -10,6 +10,7 @@ import {
   apiPostFormWithMessage,
   apiPut,
   type ApiFormRequestOptions,
+  type ApiDetailedResponse,
 } from './client';
 import {
   MY_CHATS_STATUS,
@@ -19,6 +20,9 @@ import {
   type ListMessageResult,
   type ListChatsResult,
   type MessageContentLinkPreview,
+  type OfficialConversationContextResponse,
+  type OfficialOpeningContextResponse,
+  type OfficialTemplateMessageRequest,
 } from '../types/chat';
 import type {
   ChatContactChannelsItem,
@@ -55,6 +59,84 @@ export interface ChatWorker {
   number: string | null;
   type_id?: string | null;
   is_official?: boolean | null;
+}
+
+export type WorkerCommandActionAttempt = {
+  operationId: string;
+  retryOf?: string;
+};
+
+export type WorkerCommandActionRequestResult = {
+  status: 'accepted' | 'unknown' | 'terminal' | 'rejected';
+  operationId: string;
+};
+
+type WorkerCommandActionErrorData = {
+  acceptance?: unknown;
+  reason?: unknown;
+  operation_id?: unknown;
+};
+
+function resolveWorkerCommandActionResponse(
+  response: ApiDetailedResponse<unknown> | null,
+  operationId: string
+): WorkerCommandActionRequestResult {
+  if (!response || response.httpStatus === null) {
+    return { status: 'unknown', operationId };
+  }
+
+  const responseData = response.data as
+    boolean | WorkerCommandActionErrorData | null;
+  if (
+    response.status &&
+    responseData === true &&
+    (response.operationId === undefined || response.operationId === operationId)
+  ) {
+    return { status: 'accepted', operationId };
+  }
+
+  if (response.status && responseData === true) {
+    return { status: 'unknown', operationId };
+  }
+
+  if (
+    response.httpStatus === 410 &&
+    typeof responseData === 'object' &&
+    responseData?.reason === 'retry_window_elapsed'
+  ) {
+    return { status: 'terminal', operationId };
+  }
+
+  if (
+    response.httpStatus === 408 ||
+    response.httpStatus === 429 ||
+    response.httpStatus >= 500 ||
+    (typeof responseData === 'object' && responseData?.acceptance === 'unknown')
+  ) {
+    return { status: 'unknown', operationId };
+  }
+
+  return { status: 'rejected', operationId };
+}
+
+async function requestWorkerCommandWithOneUnknownRetry<T>(
+  operationId: string,
+  request: () => Promise<T>,
+  classify: (value: T) => WorkerCommandActionRequestResult
+): Promise<{ result: WorkerCommandActionRequestResult; value: T }> {
+  let value = await request();
+  let result = classify(value);
+  if (result.operationId !== operationId) {
+    result = { status: 'unknown', operationId };
+  }
+  if (result.status === 'unknown') {
+    value = await request();
+    result = classify(value);
+    if (result.operationId !== operationId) {
+      result = { status: 'unknown', operationId };
+    }
+  }
+  return { result, value };
 }
 
 export interface ChatUser {
@@ -173,9 +255,11 @@ export interface MessageForwardPayload {
 }
 
 export interface MessageForwardResultItem {
-  target_id: string;
+  target_type: 'chat' | 'contact';
+  target_chat_id?: string | null;
+  target_contact_id?: string | null;
   status: 'sent' | 'failed';
-  reason?: string;
+  message?: string | null;
 }
 
 export interface MessageForwardResponse {
@@ -184,6 +268,11 @@ export interface MessageForwardResponse {
   failed: number;
   results: MessageForwardResultItem[];
 }
+
+export type WorkerCommandForwardRequestResult =
+  WorkerCommandActionRequestResult & {
+    data: MessageForwardResponse | null;
+  };
 
 export type PushSubscriptionProvider = 'webpush' | 'expo' | 'fcm' | 'apns';
 export type PushSubscriptionPlatform = 'web' | 'ios' | 'android';
@@ -392,6 +481,7 @@ interface ApiListMessageResponse {
     total: number;
   };
   results?: ListMessageResult[];
+  official_window?: ListMessageResponse['official_window'];
 }
 
 export async function listMessages(
@@ -415,6 +505,7 @@ export async function listMessages(
   const results = data.results ?? [];
   return {
     results,
+    official_window: data.official_window,
     current_page: pagings.current_page,
     total_pages: pagings.total_pages,
     per_page: pagings.per_page,
@@ -432,9 +523,15 @@ export async function createMessage(
   quickMessageTemplateId?: string | null,
   hash?: string | null
 ): Promise<{ ok: boolean; message: ListMessageResult | null }> {
+  const operationId = hash?.trim();
+  if (!operationId) {
+    return { ok: false, message: null };
+  }
+
   const payload: {
     type: string;
     message: string;
+    operation_id: string;
     message_quoted_id?: string;
     link_preview?: MessageContentLinkPreview;
     quick_message_template_id?: string;
@@ -442,6 +539,7 @@ export async function createMessage(
   } = {
     type,
     message: message ?? '',
+    operation_id: operationId,
   };
 
   if (
@@ -502,66 +600,145 @@ export async function listQuickMessageTemplates(
 export async function reactToMessage(
   chatId: string,
   messageId: string,
-  emoji: string
-): Promise<boolean> {
-  if (!chatId || !messageId) return false;
+  emoji: string,
+  attempt: WorkerCommandActionAttempt
+): Promise<WorkerCommandActionRequestResult> {
+  if (!chatId || !messageId) {
+    return { status: 'rejected', operationId: attempt.operationId };
+  }
   const normalizedEmoji = emoji.trim();
-  if (!normalizedEmoji) return false;
+  if (!normalizedEmoji) {
+    return { status: 'rejected', operationId: attempt.operationId };
+  }
 
-  const res = await apiPost<boolean>(
-    `/chat/${chatId}/message/${messageId}/react`,
-    { emoji: normalizedEmoji }
+  const { result } = await requestWorkerCommandWithOneUnknownRetry(
+    attempt.operationId,
+    () =>
+      apiPostWithMessage<boolean | WorkerCommandActionErrorData>(
+        `/chat/${chatId}/message/${messageId}/react`,
+        {
+          emoji: normalizedEmoji,
+          operation_id: attempt.operationId,
+          ...(attempt.retryOf ? { retry_of: attempt.retryOf } : {}),
+        }
+      ),
+    (response) =>
+      resolveWorkerCommandActionResponse(response, attempt.operationId)
   );
-
-  return !!res?.status;
+  return result;
 }
 
 export async function editMessage(
   chatId: string,
   messageId: string,
-  message: string
-): Promise<boolean> {
-  if (!chatId || !messageId) return false;
-  if (!message || message.trim().length === 0) return false;
+  message: string,
+  attempt: WorkerCommandActionAttempt
+): Promise<WorkerCommandActionRequestResult> {
+  if (!chatId || !messageId || !message || message.trim().length === 0) {
+    return { status: 'rejected', operationId: attempt.operationId };
+  }
 
-  const res = await apiPost<boolean>(
-    `/chat/${chatId}/message/${messageId}/edit`,
-    {
-      message: message.trim(),
-    }
+  const { result } = await requestWorkerCommandWithOneUnknownRetry(
+    attempt.operationId,
+    () =>
+      apiPostWithMessage<boolean | WorkerCommandActionErrorData>(
+        `/chat/${chatId}/message/${messageId}/edit`,
+        {
+          message: message.trim(),
+          operation_id: attempt.operationId,
+          ...(attempt.retryOf ? { retry_of: attempt.retryOf } : {}),
+        }
+      ),
+    (response) =>
+      resolveWorkerCommandActionResponse(response, attempt.operationId)
   );
-
-  return !!res?.status;
+  return result;
 }
 
 export async function deleteMessage(
   chatId: string,
-  messageId: string
-): Promise<boolean> {
-  if (!chatId || !messageId) return false;
+  messageId: string,
+  attempt: WorkerCommandActionAttempt
+): Promise<WorkerCommandActionRequestResult> {
+  if (!chatId || !messageId) {
+    return { status: 'rejected', operationId: attempt.operationId };
+  }
 
-  const res = await apiPost<boolean>(
-    `/chat/${chatId}/message/${messageId}/delete`,
-    {}
+  const { result } = await requestWorkerCommandWithOneUnknownRetry(
+    attempt.operationId,
+    () =>
+      apiPostWithMessage<boolean | WorkerCommandActionErrorData>(
+        `/chat/${chatId}/message/${messageId}/delete`,
+        {
+          operation_id: attempt.operationId,
+          ...(attempt.retryOf ? { retry_of: attempt.retryOf } : {}),
+        }
+      ),
+    (response) =>
+      resolveWorkerCommandActionResponse(response, attempt.operationId)
   );
-
-  return !!res?.status;
+  return result;
 }
 
 export async function forwardMessage(
   chatId: string,
   messageId: string,
-  payload: MessageForwardPayload
-): Promise<MessageForwardResponse | null> {
-  if (!chatId || !messageId) return null;
+  payload: MessageForwardPayload,
+  attempt: WorkerCommandActionAttempt
+): Promise<WorkerCommandForwardRequestResult> {
+  if (!chatId || !messageId) {
+    return {
+      status: 'rejected',
+      operationId: attempt.operationId,
+      data: null,
+    };
+  }
 
-  const res = await apiPost<MessageForwardResponse>(
-    `/chat/${chatId}/message/${messageId}/forward`,
-    payload
-  );
+  const classifyForward = (
+    response: ApiDetailedResponse<
+      MessageForwardResponse | WorkerCommandActionErrorData
+    > | null
+  ): WorkerCommandActionRequestResult => {
+    if (
+      response?.status &&
+      response.idempotencyKey === attempt.operationId &&
+      response.data &&
+      typeof response.data === 'object' &&
+      'results' in response.data
+    ) {
+      return { status: 'accepted', operationId: attempt.operationId };
+    }
+    if (response?.status) {
+      return { status: 'unknown', operationId: attempt.operationId };
+    }
+    return resolveWorkerCommandActionResponse(response, attempt.operationId);
+  };
+  const { result, value: response } =
+    await requestWorkerCommandWithOneUnknownRetry(
+      attempt.operationId,
+      () =>
+        apiPostWithMessage<
+          MessageForwardResponse | WorkerCommandActionErrorData
+        >(`/chat/${chatId}/message/${messageId}/forward`, {
+          ...payload,
+          idempotency_key: attempt.operationId,
+          ...(attempt.retryOf ? { retry_of: attempt.retryOf } : {}),
+        }),
+      classifyForward
+    );
 
-  if (!res?.status) return null;
-  return res.data ?? null;
+  if (
+    result.status === 'accepted' &&
+    response?.data &&
+    typeof response.data === 'object' &&
+    'results' in response.data
+  ) {
+    return {
+      ...result,
+      data: response.data as MessageForwardResponse,
+    };
+  }
+  return { ...result, data: null };
 }
 
 export async function registerPushSubscription(
@@ -591,6 +768,27 @@ export async function createMessageWithFormData(
   message: ListMessageResult | null;
   error: string | null;
 }> {
+  const readableFormData = formData as FormData & {
+    get?: (name: string) => FormDataEntryValue | null;
+    append?: (name: string, value: string) => void;
+  };
+  if (
+    typeof readableFormData.get === 'function' &&
+    typeof readableFormData.append === 'function'
+  ) {
+    const operationId = readableFormData.get('operation_id');
+    const hash = readableFormData.get('hash');
+    if (typeof operationId !== 'string' || operationId.trim().length === 0) {
+      if (typeof hash !== 'string' || hash.trim().length === 0) {
+        return {
+          ok: false,
+          message: null,
+          error: 'worker_command_operation_id_required',
+        };
+      }
+      readableFormData.append('operation_id', hash.trim());
+    }
+  }
   const res = await apiPostFormWithMessage<ListMessageResult | null>(
     `/chat/${chatId}`,
     formData,
@@ -1609,6 +1807,43 @@ export async function viewWorkerConfigForChat(
   return res?.data ?? null;
 }
 
+export async function viewOfficialOpeningContext(
+  workerId: string,
+  contactId: string
+): Promise<OfficialOpeningContextResponse | null> {
+  if (!workerId || !contactId) return null;
+  const res = await apiGet<OfficialOpeningContextResponse>(
+    '/chat/official-opening/context',
+    {
+      worker_id: workerId,
+      contact_id: contactId,
+    }
+  );
+  return res?.data ?? null;
+}
+
+export async function viewOfficialConversationContext(
+  chatId: string
+): Promise<OfficialConversationContextResponse | null> {
+  if (!chatId || chatId.trim().length === 0) return null;
+  const res = await apiGet<OfficialConversationContextResponse>(
+    `/chat/${chatId}/official-conversation/context`
+  );
+  return res?.data ?? null;
+}
+
+export async function sendOfficialTemplateToChat(
+  chatId: string,
+  officialTemplate: OfficialTemplateMessageRequest
+): Promise<ListChatsResult | null> {
+  if (!chatId || chatId.trim().length === 0) return null;
+  const res = await apiPost<ListChatsResult>(
+    `/chat/${chatId}/official-template`,
+    officialTemplate
+  );
+  return res?.data ?? null;
+}
+
 export type ViewChatAttendanceInactivityResult = {
   disabled: boolean;
 };
@@ -1635,18 +1870,35 @@ export async function updateChatAttendanceInactivity(
   return res?.status === true && res.data?.success === true;
 }
 
-export async function startChatWithContact(
+interface StartChatWithContactBody {
+  contact_id: string;
+  worker_id: string;
+  sector_id?: string;
+  official_template?: OfficialTemplateMessageRequest;
+}
+
+interface StartChatWithContactErrorData {
+  reason?: string;
+}
+
+export interface StartChatWithContactDetailedResult {
+  status: boolean;
+  chat: ListChatsResult | null;
+  reason: string | null;
+  message: string | null;
+  requestId: string | null;
+  httpStatus: number | null;
+}
+
+function buildStartChatWithContactBody(
   contactId: string,
   workerId: string,
-  sectorId?: string | null
-): Promise<ListChatsResult | null> {
+  sectorId?: string | null,
+  officialTemplate?: OfficialTemplateMessageRequest | null
+): StartChatWithContactBody | null {
   if (!contactId || !workerId) return null;
 
-  const body: {
-    contact_id: string;
-    worker_id: string;
-    sector_id?: string;
-  } = {
+  const body: StartChatWithContactBody = {
     contact_id: contactId,
     worker_id: workerId,
   };
@@ -1655,8 +1907,75 @@ export async function startChatWithContact(
     body.sector_id = sectorId;
   }
 
+  if (officialTemplate) {
+    body.official_template = officialTemplate;
+  }
+
+  return body;
+}
+
+export async function startChatWithContact(
+  contactId: string,
+  workerId: string,
+  sectorId?: string | null,
+  officialTemplate?: OfficialTemplateMessageRequest | null
+): Promise<ListChatsResult | null> {
+  const body = buildStartChatWithContactBody(
+    contactId,
+    workerId,
+    sectorId,
+    officialTemplate
+  );
+  if (!body) return null;
+
   const res = await apiPost<ListChatsResult>('/chat/start-with-contact', body);
   return res?.data ?? null;
+}
+
+export async function startChatWithContactDetailed(
+  contactId: string,
+  workerId: string,
+  sectorId?: string | null,
+  officialTemplate?: OfficialTemplateMessageRequest | null
+): Promise<StartChatWithContactDetailedResult> {
+  const body = buildStartChatWithContactBody(
+    contactId,
+    workerId,
+    sectorId,
+    officialTemplate
+  );
+  if (!body) {
+    return {
+      status: false,
+      chat: null,
+      reason: null,
+      message: null,
+      requestId: null,
+      httpStatus: null,
+    };
+  }
+
+  const response = await apiPostWithMessage<
+    ListChatsResult | StartChatWithContactErrorData
+  >('/chat/start-with-contact', body);
+  const data = response?.data;
+  const chat =
+    data && 'chat_id' in data && typeof data.chat_id === 'string'
+      ? (data as ListChatsResult)
+      : null;
+  const reason =
+    data && 'reason' in data && typeof data.reason === 'string'
+      ? data.reason
+      : null;
+
+  return {
+    status: response?.status === true && chat !== null,
+    chat,
+    reason,
+    message: response?.message ?? null,
+    requestId: response?.requestId ?? null,
+    httpStatus: response?.httpStatus ?? null,
+  };
 }
 
 export interface GenerateAiReplyResult {

@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { WorkerCreatorRepository } from '@core/repositories/worker/WorkerCreator.repository';
+import { EWorkerSessionStorage } from '@core/common/enums/EWorkerSessionStorage';
 
 describe('WorkerCreatorRepository', () => {
   it('returns true when insert affects one row', async () => {
@@ -20,13 +21,17 @@ describe('WorkerCreatorRepository', () => {
         server_id: 'server-1',
         account_id: 'account-1',
         name: 'Worker 1',
+        session_storage: EWorkerSessionStorage.postgres,
+        lifecycle_operation_id: 'operation-1',
         recreate_available_at: '2026-06-11T12:02:00.000Z',
-      } as never)
+      })
     ).resolves.toBe(true);
 
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
+        lifecycle_operation_id: 'operation-1',
         recreate_available_at: '2026-06-11T12:02:00.000Z',
+        session_storage: EWorkerSessionStorage.postgres,
       })
     );
   });
@@ -48,7 +53,9 @@ describe('WorkerCreatorRepository', () => {
         server_id: 'server-1',
         account_id: 'account-1',
         name: 'Worker 1',
-      } as never)
+        session_storage: EWorkerSessionStorage.postgres,
+        lifecycle_operation_id: 'operation-1',
+      })
     ).resolves.toBe(false);
   });
 });

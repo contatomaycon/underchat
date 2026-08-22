@@ -3,9 +3,10 @@ import { computed, shallowRef } from 'vue';
 
 type AuthenticatorPlatform = 'linux' | 'macos' | 'windows';
 
-defineProps<{
+const props = defineProps<{
   disabled?: boolean;
   downloading?: boolean;
+  downloadUrls?: Partial<Record<AuthenticatorPlatform, string>>;
 }>();
 
 const emit = defineEmits<{
@@ -59,6 +60,12 @@ const platforms: {
 
 const selectedPlatformMeta = computed(() =>
   platforms.find((platform) => platform.value === selectedPlatform.value)
+);
+
+const selectedDownloadUrl = computed(() =>
+  selectedPlatform.value
+    ? (props.downloadUrls?.[selectedPlatform.value]?.trim() ?? '')
+    : ''
 );
 </script>
 
@@ -132,7 +139,7 @@ const selectedPlatformMeta = computed(() =>
         color="primary"
         variant="flat"
         :loading="downloading"
-        :disabled="disabled || downloading"
+        :disabled="disabled || downloading || !selectedDownloadUrl"
         data-testid="authenticator-download"
         @click="emit('download', selectedPlatformMeta.value)"
       >

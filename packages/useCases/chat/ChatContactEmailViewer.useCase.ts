@@ -12,8 +12,20 @@ export class ChatContactEmailViewerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    contactId: string
+    contactId: string,
+    accountId: string,
+    allowedChannelIds: string[]
   ): Promise<ViewChatContactEmailResponse | null> {
+    const contact = await this.chatContactService.viewChatContactById(
+      contactId,
+      accountId,
+      allowedChannelIds
+    );
+
+    if (!contact) {
+      throw new Error(t('contact_not_found'));
+    }
+
     const email =
       await this.chatContactService.getChatContactEmailDecrypted(contactId);
 

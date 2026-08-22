@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Underchat</title>
+    <script type="module" src="/src/popup.ts"></script>
+  </head>
+  <body>
+    <main class="popup-shell">
+      <section class="brand-row">
+        <div class="brand-mark" aria-hidden="true">
+          <img src="/src/assets/underchat-logo.svg" alt="" />
+        </div>
+        <div>
+          <p class="eyebrow">Underchat</p>
+          <h1>Conectar WhatsApp</h1>
+        </div>
+      </section>
+
+      <section class="tab-state" id="tab-state">
+        <span class="state-dot" id="state-dot"></span>
+        <span id="tab-state-label">Verificando aba atual...</span>
+      </section>
+
+      <form class="token-form" id="token-form">
+        <label for="token-input">Token do canal</label>
+        <textarea
+          id="token-input"
+          name="token"
+          rows="4"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Cole aqui o token gerado na Underchat"
+        ></textarea>
+
+        <div class="action-row" id="action-row">
+          <button class="primary-action" id="connect-button" type="submit">
+            Conectar à Underchat
+          </button>
+          <button class="cancel-action" id="cancel-button" type="button" hidden>
+            Cancelar
+          </button>
+        </div>
+      </form>
+
+      <section class="status-card" id="status-card">
+        <div class="status-icon" id="status-icon"></div>
+        <div>
+          <strong id="status-title">Aguardando token</strong>
+          <p id="status-message">
+            Abra uma aba do WhatsApp Web autenticada, cole o token do canal e
+            inicie a conexão.
+          </p>
+        </div>
+      </section>
+
+      <section class="steps">
+        <div class="step" data-step-id="whatsapp_open" data-status="pending">
+          <span class="step-marker">1</span>
+          <p>WhatsApp Web aberto no Chrome</p>
+        </div>
+        <div
+          class="step"
+          data-step-id="whatsapp_connected"
+          data-status="pending"
+        >
+          <span class="step-marker">2</span>
+          <p>Conexão no WhatsApp</p>
+        </div>
+        <div class="step" data-step-id="token_pasted" data-status="pending">
+          <span class="step-marker">3</span>
+          <p>Token colado nesta extensão</p>
+        </div>
+        <div class="step" data-step-id="session_imported" data-status="pending">
+          <span class="step-marker">4</span>
+          <p>Sessão importada</p>
+        </div>
+        <div class="step" data-step-id="local_cleanup" data-status="pending">
+          <span class="step-marker">5</span>
+          <p>Limpeza local</p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,3 +1,5 @@
+import type { SecureSessionPackage as BrowserSecureSessionPackage } from '@underchat/whatsapp-web-session-browser';
+
 import type { AuthenticatorDeepLinkContext } from './deepLink';
 
 export interface AuthenticatorSession {
@@ -21,21 +23,41 @@ export interface AuthenticatorActionResult {
   status?: number | string;
 }
 
-export interface SecureSessionPackage {
-  account_hint?: string;
-  created_at: string;
-  format_version: string;
-  payload?: unknown;
+export interface SecureSessionPackage extends BrowserSecureSessionPackage {
   payload_ref?: string;
-  source: 'whatsapp_web';
-  target_provider: 'auto' | 'baileys' | 'wwebjs' | 'whatsmeow';
-  web_version?: string;
 }
 
 interface ApiEnvelope<T> {
   data?: T;
+  error?: string;
+  fail_reason?: string;
   message?: string;
   status?: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function extractApiErrorMessage(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const scopes = [value];
+  if (isRecord(value.data)) scopes.push(value.data);
+  if (isRecord(value.error)) scopes.push(value.error);
+
+  for (const key of ['fail_reason', 'error', 'message'] as const) {
+    for (const scope of scopes) {
+      const candidate = scope[key];
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+  }
+
+  return null;
 }
 
 type ApiLogFn = (
@@ -122,7 +144,13 @@ export class AuthenticatorApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`API retornou HTTP ${response.status}.`);
+        const errorPayload = (await response
+          .json()
+          .catch(() => null)) as unknown;
+        throw new Error(
+          extractApiErrorMessage(errorPayload) ??
+            `API retornou HTTP ${response.status}.`
+        );
       }
 
       if (response.status === 204) {
@@ -139,7 +167,9 @@ export class AuthenticatorApiClient {
       ) {
         const envelope = json as ApiEnvelope<T>;
         if (envelope.status === false) {
-          throw new Error(envelope.message ?? 'API retornou erro.');
+          throw new Error(
+            extractApiErrorMessage(envelope) ?? 'API retornou erro.'
+          );
         }
         return (envelope.data ?? ({} as T)) as T;
       }

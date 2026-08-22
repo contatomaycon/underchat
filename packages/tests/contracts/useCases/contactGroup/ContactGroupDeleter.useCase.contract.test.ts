@@ -15,9 +15,9 @@ describe('ContactGroupDeleterUseCase', () => {
     const useCase = new ContactGroupDeleterUseCase(service as never);
     const t = jest.fn((key: string) => key);
 
-    await expect(useCase.execute(t as never, 'cg-1')).rejects.toThrow(
-      'contact_group_not_found'
-    );
+    await expect(
+      useCase.execute(t as never, 'cg-1', 'account-1')
+    ).rejects.toThrow('contact_group_not_found');
     expect(service.deleteContactGroup).not.toHaveBeenCalled();
   });
 
@@ -27,9 +27,16 @@ describe('ContactGroupDeleterUseCase', () => {
       deleteContactGroup: jest.fn(async () => false),
     };
     const useCase = new ContactGroupDeleterUseCase(service as never);
+    const t = jest.fn();
 
-    await expect(useCase.execute(jest.fn() as never, 'cg-1')).resolves.toBe(
-      false
+    await expect(
+      useCase.execute(t as never, 'cg-1', 'account-1', 'user-1')
+    ).resolves.toBe(false);
+    expect(service.deleteContactGroup).toHaveBeenCalledWith(
+      t,
+      'cg-1',
+      'account-1',
+      'user-1'
     );
   });
 });

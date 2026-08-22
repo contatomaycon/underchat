@@ -17,6 +17,8 @@ import Redis from 'ioredis';
 import { withLock } from '@core/common/functions/withLock';
 import { createI18nInstance } from '@core/common/functions/createI18nInstance';
 import { CreditCardFeeService } from './creditCardFee.service';
+import { PlanEntitlementService } from './planEntitlement.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
 export class PlanRenewalService {
@@ -42,8 +44,35 @@ export class PlanRenewalService {
     private readonly creditCardFeeService: CreditCardFeeService,
     @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    @inject(PlanEntitlementService)
+    private readonly planEntitlementService: PlanEntitlementService
   ) {}
+
+  private readonly deactivateAccountAfterRenewalFailure = async (
+    accountId: string,
+    planId: string
+  ): Promise<void> => {
+    await this.planEntitlementService.refreshAfterMutation(
+      accountId,
+      EPlanProduct.integration
+    );
+    await Promise.all([
+      this.accountUpdaterRepository.updateAccountStatusById(
+        accountId,
+        EAccountStatus.inactive
+      ),
+      this.notificationMessageService.sendPlanNotification(
+        accountId,
+        planId,
+        ENotificationTypeId.recurring_payment_failure
+      ),
+    ]);
+    await this.planEntitlementService.refreshAfterMutation(
+      accountId,
+      EPlanProduct.integration
+    );
+  };
 
   processRenewals = async (): Promise<void> => {
     this.monthlyCreditCardFeeRate = null;
@@ -217,17 +246,10 @@ export class PlanRenewalService {
         `Usuário master não encontrado para account_id: ${planAccount.account_id}`
       );
 
-      await Promise.all([
-        this.accountUpdaterRepository.updateAccountStatusById(
-          planAccount.account_id,
-          EAccountStatus.inactive
-        ),
-        this.notificationMessageService.sendPlanNotification(
-          planAccount.account_id,
-          planAccount.plan_id,
-          ENotificationTypeId.recurring_payment_failure
-        ),
-      ]);
+      await this.deactivateAccountAfterRenewalFailure(
+        planAccount.account_id,
+        planAccount.plan_id
+      );
 
       return;
     }
@@ -244,17 +266,10 @@ export class PlanRenewalService {
         error
       );
 
-      await Promise.all([
-        this.accountUpdaterRepository.updateAccountStatusById(
-          planAccount.account_id,
-          EAccountStatus.inactive
-        ),
-        this.notificationMessageService.sendPlanNotification(
-          planAccount.account_id,
-          planAccount.plan_id,
-          ENotificationTypeId.recurring_payment_failure
-        ),
-      ]);
+      await this.deactivateAccountAfterRenewalFailure(
+        planAccount.account_id,
+        planAccount.plan_id
+      );
 
       return;
     }
@@ -269,17 +284,10 @@ export class PlanRenewalService {
         `Cartão padrão não encontrado para user_id: ${masterUser.user_id}`
       );
 
-      await Promise.all([
-        this.accountUpdaterRepository.updateAccountStatusById(
-          planAccount.account_id,
-          EAccountStatus.inactive
-        ),
-        this.notificationMessageService.sendPlanNotification(
-          planAccount.account_id,
-          planAccount.plan_id,
-          ENotificationTypeId.recurring_payment_failure
-        ),
-      ]);
+      await this.deactivateAccountAfterRenewalFailure(
+        planAccount.account_id,
+        planAccount.plan_id
+      );
 
       return;
     }
@@ -304,17 +312,10 @@ export class PlanRenewalService {
         `Falha ao criar pagamento para plan_account ${planAccount.plan_account_id}`
       );
 
-      await Promise.all([
-        this.accountUpdaterRepository.updateAccountStatusById(
-          planAccount.account_id,
-          EAccountStatus.inactive
-        ),
-        this.notificationMessageService.sendPlanNotification(
-          planAccount.account_id,
-          planAccount.plan_id,
-          ENotificationTypeId.recurring_payment_failure
-        ),
-      ]);
+      await this.deactivateAccountAfterRenewalFailure(
+        planAccount.account_id,
+        planAccount.plan_id
+      );
 
       return;
     }
@@ -323,39 +324,35 @@ export class PlanRenewalService {
       paymentResult.payment.status
     );
 
-    const accountPaymentId = await this.planService.createAccountPayment({
-      accountId: planAccount.account_id,
-      userCustomerId: customer.user_customer_id,
-      planId: planAccount.plan_id,
-      billing: paymentResult.payment.id || '',
-      paymentBillingTypeId: EPaymentBillingType.credit_card,
-      value: paymentValue.toString(),
-      netValue:
-        paymentResult.payment.netValue?.toString() || paymentValue.toString(),
-      pixTransaction: null,
-      paymentStatusId,
-      billingPeriodId: planAccount.billing_period_id,
-      invoiceUrl: paymentResult.payment.invoiceUrl || null,
-      recurringPayment: true,
-      isAddonOnly: false,
-      userCardId: defaultCard.user_card_id,
-      installment: null,
-    });
+    const billingPeriod = this.getBillingPeriod(planAccount.billing_period_id);
+    const addons = planAccount.cross_sells.map((crossSell) => ({
+      plan_cross_sell_id: crossSell.plan_cross_sell_id,
+    }));
 
-    if (planAccount.cross_sells.length > 0) {
-      const billingPeriod = this.getBillingPeriod(
-        planAccount.billing_period_id
-      );
-      const addons = planAccount.cross_sells.map((crossSell) => ({
-        plan_cross_sell_id: crossSell.plan_cross_sell_id,
-      }));
-
-      await this.planService.createAccountPaymentCrossSells({
-        accountPaymentId,
+    const accountPaymentId =
+      await this.planService.createAccountPaymentWithCrossSells({
+        payment: {
+          accountId: planAccount.account_id,
+          userCustomerId: customer.user_customer_id,
+          planId: planAccount.plan_id,
+          billing: paymentResult.payment.id || '',
+          paymentBillingTypeId: EPaymentBillingType.credit_card,
+          value: paymentValue.toString(),
+          netValue:
+            paymentResult.payment.netValue?.toString() ||
+            paymentValue.toString(),
+          pixTransaction: null,
+          paymentStatusId,
+          billingPeriodId: planAccount.billing_period_id,
+          invoiceUrl: paymentResult.payment.invoiceUrl || null,
+          recurringPayment: true,
+          isAddonOnly: false,
+          userCardId: defaultCard.user_card_id,
+          installment: null,
+        },
         addons,
         billingPeriod,
       });
-    }
 
     if (this.isAsaasPaymentSuccessful(paymentResult.payment.status)) {
       const paymentDate =
@@ -374,17 +371,10 @@ export class PlanRenewalService {
     }
 
     if (this.isPaymentRefused(paymentResult.payment.status)) {
-      await Promise.all([
-        this.accountUpdaterRepository.updateAccountStatusById(
-          planAccount.account_id,
-          EAccountStatus.inactive
-        ),
-        this.notificationMessageService.sendPlanNotification(
-          planAccount.account_id,
-          planAccount.plan_id,
-          ENotificationTypeId.recurring_payment_failure
-        ),
-      ]);
+      await this.deactivateAccountAfterRenewalFailure(
+        planAccount.account_id,
+        planAccount.plan_id
+      );
 
       return;
     }

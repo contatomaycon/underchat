@@ -7,7 +7,8 @@ import { EnqueueRecreateChannelsAllUseCase } from '@core/useCases/config/Enqueue
 import { RecreateChannelsAllRequest } from '@core/schema/config/recreateChannelsAll/request.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
+import { EWorkerSessionStorage } from '@core/common/enums/EWorkerSessionStorage';
+import { IConfigChannelsRecreateAllFilters } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 
 export const recreateChannelsAll = async (
   request: FastifyRequest<{
@@ -19,13 +20,18 @@ export const recreateChannelsAll = async (
     EnqueueRecreateChannelsAllUseCase
   );
   const { t, tokenJwtData } = request;
+  const sessionStorage = request.body.session_storage as
+    | EWorkerSessionStorage
+    | null
+    | undefined;
 
   try {
-    const payload: Omit<IConfigChannelsRecreateAllPayload, 'account_id'> = {
+    const payload: IConfigChannelsRecreateAllFilters = {
       status:
         (request.body.status as EWorkerStatus | null | undefined) ??
         EWorkerStatus.online,
       type: (request.body.type as EWorkerType | null | undefined) ?? undefined,
+      ...(sessionStorage ? { session_storage: sessionStorage } : {}),
       account: request.body.account || undefined,
       name: request.body.name || undefined,
       number: request.body.number || undefined,

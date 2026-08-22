@@ -6,3 +6,5 @@ export * from './planCrossSell.model';
 export * from './planCrossSellAccount.model';
 export * from './planAccount.model';
 export * from './planAccountExclusive.model';
+export * from './planLimitEnforcementCheckpoint.model';
+export * from './accountPlanProductEntitlementRevision.model';

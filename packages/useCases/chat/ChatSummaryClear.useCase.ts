@@ -7,6 +7,7 @@ import { ClearChatSummaryParams } from '@core/schema/chat/clearChatSummary/reque
 import { IClearChatSummaryMessage } from '@core/common/interfaces/IClearChatSummaryMessage';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class ChatSummaryClearUseCase {
@@ -54,11 +55,15 @@ export class ChatSummaryClearUseCase {
       const message: IClearChatSummaryMessage = {
         chat_id: params.chat_id,
         account_id: accountId,
+        operation_id: uuidv7(),
+        expected_summary_revision: chat.summary?.revision ?? 0,
+        expected_last_message_id: chat.summary?.last_message_id ?? null,
       };
 
       await this.streamProducerService.send(
         this.kafkaServiceQueueService.clearChatSummary(),
-        message
+        message,
+        `${accountId}:${params.chat_id}`
       );
 
       return true;

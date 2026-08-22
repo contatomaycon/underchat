@@ -12,3 +12,7 @@ export * from './workerProfileStatusContact.model';
 export * from './workerRuntime.model';
 export * from './workerWarmPool.model';
 export * from './workerWarmPoolSettings.model';
+export * from './workerWhatsappSession.model';
+export * from './workerWhatsappSessionStorageMigration.model';
+export * from './workerWhatsappPairingActivationGrant.model';
+export * from './whatsappSqlStore.model';

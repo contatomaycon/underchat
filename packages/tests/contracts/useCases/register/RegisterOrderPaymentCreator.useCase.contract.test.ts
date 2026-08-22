@@ -14,6 +14,7 @@ jest.mock('@core/services/encrypt.service', () => ({
 }));
 
 import { RegisterOrderPaymentCreatorUseCase } from '@core/useCases/register/RegisterOrderPaymentCreator.useCase';
+import { CreditCardSourceSelectionError } from '@core/common/exceptions/UserCardError';
 
 describe('RegisterOrderPaymentCreatorUseCase', () => {
   const buildInput = () => ({
@@ -194,6 +195,54 @@ describe('RegisterOrderPaymentCreatorUseCase', () => {
       )
     ).rejects.toThrow('account_name_cannot_exceed_10_characters');
   });
+
+  it.each([
+    [
+      'both a saved card and new card',
+      {
+        credit_card_id: 'card-1',
+      },
+    ],
+    [
+      'neither a saved card nor a new card',
+      {
+        credit_card_id: undefined,
+        new_card: undefined,
+      },
+    ],
+  ])(
+    'rejects registration with %s before creating an account',
+    async (_description, cardSource) => {
+      const {
+        useCase,
+        accountService,
+        userService,
+        orderPaymentCreatorUseCase,
+      } = buildDeps();
+      const input = {
+        ...buildInput(),
+        ...cardSource,
+      };
+
+      await expect(
+        useCase.execute(
+          jest.fn() as never,
+          {
+            email_c: 'enc:user@example.com',
+            phone_c: 'enc:11999990000',
+          } as never,
+          input as never,
+          '127.0.0.1'
+        )
+      ).rejects.toBeInstanceOf(CreditCardSourceSelectionError);
+
+      expect(
+        accountService.createAccountWithPlanAndApiKey
+      ).not.toHaveBeenCalled();
+      expect(userService.createUser).not.toHaveBeenCalled();
+      expect(orderPaymentCreatorUseCase.execute).not.toHaveBeenCalled();
+    }
+  );
 
   it('throws when user email already exists', async () => {
     const { useCase, userService } = buildDeps({

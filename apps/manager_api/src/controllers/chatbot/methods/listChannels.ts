@@ -17,7 +17,8 @@ export const listChannels = async (
   try {
     const response = await chatbotChannelsListerUseCase.execute(
       tokenJwtData.account_id,
-      tokenJwtData.channels
+      tokenJwtData.channels,
+      tokenJwtData.actions
     );
 
     return sendResponse(reply, {

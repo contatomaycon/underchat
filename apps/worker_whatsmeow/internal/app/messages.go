@@ -3,8 +3,10 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -16,8 +18,11 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.mau.fi/whatsmeow"
@@ -31,6 +36,140 @@ import (
 
 const unsupportedIncomingMessageText = "Mensagem recebida não suportada pelo provedor. Verifique no WhatsApp."
 
+const (
+	defaultMediaDownloadRequestTimeout  = 45 * time.Second
+	defaultMediaDownloadMaxBytes        = int64(128 * 1024 * 1024)
+	maxConcurrentIncomingMediaDownloads = 2
+)
+
+var (
+	errMediaDownloadTooLarge   = errors.New("media download exceeds configured maximum")
+	errMediaDownloadInvalidURL = errors.New("media download URL is invalid")
+	errOutboundPayloadInvalid  = errors.New("outbound payload is invalid")
+)
+
+type mediaDownloadHTTPError struct {
+	StatusCode int
+	Status     string
+}
+
+func (e *mediaDownloadHTTPError) Error() string {
+	if e == nil {
+		return "media download HTTP failure"
+	}
+	return fmt.Sprintf("media download failed: %s", e.Status)
+}
+
+func (e *mediaDownloadHTTPError) Transient() bool {
+	if e == nil {
+		return false
+	}
+	switch e.StatusCode {
+	case http.StatusRequestTimeout,
+		http.StatusTooEarly,
+		http.StatusTooManyRequests:
+		return true
+	default:
+		return e.StatusCode >= http.StatusInternalServerError
+	}
+}
+
+type boundedIncomingMediaFile struct {
+	file     *os.File
+	maxBytes int64
+	mu       sync.Mutex
+}
+
+func newBoundedIncomingMediaFile(
+	file *os.File,
+	maxBytes int64,
+) (*boundedIncomingMediaFile, error) {
+	if file == nil {
+		return nil, errors.New("media temporary file is required")
+	}
+	if maxBytes <= 0 {
+		return nil, errors.New("media download maximum must be positive")
+	}
+	return &boundedIncomingMediaFile{
+		file:     file,
+		maxBytes: maxBytes,
+	}, nil
+}
+
+func (f *boundedIncomingMediaFile) Read(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.file.Read(p)
+}
+
+func (f *boundedIncomingMediaFile) Write(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	offset, err := f.file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+	if f.exceedsLimit(offset, len(p)) {
+		return 0, errMediaDownloadTooLarge
+	}
+	return f.file.Write(p)
+}
+
+func (f *boundedIncomingMediaFile) Seek(
+	offset int64,
+	whence int,
+) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.file.Seek(offset, whence)
+}
+
+func (f *boundedIncomingMediaFile) ReadAt(
+	p []byte,
+	offset int64,
+) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.file.ReadAt(p, offset)
+}
+
+func (f *boundedIncomingMediaFile) WriteAt(
+	p []byte,
+	offset int64,
+) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.exceedsLimit(offset, len(p)) {
+		return 0, errMediaDownloadTooLarge
+	}
+	return f.file.WriteAt(p, offset)
+}
+
+func (f *boundedIncomingMediaFile) Truncate(size int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if size > f.maxBytes {
+		return errMediaDownloadTooLarge
+	}
+	return f.file.Truncate(size)
+}
+
+func (f *boundedIncomingMediaFile) Stat() (os.FileInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.file.Stat()
+}
+
+func (f *boundedIncomingMediaFile) exceedsLimit(
+	offset int64,
+	writeLength int,
+) bool {
+	if offset < 0 || offset > f.maxBytes {
+		return true
+	}
+	return int64(writeLength) > f.maxBytes-offset
+}
+
 type UnsupportedFeatureError struct {
 	Feature string
 }
@@ -39,21 +178,565 @@ func (e UnsupportedFeatureError) Error() string {
 	return "unsupported_whatsmeow_feature:" + e.Feature
 }
 
-func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage) (result map[string]any, err error) {
+type providerInvocationBoundary func(context.Context) error
+
+type providerAuthorizationGuard func(context.Context) error
+
+type providerAuthorizationContextKey struct{}
+type providerTransportEffectContextKey struct{}
+type providerInvocationWatchdogContextKey struct{}
+type providerInvocationWatchdogFactoryContextKey struct{}
+type outboundProviderStallHandlerContextKey struct{}
+type providerInvocationTimeoutContextKey struct{}
+
+var errOutboundProviderCallStalled = errors.New("outbound provider call stalled")
+
+type outboundProviderStallHandler func(context.Context, error) error
+
+const defaultProviderInvocationTimeout = 45 * time.Second
+
+func withProviderInvocationTimeout(
+	ctx context.Context,
+	timeout time.Duration,
+) context.Context {
+	if timeout <= 0 {
+		timeout = defaultProviderInvocationTimeout
+	}
+	return context.WithValue(
+		ctx,
+		providerInvocationTimeoutContextKey{},
+		timeout,
+	)
+}
+
+func providerInvocationTimeoutFromContext(ctx context.Context) time.Duration {
+	if ctx == nil {
+		return 0
+	}
+	configuredTimeout := defaultProviderInvocationTimeout
+	if timeout, ok := ctx.Value(providerInvocationTimeoutContextKey{}).(time.Duration); ok &&
+		timeout > 0 {
+		configuredTimeout = timeout
+		if deadline, hasDeadline := ctx.Deadline(); hasDeadline {
+			remaining := time.Until(deadline)
+			if remaining < configuredTimeout {
+				return remaining
+			}
+		}
+		return configuredTimeout
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		return time.Until(deadline)
+	}
+	return configuredTimeout
+}
+
+func withOutboundProviderStallHandler(
+	ctx context.Context,
+	handler outboundProviderStallHandler,
+) context.Context {
+	if handler == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, outboundProviderStallHandlerContextKey{}, handler)
+}
+
+func outboundProviderStallHandlerFromContext(
+	ctx context.Context,
+) outboundProviderStallHandler {
+	if ctx == nil {
+		return nil
+	}
+	handler, _ := ctx.Value(outboundProviderStallHandlerContextKey{}).(outboundProviderStallHandler)
+	return handler
+}
+
+const (
+	providerInvocationPending uint32 = iota
+	providerInvocationSettled
+	providerInvocationStalled
+)
+
+type providerInvocationWatchdog struct {
+	ctx       context.Context
+	manager   *WhatsAppManager
+	scope     whatsAppRuntimeFence
+	data      ChatMessage
+	startedAt time.Time
+	tracker   *providerTransportEffectTracker
+	onStall   outboundProviderStallHandler
+	armed     atomic.Bool
+	state     atomic.Uint32
+	done      chan struct{}
+	doneOnce  sync.Once
+}
+
+func newProviderInvocationWatchdog(
+	ctx context.Context,
+	manager *WhatsAppManager,
+	scope whatsAppRuntimeFence,
+	data ChatMessage,
+	startedAt time.Time,
+	tracker *providerTransportEffectTracker,
+	onStall outboundProviderStallHandler,
+) *providerInvocationWatchdog {
+	if ctx == nil || manager == nil || !scope.isValid() {
+		return nil
+	}
+	return &providerInvocationWatchdog{
+		ctx:       ctx,
+		manager:   manager,
+		scope:     scope,
+		data:      data,
+		startedAt: startedAt,
+		tracker:   tracker,
+		onStall:   onStall,
+		done:      make(chan struct{}),
+	}
+}
+
+func withProviderInvocationWatchdog(
+	ctx context.Context,
+	watchdog *providerInvocationWatchdog,
+) context.Context {
+	if watchdog == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, providerInvocationWatchdogContextKey{}, watchdog)
+}
+
+func withProviderInvocationWatchdogFactory(
+	ctx context.Context,
+	factory func() *providerInvocationWatchdog,
+) context.Context {
+	if factory == nil {
+		return ctx
+	}
+	return context.WithValue(
+		ctx,
+		providerInvocationWatchdogFactoryContextKey{},
+		factory,
+	)
+}
+
+func providerInvocationWatchdogFromContext(
+	ctx context.Context,
+) *providerInvocationWatchdog {
+	if ctx == nil {
+		return nil
+	}
+	watchdog, _ := ctx.Value(providerInvocationWatchdogContextKey{}).(*providerInvocationWatchdog)
+	if watchdog != nil {
+		return watchdog
+	}
+	factory, _ := ctx.Value(
+		providerInvocationWatchdogFactoryContextKey{},
+	).(func() *providerInvocationWatchdog)
+	if factory != nil {
+		return factory()
+	}
+	return watchdog
+}
+
+func providerInvocationWatchdogFromFactoryContext(
+	ctx context.Context,
+) *providerInvocationWatchdog {
+	if ctx == nil {
+		return nil
+	}
+	factory, _ := ctx.Value(
+		providerInvocationWatchdogFactoryContextKey{},
+	).(func() *providerInvocationWatchdog)
+	if factory == nil {
+		return nil
+	}
+	return factory()
+}
+
+func (w *providerInvocationWatchdog) arm(providerCtx context.Context) {
+	if w == nil || !w.armed.CompareAndSwap(false, true) {
+		return
+	}
+	deadline, hasDeadline := providerCtx.Deadline()
+	if !hasDeadline {
+		return
+	}
+	go func() {
+		remaining := time.Until(deadline)
+		if remaining < 0 {
+			remaining = 0
+		}
+		timer := time.NewTimer(remaining)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-w.done:
+			return
+		}
+		cause := fmt.Errorf(
+			"%w: %w",
+			errOutboundProviderCallStalled,
+			context.DeadlineExceeded,
+		)
+		w.stall(cause)
+	}()
+}
+
+func (w *providerInvocationWatchdog) stall(cause error) bool {
+	if w == nil || !w.state.CompareAndSwap(
+		providerInvocationPending,
+		providerInvocationStalled,
+	) {
+		return false
+	}
+	if cause == nil {
+		cause = fmt.Errorf(
+			"%w: %w",
+			errOutboundProviderCallStalled,
+			context.DeadlineExceeded,
+		)
+	}
+	if w.tracker != nil {
+		w.tracker.markStallReported()
+	}
+	if w.onStall != nil {
+		// Ledger terminalization must not depend on reconnect hooks,
+		// Centrifugo, or the provider's ResetConnection returning.
+		go func() {
+			recoveryCtx, cancel := context.WithTimeout(
+				context.WithoutCancel(w.ctx),
+				outboundRecoveryAttemptTimeout,
+			)
+			defer cancel()
+			if err := w.onStall(recoveryCtx, cause); err != nil {
+				log.Printf(
+					"whatsmeow provider stall ledger terminalization deferred worker_id=%s message_id_hash=%s error_code=%s",
+					w.scope.WorkerID,
+					hashConnectionFlowIdentifier(w.data.MessageID),
+					safeOperationalErrorCode(err),
+				)
+			}
+		}()
+	}
+	// Fence the old runtime and update health before the timed-out provider
+	// invocation can return control to Kafka. Even a slow/unavailable ledger
+	// cannot admit another call behind an SDK flight that ignored its context.
+	w.manager.recordOutboundProviderStall(
+		context.WithoutCancel(w.ctx),
+		w.data,
+		w.scope,
+		time.Since(w.startedAt),
+		cause,
+	)
+	return true
+}
+
+func (w *providerInvocationWatchdog) settle() {
+	if w == nil {
+		return
+	}
+	w.state.CompareAndSwap(providerInvocationPending, providerInvocationSettled)
+	w.doneOnce.Do(func() { close(w.done) })
+}
+
+func (w *providerInvocationWatchdog) stalled() bool {
+	return w != nil && w.state.Load() == providerInvocationStalled
+}
+
+func (w *providerInvocationWatchdog) isArmed() bool {
+	return w != nil && w.armed.Load()
+}
+
+type providerTransportEffectTracker struct {
+	mu            sync.Mutex
+	invocations   int
+	firstError    error
+	stallReported bool
+}
+
+func withProviderTransportEffectTracker(
+	ctx context.Context,
+	tracker *providerTransportEffectTracker,
+) context.Context {
+	if tracker == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, providerTransportEffectContextKey{}, tracker)
+}
+
+func providerTransportEffectTrackerFromContext(
+	ctx context.Context,
+) *providerTransportEffectTracker {
+	if ctx == nil {
+		return nil
+	}
+	tracker, _ := ctx.Value(providerTransportEffectContextKey{}).(*providerTransportEffectTracker)
+	return tracker
+}
+
+func (t *providerTransportEffectTracker) record(err error) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.invocations++
+	if err != nil && t.firstError == nil {
+		t.firstError = err
+	}
+}
+
+func (t *providerTransportEffectTracker) failure() (error, bool) {
+	if t == nil {
+		return nil, false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.firstError, t.invocations > 0
+}
+
+func (t *providerTransportEffectTracker) markStallReported() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.stallReported = true
+	t.mu.Unlock()
+}
+
+func (t *providerTransportEffectTracker) wasStallReported() bool {
+	if t == nil {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.stallReported
+}
+
+func withProviderAuthorizationGuard(ctx context.Context, guard providerAuthorizationGuard) context.Context {
+	return context.WithValue(ctx, providerAuthorizationContextKey{}, guard)
+}
+
+func providerAuthorizationGuardFromContext(ctx context.Context) providerAuthorizationGuard {
+	if ctx == nil {
+		return nil
+	}
+	guard, _ := ctx.Value(providerAuthorizationContextKey{}).(providerAuthorizationGuard)
+	return guard
+}
+
+func assertProviderCallAuthorized(ctx context.Context) error {
+	guard := providerAuthorizationGuardFromContext(ctx)
+	if guard == nil {
+		return fmt.Errorf("provider authorization guard is required")
+	}
+	return guard(ctx)
+}
+
+func invokeProviderAuthorizedCall[T any](
+	ctx context.Context,
+	guard providerAuthorizationGuard,
+	invoke func(context.Context) (T, error),
+) (T, error) {
+	var zero T
+	if guard == nil {
+		return zero, fmt.Errorf("provider authorization guard is required")
+	}
+	if invoke == nil {
+		return zero, fmt.Errorf("provider invocation is required")
+	}
+	if err := guard(ctx); err != nil {
+		return zero, err
+	}
+	if watchdog := providerInvocationWatchdogFromFactoryContext(ctx); watchdog != nil {
+		return invokeProviderOperationWithDeadline(ctx, watchdog, invoke)
+	}
+	result, err := invoke(ctx)
+	providerTransportEffectTrackerFromContext(ctx).record(err)
+	return result, err
+}
+
+func invokeProviderAuthorizedErrorCall(
+	ctx context.Context,
+	guard providerAuthorizationGuard,
+	invoke func(context.Context) error,
+) error {
+	_, err := invokeProviderAuthorizedCall(ctx, guard, func(invokeCtx context.Context) (struct{}, error) {
+		return struct{}{}, invoke(invokeCtx)
+	})
+	return err
+}
+
+type providerInvocationResult[T any] struct {
+	value T
+	err   error
+}
+
+func observeLateProviderInvocation[T any](
+	result <-chan providerInvocationResult[T],
+) {
+	go func() {
+		late := <-result
+		if late.err != nil {
+			log.Printf(
+				"whatsmeow provider invocation rejected after application deadline error_code=%s",
+				safeOperationalErrorCode(late.err),
+			)
+			return
+		}
+		log.Printf("whatsmeow provider invocation resolved after application deadline")
+	}()
+}
+
+func invokeProviderOperationWithDeadline[T any](
+	ctx context.Context,
+	watchdog *providerInvocationWatchdog,
+	invoke func(context.Context) (T, error),
+) (T, error) {
+	var zero T
+	providerTimeout := providerInvocationTimeoutFromContext(ctx)
+	if providerTimeout <= 0 {
+		return zero, context.DeadlineExceeded
+	}
+	providerCtx, cancelProvider := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		providerTimeout,
+	)
+	defer cancelProvider()
+	watchdog.arm(providerCtx)
+	result := make(chan providerInvocationResult[T], 1)
+	go func() {
+		value, invokeErr := invoke(providerCtx)
+		providerTransportEffectTrackerFromContext(providerCtx).record(invokeErr)
+		watchdog.settle()
+		result <- providerInvocationResult[T]{
+			value: value,
+			err:   invokeErr,
+		}
+	}()
+
+	select {
+	case outcome := <-result:
+		if watchdog.stalled() {
+			return zero, fmt.Errorf(
+				"%w: provider returned after its operation deadline",
+				errOutboundProviderCallStalled,
+			)
+		}
+		return outcome.value, outcome.err
+	case <-providerCtx.Done():
+		cause := fmt.Errorf(
+			"%w: %w",
+			errOutboundProviderCallStalled,
+			providerCtx.Err(),
+		)
+		watchdog.stall(cause)
+		observeLateProviderInvocation(result)
+		return zero, cause
+	}
+}
+
+// invokeProviderCallAtBoundary schedules the observed SDK flight immediately
+// after the boundary's durable provider_invoked transition and post-CAS
+// authorization check. When the boundary fails (including an uncertain Redis
+// result or reversal), invoke is not executed and the caller fails closed.
+func invokeProviderCallAtBoundary[T any](
+	ctx context.Context,
+	boundary providerInvocationBoundary,
+	invoke func(context.Context) (T, error),
+) (T, error) {
+	var zero T
+	if ctx == nil {
+		return zero, context.Canceled
+	}
+	if invoke == nil {
+		return zero, fmt.Errorf("provider invocation is required")
+	}
+	if boundary == nil {
+		return zero, fmt.Errorf("provider invocation boundary is required")
+	}
+	// The boundary owns both the durable transition and its final authorization
+	// check. There must be no further await between a successful boundary and
+	// scheduling the SDK call.
+	if err := ctx.Err(); err != nil {
+		return zero, err
+	}
+	if err := boundary(ctx); err != nil {
+		return zero, err
+	}
+	return invokeProviderOperationWithDeadline(
+		ctx,
+		providerInvocationWatchdogFromContext(ctx),
+		invoke,
+	)
+}
+
+func invokeProviderErrorCallAtBoundary(
+	ctx context.Context,
+	boundary providerInvocationBoundary,
+	invoke func(context.Context) error,
+) error {
+	_, err := invokeProviderCallAtBoundary(ctx, boundary, func(invokeCtx context.Context) (struct{}, error) {
+		return struct{}{}, invoke(invokeCtx)
+	})
+	return err
+}
+
+func (m *WhatsAppManager) SendChatMessageWithInvocationBoundary(
+	ctx context.Context,
+	data ChatMessage,
+	authorize providerAuthorizationGuard,
+	boundary providerInvocationBoundary,
+) (result map[string]any, err error) {
+	if authorize == nil {
+		return nil, fmt.Errorf("provider authorization guard is required")
+	}
+	if boundary == nil {
+		return nil, fmt.Errorf("provider invocation boundary is required")
+	}
 	startedAt := time.Now()
 	var target types.JID
 	externalID := ""
+	transportEffects := &providerTransportEffectTracker{}
 	m.logOutgoingSendDebug("whatsmeow.outgoing.send.start", data, target, externalID, 0, nil)
 	m.recordOutboundAttempt(ctx, data)
 	defer func() {
 		if err != nil {
-			m.recordOutboundFailure(ctx, data, time.Since(startedAt), err)
+			if !transportEffects.wasStallReported() {
+				transportErr, providerInvoked := transportEffects.failure()
+				if transportErr == nil {
+					transportErr = err
+					providerInvoked = false
+				}
+				m.recordOutboundFailureWithInvocation(
+					ctx,
+					data,
+					time.Since(startedAt),
+					transportErr,
+					providerInvoked,
+				)
+			}
 			m.logOutgoingSendDebug("whatsmeow.outgoing.send.error", data, target, externalID, time.Since(startedAt), err)
 		}
 	}()
 
 	opCtx, cancel := m.sendOperationContext(ctx)
 	defer cancel()
+	opCtx = withProviderAuthorizationGuard(opCtx, authorize)
+	opCtx = withProviderTransportEffectTracker(opCtx, transportEffects)
+	connectionScope, _ := inboundConnectionScopeFromContext(ctx)
+	opCtx = withProviderInvocationWatchdog(
+		opCtx,
+		newProviderInvocationWatchdog(
+			opCtx,
+			m,
+			connectionScope,
+			data,
+			startedAt,
+			transportEffects,
+			outboundProviderStallHandlerFromContext(ctx),
+		),
+	)
 
 	if !m.IsReady() {
 		return nil, fmt.Errorf("%w: %s", ErrWhatsAppNotReady, m.outboundReadinessReason())
@@ -67,22 +750,49 @@ func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage)
 	if err != nil {
 		return nil, err
 	}
+	resolvedTarget, err := m.resolveOutboundSendTarget(opCtx, client, target, authorize)
+	if err != nil {
+		return nil, err
+	}
+	providerTarget := resolvedTarget.providerTarget
+	sendExtra, err := sendRequestExtraForProviderTarget(target, resolvedTarget)
+	if err != nil {
+		return nil, err
+	}
+	// The USync lookup above is a provider read and may take time. Revalidate
+	// ownership before any subsequent message preparation/provider activity.
+	if err := authorize(opCtx); err != nil {
+		return nil, err
+	}
 	msg, err := m.buildOutgoingMessage(opCtx, client, target, data)
 	if err != nil {
 		return nil, err
 	}
 	if text, ok := typingSimulationText(data); ok {
-		m.simulateTypingBeforeSend(opCtx, client, target, text)
+		typingErr := m.simulateTypingBeforeSend(opCtx, client, providerTarget, text)
+		if err := opCtx.Err(); err != nil {
+			return nil, err
+		}
+		// Presence is best-effort, but a genuine fence revocation is not a
+		// cosmetic presence failure. Fail before provider_invoked so the active
+		// generation can safely reconcile the message.
+		if errors.Is(typingErr, errWhatsAppRuntimeFenceRevoked) {
+			return nil, typingErr
+		}
+	}
+	if err := opCtx.Err(); err != nil {
+		return nil, err
 	}
 	m.logOutgoingSendDebug("whatsmeow.outgoing.send.before_provider", data, target, externalID, time.Since(startedAt), nil)
-	resp, err := client.SendMessage(opCtx, target, msg)
+	resp, err := invokeProviderCallAtBoundary(opCtx, boundary, func(invokeCtx context.Context) (whatsmeow.SendResponse, error) {
+		return client.SendMessage(invokeCtx, providerTarget, msg, sendExtra)
+	})
 	if err != nil {
 		return nil, err
 	}
 	externalID = string(resp.ID)
 	m.recordOutboundSuccess(ctx, data, time.Since(startedAt), externalID)
 	m.logOutgoingSendDebug("whatsmeow.outgoing.send.ack.success", data, target, externalID, time.Since(startedAt), nil)
-	m.markChatAsReadAppState(opCtx, client, sentChatReadMessageKey(data, target, string(resp.ID)), target, time.Now())
 	return map[string]any{
 		"key": map[string]any{
 			"id":        externalID,
@@ -92,10 +802,79 @@ func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage)
 	}, nil
 }
 
-func (m *WhatsAppManager) SendProfileStatus(ctx context.Context, data ProfileStatusMessage) (string, error) {
+func sendRequestExtraForProviderTarget(
+	logicalTarget types.JID,
+	resolvedTarget outboundSendTargetResolution,
+) (whatsmeow.SendRequestExtra, error) {
+	logicalTarget = logicalTarget.ToNonAD()
+	providerTarget := resolvedTarget.providerTarget
+	recipientPN := resolvedTarget.recipientPN
+	if logicalTarget.Server != types.DefaultUserServer {
+		return whatsmeow.SendRequestExtra{}, nil
+	}
+	if !isValidNonADNumericJID(logicalTarget, types.DefaultUserServer) {
+		return whatsmeow.SendRequestExtra{}, fmt.Errorf(
+			"%w: invalid logical PN %s",
+			errOutboundTargetInvalid,
+			logicalTarget,
+		)
+	}
+	if !isValidNonADNumericJID(providerTarget, types.HiddenUserServer) ||
+		!isValidNonADNumericJID(recipientPN, types.DefaultUserServer) ||
+		(recipientPN.User != logicalTarget.User &&
+			!isBrazilMobileNinthDigitAlias(logicalTarget.User, recipientPN.User)) {
+		return whatsmeow.SendRequestExtra{}, fmt.Errorf(
+			"%w: inconsistent pre-resolved target (logical=%s provider=%s recipient_pn=%s)",
+			errOutboundTargetLIDUnavailable,
+			logicalTarget,
+			providerTarget,
+			recipientPN,
+		)
+	}
+	return whatsmeow.SendRequestExtra{PreResolvedRecipientPN: recipientPN}, nil
+}
+
+func (m *WhatsAppManager) withAuxiliaryProviderInvocationWatchdog(
+	ctx context.Context,
+	operationID string,
+) context.Context {
+	scope, ok := inboundConnectionScopeFromContext(ctx)
+	if !ok || !scope.isValid() {
+		return ctx
+	}
+	tracker := &providerTransportEffectTracker{}
+	trackedCtx := withProviderTransportEffectTracker(ctx, tracker)
+	return withProviderInvocationWatchdogFactory(
+		trackedCtx,
+		func() *providerInvocationWatchdog {
+			return newProviderInvocationWatchdog(
+				trackedCtx,
+				m,
+				scope,
+				ChatMessage{MessageID: operationID},
+				time.Now(),
+				tracker,
+				nil,
+			)
+		},
+	)
+}
+
+func (m *WhatsAppManager) SendProfileStatusWithInvocationBoundary(ctx context.Context, data ProfileStatusMessage, boundary providerInvocationBoundary) (string, error) {
+	if boundary == nil {
+		return "", fmt.Errorf("provider invocation boundary is required")
+	}
 	opCtx, cancel := m.sendOperationContext(ctx)
 	defer cancel()
+	opCtx = withProviderAuthorizationGuard(opCtx, providerAuthorizationGuard(boundary))
+	opCtx = m.withAuxiliaryProviderInvocationWatchdog(
+		opCtx,
+		"profile_status:"+firstNonEmpty(data.WorkerProfileStatusID, data.WorkerID),
+	)
 
+	if !m.IsReady() {
+		return "", fmt.Errorf("%w: %s", ErrWhatsAppNotReady, m.outboundReadinessReason())
+	}
 	client := m.getClient()
 	if client == nil {
 		return "", fmt.Errorf("client is not initialized")
@@ -107,54 +886,84 @@ func (m *WhatsAppManager) SendProfileStatus(ctx context.Context, data ProfileSta
 	if err != nil {
 		return "", err
 	}
-	resp, err := client.SendMessage(opCtx, types.StatusBroadcastJID, msg)
+	resp, err := invokeProviderCallAtBoundary(opCtx, boundary, func(invokeCtx context.Context) (whatsmeow.SendResponse, error) {
+		return client.SendMessage(invokeCtx, types.StatusBroadcastJID, msg)
+	})
 	if err != nil {
 		return "", err
 	}
 	return string(resp.ID), nil
 }
 
-func (m *WhatsAppManager) DeleteProfileStatus(ctx context.Context, data ProfileStatusDeleteMessage) error {
+func (m *WhatsAppManager) DeleteProfileStatusWithInvocationBoundary(ctx context.Context, data ProfileStatusDeleteMessage, boundary providerInvocationBoundary) error {
+	if boundary == nil {
+		return fmt.Errorf("provider invocation boundary is required")
+	}
 	opCtx, cancel := m.sendOperationContext(ctx)
 	defer cancel()
+	opCtx = m.withAuxiliaryProviderInvocationWatchdog(
+		opCtx,
+		"profile_status_delete:"+firstNonEmpty(data.ExternalID, data.WorkerProfileStatusID),
+	)
 
+	if !m.IsReady() {
+		return fmt.Errorf("%w: %s", ErrWhatsAppNotReady, m.outboundReadinessReason())
+	}
 	client := m.getClient()
 	if client == nil {
 		return fmt.Errorf("client is not initialized")
 	}
 	if strings.TrimSpace(data.ExternalID) == "" {
-		return fmt.Errorf("profile status external_id is required")
+		return fmt.Errorf("%w: profile status external_id is required", errOutboundPayloadInvalid)
 	}
 	if len(data.StatusJIDList) > 0 {
 		return UnsupportedFeatureError{Feature: "status_custom_audience"}
 	}
-	_, err := client.SendMessage(opCtx, types.StatusBroadcastJID, client.BuildRevoke(types.StatusBroadcastJID, types.EmptyJID, types.MessageID(data.ExternalID)))
+	revoke := client.BuildRevoke(types.StatusBroadcastJID, types.EmptyJID, types.MessageID(data.ExternalID))
+	_, err := invokeProviderCallAtBoundary(opCtx, boundary, func(invokeCtx context.Context) (whatsmeow.SendResponse, error) {
+		return client.SendMessage(invokeCtx, types.StatusBroadcastJID, revoke)
+	})
 	return err
 }
 
-func (m *WhatsAppManager) UpdateProfileInfo(ctx context.Context, data ProfileInfoMessage) error {
+func (m *WhatsAppManager) UpdateProfileInfoWithInvocationBoundary(ctx context.Context, data ProfileInfoMessage, boundary providerInvocationBoundary) error {
+	if boundary == nil {
+		return fmt.Errorf("provider invocation boundary is required")
+	}
 	opCtx, cancel := m.sendOperationContext(ctx)
 	defer cancel()
+	opCtx = m.withAuxiliaryProviderInvocationWatchdog(
+		opCtx,
+		"profile_info:"+firstNonEmpty(data.WorkerID, m.cfg.WorkerID),
+	)
 
+	if !m.IsReady() {
+		return fmt.Errorf("%w: %s", ErrWhatsAppNotReady, m.outboundReadinessReason())
+	}
 	client := m.getClient()
 	if client == nil {
 		return fmt.Errorf("client is not initialized")
 	}
 	if strings.TrimSpace(data.Name) != "" {
 		name := strings.TrimSpace(data.Name)
+		pushNamePatch := appstate.BuildSettingPushName(name)
 		log.Printf("whatsmeow profile info updating name worker_id=%s", m.cfg.WorkerID)
-		if err := client.SendAppState(opCtx, appstate.BuildSettingPushName(name)); err != nil {
+		if err := invokeProviderErrorCallAtBoundary(opCtx, boundary, func(invokeCtx context.Context) error {
+			return client.SendAppState(invokeCtx, pushNamePatch)
+		}); err != nil {
 			return fmt.Errorf("update profile name: %w", err)
 		}
 		client.Store.PushName = name
 		if err := client.Store.Save(opCtx); err != nil {
-			log.Printf("whatsmeow profile info local push name save failed worker_id=%s error=%v", m.cfg.WorkerID, err)
+			log.Printf("whatsmeow profile info local push name save failed worker_id=%s error_code=%s", m.cfg.WorkerID, safeOperationalErrorCode(err))
 		}
 		log.Printf("whatsmeow profile info name updated worker_id=%s", m.cfg.WorkerID)
 	}
 	if strings.TrimSpace(data.Message) != "" {
 		log.Printf("whatsmeow profile info updating status worker_id=%s", m.cfg.WorkerID)
-		if err := client.SetStatusMessage(opCtx, data.Message); err != nil {
+		if err := invokeProviderErrorCallAtBoundary(opCtx, boundary, func(invokeCtx context.Context) error {
+			return client.SetStatusMessage(invokeCtx, data.Message)
+		}); err != nil {
 			return fmt.Errorf("update profile status: %w", err)
 		}
 		log.Printf("whatsmeow profile info status updated worker_id=%s", m.cfg.WorkerID)
@@ -164,15 +973,17 @@ func (m *WhatsAppManager) UpdateProfileInfo(ctx context.Context, data ProfileInf
 			return fmt.Errorf("own profile jid is unavailable")
 		}
 		if data.PhotoRemove {
-			log.Printf("whatsmeow profile info removing picture worker_id=%s jid=%s", m.cfg.WorkerID, client.Store.ID.String())
-			_, err := client.SetProfilePhoto(opCtx, nil)
+			log.Printf("whatsmeow profile info removing picture worker_id=%s jid_hash=%s", m.cfg.WorkerID, hashConnectionFlowIdentifier(client.Store.ID.String()))
+			_, err := invokeProviderCallAtBoundary(opCtx, boundary, func(invokeCtx context.Context) (string, error) {
+				return client.SetProfilePhoto(invokeCtx, nil)
+			})
 			if err != nil {
 				return fmt.Errorf("remove profile picture: %w", err)
 			}
 			log.Printf("whatsmeow profile info picture removed worker_id=%s", m.cfg.WorkerID)
 			return err
 		}
-		log.Printf("whatsmeow profile info updating picture worker_id=%s jid=%s", m.cfg.WorkerID, client.Store.ID.String())
+		log.Printf("whatsmeow profile info updating picture worker_id=%s jid_hash=%s", m.cfg.WorkerID, hashConnectionFlowIdentifier(client.Store.ID.String()))
 		body, contentType, _, err := downloadURL(opCtx, data.Photo)
 		if err != nil {
 			return fmt.Errorf("download profile picture: %w", err)
@@ -181,20 +992,27 @@ func (m *WhatsAppManager) UpdateProfileInfo(ctx context.Context, data ProfileInf
 		if err != nil {
 			return fmt.Errorf("normalize profile picture: %w", err)
 		}
-		pictureID, err := client.SetProfilePhoto(opCtx, avatar)
+		pictureID, err := invokeProviderCallAtBoundary(opCtx, boundary, func(invokeCtx context.Context) (string, error) {
+			return client.SetProfilePhoto(invokeCtx, avatar)
+		})
 		if err != nil {
 			return fmt.Errorf("update profile picture: %w", err)
 		}
-		log.Printf("whatsmeow profile info picture updated worker_id=%s picture_id=%s bytes=%d", m.cfg.WorkerID, pictureID, len(avatar))
+		log.Printf("whatsmeow profile info picture updated worker_id=%s picture_id_hash=%s bytes=%d", m.cfg.WorkerID, hashConnectionFlowIdentifier(pictureID), len(avatar))
 	}
 	return nil
 }
 
 func (m *WhatsAppManager) sendOperationContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if m.cfg.SendTimeout <= 0 {
-		return context.WithCancel(ctx)
+		operationCtx, cancel := context.WithCancel(ctx)
+		return withProviderInvocationTimeout(
+			operationCtx,
+			defaultProviderInvocationTimeout,
+		), cancel
 	}
-	return context.WithTimeout(ctx, m.cfg.SendTimeout)
+	operationCtx, cancel := context.WithTimeout(ctx, m.cfg.SendTimeout)
+	return withProviderInvocationTimeout(operationCtx, m.cfg.SendTimeout), cancel
 }
 
 func (m *WhatsAppManager) logOutgoingSendDebug(stage string, data ChatMessage, target types.JID, externalID string, elapsed time.Duration, err error) {
@@ -202,36 +1020,35 @@ func (m *WhatsAppManager) logOutgoingSendDebug(stage string, data ChatMessage, t
 	if !messageDebugEnabledForAccount(m.cfg, accountID) {
 		return
 	}
-	contentJSON, contentTruncated, contentErr := debugJSONPayload(data.Content, messageDebugRawLimit)
-	errorText := ""
-	if err != nil {
-		errorText = err.Error()
-	}
+	textBytes := len([]byte(outgoingMessageTextPreview(data)))
 	log.Printf(
-		"message_debug direction=out stage=%s worker_id=%s account_id=%s message_id=%s chat_id=%s target_jid=%s phone=%s message_type=%s external_message_id=%s elapsed_ms=%d timeout_ms=%d message_text=%q content_payload=%q content_truncated=%t content_error=%q error=%q",
+		"message_debug direction=out stage=%s worker_id=%s account_id=%s message_id_hash=%s chat_id_hash=%s target_jid_hash=%s phone_hash=%s message_type=%s external_message_id_hash=%s elapsed_ms=%d timeout_ms=%d text_bytes=%d content_field_count=%d content_fields=%q error_code=%s",
 		stage,
 		m.cfg.WorkerID,
 		accountID,
-		data.MessageID,
-		data.ChatID,
-		jidString(target),
-		data.Phone,
+		hashConnectionFlowIdentifier(data.MessageID),
+		hashConnectionFlowIdentifier(data.ChatID),
+		hashConnectionFlowIdentifier(jidString(target)),
+		hashConnectionFlowIdentifier(data.Phone),
 		chatMessageType(data),
-		externalID,
+		hashConnectionFlowIdentifier(externalID),
 		elapsed.Milliseconds(),
 		m.cfg.SendTimeout.Milliseconds(),
-		truncateLogValue(outgoingMessageTextPreview(data), messageDebugBodyLimit),
-		contentJSON,
-		contentTruncated,
-		contentErr,
-		errorText,
+		textBytes,
+		len(data.Content),
+		mapLogFieldNames(data.Content),
+		safeOperationalErrorCode(err),
 	)
 }
 
-const (
-	messageDebugBodyLimit = 500
-	messageDebugRawLimit  = 4000
-)
+func mapLogFieldNames(value map[string]any) []string {
+	keys := make([]string, 0, len(value))
+	for key := range value {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 func messageDebugEnabledForAccount(cfg Config, accountID string) bool {
 	enabled := envBoolDefault("MESSAGE_DEBUG_ENABLED", false) || envBoolDefault("WHATS_MEOW_MESSAGE_DEBUG_ENABLED", false)
@@ -262,15 +1079,6 @@ func messageDebugFilterMatches(key string, value string) bool {
 	return false
 }
 
-func debugJSONPayload(value any, limit int) (string, bool, string) {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return "null", false, err.Error()
-	}
-	valueText, truncated := truncateDebugLogValue(string(raw), limit)
-	return valueText, truncated, ""
-}
-
 func outgoingMessageTextPreview(data ChatMessage) string {
 	candidates := []string{
 		stringValue(data.Content["message"]),
@@ -291,7 +1099,7 @@ func outgoingMessageTextPreview(data ChatMessage) string {
 
 func normalizeProfilePhotoJPEG(body []byte, contentType string) ([]byte, error) {
 	if len(body) == 0 {
-		return nil, fmt.Errorf("profile picture is empty")
+		return nil, fmt.Errorf("%w: profile picture is empty", errOutboundPayloadInvalid)
 	}
 	img, format, err := image.Decode(bytes.NewReader(body))
 	if err != nil {
@@ -301,7 +1109,7 @@ func normalizeProfilePhotoJPEG(body []byte, contentType string) ([]byte, error) 
 	width := bounds.Dx()
 	height := bounds.Dy()
 	if width <= 0 || height <= 0 {
-		return nil, fmt.Errorf("profile picture has invalid dimensions")
+		return nil, fmt.Errorf("%w: profile picture has invalid dimensions", errOutboundPayloadInvalid)
 	}
 
 	side := width
@@ -334,7 +1142,7 @@ func (m *WhatsAppManager) buildProfileStatusMessage(ctx context.Context, client 
 	case WorkerProfileStatusTypeText:
 		text := strings.TrimSpace(data.Value)
 		if text == "" {
-			return nil, fmt.Errorf("profile status text is required")
+			return nil, fmt.Errorf("%w: profile status text is required", errOutboundPayloadInvalid)
 		}
 		return &waE2E.Message{Conversation: proto.String(text)}, nil
 	case WorkerProfileStatusTypeImage:
@@ -382,7 +1190,7 @@ func (m *WhatsAppManager) buildOutgoingMessage(ctx context.Context, client *what
 	}
 
 	if isTextEditMessage(data, contentType) {
-		log.Printf("whatsmeow edit message requested worker_id=%s message_id=%s target_key_id=%s", m.cfg.WorkerID, data.MessageID, data.MessageKey.ID)
+		log.Printf("whatsmeow edit message requested worker_id=%s message_id_hash=%s target_key_id_hash=%s", m.cfg.WorkerID, hashConnectionFlowIdentifier(data.MessageID), hashConnectionFlowIdentifier(data.MessageKey.ID))
 		return buildTextEditMessage(client, target, data)
 	}
 
@@ -396,19 +1204,19 @@ func (m *WhatsAppManager) buildOutgoingMessage(ctx context.Context, client *what
 		return &waE2E.Message{Conversation: proto.String(text)}, nil
 	case MessageTypeEditText:
 		if data.MessageKey == nil || data.MessageKey.ID == "" {
-			return nil, fmt.Errorf("edit_text requires message_key.id")
+			return nil, fmt.Errorf("%w: edit_text requires message_key.id", errOutboundPayloadInvalid)
 		}
 		return client.BuildEdit(target, data.MessageKey.ID, &waE2E.Message{
 			Conversation: proto.String(stringValue(data.Content["message"])),
 		}), nil
 	case MessageTypeDelete:
 		if data.MessageKey == nil || data.MessageKey.ID == "" {
-			return nil, fmt.Errorf("delete_message requires message_key.id")
+			return nil, fmt.Errorf("%w: delete_message requires message_key.id", errOutboundPayloadInvalid)
 		}
 		return client.BuildRevoke(target, senderJIDFromKey(target, data.MessageKey), data.MessageKey.ID), nil
 	case MessageTypeReact:
 		if data.MessageKey == nil || data.MessageKey.ID == "" {
-			return nil, fmt.Errorf("react requires message_key.id")
+			return nil, fmt.Errorf("%w: react requires message_key.id", errOutboundPayloadInvalid)
 		}
 		emoji := stringValue(data.Content["message"])
 		if emoji == "" {
@@ -473,14 +1281,14 @@ func isTextEditMessage(data ChatMessage, contentType string) bool {
 
 func buildTextEditMessage(client *whatsmeow.Client, target types.JID, data ChatMessage) (*waE2E.Message, error) {
 	if data.MessageKey == nil || data.MessageKey.ID == "" {
-		return nil, fmt.Errorf("edit_text requires message_key.id")
+		return nil, fmt.Errorf("%w: edit_text requires message_key.id", errOutboundPayloadInvalid)
 	}
 	if !data.MessageKey.FromMeValue() {
-		return nil, fmt.Errorf("Message edit is not allowed for non-own message")
+		return nil, fmt.Errorf("%w: message edit is not allowed for non-own message", errOutboundPayloadInvalid)
 	}
 	newText := firstNonEmpty(latestVersionMessage(data.Content["version"]), stringValue(data.Content["message"]))
 	if newText == "" {
-		return nil, fmt.Errorf("edit_text requires message")
+		return nil, fmt.Errorf("%w: edit_text requires message", errOutboundPayloadInvalid)
 	}
 	return client.BuildEdit(target, data.MessageKey.ID, &waE2E.Message{
 		Conversation: proto.String(newText),
@@ -533,7 +1341,7 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 	media := asMap(data.Content[contentKey])
 	url := stringValue(media["url"])
 	if url == "" {
-		return nil, fmt.Errorf("%s url is required", contentKey)
+		return nil, fmt.Errorf("%w: %s url is required", errOutboundPayloadInvalid, contentKey)
 	}
 	body, contentType, fileName, err := downloadURL(ctx, url)
 	if err != nil {
@@ -543,7 +1351,9 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 	if name := firstNonEmpty(stringValue(media["name"]), stringValue(media["filename"]), stringValue(media["fileName"])); name != "" {
 		fileName = name
 	}
-	upload, err := client.Upload(ctx, body, mediaType)
+	upload, err := invokeProviderAuthorizedCall(ctx, providerAuthorizationGuardFromContext(ctx), func(invokeCtx context.Context) (whatsmeow.UploadResponse, error) {
+		return client.Upload(invokeCtx, body, mediaType)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("upload media %s: %w", contentKey, err)
 	}
@@ -837,6 +1647,115 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		return m.withIncomingQuoted(evt, msg, MessageTypeContacts, map[string]any{"type": MessageTypeContacts, "contacts": items})
 	}
 	return m.unsupportedIncomingFallback(evt, msg, "incoming.unknown_message_type")
+}
+
+// incomingHistoryContent deliberately avoids Download and storage Upload.
+// History records are deduplicated downstream, so replaying media bytes here
+// would amplify reconnects into provider/storage storms before deduplication.
+// The historical payload keeps its media type and lightweight metadata; a live
+// delivery remains the authoritative path for the attachment URL.
+func (m *WhatsAppManager) incomingHistoryContent(ctx context.Context, evt *events.Message) (string, map[string]any) {
+	if evt == nil {
+		return "", nil
+	}
+	msg, wrappedViewOnce := unwrapIncomingMessage(evt.Message)
+	if msg == nil {
+		return "", nil
+	}
+	viewOnce := evt.IsViewOnce || evt.IsViewOnceV2 || evt.IsViewOnceV2Extension || wrappedViewOnce
+
+	if image := msg.GetImageMessage(); image != nil {
+		content := historyMediaContent(image, MessageTypeImage, image.GetCaption(), image.GetMimetype(), viewOnce)
+		enrichIncomingAlbumContent(content, msg)
+		return m.withIncomingHistoryMedia(evt, msg, MessageTypeImage, content, viewOnce)
+	}
+	if video := msg.GetVideoMessage(); video != nil {
+		return m.withIncomingHistoryMedia(evt, msg, MessageTypeVideo, historyMediaContent(video, MessageTypeVideo, video.GetCaption(), video.GetMimetype(), viewOnce), viewOnce)
+	}
+	if video := msg.GetPtvMessage(); video != nil {
+		return m.withIncomingHistoryMedia(evt, msg, MessageTypeVideoNote, historyMediaContent(video, MessageTypeVideoNote, video.GetCaption(), video.GetMimetype(), viewOnce), viewOnce)
+	}
+	if audio := msg.GetAudioMessage(); audio != nil {
+		return m.withIncomingHistoryMedia(evt, msg, MessageTypeAudio, historyMediaContent(audio, MessageTypeAudio, "", audio.GetMimetype(), viewOnce), viewOnce)
+	}
+	if document := msg.GetDocumentMessage(); document != nil {
+		return m.withIncomingHistoryMedia(evt, msg, MessageTypeDocument, historyMediaContent(document, MessageTypeDocument, document.GetCaption(), document.GetMimetype(), viewOnce), viewOnce)
+	}
+	if sticker := msg.GetStickerMessage(); sticker != nil {
+		return m.withIncomingHistoryMedia(evt, msg, MessageTypeSticker, historyMediaContent(sticker, MessageTypeSticker, "", sticker.GetMimetype(), viewOnce), viewOnce)
+	}
+	return m.incomingContent(ctx, evt)
+}
+
+func (m *WhatsAppManager) withIncomingHistoryMedia(
+	evt *events.Message,
+	msg *waE2E.Message,
+	mediaType string,
+	content map[string]any,
+	viewOnce bool,
+) (string, map[string]any) {
+	messageType := mediaType
+	if viewOnce {
+		messageType = MessageTypeViewOnce
+		content["type"] = MessageTypeViewOnce
+		content["media_type"] = mediaType
+	}
+	return m.withIncomingQuoted(evt, msg, messageType, content)
+}
+
+func historyMediaContent(media whatsmeow.DownloadableMessage, messageType, caption, mimetype string, viewOnce bool) map[string]any {
+	key := messageType
+	if messageType == MessageTypeVideoNote {
+		key = "video"
+	}
+	entry := map[string]any{
+		"caption":               caption,
+		"mimetype":              mimetype,
+		"is_view_once":          viewOnce,
+		"view_once":             viewOnce,
+		"history_media_omitted": true,
+	}
+	enrichHistoryMediaMetadata(entry, media)
+	return map[string]any{
+		"type":                  messageType,
+		"history_media_omitted": true,
+		key:                     entry,
+	}
+}
+
+func enrichHistoryMediaMetadata(entry map[string]any, media whatsmeow.DownloadableMessage) {
+	switch msg := media.(type) {
+	case *waE2E.ImageMessage:
+		setPositiveNumber(entry, "height", msg.GetHeight())
+		setPositiveNumber(entry, "width", msg.GetWidth())
+		setPositiveUint64(entry, "size", msg.GetFileLength())
+	case *waE2E.VideoMessage:
+		setPositiveNumber(entry, "height", msg.GetHeight())
+		setPositiveNumber(entry, "width", msg.GetWidth())
+		setPositiveNumber(entry, "duration", msg.GetSeconds())
+		setPositiveUint64(entry, "size", msg.GetFileLength())
+	case *waE2E.AudioMessage:
+		setPositiveNumber(entry, "duration", msg.GetSeconds())
+		setPositiveUint64(entry, "size", msg.GetFileLength())
+		entry["ptt"] = msg.GetPTT()
+	case *waE2E.DocumentMessage:
+		if name := firstNonEmpty(msg.GetFileName(), msg.GetTitle()); name != "" {
+			entry["name"] = name
+		}
+		setPositiveUint64(entry, "size", msg.GetFileLength())
+	case *waE2E.StickerMessage:
+		setPositiveNumber(entry, "height", msg.GetHeight())
+		setPositiveNumber(entry, "width", msg.GetWidth())
+		setPositiveUint64(entry, "size", msg.GetFileLength())
+		entry["is_animated"] = msg.GetIsAnimated()
+		entry["is_lottie"] = msg.GetIsLottie()
+	}
+}
+
+func setPositiveUint64(entry map[string]any, key string, value uint64) {
+	if value > 0 {
+		entry[key] = value
+	}
 }
 
 func incomingButtonsContent(buttons *waE2E.ButtonsMessage) map[string]any {
@@ -1190,14 +2109,14 @@ func (m *WhatsAppManager) incomingSecretEncryptedContent(ctx context.Context, ev
 	decrypted, err := m.client.DecryptSecretEncryptedMessage(ctx, evt)
 	if err != nil {
 		log.Printf(
-			"whatsmeow incoming secret edit decrypt failed worker_id=%s account_id=%s chat=%s sender=%s id=%s target_id=%s error=%q",
+			"whatsmeow incoming secret edit decrypt failed worker_id=%s account_id=%s chat_hash=%s sender_hash=%s id_hash=%s target_id_hash=%s error_code=%s",
 			m.cfg.WorkerID,
 			m.cfg.AccountID,
-			incomingChatString(evt),
-			incomingSenderString(evt),
-			incomingMessageID(evt),
-			secret.GetTargetMessageKey().GetID(),
-			err.Error(),
+			hashConnectionFlowIdentifier(incomingChatString(evt)),
+			hashConnectionFlowIdentifier(incomingSenderString(evt)),
+			hashConnectionFlowIdentifier(incomingMessageID(evt)),
+			hashConnectionFlowIdentifier(secret.GetTargetMessageKey().GetID()),
+			safeOperationalErrorCode(err),
 		)
 		return "", nil
 	}
@@ -1252,17 +2171,16 @@ func (m *WhatsAppManager) unsupportedIncomingFallback(evt *events.Message, msg *
 }
 
 func (m *WhatsAppManager) logIncomingProviderDebug(stage string, evt *events.Message) {
-	rawJSON, rawTruncated, rawErr := incomingRawMessageJSON(evt, incomingMessageRawLogLimit)
 	log.Printf(
-		"whatsmeow incoming debug stage=%s worker_id=%s account_id=%s chat=%s sender=%s sender_alt=%s recipient_alt=%s id=%s from_me=%t category=%q info_type=%q media_type=%q edit=%q is_edit=%t source_web_msg=%t is_ephemeral=%t is_view_once=%t is_view_once_v2=%t is_view_once_v2_extension=%t is_document_with_caption=%t is_lottie_sticker=%t is_bot_invoke=%t kinds=%q message_text=%q raw_payload=%q raw_truncated=%t raw_error=%q",
+		"whatsmeow incoming debug stage=%s worker_id=%s account_id=%s chat_hash=%s sender_hash=%s sender_alt_hash=%s recipient_alt_hash=%s id_hash=%s from_me=%t category=%q info_type=%q media_type=%q edit=%q is_edit=%t source_web_msg=%t is_ephemeral=%t is_view_once=%t is_view_once_v2=%t is_view_once_v2_extension=%t is_document_with_caption=%t is_lottie_sticker=%t is_bot_invoke=%t kinds=%q message_text_bytes=%d protobuf_bytes=%d",
 		stage,
 		m.cfg.WorkerID,
 		m.cfg.AccountID,
-		incomingChatString(evt),
-		incomingSenderString(evt),
-		incomingSenderAltString(evt),
-		incomingRecipientAltString(evt),
-		incomingMessageID(evt),
+		hashConnectionFlowIdentifier(incomingChatString(evt)),
+		hashConnectionFlowIdentifier(incomingSenderString(evt)),
+		hashConnectionFlowIdentifier(incomingSenderAltString(evt)),
+		hashConnectionFlowIdentifier(incomingRecipientAltString(evt)),
+		hashConnectionFlowIdentifier(incomingMessageID(evt)),
 		incomingFromMe(evt),
 		incomingCategory(evt),
 		incomingInfoType(evt),
@@ -1278,11 +2196,16 @@ func (m *WhatsAppManager) logIncomingProviderDebug(stage string, evt *events.Mes
 		evt != nil && evt.IsLottieSticker,
 		evt != nil && evt.IsBotInvoke,
 		strings.Join(incomingMessageKinds(evt), ","),
-		truncateLogValue(incomingTextPreview(evt), messageDebugBodyLimit),
-		rawJSON,
-		rawTruncated,
-		rawErr,
+		len([]byte(incomingTextPreview(evt))),
+		incomingMessageProtoSize(evt),
 	)
+}
+
+func incomingMessageProtoSize(evt *events.Message) int {
+	if evt == nil || evt.Message == nil {
+		return 0
+	}
+	return proto.Size(evt.Message)
 }
 
 func incomingHasEditSignal(evt *events.Message, msg *waE2E.Message) bool {
@@ -1386,7 +2309,7 @@ func mediaContent(ctx context.Context, manager *WhatsAppManager, media whatsmeow
 		content[key] = entry
 		if manager != nil {
 			if err != nil {
-				log.Printf("whatsmeow media failed worker_id=%s type=%s key=%s reason=%s error=%v", manager.cfg.WorkerID, messageType, key, reason, err)
+				log.Printf("whatsmeow media failed worker_id=%s type=%s key=%s reason=%s error_code=%s", manager.cfg.WorkerID, messageType, key, reason, safeOperationalErrorCode(err))
 			} else {
 				log.Printf("whatsmeow media failed worker_id=%s type=%s key=%s reason=%s", manager.cfg.WorkerID, messageType, key, reason)
 			}
@@ -1406,7 +2329,7 @@ func mediaContent(ctx context.Context, manager *WhatsAppManager, media whatsmeow
 		return failMedia("storage_unavailable", nil)
 	}
 
-	data, err := client.Download(ctx, media)
+	data, err := downloadIncomingMedia(ctx, manager, client, media)
 	if err != nil {
 		return failMedia("download_failed", err)
 	}
@@ -1423,17 +2346,155 @@ func mediaContent(ctx context.Context, manager *WhatsAppManager, media whatsmeow
 	entry["extension"] = extensionName(firstNonEmpty(object.Name, name), contentType)
 	content[key] = entry
 	log.Printf(
-		"whatsmeow media uploaded worker_id=%s type=%s key=%s name=%s mimetype=%s size=%d url=%s backup=%t",
+		"whatsmeow media uploaded worker_id=%s type=%s key=%s name_hash=%s mimetype=%s size=%d host=%s backup=%t",
 		manager.cfg.WorkerID,
 		messageType,
 		key,
-		object.Name,
+		hashConnectionFlowIdentifier(object.Name),
 		contentType,
 		object.Size,
-		object.URL,
+		urlHost(object.URL),
 		object.UsedBackup,
 	)
 	return content
+}
+
+type incomingMediaDownloadInvoker func(
+	context.Context,
+	whatsmeow.File,
+) error
+
+func downloadIncomingMedia(
+	ctx context.Context,
+	manager *WhatsAppManager,
+	client *whatsmeow.Client,
+	media whatsmeow.DownloadableMessage,
+) ([]byte, error) {
+	if media == nil {
+		return nil, errors.New("downloadable media is required")
+	}
+	return downloadIncomingMediaWithInvoker(
+		ctx,
+		manager,
+		client,
+		incomingMediaDownloadOperation(media),
+		func(downloadCtx context.Context, file whatsmeow.File) error {
+			return client.DownloadToFile(downloadCtx, media, file)
+		},
+	)
+}
+
+func incomingMediaDownloadOperation(
+	media whatsmeow.DownloadableMessage,
+) string {
+	if media == nil {
+		return "inbound_media_download:missing"
+	}
+	digest := sha256.Sum256([]byte(media.GetDirectPath()))
+	return fmt.Sprintf("inbound_media_download:%x", digest[:8])
+}
+
+func downloadIncomingMediaWithInvoker(
+	ctx context.Context,
+	manager *WhatsAppManager,
+	client *whatsmeow.Client,
+	operation string,
+	invoke incomingMediaDownloadInvoker,
+) (data []byte, err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if manager == nil {
+		return nil, errors.New("whatsmeow manager is required")
+	}
+	if client == nil {
+		return nil, errors.New("whatsmeow client is not initialized")
+	}
+	if invoke == nil {
+		return nil, errors.New("media download invocation is required")
+	}
+	operation = strings.TrimSpace(operation)
+	if operation == "" {
+		return nil, errors.New("media download operation is required")
+	}
+
+	downloadCtx, cancelDownload := context.WithTimeout(
+		ctx,
+		resolveMediaDownloadRequestTimeout(),
+	)
+	defer cancelDownload()
+	releaseDownload, err := manager.acquireIncomingMediaDownload(downloadCtx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseDownload()
+
+	tempFile, err := os.CreateTemp("", "underchat-whatsmeow-media-*")
+	if err != nil {
+		return nil, fmt.Errorf("create media temporary file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	defer func() {
+		closeErr := tempFile.Close()
+		removeErr := os.Remove(tempPath)
+		var cleanupErr error
+		if closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+			cleanupErr = errors.Join(
+				cleanupErr,
+				fmt.Errorf("close media temporary file: %w", closeErr),
+			)
+		}
+		if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			cleanupErr = errors.Join(
+				cleanupErr,
+				fmt.Errorf("remove media temporary file: %w", removeErr),
+			)
+		}
+		if cleanupErr != nil {
+			err = errors.Join(err, cleanupErr)
+		}
+	}()
+
+	maxBytes := resolveMediaDownloadMaxBytes()
+	boundedFile, err := newBoundedIncomingMediaFile(tempFile, maxBytes)
+	if err != nil {
+		return nil, err
+	}
+	_, err = invokeWhatsmeowProviderOperationWithDeadline(
+		downloadCtx,
+		manager,
+		client,
+		operation,
+		resolveMediaDownloadRequestTimeout(),
+		func(downloadCtx context.Context) (struct{}, error) {
+			return struct{}{}, invoke(downloadCtx, boundedFile)
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	fileInfo, err := boundedFile.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat downloaded media: %w", err)
+	}
+	if fileInfo.Size() > maxBytes {
+		return nil, errMediaDownloadTooLarge
+	}
+	if _, err = boundedFile.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("seek downloaded media: %w", err)
+	}
+	data, err = io.ReadAll(io.LimitReader(boundedFile, maxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read downloaded media: %w", err)
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, errMediaDownloadTooLarge
+	}
+	return data, nil
 }
 
 func enrichIncomingMediaMetadata(entry map[string]any, media whatsmeow.DownloadableMessage) {
@@ -1597,12 +2658,12 @@ func (m *WhatsAppManager) withIncomingQuoted(evt *events.Message, msg *waE2E.Mes
 	}
 	if m != nil {
 		log.Printf(
-			"whatsmeow incoming quoted mapped worker_id=%s message_id=%s quoted_id=%s quoted_type=%s participant=%s",
+			"whatsmeow incoming quoted mapped worker_id=%s message_id_hash=%s quoted_id_hash=%s quoted_type=%s participant_hash=%s",
 			m.cfg.WorkerID,
-			evt.Info.ID,
-			stringValue(asMap(quoted["key"])["id"]),
+			hashConnectionFlowIdentifier(evt.Info.ID),
+			hashConnectionFlowIdentifier(stringValue(asMap(quoted["key"])["id"])),
 			stringValue(quoted["type"]),
-			stringValue(asMap(quoted["key"])["participant"]),
+			hashConnectionFlowIdentifier(stringValue(asMap(quoted["key"])["participant"])),
 		)
 	}
 	return messageType, content
@@ -2160,17 +3221,25 @@ func parseVCard(name, vcard string) map[string]any {
 func resolveTargetJID(data ChatMessage) (types.JID, error) {
 	if data.MessageKey != nil {
 		if remote := data.MessageKey.Remote(); remote != "" {
-			return parseJID(remote)
+			target, err := parseJID(remote)
+			if err != nil {
+				return types.EmptyJID, fmt.Errorf("%w: %v", errOutboundTargetInvalid, err)
+			}
+			return target, nil
 		}
 	}
 	if data.ChatID != "" && strings.Contains(data.ChatID, "@") {
-		return parseJID(data.ChatID)
+		target, err := parseJID(data.ChatID)
+		if err != nil {
+			return types.EmptyJID, fmt.Errorf("%w: %v", errOutboundTargetInvalid, err)
+		}
+		return target, nil
 	}
 	phone := digits(data.PhoneDDI + data.Phone)
 	if phone != "" {
 		return types.NewJID(phone, types.DefaultUserServer), nil
 	}
-	return types.EmptyJID, fmt.Errorf("message target jid is required")
+	return types.EmptyJID, fmt.Errorf("%w: message target jid is required", errOutboundTargetInvalid)
 }
 
 func parseJID(value string) (types.JID, error) {
@@ -2227,9 +3296,27 @@ func (m *WhatsAppManager) markChatAsReadAppState(ctx context.Context, client *wh
 	}
 	appStateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	authorizeProvider := providerAuthorizationGuardFromContext(appStateCtx)
 	for _, patch := range patches {
-		if err := client.SendAppState(appStateCtx, appstate.BuildMarkChatAsRead(patch.chat, true, patch.timestamp, patch.lastMessageKey)); err != nil {
-			log.Printf("whatsmeow mark chat read app state failed worker_id=%s chat=%s id=%s error=%v", m.cfg.WorkerID, patch.chat.String(), patch.lastMessageKey.GetID(), err)
+		if err := invokeProviderAuthorizedErrorCall(
+			appStateCtx,
+			authorizeProvider,
+			func(invokeCtx context.Context) error {
+				return client.SendAppState(
+					invokeCtx,
+					appstate.BuildMarkChatAsRead(
+						patch.chat,
+						true,
+						patch.timestamp,
+						patch.lastMessageKey,
+					),
+				)
+			},
+		); err != nil {
+			log.Printf("whatsmeow mark chat read app state failed worker_id=%s chat_jid_hash=%s message_id_hash=%s error_code=%s", m.cfg.WorkerID, hashConnectionFlowIdentifier(patch.chat.String()), hashConnectionFlowIdentifier(patch.lastMessageKey.GetID()), safeOperationalErrorCode(err))
+			if errors.Is(err, errOutboundProviderCallStalled) {
+				return
+			}
 		}
 	}
 }
@@ -2358,10 +3445,45 @@ func splitStatusValue(value string) (string, string) {
 	return url, strings.TrimSpace(strings.Join(parts[1:], "|"))
 }
 
+func resolveMediaDownloadRequestTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("MEDIA_DOWNLOAD_REQUEST_TIMEOUT_MS"))
+	if raw == "" {
+		return defaultMediaDownloadRequestTimeout
+	}
+	timeoutMs, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil ||
+		timeoutMs <= 0 ||
+		timeoutMs > int64((time.Duration(1<<63-1)/time.Millisecond)) {
+		return defaultMediaDownloadRequestTimeout
+	}
+	return time.Duration(timeoutMs) * time.Millisecond
+}
+
+func resolveMediaDownloadMaxBytes() int64 {
+	raw := strings.TrimSpace(os.Getenv("MEDIA_DOWNLOAD_MAX_BYTES"))
+	if raw == "" {
+		return defaultMediaDownloadMaxBytes
+	}
+	maxBytes, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || maxBytes <= 0 || maxBytes == int64(1<<63-1) {
+		return defaultMediaDownloadMaxBytes
+	}
+	return maxBytes
+}
+
 func downloadURL(ctx context.Context, rawURL string) ([]byte, string, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	downloadCtx, cancel := context.WithTimeout(
+		ctx,
+		resolveMediaDownloadRequestTimeout(),
+	)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", "", fmt.Errorf("%w: %v", errMediaDownloadInvalidURL, err)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -2369,11 +3491,30 @@ func downloadURL(ctx context.Context, rawURL string) ([]byte, string, string, er
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", "", fmt.Errorf("download failed: %s", resp.Status)
+		return nil, "", "", &mediaDownloadHTTPError{
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
+		}
 	}
-	body, err := io.ReadAll(resp.Body)
+	maxBytes := resolveMediaDownloadMaxBytes()
+	if resp.ContentLength > maxBytes {
+		return nil, "", "", fmt.Errorf(
+			"%w: content_length=%d max_bytes=%d",
+			errMediaDownloadTooLarge,
+			resp.ContentLength,
+			maxBytes,
+		)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, "", "", err
+	}
+	if int64(len(body)) > maxBytes {
+		return nil, "", "", fmt.Errorf(
+			"%w: received_bytes>%d",
+			errMediaDownloadTooLarge,
+			maxBytes,
+		)
 	}
 	contentType := resp.Header.Get("Content-Type")
 	fileName := path.Base(req.URL.Path)
@@ -2414,6 +3555,24 @@ func stringValue(value any) string {
 		return strconv.FormatFloat(typed, 'f', -1, 64)
 	case int:
 		return strconv.Itoa(typed)
+	case int8:
+		return strconv.FormatInt(int64(typed), 10)
+	case int16:
+		return strconv.FormatInt(int64(typed), 10)
+	case int32:
+		return strconv.FormatInt(int64(typed), 10)
+	case int64:
+		return strconv.FormatInt(typed, 10)
+	case uint:
+		return strconv.FormatUint(uint64(typed), 10)
+	case uint8:
+		return strconv.FormatUint(uint64(typed), 10)
+	case uint16:
+		return strconv.FormatUint(uint64(typed), 10)
+	case uint32:
+		return strconv.FormatUint(uint64(typed), 10)
+	case uint64:
+		return strconv.FormatUint(typed, 10)
 	default:
 		return ""
 	}

@@ -11,18 +11,21 @@ function createSelectMock(resultsQueue: unknown[][]) {
     const result = queue.shift() ?? [];
     const chain: {
       innerJoin: jest.Mock;
+      leftJoin: jest.Mock;
       where: jest.Mock;
       limit: jest.Mock;
       orderBy: jest.Mock;
       execute: jest.Mock;
     } = {
       innerJoin: jest.fn(),
+      leftJoin: jest.fn(),
       where: jest.fn(),
       limit: jest.fn(),
       orderBy: jest.fn(),
       execute: jest.fn(async () => result),
     };
     chain.innerJoin.mockReturnValue(chain);
+    chain.leftJoin.mockReturnValue(chain);
     chain.where.mockReturnValue(chain);
     chain.limit.mockReturnValue(chain);
     chain.orderBy.mockReturnValue(chain);

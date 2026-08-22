@@ -2,8 +2,10 @@ import {
   createAttendanceInactivityCacheKey,
   createAiResponseHistoryCacheKey,
   createChatbotFailedAttemptsCacheKey,
+  createChatbotFlowContextCacheKey,
   createChatbotFlowCacheKey,
   createChatbotInactivityCacheKey,
+  createChatbotOfficialResponsePendingCacheKey,
   createChatCacheKey,
   createChatCacheKeyChatId,
   createJwtCacheKey,
@@ -49,7 +51,7 @@ describe('createCacheKey', () => {
 
   it('creates key api cache key with encoded route module', () => {
     expect(createKeyApiCacheKey('k1', 'chat/list')).toBe(
-      'keyCache:k1:chat%2Flist'
+      'keyCache:6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd0:chat%2Flist'
     );
 
     expect(() => createKeyApiCacheKey('', 'chat/list')).toThrow(
@@ -109,6 +111,12 @@ describe('createCacheKey', () => {
     expect(createChatbotFlowCacheKey('acc', 'worker', 'chat-1')).toBe(
       'underchat:chatbot-flow:acc:worker:chat-1'
     );
+    expect(createChatbotFlowContextCacheKey('acc', 'worker', 'chat-1')).toBe(
+      'underchat:chatbot-flow-context:acc:worker:chat-1'
+    );
+    expect(
+      createChatbotOfficialResponsePendingCacheKey('acc', 'worker', 'chat-1')
+    ).toBe('underchat:chatbot-official-response-pending:acc:worker:chat-1');
     expect(createChatbotInactivityCacheKey('acc', 'worker', 'chat-1')).toBe(
       'underchat:chatbot-inactivity:acc:worker:chat-1'
     );
@@ -145,6 +153,25 @@ describe('createCacheKey', () => {
     expect(() => createChatbotFlowCacheKey('acc', 'worker', '')).toThrow(
       'chat id is required'
     );
+    expect(() =>
+      createChatbotFlowContextCacheKey('', 'worker', 'chat')
+    ).toThrow('account id is required');
+    expect(() => createChatbotFlowContextCacheKey('acc', '', 'chat')).toThrow(
+      'worker id is required'
+    );
+    expect(() => createChatbotFlowContextCacheKey('acc', 'worker', '')).toThrow(
+      'chat id is required'
+    );
+
+    expect(() =>
+      createChatbotOfficialResponsePendingCacheKey('', 'worker', 'chat')
+    ).toThrow('account id is required');
+    expect(() =>
+      createChatbotOfficialResponsePendingCacheKey('acc', '', 'chat')
+    ).toThrow('worker id is required');
+    expect(() =>
+      createChatbotOfficialResponsePendingCacheKey('acc', 'worker', '')
+    ).toThrow('chat id is required');
 
     expect(() => createChatbotInactivityCacheKey('', 'worker', 'chat')).toThrow(
       'account id is required'
@@ -159,9 +186,9 @@ describe('createCacheKey', () => {
     expect(() =>
       createAttendanceInactivityCacheKey('', 'worker', 'chat')
     ).toThrow('account id is required');
-    expect(() =>
-      createAttendanceInactivityCacheKey('acc', '', 'chat')
-    ).toThrow('worker id is required');
+    expect(() => createAttendanceInactivityCacheKey('acc', '', 'chat')).toThrow(
+      'worker id is required'
+    );
     expect(() =>
       createAttendanceInactivityCacheKey('acc', 'worker', '')
     ).toThrow('chat id is required');

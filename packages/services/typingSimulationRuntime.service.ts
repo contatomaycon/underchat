@@ -9,6 +9,7 @@ import {
   parseTypingSimulationConfigCache,
   typingSimulationCacheKey,
 } from '@core/common/functions/typingSimulationConfig';
+import { workerErrorDiagnostics } from '@core/common/functions/workerErrorDiagnostics';
 
 @injectable()
 export class TypingSimulationRuntimeService {
@@ -33,7 +34,7 @@ export class TypingSimulationRuntimeService {
     const cached = await this.readCache(cacheKey).catch((error) => {
       console.error('[TypingSimulationRuntime] cache read failed', {
         workerId: normalizedWorkerId,
-        error,
+        ...workerErrorDiagnostics(error),
       });
       return null;
     });
@@ -54,7 +55,7 @@ export class TypingSimulationRuntimeService {
       await this.writeCache(cacheKey, config).catch((error) => {
         console.error('[TypingSimulationRuntime] cache write failed', {
           workerId: normalizedWorkerId,
-          error,
+          ...workerErrorDiagnostics(error),
         });
       });
 
@@ -62,7 +63,7 @@ export class TypingSimulationRuntimeService {
     } catch (error) {
       console.error('[TypingSimulationRuntime] config fetch failed', {
         workerId: normalizedWorkerId,
-        error,
+        ...workerErrorDiagnostics(error),
       });
 
       return defaultTypingSimulationConfig();

@@ -207,6 +207,43 @@ describe('OrderPaymentCreatorRepository', () => {
     expect(dbRw.insert).not.toHaveBeenCalled();
   });
 
+  it('commits the payment and its add-on selection through the same transaction', async () => {
+    const tx = {};
+    const dbRw = {
+      transaction: jest.fn(async (callback: (database: unknown) => unknown) =>
+        callback(tx)
+      ),
+    };
+    const repository = buildRepository(dbRw);
+    const createPayment = jest
+      .spyOn(repository as never, 'createAccountPaymentUsing' as never)
+      .mockResolvedValue('ap-atomic' as never);
+    const createCrossSells = jest
+      .spyOn(
+        repository as never,
+        'createAccountPaymentCrossSellsUsing' as never
+      )
+      .mockResolvedValue(undefined as never);
+
+    await expect(
+      repository.createAccountPaymentWithCrossSells({
+        payment: { billing: 'billing-1' } as never,
+        addons: [{ plan_cross_sell_id: 'pcs-1' }],
+        billingPeriod: 'monthly',
+      })
+    ).resolves.toBe('ap-atomic');
+
+    expect(createPayment).toHaveBeenCalledWith(tx, {
+      billing: 'billing-1',
+    });
+    expect(createCrossSells).toHaveBeenCalledWith(tx, {
+      accountPaymentId: 'ap-atomic',
+      addons: [{ plan_cross_sell_id: 'pcs-1' }],
+      billingPeriod: 'monthly',
+    });
+    expect(dbRw.transaction).toHaveBeenCalledTimes(1);
+  });
+
   it('getCurrentActivePlanAccount maps billing period name from row', async () => {
     const repository = buildRepository({
       select: jest.fn(() => ({

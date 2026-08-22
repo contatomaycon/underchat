@@ -5,6 +5,8 @@ import { useContactStore } from '@/@webcore/stores/contact';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
 import { EColor } from '@core/common/enums/EColor';
+import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { ListAiAgentResponse } from '@core/schema/aiAgent/listAiAgent/response.schema';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
@@ -21,6 +23,9 @@ import { ViewAttendanceInactivityAlertResponse } from '@core/schema/worker/viewA
 import { UpdateAttendanceInactivityAlertRequest } from '@core/schema/worker/updateAttendanceInactivityAlert/request.schema';
 import { ViewOperatorReplyPendingAlertResponse } from '@core/schema/worker/viewOperatorReplyPendingAlert/response.schema';
 import { UpdateOperatorReplyPendingAlertRequest } from '@core/schema/worker/updateOperatorReplyPendingAlert/request.schema';
+import { ViewOperatorReplyPendingRedistributionResponse } from '@core/schema/worker/viewOperatorReplyPendingRedistribution/response.schema';
+import { UpdateOperatorReplyPendingRedistributionRequest } from '@core/schema/worker/updateOperatorReplyPendingRedistribution/request.schema';
+import { UpdateOperatorReplyPendingRedistributionResponse } from '@core/schema/worker/updateOperatorReplyPendingRedistribution/response.schema';
 import { ViewSecurityKeyResponse } from '@core/schema/worker/viewSecurityKey/response.schema';
 import { UpdateSecurityKeyRequest } from '@core/schema/worker/updateSecurityKey/request.schema';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
@@ -34,6 +39,7 @@ import {
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 import AppSelectSearch from '@/components/AppSelectSearch.vue';
 import AppSecurityKeyConfigDialog from '@/components/channel/AppSecurityKeyConfigDialog.vue';
+import OperatorReplyPendingRedistributionDialog from '@/components/channel/OperatorReplyPendingRedistributionDialog.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 
 const channelStore = useChannelsStore();
@@ -252,6 +258,7 @@ type WorkerConfigForm = {
   attendance_hours: boolean;
   attendance_inactivity_alert: boolean;
   operator_reply_pending_alert: boolean;
+  operator_reply_pending_redistribution: boolean;
 };
 
 type ChatbotWorkingHoursRulePayload = {
@@ -290,6 +297,7 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   attendance_hours: false,
   attendance_inactivity_alert: false,
   operator_reply_pending_alert: false,
+  operator_reply_pending_redistribution: false,
 });
 
 type AttendanceRulePayload = UpdateAttendanceHoursRequest['rules'][number];
@@ -318,6 +326,7 @@ const ATTENDANCE_INACTIVITY_DEFAULT_QUANTITY = 1;
 const ATTENDANCE_INACTIVITY_DEFAULT_TIME = 180;
 const ATTENDANCE_INACTIVITY_DEFAULT_ACTION = 'finish';
 const OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES = 15;
+const OPERATOR_REPLY_PENDING_REDISTRIBUTION_DEFAULT_TIME_MINUTES = 15;
 const TYPING_SIMULATION_DEFAULT_SPEED = 50;
 const CHATBOT_WORKING_HOURS_TIMEZONE = 'America/Sao_Paulo';
 const CHATBOT_WORKING_HOURS_DEFAULT_START = '09:00';
@@ -631,6 +640,16 @@ const operatorReplyPendingAlertEnabledInModal = ref(false);
 const operatorReplyPendingAlertTimeMinutesInModal = ref(
   OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES
 );
+const operatorReplyPendingRedistributionModalOpen = ref(false);
+const isSavingOperatorReplyPendingRedistribution = ref(false);
+const operatorReplyPendingRedistributionEnabledInModal = ref(false);
+const operatorReplyPendingRedistributionTimeMinutesInModal = ref(
+  OPERATOR_REPLY_PENDING_REDISTRIBUTION_DEFAULT_TIME_MINUTES
+);
+const operatorReplyPendingRedistributionSectorIdsInModal = ref<string[]>([]);
+const operatorReplyPendingRedistributionAvailableSectors = ref<
+  ViewOperatorReplyPendingRedistributionResponse['available_sectors']
+>([]);
 const chatbotId = ref<string | null>(null);
 const chatbotModalOpen = ref(false);
 const isSavingChatbot = ref(false);
@@ -654,6 +673,32 @@ const aiAgentModalOpen = ref(false);
 const isSavingAiAgent = ref(false);
 const selectedAiAgentId = ref<string | null>(null);
 const aiAgentEnabledInModal = ref<boolean>(false);
+const activeAiAgents = ref<ListAiAgentResponse[]>([]);
+const aiAgentOptions = computed(() => {
+  const selectedId = selectedAiAgentId.value;
+  const activeAgents = activeAiAgents.value;
+
+  if (
+    !selectedId ||
+    activeAgents.some((agent) => agent.ai_agent_id === selectedId)
+  ) {
+    return activeAgents;
+  }
+
+  return [
+    {
+      ai_agent_id: selectedId,
+      name: t('ai_agent_current_unavailable'),
+    },
+    ...activeAgents,
+  ];
+});
+const aiAgentSelectionRules = computed(() => [
+  (value: unknown) =>
+    !aiAgentEnabledInModal.value ||
+    Boolean(value) ||
+    t('ai_agent_selection_required'),
+]);
 const attendanceHoursModalOpen = ref(false);
 const isSavingAttendanceHours = ref(false);
 const attendanceHoursEnabledInModal = ref<boolean>(false);
@@ -1276,6 +1321,7 @@ const resetWorkerConfigState = () => {
   applyAttendanceHoursState();
   applyAttendanceInactivityAlertState();
   applyOperatorReplyPendingAlertState();
+  applyOperatorReplyPendingRedistributionState();
   applyTypingSimulationState();
   applySecurityKeyState();
   workerConfigLoadedFor.value = null;
@@ -1548,6 +1594,54 @@ const buildOperatorReplyPendingAlertPayload = (
   };
 };
 
+const applyOperatorReplyPendingRedistributionState = (
+  config?:
+    | ViewOperatorReplyPendingRedistributionResponse
+    | UpdateOperatorReplyPendingRedistributionResponse
+    | null
+): void => {
+  workerConfigForm.operator_reply_pending_redistribution =
+    config?.enabled ?? false;
+  operatorReplyPendingRedistributionEnabledInModal.value =
+    config?.enabled ?? false;
+  operatorReplyPendingRedistributionTimeMinutesInModal.value =
+    config?.time_minutes ??
+    OPERATOR_REPLY_PENDING_REDISTRIBUTION_DEFAULT_TIME_MINUTES;
+  operatorReplyPendingRedistributionSectorIdsInModal.value = [
+    ...(config?.sector_ids ?? []),
+  ];
+
+  if (config && 'available_sectors' in config) {
+    operatorReplyPendingRedistributionAvailableSectors.value =
+      config.available_sectors;
+  } else if (!config) {
+    operatorReplyPendingRedistributionAvailableSectors.value = [];
+  }
+};
+
+const buildOperatorReplyPendingRedistributionPayload = (
+  enabled: boolean
+): UpdateOperatorReplyPendingRedistributionRequest | null => {
+  const timeMinutes = normalizePositiveInteger(
+    operatorReplyPendingRedistributionTimeMinutesInModal.value
+  );
+  if (!timeMinutes) {
+    channelStore.showSnackbar(
+      t('operator_reply_pending_redistribution_invalid_time'),
+      EColor.warning
+    );
+    return null;
+  }
+
+  return {
+    enabled,
+    time_minutes: timeMinutes,
+    sector_ids: [
+      ...new Set(operatorReplyPendingRedistributionSectorIdsInModal.value),
+    ],
+  };
+};
+
 const loadWorkerConfig = async (force = false) => {
   if (!channelId.value) return;
   if (!force && workerConfigLoadedFor.value === channelId.value) return;
@@ -1578,6 +1672,7 @@ const loadWorkerConfig = async (force = false) => {
       sendMessageOnFinishAttendanceData,
       attendanceInactivityAlertData,
       operatorReplyPendingAlertData,
+      operatorReplyPendingRedistributionData,
       chatbotData,
       attendanceHoursData,
       aiAgentData,
@@ -1593,6 +1688,7 @@ const loadWorkerConfig = async (force = false) => {
       channelStore.fetchSendMessageOnFinishAttendance(channelId.value),
       channelStore.fetchAttendanceInactivityAlert(channelId.value),
       channelStore.fetchOperatorReplyPendingAlert(channelId.value),
+      channelStore.fetchOperatorReplyPendingRedistribution(channelId.value),
       channelStore.fetchChatbot(channelId.value),
       channelStore.fetchAttendanceHours(channelId.value),
       channelStore.fetchAiAgentConfig(channelId.value),
@@ -1688,6 +1784,9 @@ const loadWorkerConfig = async (force = false) => {
 
     applyAttendanceInactivityAlertState(attendanceInactivityAlertData);
     applyOperatorReplyPendingAlertState(operatorReplyPendingAlertData);
+    applyOperatorReplyPendingRedistributionState(
+      operatorReplyPendingRedistributionData
+    );
 
     applyChatbotState(chatbotData as ChatbotConfigResponse | null);
 
@@ -1708,6 +1807,8 @@ const saveWorkerConfig = async () => {
       attendance_hours: _attendanceHours,
       attendance_inactivity_alert: _attendanceInactivityAlert,
       operator_reply_pending_alert: _operatorReplyPendingAlert,
+      operator_reply_pending_redistribution:
+        _operatorReplyPendingRedistribution,
       typing_simulation: _typingSimulation,
       security_key: _securityKey,
       ...payload
@@ -2686,6 +2787,63 @@ const saveOperatorReplyPendingAlertConfiguration = async () => {
   }
 };
 
+const openOperatorReplyPendingRedistributionModal = async (
+  forceEnable = false
+) => {
+  if (!channelId.value) return;
+  const data = await channelStore.fetchOperatorReplyPendingRedistribution(
+    channelId.value
+  );
+  applyOperatorReplyPendingRedistributionState(data);
+  if (forceEnable && !workerConfigForm.operator_reply_pending_redistribution) {
+    operatorReplyPendingRedistributionEnabledInModal.value = true;
+  }
+  operatorReplyPendingRedistributionModalOpen.value = true;
+};
+
+const toggleOperatorReplyPendingRedistributionStatus = async () => {
+  if (!channelId.value) return;
+  if (!workerConfigForm.operator_reply_pending_redistribution) {
+    await openOperatorReplyPendingRedistributionModal(true);
+    return;
+  }
+
+  const body = buildOperatorReplyPendingRedistributionPayload(false);
+  if (!body) return;
+  try {
+    isSavingOperatorReplyPendingRedistribution.value = true;
+    const result = await channelStore.updateOperatorReplyPendingRedistribution(
+      channelId.value,
+      body
+    );
+    if (result) applyOperatorReplyPendingRedistributionState(result);
+  } finally {
+    isSavingOperatorReplyPendingRedistribution.value = false;
+  }
+};
+
+const saveOperatorReplyPendingRedistributionConfiguration = async () => {
+  if (!channelId.value) return;
+  const body = buildOperatorReplyPendingRedistributionPayload(
+    operatorReplyPendingRedistributionEnabledInModal.value
+  );
+  if (!body) return;
+
+  try {
+    isSavingOperatorReplyPendingRedistribution.value = true;
+    const result = await channelStore.updateOperatorReplyPendingRedistribution(
+      channelId.value,
+      body
+    );
+    if (result) {
+      applyOperatorReplyPendingRedistributionState(result);
+      operatorReplyPendingRedistributionModalOpen.value = false;
+    }
+  } finally {
+    isSavingOperatorReplyPendingRedistribution.value = false;
+  }
+};
+
 const loadChatbotOfficialNodeMap = async () => {
   if (isOfficialChannel.value) {
     chatbotsWithOfficialNodes.value = new Set();
@@ -2903,13 +3061,65 @@ const applyAiAgentState = (
   workerConfigForm.ai_agent = config?.enabled ?? false;
 };
 
-const openAiAgentModal = async () => {
-  if (!channelId.value) return;
+const loadAllActiveAiAgents = async (): Promise<boolean> => {
+  const perPage = 200;
+  const firstPage = await aiAgentStore.listAiAgents({
+    page: 1,
+    per_page: perPage,
+    status: EAiAgentStatus.active,
+  });
 
-  await aiAgentStore.listAiAgents({ status: 'active' as any });
-  const data = await channelStore.fetchAiAgentConfig(channelId.value);
-  applyAiAgentState(data);
-  aiAgentModalOpen.value = true;
+  if (!firstPage) {
+    return false;
+  }
+
+  const agents = [...firstPage.results];
+
+  for (let page = 2; page <= firstPage.pagings.total_pages; page += 1) {
+    const nextPage = await aiAgentStore.listAiAgents({
+      page,
+      per_page: perPage,
+      status: EAiAgentStatus.active,
+    });
+
+    if (!nextPage) {
+      return false;
+    }
+
+    agents.push(...nextPage.results);
+  }
+
+  activeAiAgents.value = Array.from(
+    new Map(agents.map((agent) => [agent.ai_agent_id, agent])).values()
+  );
+
+  return true;
+};
+
+const openAiAgentModal = async () => {
+  if (!channelId.value || isSavingAiAgent.value) return;
+
+  try {
+    isSavingAiAgent.value = true;
+    activeAiAgents.value = [];
+    const agentsLoaded = await loadAllActiveAiAgents();
+
+    if (!agentsLoaded) {
+      channelStore.showSnackbar(
+        aiAgentStore.snackbar.message || t('ai_agent_list_error'),
+        EColor.error
+      );
+      return;
+    }
+
+    const data = await channelStore.fetchAiAgentConfig(channelId.value);
+    if (!data) return;
+
+    applyAiAgentState(data);
+    aiAgentModalOpen.value = true;
+  } finally {
+    isSavingAiAgent.value = false;
+  }
 };
 
 const closeAiAgentModal = () => {
@@ -2925,7 +3135,9 @@ const toggleAiAgentStatus = async () => {
   try {
     isSavingAiAgent.value = true;
 
-    const aiAgentIdValue = aiAgentId.value || selectedAiAgentId.value || null;
+    const aiAgentIdValue = newEnabled
+      ? aiAgentId.value || selectedAiAgentId.value || null
+      : null;
 
     const result = await channelStore.updateAiAgentConfig(
       channelId.value,
@@ -2941,16 +3153,19 @@ const toggleAiAgentStatus = async () => {
   }
 };
 
-const toggleAiAgentStatusInModal = () => {
-  aiAgentEnabledInModal.value = !aiAgentEnabledInModal.value;
-};
-
 const saveAiAgent = async () => {
   if (!channelId.value) return;
 
+  if (aiAgentEnabledInModal.value && !selectedAiAgentId.value) {
+    channelStore.showSnackbar(t('ai_agent_selection_required'), EColor.error);
+    return;
+  }
+
   try {
     isSavingAiAgent.value = true;
-    const aiAgentIdValue = selectedAiAgentId.value || null;
+    const aiAgentIdValue = aiAgentEnabledInModal.value
+      ? selectedAiAgentId.value
+      : null;
 
     const result = await channelStore.updateAiAgentConfig(
       channelId.value,
@@ -2960,9 +3175,8 @@ const saveAiAgent = async () => {
 
     if (result) {
       applyAiAgentState(result);
+      closeAiAgentModal();
     }
-
-    closeAiAgentModal();
   } finally {
     isSavingAiAgent.value = false;
   }
@@ -3141,6 +3355,15 @@ const workerConfigOptions = computed(() => {
       ),
     },
     {
+      key: 'operator_reply_pending_redistribution' as WorkerConfigField,
+      title: t(
+        'channel_general_config_operator_reply_pending_redistribution_title'
+      ),
+      description: t(
+        'channel_general_config_operator_reply_pending_redistribution_description'
+      ),
+    },
+    {
       key: 'attendance_hours' as WorkerConfigField,
       title: t('channel_general_config_attendance_hours_title'),
       description: t('channel_general_config_attendance_hours_description'),
@@ -3180,6 +3403,7 @@ const hasModal = (key: WorkerConfigField): boolean => {
     key === 'security_key' ||
     key === 'attendance_inactivity_alert' ||
     key === 'operator_reply_pending_alert' ||
+    key === 'operator_reply_pending_redistribution' ||
     key === 'attendance_hours' ||
     key === 'chatbot' ||
     key === 'ai_agent'
@@ -3294,6 +3518,13 @@ const getToggleDisabled = (key: WorkerConfigField): boolean => {
     );
   }
 
+  if (key === 'operator_reply_pending_redistribution') {
+    return (
+      isSavingWorkerConfig.value ||
+      isSavingOperatorReplyPendingRedistribution.value
+    );
+  }
+
   if (key === 'typing_simulation') {
     return isSavingWorkerConfig.value || isSavingTypingSimulation.value;
   }
@@ -3385,6 +3616,12 @@ const handleToggleClick = (key: WorkerConfigField): void => {
     return;
   }
 
+  if (key === 'operator_reply_pending_redistribution') {
+    void toggleOperatorReplyPendingRedistributionStatus();
+
+    return;
+  }
+
   if (key === 'typing_simulation') {
     toggleTypingSimulationStatus();
 
@@ -3457,6 +3694,12 @@ const handleCardClick = (key: WorkerConfigField): void => {
 
   if (key === 'operator_reply_pending_alert') {
     void openOperatorReplyPendingAlertModal();
+
+    return;
+  }
+
+  if (key === 'operator_reply_pending_redistribution') {
+    void openOperatorReplyPendingRedistributionModal();
 
     return;
   }
@@ -6638,6 +6881,16 @@ onMounted(async () => {
     </VCard>
   </VDialog>
 
+  <OperatorReplyPendingRedistributionDialog
+    v-model="operatorReplyPendingRedistributionModalOpen"
+    v-model:enabled="operatorReplyPendingRedistributionEnabledInModal"
+    v-model:time-minutes="operatorReplyPendingRedistributionTimeMinutesInModal"
+    v-model:sector-ids="operatorReplyPendingRedistributionSectorIdsInModal"
+    :available-sectors="operatorReplyPendingRedistributionAvailableSectors"
+    :loading="isSavingOperatorReplyPendingRedistribution"
+    @save="saveOperatorReplyPendingRedistributionConfiguration"
+  />
+
   <VDialog v-model="attendanceHoursModalOpen" max-width="900" persistent>
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">
@@ -7126,12 +7379,11 @@ onMounted(async () => {
         <span>{{ $t('channel_general_config_ai_agent_title') }}</span>
         <div class="d-flex align-center gap-2">
           <VSwitch
-            :model-value="aiAgentEnabledInModal"
+            v-model="aiAgentEnabledInModal"
             color="primary"
             :disabled="isSavingAiAgent"
-            @click="toggleAiAgentStatusInModal"
           />
-          <IconBtn @click="closeAiAgentModal">
+          <IconBtn :disabled="isSavingAiAgent" @click="closeAiAgentModal">
             <VIcon icon="tabler-x" />
           </IconBtn>
         </div>
@@ -7145,14 +7397,15 @@ onMounted(async () => {
           </div>
           <AppSelectSearch
             v-model="selectedAiAgentId"
-            :items="aiAgentStore.list"
+            :items="aiAgentOptions"
             item-value="ai_agent_id"
             item-title="name"
             :placeholder="
               $t('channel_general_config_ai_agent_select_placeholder')
             "
             clearable
-            :disabled="!aiAgentEnabledInModal"
+            :rules="aiAgentSelectionRules"
+            :disabled="!aiAgentEnabledInModal || isSavingAiAgent"
           />
         </div>
       </VCardText>

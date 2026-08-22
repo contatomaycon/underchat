@@ -32,6 +32,7 @@ export class ChannelUpdaterUseCase {
       name: input.name,
       worker_type: input.worker_type,
       server_id: input.server_id,
+      connection_strategy: input.connection_strategy,
     };
 
     if (debugTraceId) {

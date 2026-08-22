@@ -143,6 +143,8 @@ export interface TransferWorker {
   id: string;
   name: string;
   number: string | null;
+  type_id?: string | null;
+  is_official?: boolean | null;
   status: {
     id: string;
   } | null;

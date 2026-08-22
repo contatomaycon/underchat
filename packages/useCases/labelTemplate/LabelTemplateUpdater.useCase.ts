@@ -13,10 +13,14 @@ export class LabelTemplateUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     labelTemplateId: string,
-    body: UpdateLabelTemplateRequest
+    body: UpdateLabelTemplateRequest,
+    accountId: string
   ): Promise<boolean> {
     const labelTemplateExists =
-      await this.labelTemplateService.existsLabelTemplateById(labelTemplateId);
+      await this.labelTemplateService.viewLabelTemplateById(
+        labelTemplateId,
+        accountId
+      );
 
     if (!labelTemplateExists) {
       throw new Error(t('label_template_not_found'));
@@ -36,7 +40,8 @@ export class LabelTemplateUpdaterUseCase {
     const labelTemplateUpdater =
       await this.labelTemplateService.updateLabelTemplateById(
         labelTemplateId,
-        body
+        body,
+        accountId
       );
 
     if (!labelTemplateUpdater) {

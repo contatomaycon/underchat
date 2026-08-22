@@ -1,33 +1,79 @@
 package app
 
 import (
+	"encoding/hex"
+	"errors"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+)
+
+const (
+	defaultHistoryReconciliationWindow        = 6 * time.Hour
+	defaultHistoryReconciliationMessageLimit  = 1000
+	defaultHistoryReconciliationChatScanLimit = 100
+	defaultHistoryReconciliationPerChatLimit  = 250
+	defaultSendQueueTimeout                   = 45 * time.Second
+	defaultTypingSimulationMaxDelay           = 15 * time.Second
+	defaultTypingSimulationProviderReserve    = 20 * time.Second
+	defaultTypingSimulationMaxOrphans         = 8
+	maxTypingSimulationMaxOrphans             = 64
+	defaultProviderSendMaxInFlight            = 4
+	maxProviderSendMaxInFlight                = 64
+	minTypingSimulationMaxDelay               = time.Second
+	maxTypingSimulationMaxDelay               = 60 * time.Second
+	defaultRuntimeEffectLeaseTTL              = 45 * time.Second
+	defaultRuntimeEffectLeaseHeartbeat        = 5 * time.Second
 )
 
 type Config struct {
-	WorkerID          string
-	AccountID         string
-	RuntimeGeneration int
-	DataDir           string
-	WarmStandby       bool
-	WarmPoolID        string
+	AppEnvironment            string
+	WorkerID                  string
+	AccountID                 string
+	RuntimeGeneration         int
+	DataDir                   string
+	SessionStorage            string
+	WorkerDatabaseURL         string
+	SessionStorageMigrationID string
+	LegacySessionVolumeName   string
+	LegacySessionChecksum     string
+	RuntimeCapability         string
+	WriterEpoch               string
+	// OwnedConnectionEpoch and OwnedConnectionAttemptID are resolved from the
+	// durable pairing grant during same-generation bootstrap. They are never
+	// accepted from environment input.
+	OwnedConnectionEpoch     string
+	OwnedConnectionAttemptID string
+	// DeferAuthStoreInitialization is set only by the runtime bootstrap when the
+	// durable connection fence rejects an unowned/stale activation (for example
+	// after an explicit disconnect tombstone). The process remains available to
+	// consume a newly authorized QR grant, but must not open the provider auth
+	// store before that grant is durably activated.
+	DeferAuthStoreInitialization bool
+	ElasticURL                   string
+	ElasticUsername              string
+	ElasticPassword              string
+	WarmStandby                  bool
+	WarmPoolID                   string
 
 	HTTPAddr string
 	GRPCAddr string
 
-	BalanceGRPCHost string
-	BalanceGRPCPort int
+	KafkaBrokers        []string
+	KafkaProtocol       string
+	KafkaUsername       string
+	KafkaPassword       string
+	KafkaSASLMechanism  string
+	KafkaAllowPlaintext bool
 
-	KafkaBrokers       []string
-	KafkaProtocol      string
-	KafkaUsername      string
-	KafkaPassword      string
-	KafkaSASLMechanism string
+	NATSURLs     []string
+	NATSUser     string
+	NATSPassword string
+	NATSTLS      bool
 
 	RedisHost     string
 	RedisPort     int
@@ -56,34 +102,38 @@ type Config struct {
 	SendTimeout                          time.Duration
 	WhatsAppConnectTimeout               time.Duration
 	ConnectionQRFirstQRTimeout           time.Duration
-	KafkaPollInterval                    time.Duration
 	OutboundReadyTimeout                 time.Duration
 	SendMaxInFlight                      int
+	ProviderSendMaxInFlight              int
 	KafkaConsumerMaxInFlight             int
 	SendQueueTimeout                     time.Duration
+	TypingSimulationMaxDelay             time.Duration
+	TypingSimulationProviderReserve      time.Duration
+	TypingSimulationMaxOrphans           int
+	RuntimeEffectLeaseTTL                time.Duration
+	RuntimeEffectLeaseHeartbeat          time.Duration
 	ConnectionHealthFailOnKafkaUnhealthy bool
 	ConnectionLifecycleDebugEnabled      bool
+	WhatsappSessionDebugEnabled          bool
 	SelfMonitorInterval                  time.Duration
 	SelfMonitorInitialDelay              time.Duration
 	SelfMonitorFailureThreshold          int
 	SelfHealRecoveryWindow               time.Duration
+	DailyMaintenanceEnabled              bool
 	DailyMaintenanceHour                 int
 	DailyMaintenanceMinute               int
 
-	KafkaSendConsumerIdleRecreateInterval time.Duration
-	KafkaHandlerErrorBackoff              time.Duration
-	KafkaConsumerStallTimeout             time.Duration
-	KafkaConsumerStallCheckInterval       time.Duration
-	KafkaConsumerMaxStallRestarts         int
+	KafkaConsumerRepairCooldown  time.Duration
+	KafkaConsumerMaxLocalRepairs int
 
 	OutboundFailureReconnectThreshold int
 	OutboundFailureReconnectCooldown  time.Duration
-	SendIdempotencyInProgressTTL      time.Duration
-	SendIdempotencyFinalTTL           time.Duration
-	SendIdempotencyStaleAfter         time.Duration
 
-	HistoryReconciliationEnabled      bool
-	HistoryReconciliationMessageLimit int
+	HistoryReconciliationEnabled       bool
+	HistoryReconciliationWindow        time.Duration
+	HistoryReconciliationMessageLimit  int
+	HistoryReconciliationChatScanLimit int
+	HistoryReconciliationPerChatLimit  int
 }
 
 func LoadConfig() (Config, error) {
@@ -91,20 +141,40 @@ func LoadConfig() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	kafkaConsumerStallTimeout := envMillisDurationDefault("KAFKA_CONSUMER_STALL_MS", 5*time.Minute)
 	dailyMaintenanceHour, dailyMaintenanceMinute := envDailyMaintenanceSchedule()
-
+	kafkaProtocol := strings.ToLower(scopedEnvDefault(
+		envScope,
+		"KAFKA_PUBLIC_SECURITY_PROTOCOL",
+		"KAFKA_PRIVATE_SECURITY_PROTOCOL",
+		"SECURITY_PROTOCOL",
+		"",
+	))
 	cfg := Config{
-		WorkerID:          strings.TrimSpace(os.Getenv("WORKER_ID")),
-		AccountID:         strings.TrimSpace(os.Getenv("ACCOUNT_ID")),
-		RuntimeGeneration: envIntDefault("RUNTIME_GENERATION", 0),
-		DataDir:           envDefault("WORKER_DATA_DIR", "/app/data"),
-		WarmStandby:       envBoolDefault("WARM_STANDBY", false),
-		WarmPoolID:        strings.TrimSpace(os.Getenv("WARM_POOL_ID")),
-		HTTPAddr:          ":" + envDefault("WORKER_HTTP_PORT", "3005"),
-		GRPCAddr:          ":" + envDefault("WORKER_WHATSMEOW_GRPC_PORT", "50054"),
-		BalanceGRPCHost:   envDefault("BALANCER_GRPC_HOST", "under-balance-api"),
-		BalanceGRPCPort:   envIntDefault("BALANCER_GRPC_PORT", 50051),
+		AppEnvironment:            strings.ToUpper(strings.TrimSpace(os.Getenv("APP_ENVIRONMENT"))),
+		WorkerID:                  strings.TrimSpace(os.Getenv("WORKER_ID")),
+		AccountID:                 strings.TrimSpace(os.Getenv("ACCOUNT_ID")),
+		RuntimeGeneration:         envIntDefault("RUNTIME_GENERATION", 0),
+		DataDir:                   envDefault("WORKER_DATA_DIR", "/app/data"),
+		SessionStorage:            normalizeSessionStorage(os.Getenv("WORKER_SESSION_STORAGE")),
+		WorkerDatabaseURL:         strings.TrimSpace(os.Getenv("WORKER_DATABASE_URL")),
+		SessionStorageMigrationID: strings.TrimSpace(os.Getenv("SESSION_STORAGE_MIGRATION_ID")),
+		LegacySessionVolumeName:   strings.TrimSpace(os.Getenv("LEGACY_SESSION_VOLUME_NAME")),
+		LegacySessionChecksum:     strings.ToLower(strings.TrimSpace(os.Getenv("LEGACY_SESSION_CHECKSUM_SHA256"))),
+		RuntimeCapability:         strings.TrimSpace(os.Getenv("WORKER_RUNTIME_CAPABILITY")),
+		WriterEpoch:               strings.TrimSpace(os.Getenv("WORKER_WRITER_EPOCH")),
+		ElasticURL: scopedEnvDefault(
+			envScope,
+			"DB_ELASTIC_PUBLIC_HOST",
+			"DB_ELASTIC_PRIVATE_HOST",
+			"DB_ELASTIC_HOST",
+			"",
+		),
+		ElasticUsername: strings.TrimSpace(os.Getenv("DB_ELASTIC_USER")),
+		ElasticPassword: os.Getenv("DB_ELASTIC_PASSWORD"),
+		WarmStandby:     envBoolDefault("WARM_STANDBY", false),
+		WarmPoolID:      strings.TrimSpace(os.Getenv("WARM_POOL_ID")),
+		HTTPAddr:        ":" + envDefault("WORKER_HTTP_PORT", "3005"),
+		GRPCAddr:        ":" + envDefault("WORKER_WHATSMEOW_GRPC_PORT", "50054"),
 		KafkaBrokers: splitCSV(scopedEnvDefault(
 			envScope,
 			"KAFKA_PUBLIC_BROKER",
@@ -112,13 +182,7 @@ func LoadConfig() (Config, error) {
 			"KAFKA_BROKER",
 			"",
 		)),
-		KafkaProtocol: strings.ToLower(scopedEnvDefault(
-			envScope,
-			"KAFKA_PUBLIC_SECURITY_PROTOCOL",
-			"KAFKA_PRIVATE_SECURITY_PROTOCOL",
-			"SECURITY_PROTOCOL",
-			"plaintext",
-		)),
+		KafkaProtocol: kafkaProtocol,
 		KafkaUsername: scopedEnvDefault(
 			envScope,
 			"KAFKA_PUBLIC_USERNAME",
@@ -138,8 +202,19 @@ func LoadConfig() (Config, error) {
 			"KAFKA_PUBLIC_SASL_MECHANISM",
 			"KAFKA_PRIVATE_SASL_MECHANISM",
 			"SASL_MECHANISM",
-			"PLAIN",
+			"",
 		)),
+		KafkaAllowPlaintext: envBoolDefault("KAFKA_ALLOW_PLAINTEXT", kafkaProtocolUsesPlaintext(kafkaProtocol)),
+		NATSURLs: splitCSV(scopedEnvDefault(
+			envScope,
+			"NATS_PUBLIC_URL",
+			"NATS_PRIVATE_URL",
+			"NATS_URL",
+			"nats://localhost:4222",
+		)),
+		NATSUser:     strings.TrimSpace(os.Getenv("NATS_USER")),
+		NATSPassword: os.Getenv("NATS_PASSWORD"),
+		NATSTLS:      envBoolDefault("NATS_TLS", false),
 		RedisHost: scopedEnvDefault(
 			envScope,
 			"DB_CACHE_PUBLIC_HOST",
@@ -178,69 +253,143 @@ func LoadConfig() (Config, error) {
 		ProxyPort:            envIntDefault("PROXY_PORT", 0),
 		ProxyUsername:        os.Getenv("PROXY_USERNAME"),
 		ProxyPassword:        os.Getenv("PROXY_PASSWORD"),
-		SendTimeout:          envDurationDefault("WORKER_SEND_TIMEOUT", 90*time.Second),
+		SendTimeout:          envDurationDefault("WORKER_SEND_TIMEOUT", 45*time.Second),
 		WhatsAppConnectTimeout: envDurationDefault(
 			"WORKER_WHATSAPP_CONNECT_TIMEOUT",
 			45*time.Second,
 		),
-		ConnectionQRFirstQRTimeout:            envMillisDurationDefault("CONNECTION_QR_FIRST_QR_TIMEOUT_MS", 75*time.Second),
-		KafkaPollInterval:                     250 * time.Millisecond,
-		OutboundReadyTimeout:                  envDurationDefault("WORKER_OUTBOUND_READY_TIMEOUT", 60*time.Second),
-		SendMaxInFlight:                       envIntDefault("WORKER_SEND_MAX_IN_FLIGHT", 256),
-		KafkaConsumerMaxInFlight:              envIntDefault("WORKER_KAFKA_MAX_IN_FLIGHT", 32),
-		SendQueueTimeout:                      envDurationDefault("WORKER_SEND_QUEUE_TIMEOUT", kafkaConsumerStallTimeout),
-		ConnectionHealthFailOnKafkaUnhealthy:  envBoolDefault("WORKER_CONNECTION_HEALTH_FAIL_ON_KAFKA_UNHEALTHY", false),
-		ConnectionLifecycleDebugEnabled:       envBoolDefault("CONNECTION_LIFECYCLE_DEBUG_ENABLED", false),
-		SelfMonitorInterval:                   envMillisDurationDefault("WORKER_SELF_MONITOR_INTERVAL_MS", 30*time.Second),
-		SelfMonitorInitialDelay:               envMillisDurationDefault("WORKER_SELF_MONITOR_INITIAL_DELAY_MS", 15*time.Second),
-		SelfMonitorFailureThreshold:           envIntDefault("WORKER_SELF_MONITOR_FAILURE_THRESHOLD", 3),
-		SelfHealRecoveryWindow:                time.Duration(envIntDefault("WORKER_SELF_HEAL_RECOVERY_WINDOW_SECONDS", 10*60)) * time.Second,
-		DailyMaintenanceHour:                  dailyMaintenanceHour,
-		DailyMaintenanceMinute:                dailyMaintenanceMinute,
-		KafkaSendConsumerIdleRecreateInterval: envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 0),
-		KafkaHandlerErrorBackoff:              envDurationDefault("WORKER_KAFKA_HANDLER_ERROR_BACKOFF", time.Second),
-		KafkaConsumerStallTimeout:             kafkaConsumerStallTimeout,
-		KafkaConsumerStallCheckInterval:       envMillisDurationDefault("KAFKA_CONSUMER_STALL_CHECK_MS", 30*time.Second),
-		KafkaConsumerMaxStallRestarts:         envIntDefault("KAFKA_CONSUMER_MAX_RESTARTS_BEFORE_UNHEALTHY", 3),
-		OutboundFailureReconnectThreshold:     envIntDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_THRESHOLD", 3),
-		OutboundFailureReconnectCooldown:      envDurationDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_COOLDOWN", 2*time.Minute),
-		SendIdempotencyInProgressTTL:          envDurationDefault("WORKER_SEND_IDEMPOTENCY_IN_PROGRESS_TTL", 10*time.Minute),
-		SendIdempotencyFinalTTL:               envDurationDefault("WORKER_SEND_IDEMPOTENCY_FINAL_TTL", 24*time.Hour),
-		SendIdempotencyStaleAfter:             envDurationDefault("WORKER_SEND_IDEMPOTENCY_STALE_AFTER", 0),
-		HistoryReconciliationEnabled:          envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
-		HistoryReconciliationMessageLimit:     envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", 100),
+		ConnectionQRFirstQRTimeout:           envMillisDurationDefault("CONNECTION_QR_FIRST_QR_TIMEOUT_MS", 75*time.Second),
+		OutboundReadyTimeout:                 envDurationDefault("WORKER_OUTBOUND_READY_TIMEOUT", 60*time.Second),
+		SendMaxInFlight:                      envIntDefault("WORKER_SEND_MAX_IN_FLIGHT", 256),
+		ProviderSendMaxInFlight:              envIntDefault("WORKER_PROVIDER_SEND_MAX_IN_FLIGHT", defaultProviderSendMaxInFlight),
+		KafkaConsumerMaxInFlight:             envIntDefault("WORKER_KAFKA_MAX_IN_FLIGHT", 32),
+		SendQueueTimeout:                     envDurationDefault("WORKER_SEND_QUEUE_TIMEOUT", defaultSendQueueTimeout),
+		TypingSimulationMaxDelay:             resolveTypingSimulationMaxDelay(os.Getenv("TYPING_SIMULATION_MAX_DELAY_MS")),
+		TypingSimulationProviderReserve:      envMillisDurationDefault("WORKER_SEND_PROVIDER_RESERVE_MS", defaultTypingSimulationProviderReserve),
+		TypingSimulationMaxOrphans:           envIntDefault("WORKER_TYPING_MAX_ORPHANS", defaultTypingSimulationMaxOrphans),
+		RuntimeEffectLeaseTTL:                envMillisDurationDefault("WHATSAPP_RUNTIME_EFFECT_LEASE_TTL_MS", defaultRuntimeEffectLeaseTTL),
+		RuntimeEffectLeaseHeartbeat:          envMillisDurationDefault("WHATSAPP_RUNTIME_EFFECT_LEASE_HEARTBEAT_MS", defaultRuntimeEffectLeaseHeartbeat),
+		ConnectionHealthFailOnKafkaUnhealthy: envBoolDefault("WORKER_CONNECTION_HEALTH_FAIL_ON_KAFKA_UNHEALTHY", false),
+		ConnectionLifecycleDebugEnabled:      envBoolDefault("CONNECTION_LIFECYCLE_DEBUG_ENABLED", false),
+		WhatsappSessionDebugEnabled:          envBoolDefault("WHATSAPP_SESSION_DEBUG_ENABLED", true),
+		SelfMonitorInterval:                  envMillisDurationDefault("WORKER_SELF_MONITOR_INTERVAL_MS", 30*time.Second),
+		SelfMonitorInitialDelay:              envMillisDurationDefault("WORKER_SELF_MONITOR_INITIAL_DELAY_MS", 15*time.Second),
+		SelfMonitorFailureThreshold:          envIntDefault("WORKER_SELF_MONITOR_FAILURE_THRESHOLD", 3),
+		SelfHealRecoveryWindow:               time.Duration(envIntDefault("WORKER_SELF_HEAL_RECOVERY_WINDOW_SECONDS", 10*60)) * time.Second,
+		DailyMaintenanceEnabled:              envBoolDefault("WORKER_DAILY_MAINTENANCE_ENABLED", false),
+		DailyMaintenanceHour:                 dailyMaintenanceHour,
+		DailyMaintenanceMinute:               dailyMaintenanceMinute,
+		KafkaConsumerRepairCooldown:          envMillisDurationDefault("KAFKA_CONSUMER_REPAIR_COOLDOWN_MS", 30*time.Second),
+		KafkaConsumerMaxLocalRepairs:         envIntDefault("KAFKA_CONSUMER_MAX_LOCAL_REPAIRS", 3),
+		OutboundFailureReconnectThreshold:    envIntDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_THRESHOLD", 3),
+		OutboundFailureReconnectCooldown:     envDurationDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_COOLDOWN", 2*time.Minute),
+		HistoryReconciliationEnabled:         envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
+		HistoryReconciliationWindow:          envMillisDurationDefault("HISTORY_RECONCILIATION_WINDOW_MS", defaultHistoryReconciliationWindow),
+		HistoryReconciliationMessageLimit:    envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", defaultHistoryReconciliationMessageLimit),
+		HistoryReconciliationChatScanLimit:   envIntDefault("HISTORY_RECONCILIATION_CHAT_SCAN_LIMIT", defaultHistoryReconciliationChatScanLimit),
+		HistoryReconciliationPerChatLimit:    envIntDefault("HISTORY_RECONCILIATION_PER_CHAT_LIMIT", defaultHistoryReconciliationPerChatLimit),
 	}
 
-	if cfg.WarmStandby {
+	if cfg.SessionStorage != SessionStorageLegacyVolume && cfg.SessionStorage != SessionStoragePostgres {
+		return cfg, fmt.Errorf("WORKER_SESSION_STORAGE must be %q or %q", SessionStorageLegacyVolume, SessionStoragePostgres)
+	}
+	if !cfg.WarmStandby {
 		if cfg.WorkerID == "" {
-			if cfg.WarmPoolID != "" {
-				cfg.WorkerID = cfg.WarmPoolID
-			} else {
-				cfg.WorkerID = "warm-standby"
-			}
+			return cfg, fmt.Errorf("WORKER_ID is not defined")
 		}
 		if cfg.AccountID == "" {
-			cfg.AccountID = "warm-standby"
+			return cfg, fmt.Errorf("ACCOUNT_ID is not defined")
 		}
 	}
-
-	if cfg.WorkerID == "" {
-		return cfg, fmt.Errorf("WORKER_ID is not defined")
+	if cfg.SessionStorage == SessionStoragePostgres {
+		if cfg.WorkerDatabaseURL == "" {
+			return cfg, fmt.Errorf("WORKER_DATABASE_URL is required for postgres session storage")
+		}
 	}
-	if cfg.AccountID == "" {
-		return cfg, fmt.Errorf("ACCOUNT_ID is not defined")
+	migrationFieldCount := 0
+	for _, value := range []string{cfg.SessionStorageMigrationID, cfg.LegacySessionVolumeName, cfg.LegacySessionChecksum} {
+		if value != "" {
+			migrationFieldCount++
+		}
+	}
+	if migrationFieldCount != 0 && migrationFieldCount != 3 {
+		return cfg, fmt.Errorf("session storage migration environment is incomplete")
+	}
+	if migrationFieldCount == 3 {
+		if cfg.SessionStorage != SessionStoragePostgres {
+			return cfg, fmt.Errorf("session storage migration requires postgres storage")
+		}
+		if _, err := uuid.Parse(cfg.SessionStorageMigrationID); err != nil {
+			return cfg, fmt.Errorf("SESSION_STORAGE_MIGRATION_ID must be a UUID")
+		}
+		if len(cfg.LegacySessionVolumeName) > 255 || strings.ContainsAny(cfg.LegacySessionVolumeName, "\\/\x00") {
+			return cfg, fmt.Errorf("LEGACY_SESSION_VOLUME_NAME is invalid")
+		}
+		if len(cfg.LegacySessionChecksum) != 64 {
+			return cfg, fmt.Errorf("LEGACY_SESSION_CHECKSUM_SHA256 is invalid")
+		}
+		if _, err := hex.DecodeString(cfg.LegacySessionChecksum); err != nil {
+			return cfg, fmt.Errorf("LEGACY_SESSION_CHECKSUM_SHA256 is invalid")
+		}
+	}
+	// Every active worker with direct database access participates in the same
+	// canonical runtime fence, including legacy-volume workers. A warm standby
+	// deliberately has no channel identity until ActivateRuntime assigns it.
+	if cfg.WorkerDatabaseURL != "" && !cfg.WarmStandby {
+		if _, err := uuid.Parse(cfg.WorkerID); err != nil {
+			return cfg, fmt.Errorf("WORKER_ID must be a UUID when WORKER_DATABASE_URL is configured")
+		}
+		if _, err := uuid.Parse(cfg.AccountID); err != nil {
+			return cfg, fmt.Errorf("ACCOUNT_ID must be a UUID when WORKER_DATABASE_URL is configured")
+		}
+		if cfg.RuntimeGeneration <= 0 {
+			return cfg, fmt.Errorf("RUNTIME_GENERATION must be positive when WORKER_DATABASE_URL is configured")
+		}
+		if len(cfg.RuntimeCapability) < 32 {
+			return cfg, fmt.Errorf("WORKER_RUNTIME_CAPABILITY is required when WORKER_DATABASE_URL is configured")
+		}
+		if _, err := uuid.Parse(cfg.WriterEpoch); err != nil {
+			return cfg, fmt.Errorf("WORKER_WRITER_EPOCH must be a UUID when WORKER_DATABASE_URL is configured")
+		}
 	}
 	if len(cfg.KafkaBrokers) == 0 {
 		return cfg, fmt.Errorf("KAFKA_BROKER is not defined")
 	}
+	if len(cfg.NATSURLs) == 0 {
+		return cfg, fmt.Errorf("NATS_URL is not defined")
+	}
+	if (cfg.NATSUser == "") != (cfg.NATSPassword == "") {
+		return cfg, fmt.Errorf("NATS_USER and NATS_PASSWORD must be configured together")
+	}
+	if strings.TrimSpace(os.Getenv("NATS_TOKEN")) != "" || strings.TrimSpace(os.Getenv("NATS_CREDS_BASE64")) != "" {
+		return cfg, fmt.Errorf("NATS workers support only NATS_USER and NATS_PASSWORD authentication")
+	}
+	if raw := strings.TrimSpace(os.Getenv("NATS_TLS")); raw != "" &&
+		!strings.EqualFold(raw, "true") && !strings.EqualFold(raw, "false") {
+		return cfg, fmt.Errorf("NATS_TLS must be true or false")
+	}
+	if strings.TrimSpace(cfg.KafkaProtocol) == "" {
+		return cfg, fmt.Errorf("Kafka security protocol is not defined")
+	}
+	if kafkaProtocolUsesPlaintext(cfg.KafkaProtocol) && !cfg.KafkaAllowPlaintext {
+		return cfg, fmt.Errorf(
+			"Kafka plaintext transport requires KAFKA_ALLOW_PLAINTEXT=true",
+		)
+	}
 	if cfg.RedisPort <= 0 {
 		return cfg, fmt.Errorf("DB_CACHE_PORT is invalid")
 	}
-	if cfg.BalanceGRPCPort <= 0 {
-		return cfg, fmt.Errorf("BALANCER_GRPC_PORT is invalid")
+	if cfg.HistoryReconciliationWindow <= 0 {
+		cfg.HistoryReconciliationWindow = defaultHistoryReconciliationWindow
 	}
 	if cfg.HistoryReconciliationMessageLimit <= 0 {
-		cfg.HistoryReconciliationMessageLimit = 100
+		cfg.HistoryReconciliationMessageLimit = defaultHistoryReconciliationMessageLimit
+	}
+	if cfg.HistoryReconciliationChatScanLimit <= 0 {
+		cfg.HistoryReconciliationChatScanLimit = defaultHistoryReconciliationChatScanLimit
+	}
+	if cfg.HistoryReconciliationPerChatLimit <= 0 {
+		cfg.HistoryReconciliationPerChatLimit = defaultHistoryReconciliationPerChatLimit
 	}
 	if cfg.OutboundFailureReconnectThreshold <= 0 {
 		cfg.OutboundFailureReconnectThreshold = 3
@@ -254,23 +403,32 @@ func LoadConfig() (Config, error) {
 	if cfg.SendMaxInFlight <= 0 {
 		cfg.SendMaxInFlight = 256
 	}
+	cfg.ProviderSendMaxInFlight = normalizeProviderSendMaxInFlight(
+		cfg.ProviderSendMaxInFlight,
+	)
 	if cfg.KafkaConsumerMaxInFlight <= 0 {
 		cfg.KafkaConsumerMaxInFlight = 32
 	}
 	if cfg.SendQueueTimeout <= 0 {
-		cfg.SendQueueTimeout = cfg.KafkaConsumerStallTimeout
+		cfg.SendQueueTimeout = defaultSendQueueTimeout
 	}
-	if cfg.KafkaHandlerErrorBackoff <= 0 {
-		cfg.KafkaHandlerErrorBackoff = time.Second
+	cfg.TypingSimulationMaxDelay = normalizeTypingSimulationMaxDelay(cfg.TypingSimulationMaxDelay)
+	if cfg.TypingSimulationProviderReserve <= 0 {
+		cfg.TypingSimulationProviderReserve = defaultTypingSimulationProviderReserve
 	}
-	if cfg.KafkaConsumerStallTimeout <= 0 {
-		cfg.KafkaConsumerStallTimeout = 5 * time.Minute
+	cfg.TypingSimulationMaxOrphans = normalizeTypingSimulationMaxOrphans(
+		cfg.TypingSimulationMaxOrphans,
+	)
+	cfg.RuntimeEffectLeaseTTL, cfg.RuntimeEffectLeaseHeartbeat =
+		normalizeRuntimeEffectLeaseDurations(
+			cfg.RuntimeEffectLeaseTTL,
+			cfg.RuntimeEffectLeaseHeartbeat,
+		)
+	if cfg.KafkaConsumerRepairCooldown <= 0 {
+		cfg.KafkaConsumerRepairCooldown = 30 * time.Second
 	}
-	if cfg.KafkaConsumerStallCheckInterval <= 0 {
-		cfg.KafkaConsumerStallCheckInterval = 30 * time.Second
-	}
-	if cfg.KafkaConsumerMaxStallRestarts <= 0 {
-		cfg.KafkaConsumerMaxStallRestarts = 3
+	if cfg.KafkaConsumerMaxLocalRepairs <= 0 {
+		cfg.KafkaConsumerMaxLocalRepairs = 3
 	}
 	if cfg.SelfMonitorInterval <= 0 {
 		cfg.SelfMonitorInterval = 30 * time.Second
@@ -290,23 +448,51 @@ func LoadConfig() (Config, error) {
 	if cfg.DailyMaintenanceMinute < 0 || cfg.DailyMaintenanceMinute > 59 {
 		cfg.DailyMaintenanceMinute = 0
 	}
-	if cfg.SendIdempotencyInProgressTTL <= 0 {
-		cfg.SendIdempotencyInProgressTTL = 10 * time.Minute
-	}
-	if cfg.SendIdempotencyFinalTTL <= 0 {
-		cfg.SendIdempotencyFinalTTL = 24 * time.Hour
-	}
-	if cfg.SendIdempotencyStaleAfter <= 0 {
-		cfg.SendIdempotencyStaleAfter = cfg.SendTimeout + 30*time.Second
-	}
-	if cfg.SendIdempotencyStaleAfter < cfg.SendTimeout {
-		cfg.SendIdempotencyStaleAfter = cfg.SendTimeout
+	return cfg, nil
+}
+
+func withoutNATSAuthentication(cfg Config) Config {
+	cfg.NATSUser = ""
+	cfg.NATSPassword = ""
+	return cfg
+}
+
+func hasNATSAuthentication(cfg Config) bool {
+	return cfg.NATSUser != "" && cfg.NATSPassword != ""
+}
+
+func warmStandbyNATSConfig(cfg Config) Config {
+	return cfg
+}
+
+func workerRuntimeNATSConfig(cfg Config) (Config, error) {
+	if !hasNATSAuthentication(cfg) {
+		return cfg, errors.New("NATS_USER and NATS_PASSWORD are required")
 	}
 	return cfg, nil
 }
 
-func (c Config) BalanceGRPCAddress() string {
-	return net.JoinHostPort(c.BalanceGRPCHost, strconv.Itoa(c.BalanceGRPCPort))
+const (
+	SessionStorageLegacyVolume = "legacy_volume"
+	SessionStoragePostgres     = "postgres"
+)
+
+func normalizeSessionStorage(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return SessionStorageLegacyVolume
+	}
+	return value
+}
+
+func normalizeProviderSendMaxInFlight(limit int) int {
+	if limit <= 0 {
+		return defaultProviderSendMaxInFlight
+	}
+	if limit > maxProviderSendMaxInFlight {
+		return maxProviderSendMaxInFlight
+	}
+	return limit
 }
 
 func (c Config) ProxyURL() string {
@@ -485,6 +671,68 @@ func envMillisDurationDefault(key string, fallback time.Duration) time.Duration 
 		return time.Duration(millis) * time.Millisecond
 	}
 	return fallback
+}
+
+// resolveTypingSimulationMaxDelay mirrors the shared Node worker contract:
+// integer values are milliseconds, duration strings remain accepted by the Go
+// worker, invalid/non-positive values use the safe default, and the result is
+// constrained to one through sixty seconds.
+func resolveTypingSimulationMaxDelay(raw string) time.Duration {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return defaultTypingSimulationMaxDelay
+	}
+	if value, err := time.ParseDuration(raw); err == nil {
+		return normalizeTypingSimulationMaxDelay(value)
+	}
+	millis, err := strconv.Atoi(raw)
+	if err != nil || millis <= 0 {
+		return defaultTypingSimulationMaxDelay
+	}
+	return normalizeTypingSimulationMaxDelay(time.Duration(millis) * time.Millisecond)
+}
+
+func normalizeTypingSimulationMaxDelay(value time.Duration) time.Duration {
+	if value <= 0 {
+		return defaultTypingSimulationMaxDelay
+	}
+	if value < minTypingSimulationMaxDelay {
+		return minTypingSimulationMaxDelay
+	}
+	if value > maxTypingSimulationMaxDelay {
+		return maxTypingSimulationMaxDelay
+	}
+	return value
+}
+
+func normalizeTypingSimulationMaxOrphans(value int) int {
+	if value <= 0 {
+		return defaultTypingSimulationMaxOrphans
+	}
+	if value > maxTypingSimulationMaxOrphans {
+		return maxTypingSimulationMaxOrphans
+	}
+	return value
+}
+
+func normalizeRuntimeEffectLeaseDurations(
+	ttl time.Duration,
+	heartbeat time.Duration,
+) (time.Duration, time.Duration) {
+	if ttl <= 0 {
+		ttl = defaultRuntimeEffectLeaseTTL
+	}
+	if heartbeat <= 0 {
+		heartbeat = defaultRuntimeEffectLeaseHeartbeat
+	}
+	// Require six missed heartbeats before an orphan expires. A live provider
+	// effect remains fenced through short Redis/network stalls while a hard
+	// crash no longer blocks replacement for the previous five minutes.
+	minimumTTL := heartbeat * 6
+	if ttl < minimumTTL {
+		ttl = minimumTTL
+	}
+	return ttl, heartbeat
 }
 
 func splitCSV(value string) []string {

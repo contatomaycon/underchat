@@ -1,9 +1,12 @@
+import type { ContactValidationOrigin } from '@core/common/types/ContactValidationOrigin';
+
 export interface ICreateContact {
   account_id?: string | null;
   channel_ids?: string[] | null;
   label_template_ids?: string[] | null;
   contact_document_type_id?: string | null;
   is_valided?: boolean;
+  validation_origin?: ContactValidationOrigin | null;
   name: string;
   last_name?: string | null;
   email?: string | null;

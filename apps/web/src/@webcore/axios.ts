@@ -21,6 +21,7 @@ import { normalizeBaseUrl } from './utils/helpers';
 import { UserAttendanceHoursBlockedData } from '@core/schema/user/attendanceHours/shared.schema';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { updateAbilityPermissions } from '@/plugins/0.casl/ability';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 const createAxiosInstance = () => {
   const baseUrl = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
@@ -269,6 +270,42 @@ const isPermissionDeniedMessage = (message: string | null): boolean => {
   return typeof translatedMessage === 'string' && message === translatedMessage;
 };
 
+const isIntegrationPlanRequired = (responseData: unknown): boolean => {
+  if (!responseData || typeof responseData !== 'object') {
+    return false;
+  }
+
+  const data = (responseData as { data?: unknown }).data;
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  const entitlementError = data as {
+    reason?: unknown;
+    plan_product_id?: unknown;
+  };
+
+  return (
+    entitlementError.reason === 'integration_plan_required' &&
+    (entitlementError.plan_product_id === undefined ||
+      entitlementError.plan_product_id === EPlanProduct.integration)
+  );
+};
+
+const currentRouteRequiresIntegration = (): boolean =>
+  router.currentRoute.value.matched.some((route) =>
+    route.meta.requiredPlanProducts?.includes(EPlanProduct.integration)
+  );
+
+const applyIntegrationPlanDenied = async (): Promise<void> => {
+  const { useAuthStore } = await import('@webcore/stores/auth');
+  useAuthStore().revokeIntegrationEntitlement();
+
+  if (currentRouteRequiresIntegration()) {
+    await redirectPermissionDeniedWithSingleFlight();
+  }
+};
+
 axiosAuth.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = getToken();
@@ -300,6 +337,13 @@ axiosAuth.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config as
       (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+
+    if (
+      error.response?.status === 402 &&
+      isIntegrationPlanRequired(error.response?.data)
+    ) {
+      await applyIntegrationPlanDenied();
+    }
 
     if (error.response?.status === 403) {
       const blockedData = error?.response?.data

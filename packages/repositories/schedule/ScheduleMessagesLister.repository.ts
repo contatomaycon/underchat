@@ -107,6 +107,13 @@ export class ScheduleMessagesListerRepository {
               },
             },
           ],
+          must_not: [
+            {
+              exists: {
+                field: 'reprocessed_by_message_id',
+              },
+            },
+          ],
         },
       },
       aggs: {

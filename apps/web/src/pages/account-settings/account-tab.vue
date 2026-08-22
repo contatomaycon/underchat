@@ -15,6 +15,15 @@ import { VForm } from 'vuetify/components/VForm';
 import { setUser } from '@/@webcore/localStorage/user';
 import { UpdateAdditionalInfoRequest } from '@core/schema/accountSettings/updateAdditionalInfo/request.schema';
 import { UpdateAddressRequest } from '@core/schema/accountSettings/updateAddress/request.schema';
+import {
+  formatCnpj,
+  normalizeCnpj,
+  validateCnpj,
+} from '@core/common/functions/validateCnpj';
+import { cnpjAlphanumericMask } from '@/@webcore/utils/masks';
+import AccountProfilePhotoPanel from '@/components/account-settings/AccountProfilePhotoPanel.vue';
+import AccountSettingsSection from '@/components/account-settings/AccountSettingsSection.vue';
+import AccountTabSkeleton from '@/components/account-settings/AccountTabSkeleton.vue';
 
 const { t } = useI18n();
 const accountSettingsStore = useAccountSettingsStore();
@@ -40,6 +49,10 @@ const isUploadingPhoto = ref(false);
 const cropImageRef = ref<HTMLImageElement | null>(null);
 const cropCanvasRef = ref<HTMLCanvasElement | null>(null);
 const cropPreviewSize = 400;
+const profilePhotoSrc = computed(
+  () => photoPreview.value || chatStore.user?.info.photo || null
+);
+const hasProfilePhoto = computed(() => Boolean(profilePhotoSrc.value));
 
 const cropDialog = ref({
   imageSrc: '',
@@ -137,9 +150,9 @@ const documentFormatted = computed({
       documentHasBeenEdited.value = true;
     }
     if (isCPF.value || isCNPJ.value) {
-      const maxLength = isCPF.value ? 11 : 14;
-      const digits = onlyDigits(value).slice(0, maxLength);
-      document.value = digits || null;
+      document.value = isCNPJ.value
+        ? normalizeCnpj(value).slice(0, 14) || null
+        : onlyDigits(value).slice(0, 11) || null;
     } else {
       document.value = value || null;
     }
@@ -185,7 +198,9 @@ const toggleDocumentVisibility = async () => {
   if (decryptedDocument) {
     documentHasBeenEdited.value = true;
     await nextTick();
-    document.value = decryptedDocument.replaceAll(/\D/g, '');
+    document.value = isCNPJ.value
+      ? normalizeCnpj(decryptedDocument)
+      : decryptedDocument.replaceAll(/\D/g, '');
     isDocumentDecrypted.value = true;
   }
 };
@@ -299,9 +314,9 @@ const docConfig = {
     placeholder: '000.000.000-00',
   },
   cnpj: {
-    mask: '##.###.###/####-##',
+    mask: cnpjAlphanumericMask,
     label: t('cnpj'),
-    placeholder: '00.000.000/0000-00',
+    placeholder: '00.AAA.000/00AA-00',
   },
 };
 
@@ -329,27 +344,14 @@ const formatCpfDigits = (digits: string) => {
   }
   return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9, 11)}`;
 };
-const formatCnpjDigits = (digits: string) => {
-  const clean = digits.slice(0, 14);
-  if (clean.length <= 2) return clean;
-  if (clean.length <= 5) return `${clean.slice(0, 2)}.${clean.slice(2)}`;
-  if (clean.length <= 8) {
-    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
-  }
-  if (clean.length <= 12) {
-    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
-  }
-  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
-};
-const formatDocumentForDisplay = (digits: string | null) => {
-  if (!digits) return '';
-  if (isCPF.value) return formatCpfDigits(digits);
-  if (isCNPJ.value) return formatCnpjDigits(digits);
-  return digits;
+const formatDocumentForDisplay = (value: string | null) => {
+  if (!value) return '';
+  if (isCPF.value) return formatCpfDigits(onlyDigits(value));
+  if (isCNPJ.value) return formatCnpj(value);
+  return value;
 };
 
 const cpfRegex = /^\d{11}$/;
-const cnpjRegex = /^\d{14}$/;
 
 const requiredMsg = (label: string) => t('field_required', { field: label });
 
@@ -357,12 +359,13 @@ const docRules = computed(() => {
   if (isCPF.value || isCNPJ.value) {
     return [
       (v: string | null) =>
-        (!!v && onlyDigits(v).length > 0) || requiredMsg(docLabel.value),
+        (!!v && (onlyDigits(v).length > 0 || normalizeCnpj(v).length > 0)) ||
+        requiredMsg(docLabel.value),
       (v: string | null) => {
         if (!v) return true;
         const digits = onlyDigits(v);
         if (isCPF.value) return cpfRegex.test(digits) || t('cpf_invalid');
-        if (isCNPJ.value) return cnpjRegex.test(digits) || t('cnpj_invalid');
+        if (isCNPJ.value) return validateCnpj(v) || t('cnpj_invalid');
         return true;
       },
     ];
@@ -372,12 +375,13 @@ const docRules = computed(() => {
   }
   return [
     (v: string | null) =>
-      (!!v && onlyDigits(v).length > 0) || requiredMsg(docLabel.value),
+      (!!v && (onlyDigits(v).length > 0 || normalizeCnpj(v).length > 0)) ||
+      requiredMsg(docLabel.value),
     (v: string | null) => {
       if (!v) return true;
       const digits = onlyDigits(v);
       if (isCPF.value) return cpfRegex.test(digits) || t('cpf_invalid');
-      if (isCNPJ.value) return cnpjRegex.test(digits) || t('cnpj_invalid');
+      if (isCNPJ.value) return validateCnpj(v) || t('cnpj_invalid');
       return true;
     },
   ];
@@ -855,12 +859,16 @@ const buildAdditionalInfoBody = (): UpdateAdditionalInfoRequest => {
     } else {
       body.document_type_id = user_document_type_id.value;
       if (document.value) {
-        body.document = document.value;
+        body.document = isCNPJ.value
+          ? normalizeCnpj(document.value)
+          : document.value;
       }
     }
   } else {
     if (document.value) {
-      body.document = document.value;
+      body.document = isCNPJ.value
+        ? normalizeCnpj(document.value)
+        : document.value;
     }
   }
 
@@ -1281,509 +1289,321 @@ watch(zip_code, () => {
 </script>
 
 <template>
-  <div class="d-flex flex-column account-tab-container">
-    <template v-if="isInitializing">
-      <VCard variant="elevated" class="account-settings-card">
-        <VCardTitle class="text-h6 pa-6 pb-4">
-          {{ $t('profile_details') }}
-        </VCardTitle>
-        <VDivider />
-        <VCardText>
-          <div class="d-flex align-center gap-6 pa-4">
-            <VSkeletonLoader type="avatar" width="120" height="120" />
-            <div class="d-flex flex-column gap-3 flex-grow-1">
-              <div class="d-flex gap-3">
-                <VSkeletonLoader type="button" width="160" height="36" />
-                <VSkeletonLoader type="button" width="100" height="36" />
-              </div>
-              <VSkeletonLoader type="text" width="70%" height="16" />
-            </div>
-          </div>
-        </VCardText>
-      </VCard>
-
-      <VCard variant="elevated" class="account-settings-card">
-        <VCardTitle class="text-h6 pa-6 pb-4">
-          {{ $t('additional_info') }}
-        </VCardTitle>
-        <VDivider />
-        <VCardText>
-          <VRow class="mt-4 mb-2">
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="60"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="50"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12">
-              <VDivider />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="40"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="80"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="100"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="70"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="80"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-          </VRow>
-          <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
-            <VSkeletonLoader type="button" width="100" height="36" />
-          </VCardText>
-        </VCardText>
-      </VCard>
-
-      <VCard variant="elevated" class="account-settings-card">
-        <VCardTitle class="text-h6 pa-6 pb-4">
-          {{ $t('address') }}
-        </VCardTitle>
-        <VDivider />
-        <VCardText>
-          <VRow class="mt-4 mb-2">
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="60"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="80"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="50"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="40"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="70"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="120"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSkeletonLoader
-                type="text"
-                width="70"
-                height="20"
-                class="mb-1"
-              />
-              <VSkeletonLoader type="text" height="48" />
-            </VCol>
-          </VRow>
-          <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
-            <VSkeletonLoader type="button" width="100" height="36" />
-          </VCardText>
-        </VCardText>
-      </VCard>
-    </template>
+  <div class="account-tab-container">
+    <AccountTabSkeleton v-if="isInitializing" />
 
     <template v-else>
-      <VCard variant="elevated" class="account-settings-card">
-        <VCardTitle class="text-h6 pa-6 pb-4">
-          {{ $t('profile_details') }}
-        </VCardTitle>
-        <VDivider />
-        <VCardText>
-          <div class="d-flex align-center gap-6 pa-4">
-            <div
-              class="d-flex align-center justify-center"
-              style="min-width: 120px"
-            >
-              <VAvatar
-                size="120"
-                class="cursor-pointer"
-                @click="openFileSelector"
-              >
-                <VImg
-                  v-if="photoPreview || chatStore.user?.info.photo"
-                  :src="photoPreview || chatStore.user?.info.photo || ''"
-                />
-                <VImg
-                  v-if="!photoPreview && !chatStore.user?.info.photo"
-                  :src="'/images/svg/avatar-default.svg'"
-                  alt="Avatar"
-                />
-                <div class="photo-overlay d-flex align-center justify-center">
-                  <VIcon icon="tabler-camera" size="24" color="white" />
-                </div>
-              </VAvatar>
-            </div>
+      <div class="account-tab-layout">
+        <AccountProfilePhotoPanel
+          :photo-src="profilePhotoSrc"
+          :has-photo="hasProfilePhoto"
+          :loading="accountSettingsStore.loading"
+          :hint="$t('allowed_jpg_gif_png_max_size_800k')"
+          @change-photo="openFileSelector"
+          @delete-photo="deletePhoto"
+        />
 
-            <div class="d-flex flex-column gap-3 flex-grow-1">
-              <div class="d-flex gap-3">
-                <VBtn
-                  color="primary"
-                  variant="elevated"
-                  size="default"
-                  @click="openFileSelector"
+        <div class="account-tab-main">
+          <VForm
+            ref="refFormAdditionalInfo"
+            class="account-section-form"
+            @submit.prevent="saveAdditionalInfo"
+          >
+            <AccountSettingsSection
+              :title="$t('additional_info')"
+              icon="tabler-id"
+            >
+              <VRow class="account-form-grid">
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('phone_ddi') }}:
+                  </VLabel>
+                  <AppSelectSearch
+                    v-model="phone_ddi"
+                    :items="countryCodes"
+                    :placeholder="$t('select_phone_ddi')"
+                    item-value="value"
+                    item-title="title"
+                  />
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('phone') }}:
+                  </VLabel>
+                  <AppTextField
+                    v-model="phoneFormatted"
+                    type="tel"
+                    :placeholder="$t('phone')"
+                    maxlength="15"
+                  >
+                    <template #append-inner>
+                      <VIcon
+                        v-if="phonePartial"
+                        :icon="
+                          isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                        "
+                        class="cursor-pointer account-sensitive-icon"
+                        :class="{ 'opacity-50': isLoadingPhone }"
+                        @click.stop="togglePhoneVisibility"
+                      />
+                    </template>
+                  </AppTextField>
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('name') }}:
+                  </VLabel>
+                  <AppTextField v-model="name" :placeholder="$t('name')" />
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('last_name') }}:
+                  </VLabel>
+                  <AppTextField
+                    v-model="last_name"
+                    :placeholder="$t('last_name')"
+                  />
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('document_type') }}:
+                  </VLabel>
+                  <AppSelectSearch
+                    v-model="user_document_type_id"
+                    :items="itemsDocuments"
+                    :placeholder="$t('document_type')"
+                    :clearable="true"
+                    item-value="value"
+                    item-title="title"
+                    @select="handleDocumentTypeSelect"
+                    @clear="handleDocumentTypeClear"
+                  />
+                </VCol>
+
+                <VCol
+                  v-if="isCPF || isCNPJ || documentPartial"
+                  cols="12"
+                  md="6"
                 >
-                  {{
-                    chatStore.user?.info.photo
-                      ? $t('change_photo')
-                      : $t('upload_new_photo')
-                  }}
-                </VBtn>
+                  <VLabel class="account-field-label">{{ docLabel }}:</VLabel>
+                  <AppTextField
+                    v-model="documentFormatted"
+                    :placeholder="docPlaceholder"
+                    :inputmode="isCNPJ ? undefined : isCPF ? 'numeric' : 'text'"
+                    :rules="docRules"
+                    v-maska="shouldUseDocMask ? docMask : ''"
+                  >
+                    <template #append-inner>
+                      <VIcon
+                        v-if="documentPartial"
+                        :icon="
+                          isDocumentDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                        "
+                        class="cursor-pointer account-sensitive-icon"
+                        :class="{ 'opacity-50': isLoadingDocument }"
+                        @click.stop="toggleDocumentVisibility"
+                      />
+                    </template>
+                  </AppTextField>
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('birth_date') }}:
+                  </VLabel>
+                  <AppDateTimePicker
+                    v-model="birth_date"
+                    :placeholder="$t('birth_date')"
+                  />
+                </VCol>
+              </VRow>
+
+              <template #actions>
                 <VBtn
-                  v-if="chatStore.user?.info.photo || photoPreview"
-                  color="error"
-                  variant="outlined"
-                  size="default"
-                  @click="deletePhoto"
+                  type="submit"
+                  prepend-icon="tabler-device-floppy"
                   :loading="accountSettingsStore.loading"
                 >
-                  {{ $t('delete') }}
+                  {{ $t('save') }}
                 </VBtn>
-              </div>
+              </template>
+            </AccountSettingsSection>
+          </VForm>
 
-              <p class="text-body-2 text-medium-emphasis mb-0">
-                {{ $t('allowed_jpg_gif_png_max_size_800k') }}
-              </p>
-            </div>
-          </div>
-        </VCardText>
-      </VCard>
-
-      <VCard variant="elevated" class="account-settings-card">
-        <VCardTitle class="text-h6 pa-6 pb-4">
-          {{ $t('additional_info') }}
-        </VCardTitle>
-        <VDivider />
-        <VCardText>
-          <VForm class="mt-4" ref="refFormAdditionalInfo" @submit.prevent>
-          <VRow class="mb-2">
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('phone_ddi') }}:</VLabel>
-              <AppSelectSearch
-                v-model="phone_ddi"
-                :items="countryCodes"
-                :placeholder="$t('select_phone_ddi')"
-                item-value="value"
-                item-title="title"
-              />
-            </VCol>
-
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
-              <AppTextField
-                v-model="phoneFormatted"
-                type="tel"
-                :placeholder="$t('phone')"
-                maxlength="15"
-              >
-                <template #append-inner>
-                  <VIcon
-                    v-if="phonePartial"
-                    :icon="isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
-                    class="cursor-pointer"
-                    :class="{ 'opacity-50': isLoadingPhone }"
-                    @click.stop="togglePhoneVisibility"
-                  />
-                </template>
-              </AppTextField>
-            </VCol>
-
-            <VCol cols="12">
-              <VDivider />
-            </VCol>
-
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
-              <AppTextField v-model="name" :placeholder="$t('name')" />
-            </VCol>
-
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('last_name') }}:</VLabel>
-              <AppTextField
-                v-model="last_name"
-                :placeholder="$t('last_name')"
-              />
-            </VCol>
-
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('document_type') }}:</VLabel
-              >
-              <AppSelectSearch
-                v-model="user_document_type_id"
-                :items="itemsDocuments"
-                :placeholder="$t('document_type')"
-                :clearable="true"
-                item-value="value"
-                item-title="title"
-                @select="handleDocumentTypeSelect"
-                @clear="handleDocumentTypeClear"
-              />
-            </VCol>
-
-            <VCol v-if="isCPF || isCNPJ || documentPartial" cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ docLabel }}:</VLabel>
-              <AppTextField
-                v-model="documentFormatted"
-                :placeholder="docPlaceholder"
-                :inputmode="isCPF || isCNPJ ? 'numeric' : 'text'"
-                :rules="docRules"
-                v-maska="shouldUseDocMask ? docMask : ''"
-              >
-                <template #append-inner>
-                  <VIcon
-                    v-if="documentPartial"
-                    :icon="
-                      isDocumentDecrypted ? 'tabler-eye-off' : 'tabler-eye'
-                    "
-                    class="cursor-pointer"
-                    :class="{ 'opacity-50': isLoadingDocument }"
-                    @click.stop="toggleDocumentVisibility"
-                  />
-                </template>
-              </AppTextField>
-            </VCol>
-
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('birth_date') }}:</VLabel>
-              <AppDateTimePicker
-                v-model="birth_date"
-                :placeholder="$t('birth_date')"
-              />
-            </VCol>
-          </VRow>
-
-          <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
-            <VBtn
-              @click="saveAdditionalInfo"
-              :loading="accountSettingsStore.loading"
+          <VForm
+            ref="refFormAddress"
+            class="account-section-form"
+            @submit.prevent="saveAddress"
+          >
+            <AccountSettingsSection
+              :title="$t('address')"
+              icon="tabler-map-pin"
             >
-              {{ $t('save') }}
-            </VBtn>
-          </VCardText>
-        </VForm>
-      </VCardText>
-    </VCard>
+              <VRow class="account-form-grid">
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('country') }}:
+                  </VLabel>
+                  <AppSelectSearch
+                    :placeholder="$t('country')"
+                    :model-value="country_id"
+                    :items="itemsCountry"
+                    :clearable="true"
+                    item-value="value"
+                    item-title="title"
+                    @update:model-value="
+                      (val) => onCountryChange(val as number | null)
+                    "
+                    @select="
+                      (item) => onCountryChange(item.value as number | null)
+                    "
+                  />
+                </VCol>
 
-    <VCard variant="elevated" class="account-settings-card">
-      <VCardTitle class="text-h6 pa-6 pb-4">
-        {{ $t('address') }}
-      </VCardTitle>
-      <VDivider />
-      <VCardText>
-        <VForm class="mt-4" ref="refFormAddress" @submit.prevent>
-          <VRow class="mb-2">
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('country') }}:</VLabel>
-              <AppSelectSearch
-                :placeholder="$t('country')"
-                :model-value="country_id"
-                :items="itemsCountry"
-                :clearable="true"
-                item-value="value"
-                item-title="title"
-                @update:model-value="
-                  (val) => onCountryChange(val as number | null)
-                "
-                @select="(item) => onCountryChange(item.value as number | null)"
-              />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('zip_code') }}:</VLabel>
-              <AppTextField
-                ref="zipInputRef"
-                v-model="zip_codeFormatted"
-                :placeholder="$t('zip_code')"
-                :disabled="!country_id"
-                :loading="isViewingZipcode"
-                v-maska="'#####-###'"
-                inputmode="numeric"
-                @blur="viewZipcode"
-                @keydown.enter.prevent="viewZipcode"
-                maxlength="9"
-              />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('state') }}:</VLabel>
-              <AppSelectSearch
-                v-model="state_id"
-                :items="filteredStates"
-                :placeholder="$t('state')"
-                :disabled="!country_id"
-                item-value="value"
-                item-title="title"
-                @select="
-                  (item) => {
-                    onStateChange((item.value as string) || null);
-                    state = (item.title as string) || null;
-                  }
-                "
-              />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('city') }}:</VLabel>
-              <AppSelectSearch
-                v-model="city_id"
-                :items="filteredCities"
-                :placeholder="$t('city')"
-                :disabled="!state_id || !country_id"
-                item-value="value"
-                item-title="title"
-                @select="
-                  (item) => {
-                    city = (item.title as string) || null;
-                  }
-                "
-              />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('address') }}:</VLabel>
-              <AppTextField
-                v-model="address1Formatted"
-                :disabled="!country_id"
-                :placeholder="$t('address')"
-              >
-                <template #append-inner>
-                  <VIcon
-                    v-if="address1Partial"
-                    :icon="
-                      isAddress1Decrypted ? 'tabler-eye-off' : 'tabler-eye'
-                    "
-                    class="cursor-pointer"
-                    :class="{ 'opacity-50': isLoadingAddress1 }"
-                    @click.stop="toggleAddress1Visibility"
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('zip_code') }}:
+                  </VLabel>
+                  <AppTextField
+                    ref="zipInputRef"
+                    v-model="zip_codeFormatted"
+                    :placeholder="$t('zip_code')"
+                    :disabled="!country_id"
+                    :loading="isViewingZipcode"
+                    v-maska="'#####-###'"
+                    inputmode="numeric"
+                    maxlength="9"
+                    @blur="viewZipcode"
+                    @keydown.enter.prevent="viewZipcode"
                   />
-                </template>
-              </AppTextField>
-            </VCol>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('address_secondary') }}:</VLabel
-              >
-              <AppTextField
-                v-model="address2Formatted"
-                :disabled="!country_id"
-                :placeholder="$t('address_secondary')"
-              >
-                <template #append-inner>
-                  <VIcon
-                    v-if="address2Partial"
-                    :icon="
-                      isAddress2Decrypted ? 'tabler-eye-off' : 'tabler-eye'
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('state') }}:
+                  </VLabel>
+                  <AppSelectSearch
+                    v-model="state_id"
+                    :items="filteredStates"
+                    :placeholder="$t('state')"
+                    :disabled="!country_id"
+                    item-value="value"
+                    item-title="title"
+                    @select="
+                      (item) => {
+                        onStateChange((item.value as string) || null);
+                        state = (item.title as string) || null;
+                      }
                     "
-                    class="cursor-pointer"
-                    :class="{ 'opacity-50': isLoadingAddress2 }"
-                    @click.stop="toggleAddress2Visibility"
                   />
-                </template>
-              </AppTextField>
-            </VCol>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('district') }}:</VLabel>
-              <AppTextField
-                v-model="district"
-                :disabled="!country_id"
-                :placeholder="$t('district')"
-              />
-            </VCol>
-          </VRow>
-          <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
-            <VBtn @click="saveAddress" :loading="accountSettingsStore.loading">
-              {{ $t('save') }}
-            </VBtn>
-          </VCardText>
-        </VForm>
-      </VCardText>
-    </VCard>
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('city') }}:
+                  </VLabel>
+                  <AppSelectSearch
+                    v-model="city_id"
+                    :items="filteredCities"
+                    :placeholder="$t('city')"
+                    :disabled="!state_id || !country_id"
+                    item-value="value"
+                    item-title="title"
+                    @select="
+                      (item) => {
+                        city = (item.title as string) || null;
+                      }
+                    "
+                  />
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('address') }}:
+                  </VLabel>
+                  <AppTextField
+                    v-model="address1Formatted"
+                    :disabled="!country_id"
+                    :placeholder="$t('address')"
+                  >
+                    <template #append-inner>
+                      <VIcon
+                        v-if="address1Partial"
+                        :icon="
+                          isAddress1Decrypted ? 'tabler-eye-off' : 'tabler-eye'
+                        "
+                        class="cursor-pointer account-sensitive-icon"
+                        :class="{ 'opacity-50': isLoadingAddress1 }"
+                        @click.stop="toggleAddress1Visibility"
+                      />
+                    </template>
+                  </AppTextField>
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('address_secondary') }}:
+                  </VLabel>
+                  <AppTextField
+                    v-model="address2Formatted"
+                    :disabled="!country_id"
+                    :placeholder="$t('address_secondary')"
+                  >
+                    <template #append-inner>
+                      <VIcon
+                        v-if="address2Partial"
+                        :icon="
+                          isAddress2Decrypted ? 'tabler-eye-off' : 'tabler-eye'
+                        "
+                        class="cursor-pointer account-sensitive-icon"
+                        :class="{ 'opacity-50': isLoadingAddress2 }"
+                        @click.stop="toggleAddress2Visibility"
+                      />
+                    </template>
+                  </AppTextField>
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="account-field-label">
+                    {{ $t('district') }}:
+                  </VLabel>
+                  <AppTextField
+                    v-model="district"
+                    :disabled="!country_id"
+                    :placeholder="$t('district')"
+                  />
+                </VCol>
+              </VRow>
+
+              <template #actions>
+                <VBtn
+                  type="submit"
+                  prepend-icon="tabler-device-floppy"
+                  :loading="accountSettingsStore.loading"
+                >
+                  {{ $t('save') }}
+                </VBtn>
+              </template>
+            </AccountSettingsSection>
+          </VForm>
+        </div>
+      </div>
     </template>
 
-    <VDialog v-model="isCropModalOpen" max-width="500" persistent>
-      <VCard>
-        <VCardTitle class="d-flex justify-space-between align-center">
+    <VDialog v-model="isCropModalOpen" max-width="520" persistent>
+      <VCard class="account-crop-card">
+        <VCardTitle class="account-crop-card__title">
           <span>{{ $t('crop_image') }}</span>
           <IconBtn @click="cancelCrop">
             <VIcon icon="tabler-x" />
           </IconBtn>
         </VCardTitle>
 
-        <VCardText>
+        <VCardText class="account-crop-card__body">
           <div class="crop-container">
             <img
               ref="cropImageRef"
@@ -1831,11 +1651,21 @@ watch(zip_code, () => {
           <canvas ref="cropCanvasRef" style="display: none"></canvas>
         </VCardText>
 
-        <VCardText class="d-flex justify-end gap-3 flex-wrap">
-          <VBtn variant="tonal" color="secondary" @click="cancelCrop">
+        <VCardText class="account-crop-card__actions">
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            prepend-icon="tabler-x"
+            @click="cancelCrop"
+          >
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn color="primary" :loading="isUploadingPhoto" @click="cropImage">
+          <VBtn
+            color="primary"
+            prepend-icon="tabler-check"
+            :loading="isUploadingPhoto"
+            @click="cropImage"
+          >
             {{ $t('save') }}
           </VBtn>
         </VCardText>
@@ -1854,58 +1684,129 @@ watch(zip_code, () => {
 </template>
 
 <style lang="scss" scoped>
-.photo-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  opacity: 0;
-  transition: opacity 0.2s;
-  border-radius: 50%;
+.account-tab-container {
+  display: grid;
+  gap: 18px;
 }
 
-.cursor-pointer:hover .photo-overlay {
-  opacity: 1;
+.account-tab-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+
+.account-tab-main {
+  display: grid;
+  gap: 18px;
+}
+
+.account-section-form {
+  min-width: 0;
+}
+
+.account-form-grid {
+  margin: -6px -8px;
+}
+
+.account-form-grid :deep(.v-col) {
+  padding: 6px 8px;
+}
+
+.account-field-label {
+  display: inline-flex;
+  margin-block-end: 5px;
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.account-sensitive-icon {
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+  transition: color 0.18s ease;
+}
+
+.account-sensitive-icon:hover {
+  color: rgb(var(--v-theme-primary));
+}
+
+.account-tab-container :deep(.v-field) {
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.015);
+}
+
+.account-tab-container :deep(.v-field--focused) {
+  box-shadow: 0 0 0 3px rgb(var(--v-theme-primary) / 0.08);
+}
+
+.account-crop-card {
+  overflow: hidden;
+  border-radius: 8px !important;
+}
+
+.account-crop-card__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.account-crop-card__body {
+  padding: 20px !important;
+}
+
+.account-crop-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 0 20px 20px !important;
 }
 
 .crop-container {
+  position: relative;
   width: 100%;
   max-width: 400px;
   height: 400px;
-  margin: 0 auto;
   overflow: hidden;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 8px;
-  background: rgba(var(--v-theme-surface-variant), 0.1);
-  position: relative;
-  user-select: none;
+  margin: 0 auto;
+  background:
+    linear-gradient(135deg, rgb(var(--v-theme-primary) / 0.08), transparent),
+    rgba(var(--v-theme-on-surface), 0.04);
   touch-action: none;
+  user-select: none;
 }
 
 .crop-image {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
   pointer-events: none;
+  transform: translate(-50%, -50%);
 }
 
 .crop-area {
   position: absolute;
-  border: 2px solid rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-primary), 0.05);
-  cursor: move;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
   z-index: 10;
-  touch-action: none;
+  border: 2px solid rgb(var(--v-theme-primary));
+  background: rgb(var(--v-theme-primary) / 0.05);
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.52);
+  cursor: move;
   pointer-events: all;
+  touch-action: none;
 }
 
 .crop-area-border {
   position: absolute;
   inset: 0;
-  border: 2px dashed rgba(255, 255, 255, 0.8);
+  border: 2px dashed rgb(255 255 255 / 0.85);
   pointer-events: none;
 }
 
@@ -1917,14 +1818,14 @@ watch(zip_code, () => {
 
 .crop-handle {
   position: absolute;
+  z-index: 11;
   width: 12px;
   height: 12px;
-  background: rgb(var(--v-theme-primary));
   border: 2px solid white;
   border-radius: 50%;
-  pointer-events: all;
+  background: rgb(var(--v-theme-primary));
   cursor: nwse-resize;
-  z-index: 11;
+  pointer-events: all;
 }
 
 .crop-handle-nw {
@@ -1946,18 +1847,30 @@ watch(zip_code, () => {
 }
 
 .crop-handle-se {
-  bottom: -6px;
   right: -6px;
+  bottom: -6px;
   cursor: nwse-resize;
 }
 
-.account-tab-container {
-  gap: 24px;
+@media (max-width: 1279px) {
+  .account-tab-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
-.account-settings-card {
-  background-color: rgb(var(--v-theme-surface)) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
-  border-radius: 8px;
+@media (max-width: 599px) {
+  .account-tab-container,
+  .account-tab-layout,
+  .account-tab-main {
+    gap: 18px;
+  }
+
+  .crop-container {
+    height: min(400px, calc(100vw - 72px));
+  }
+
+  .account-crop-card__actions {
+    flex-direction: column-reverse;
+  }
 }
 </style>

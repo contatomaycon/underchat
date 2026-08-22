@@ -139,6 +139,7 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | 'config-channels-tab'
       | 'config-creditcard-tab'
+      | 'config-download-artifacts-tab'
       | 'config-method-payments-tab'
       | 'config-nfse-tab'
       | 'config-notifications-tab'
@@ -155,6 +156,13 @@ declare module 'vue-router/auto-routes' {
     'config-creditcard-tab': RouteRecordInfo<
       'config-creditcard-tab',
       '/config/creditcard-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'config-download-artifacts-tab': RouteRecordInfo<
+      'config-download-artifacts-tab',
+      '/config/download-artifacts-tab',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -567,6 +575,7 @@ declare module 'vue-router/auto-routes' {
         | 'config'
         | 'config-channels-tab'
         | 'config-creditcard-tab'
+        | 'config-download-artifacts-tab'
         | 'config-method-payments-tab'
         | 'config-nfse-tab'
         | 'config-notifications-tab'
@@ -584,6 +593,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/config/creditcard-tab.vue': {
       routes:
         | 'config-creditcard-tab'
+      views:
+        | never
+    }
+    'src/pages/config/download-artifacts-tab.vue': {
+      routes:
+        | 'config-download-artifacts-tab'
       views:
         | never
     }

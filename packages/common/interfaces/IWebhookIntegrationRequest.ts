@@ -1,6 +1,9 @@
 import { IMappedWebhookData } from './IMappedWebhookData';
 
 export interface IWebhookIntegrationRequest {
+  /** Stable identity of this accepted webhook operation. */
+  operation_id?: string;
+  integration_entitlement_revision: string;
   account_id: string;
   worker_id: string;
   contact_id: string;

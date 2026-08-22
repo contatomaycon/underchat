@@ -116,6 +116,7 @@ describe('ChatContactViewerRepository', () => {
         document: null,
         document_partial: null,
         is_valided: true,
+        validation_origin: 'official_inbound',
         ignore: null,
         contact_document_type: null,
         user: null,
@@ -151,6 +152,7 @@ describe('ChatContactViewerRepository', () => {
         document_partial: null,
         photo: null,
         is_valided: true,
+        validation_status: 'validated',
         label_templates: [
           {
             label_template_id: 'label-1',

@@ -1,5 +1,7 @@
 import 'reflect-metadata';
 import { ContactChannelChannelsListerRepository } from '@core/repositories/contact/ContactChannelChannelsLister.repository';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 function createSelectChain(result: unknown[]) {
   const execute = jest.fn(async () => result);
@@ -17,6 +19,7 @@ function createSelectChain(result: unknown[]) {
 
   return {
     dbRo: { select },
+    innerJoin: chain.innerJoin,
     where: chain.where,
   };
 }
@@ -34,7 +37,7 @@ describe('ContactChannelChannelsListerRepository', () => {
   });
 
   it('returns channel ids from query result', async () => {
-    const { dbRo, where } = createSelectChain([
+    const { dbRo, innerJoin, where } = createSelectChain([
       { channel_id: 'ch-1' },
       { channel_id: 'ch-2' },
     ]);
@@ -46,5 +49,17 @@ describe('ContactChannelChannelsListerRepository', () => {
       repository.listChannelIdsByContactAndAccount('contact-1', 'account-1')
     ).resolves.toEqual(['ch-1', 'ch-2']);
     expect(where).toHaveBeenCalledTimes(1);
+
+    const dialect = new PgDialect();
+    const joinCondition = dialect.sqlToQuery(
+      innerJoin.mock.calls[0]?.[1] as SQL
+    );
+    const whereCondition = dialect.sqlToQuery(where.mock.calls[0]?.[0] as SQL);
+
+    expect(joinCondition.sql).toContain(
+      '"contact_channel"."account_id" = "worker"."account_id"'
+    );
+    expect(whereCondition.sql).toContain('"worker"."account_id" =');
+    expect(whereCondition.sql).toContain('"worker"."deleted_at" is null');
   });
 });

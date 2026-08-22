@@ -5,6 +5,7 @@ export interface IQueuedMessage {
   value: Buffer;
   keyBuffer: Buffer | undefined;
   headers?: MessageHeader[];
+  assertActive?: () => void | Promise<void>;
   resolve: () => void;
   reject: (error: Error) => void;
 }

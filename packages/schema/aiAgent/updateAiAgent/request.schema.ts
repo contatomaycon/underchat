@@ -11,8 +11,12 @@ export const updateAiAgentBodySchema = Type.Object({
   name: Type.Optional(
     Type.Union([Type.String({ minLength: 1, maxLength: 200 }), Type.Null()])
   ),
-  base_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  api_key: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  base_url: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 500 }), Type.Null()])
+  ),
+  api_key: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 2000 }), Type.Null()])
+  ),
   model: Type.Optional(
     Type.Union([Type.String({ minLength: 1, maxLength: 100 }), Type.Null()])
   ),

@@ -3,6 +3,8 @@ import { computed, ref, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useIntegrationStore } from '@/@webcore/stores/integration';
 import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EIntegrationPermissions } from '@core/common/enums/EPermissions/integration';
 import AppWebhookMappingModal from './AppWebhookMappingModal.vue';
 
 const { t } = useI18n();
@@ -24,6 +26,19 @@ const isVisible = computed({
 });
 
 const isWebhookMappingModalOpen = ref(false);
+
+const permissionsUpdateStatus = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EIntegrationPermissions.integration_group,
+  EIntegrationPermissions.integration_status_update,
+];
+const permissionsGenerateKey = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EIntegrationPermissions.integration_group,
+  EIntegrationPermissions.integration_generate_key,
+];
 
 const currentIntegration = computed(() => integrationStore.currentIntegration);
 
@@ -159,6 +174,7 @@ onMounted(async () => {
 
             <VCol cols="12" md="6" class="text-end">
               <VBtn
+                v-if="$canPermission(permissionsUpdateStatus)"
                 :color="isActive ? 'error' : 'success'"
                 @click="handleToggleStatus"
               >
@@ -233,6 +249,7 @@ onMounted(async () => {
               </VTextField>
 
               <VBtn
+                v-if="$canPermission(permissionsGenerateKey)"
                 color="primary"
                 variant="outlined"
                 @click="handleGenerateKey"

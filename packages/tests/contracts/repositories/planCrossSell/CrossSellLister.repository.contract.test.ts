@@ -49,12 +49,12 @@ describe('CrossSellListerRepository', () => {
     const rows = [
       {
         plan_cross_sell_id: 'cs-1',
-        plan_product_id: 'prod-1',
+        plan_product_id: EPlanProduct.integration,
         quantity: 2,
         price: '19.9',
         created_at: '2026-04-21T00:00:00.000Z',
         plan_product: {
-          plan_product_id: 'prod-1',
+          plan_product_id: EPlanProduct.integration,
           name: 'Produto',
           description: 'Desc',
         },
@@ -71,12 +71,12 @@ describe('CrossSellListerRepository', () => {
     ).resolves.toEqual([
       {
         plan_cross_sell_id: 'cs-1',
-        plan_product_id: 'prod-1',
+        plan_product_id: EPlanProduct.integration,
         quantity: 2,
         price: 19.9,
         created_at: '2026-04-21T00:00:00.000Z',
         plan_product: {
-          plan_product_id: 'prod-1',
+          plan_product_id: EPlanProduct.integration,
           name: 'Produto',
           description: 'Desc',
         },
@@ -115,12 +115,12 @@ describe('CrossSellListerRepository', () => {
     const rows = [
       {
         plan_cross_sell_id: 'cs-1',
-        plan_product_id: 'prod-1',
+        plan_product_id: EPlanProduct.integration,
         quantity: 2,
         price: '19.9',
         created_at: '2026-04-21T00:00:00.000Z',
         plan_product: {
-          plan_product_id: 'prod-1',
+          plan_product_id: EPlanProduct.integration,
           name: 'Produto',
           description: 'Desc',
         },
@@ -132,7 +132,7 @@ describe('CrossSellListerRepository', () => {
     await expect(repository.listAvailableCrossSells()).resolves.toEqual([
       {
         plan_cross_sell_id: 'cs-1',
-        plan_product_id: 'prod-1',
+        plan_product_id: EPlanProduct.integration,
         quantity: 2,
         price: 19.9,
         price_per_cycle: 19.9,
@@ -144,11 +144,11 @@ describe('CrossSellListerRepository', () => {
         renewable_quantity: 0,
         active_instances: 0,
         renewable_instances: 0,
-        is_single_use: false,
+        is_single_use: true,
         can_purchase: true,
         created_at: '2026-04-21T00:00:00.000Z',
         plan_product: {
-          plan_product_id: 'prod-1',
+          plan_product_id: EPlanProduct.integration,
           name: 'Produto',
           description: 'Desc',
         },

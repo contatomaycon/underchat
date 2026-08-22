@@ -31,6 +31,7 @@ export class AsaasInvoiceWebhookConsume {
       groupId: 'group-underchat-asaas-invoice-webhook',
       parse: (message) => this.parseMessage(message.value),
       resolveEntityKey: (data) => data.payment.id,
+      preserveEntityOrder: true,
       handle: async (data) => {
         try {
           await this.handleWebhookEvent(data);
@@ -53,8 +54,10 @@ export class AsaasInvoiceWebhookConsume {
       onInvalidMessage: () => {
         server.log.warn('Skipping message without value or invalid JSON');
       },
-      maxRetries: 3,
-      retryDelaysMs: [1000, 5000, 15000],
+      // A provider webhook can beat the local transaction that stores the
+      // payment intent. Keep that narrow race retryable for a bounded window.
+      maxRetries: 6,
+      retryDelaysMs: [1000, 5000, 15000, 30000, 60000],
       logger: console,
     });
 
@@ -95,6 +98,14 @@ export class AsaasInvoiceWebhookConsume {
       case 'PAYMENT_CHECKOUT_VIEWED':
         break;
       default:
+        // Asaas can introduce status-specific PAYMENT_* event names while the
+        // payment.status contract remains stable. Route those through the
+        // authoritative status mapper so refund/chargeback regressions are not
+        // silently committed as unknown events.
+        if (data.event.startsWith('PAYMENT_')) {
+          await this.planReleaseService.processPaymentWebhook(data);
+          break;
+        }
         throw new Error(`Unhandled event type: ${data.event}`);
     }
   }
@@ -106,8 +117,7 @@ export class AsaasInvoiceWebhookConsume {
 
     return (
       error.message.startsWith('Unhandled event type:') ||
-      error.message.startsWith('Status desconhecido:') ||
-      error.message.startsWith('Pagamento não encontrado:')
+      error.message.startsWith('Status desconhecido:')
     );
   }
 

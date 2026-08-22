@@ -17,6 +17,18 @@ export class AiAgentDeleterUseCase {
     aiAgentId: string,
     accountId: string
   ): Promise<boolean> {
+    return this.embeddingService.withEmbeddingGenerationLock(
+      accountId,
+      aiAgentId,
+      () => this.executeWithEmbeddingGenerationLock(t, aiAgentId, accountId)
+    );
+  }
+
+  private async executeWithEmbeddingGenerationLock(
+    t: TFunction<'translation', undefined>,
+    aiAgentId: string,
+    accountId: string
+  ): Promise<boolean> {
     const aiAgentExists = await this.aiAgentService.viewAiAgent(
       aiAgentId,
       accountId

@@ -18,7 +18,8 @@ export const listChatbotFlow = async (
   try {
     const response = await chatbotFlowListerUseCase.execute(
       tokenJwtData.account_id,
-      request.query.chatbot_id
+      request.query.chatbot_id,
+      tokenJwtData.actions
     );
 
     return sendResponse(reply, {

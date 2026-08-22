@@ -8,6 +8,8 @@ import { useI18n } from 'vue-i18n';
 import { can } from '@layouts/plugins/casl';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { formatCnpj } from '@core/common/functions/validateCnpj';
+import ContactValidationBadge from '@/components/contact/ContactValidationBadge.vue';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
@@ -103,21 +105,6 @@ function formatCpfDigits(digits: string): string {
   return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9, 11)}`;
 }
 
-function formatCnpjDigits(digits: string): string {
-  const clean = digits.replaceAll(/\D/g, '').slice(0, 14);
-  if (clean.length <= 2) return clean;
-  if (clean.length <= 5) {
-    return `${clean.slice(0, 2)}.${clean.slice(2)}`;
-  }
-  if (clean.length <= 8) {
-    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
-  }
-  if (clean.length <= 12) {
-    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
-  }
-  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
-}
-
 const documentFormatted = computed(() => {
   if (!props.contact?.contact_document_type) return '';
 
@@ -127,7 +114,7 @@ const documentFormatted = computed(() => {
       return formatCpfDigits(digits);
     }
     if (props.contact.contact_document_type.name === 'CNPJ') {
-      return formatCnpjDigits(digits);
+      return formatCnpj(viewContactDocument.value);
     }
     return viewContactDocument.value;
   }
@@ -290,7 +277,14 @@ watch(
       <VProgressCircular color="primary" indeterminate size="64" />
     </VOverlay>
 
-    <VCard :title="$t('view_contact')" v-if="contact">
+    <VCard v-if="contact">
+      <VCardTitle class="d-flex align-center justify-space-between gap-3">
+        <span>{{ $t('view_contact') }}</span>
+        <ContactValidationBadge
+          :validation-status="contact.validation_status"
+          :is-validated="contact.is_valided"
+        />
+      </VCardTitle>
       <VCardText>
         <VRow>
           <VCol cols="12" class="d-flex justify-center mb-4">

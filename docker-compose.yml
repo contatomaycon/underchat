@@ -18,13 +18,54 @@ services:
       - max_replication_slots=10
       - -c
       - max_wal_senders=10
+      # Local services keep independent RW/RO pools and external Balance/workers
+      # also reach this database. PostgreSQL's default of 100 is therefore below
+      # the legitimate development envelope and can deadlock lifecycle/QR flows.
+      - -c
+      - max_connections=1500
+      - -c
+      - work_mem=2MB
     ports:
       - 5432:5432
     networks:
       - underchat
     restart: 'no'
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 2s
+      timeout: 5s
+      retries: 30
     volumes:
       - db_postgresql:/var/lib/postgresql
+
+  # Provisiona e rotaciona somente a credencial LOGIN entregue aos runtimes
+  # WhatsApp. DDL/grants dos objetos whatsapp_* continuam sob
+  # responsabilidade do Atlas; este job apenas fecha a fronteira de identidade.
+  under-db-whatsapp-worker-role-provision:
+    image: postgres:latest
+    container_name: under-db-whatsapp-worker-role-provision
+    depends_on:
+      under-db:
+        condition: service_healthy
+    environment:
+      PGCONNECT_TIMEOUT: 5
+      PGDATABASE: '${DB_DATABASE:-underchat}'
+      PGHOST: under-db
+      PGPASSWORD: '${DB_PASSWORD:-admin}'
+      PGPORT: 5432
+      PGUSER: '${DB_USER:-admin}'
+      WORKER_DB_PASSWORD: '${WORKER_DB_PASSWORD:?WORKER_DB_PASSWORD is required}'
+      WORKER_DB_USER: '${WORKER_DB_USER:-whatsapp_worker_runtime}'
+      # under-db is a dedicated Compose cluster. Shared clusters must instead
+      # isolate this LOGIN to DB_DATABASE with pg_hba before setting true.
+      WORKER_DB_CLUSTER_ISOLATED: '${WORKER_DB_CLUSTER_ISOLATED:?set true only for a dedicated cluster or pg_hba database isolation}'
+    entrypoint: ['/opt/underchat/provision-whatsapp-worker-runtime-role.sh']
+    networks:
+      - underchat
+    restart: 'no'
+    volumes:
+      - ./infra/postgres/provision-whatsapp-worker-runtime-role.sh:/opt/underchat/provision-whatsapp-worker-runtime-role.sh:ro
 
   under-db-elastic:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
@@ -120,11 +161,19 @@ services:
     environment:
       - TZ=America/Sao_Paulo
       - PGTZ=America/Sao_Paulo
+      # The host configuration legitimately uses localhost. Inside the Atlas
+      # container the application database is reached by its Compose DNS name.
+      - DB_PUBLIC_HOST_RW=under-db
+      - DB_PUBLIC_PORT_RW=5432
     networks:
       - underchat
     depends_on:
-      - under-db
-      - under-atlas-db
+      under-atlas-db:
+        condition: service_started
+      under-db:
+        condition: service_healthy
+      under-db-whatsapp-worker-role-provision:
+        condition: service_completed_successfully
     volumes:
       - ./:/app
 
@@ -140,7 +189,7 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: 'broker,controller'
       KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://under-kafka-1:9092,EXTERNAL://10.0.2.3:29092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://under-kafka-1:9092,EXTERNAL://10.0.2.12:29092'
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@under-kafka-1:9093,2@under-kafka-2:9093,3@under-kafka-3:9093'
@@ -180,7 +229,7 @@ services:
       KAFKA_NODE_ID: 2
       KAFKA_PROCESS_ROLES: 'broker,controller'
       KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://under-kafka-2:9092,EXTERNAL://10.0.2.3:29093'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://under-kafka-2:9092,EXTERNAL://10.0.2.12:29093'
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@under-kafka-1:9093,2@under-kafka-2:9093,3@under-kafka-3:9093'
@@ -220,7 +269,7 @@ services:
       KAFKA_NODE_ID: 3
       KAFKA_PROCESS_ROLES: 'broker,controller'
       KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092'
-      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://under-kafka-3:9092,EXTERNAL://10.0.2.3:29094'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://under-kafka-3:9092,EXTERNAL://10.0.2.12:29094'
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@under-kafka-1:9093,2@under-kafka-2:9093,3@under-kafka-3:9093'
@@ -248,11 +297,136 @@ services:
       timeout: 5s
       retries: 10
 
+  # Local-only R3 JetStream cluster for worker commands. The application route
+  # is JetStream-only; Kafka remains available for existing global result
+  # topics. Production manifests continue to be owned by underchat-argocd.
+  under-nats-1:
+    image: nats:2.14.3-alpine
+    container_name: under-nats-1
+    command:
+      - '--config'
+      - '/etc/nats/nats-server.conf'
+      - '--name'
+      - 'under-nats-1'
+      - '--client_advertise'
+      - '10.0.2.12:4222'
+      - '--routes'
+      - 'nats://${NATS_ROUTE_USER:-underchat_route}:${NATS_ROUTE_PASSWORD:-underchat_local_route_only}@under-nats-2:6222,nats://${NATS_ROUTE_USER:-underchat_route}:${NATS_ROUTE_PASSWORD:-underchat_local_route_only}@under-nats-3:6222'
+    environment: &under-nats-environment
+      NATS_ROUTE_USER: '${NATS_ROUTE_USER:-underchat_route}'
+      NATS_ROUTE_PASSWORD: '${NATS_ROUTE_PASSWORD:-underchat_local_route_only}'
+      NATS_SYSTEM_USER: '${NATS_SYSTEM_USER:-underchat_system}'
+      NATS_SYSTEM_PASSWORD: '${NATS_SYSTEM_PASSWORD:-underchat_local_system_only}'
+      NATS_ADMIN_USER: '${NATS_ADMIN_USER:-underchat_admin}'
+      NATS_ADMIN_PASSWORD: '${NATS_ADMIN_PASSWORD:-underchat_local_admin_only}'
+      NATS_USER: '${NATS_USER:-underchat_runtime}'
+      NATS_PASSWORD: '${NATS_PASSWORD:-underchat_local_runtime_only}'
+    ports:
+      - '10.0.2.12:${NATS_HOST_PORT_1:-4222}:4222'
+      - '127.0.0.1:${NATS_MONITOR_HOST_PORT_1:-8222}:8222'
+    networks:
+      - underchat
+    volumes:
+      - ./infra/nats/nats-server.conf:/etc/nats/nats-server.conf:ro
+      - nats_data_1:/data/jetstream
+    restart: 'no'
+    healthcheck: &under-nats-healthcheck
+      test:
+        [
+          'CMD-SHELL',
+          'wget -qO- "http://127.0.0.1:8222/healthz?js-enabled-only=true" | grep -q "ok"',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  under-nats-2:
+    image: nats:2.14.3-alpine
+    container_name: under-nats-2
+    command:
+      - '--config'
+      - '/etc/nats/nats-server.conf'
+      - '--name'
+      - 'under-nats-2'
+      - '--client_advertise'
+      - '10.0.2.12:4223'
+      - '--routes'
+      - 'nats://${NATS_ROUTE_USER:-underchat_route}:${NATS_ROUTE_PASSWORD:-underchat_local_route_only}@under-nats-1:6222'
+    environment: *under-nats-environment
+    ports:
+      - '10.0.2.12:${NATS_HOST_PORT_2:-4223}:4222'
+      - '127.0.0.1:${NATS_MONITOR_HOST_PORT_2:-8223}:8222'
+    networks:
+      - underchat
+    volumes:
+      - ./infra/nats/nats-server.conf:/etc/nats/nats-server.conf:ro
+      - nats_data_2:/data/jetstream
+    restart: 'no'
+    depends_on:
+      under-nats-1:
+        condition: service_started
+    healthcheck: *under-nats-healthcheck
+
+  under-nats-3:
+    image: nats:2.14.3-alpine
+    container_name: under-nats-3
+    command:
+      - '--config'
+      - '/etc/nats/nats-server.conf'
+      - '--name'
+      - 'under-nats-3'
+      - '--client_advertise'
+      - '10.0.2.12:4224'
+      - '--routes'
+      - 'nats://${NATS_ROUTE_USER:-underchat_route}:${NATS_ROUTE_PASSWORD:-underchat_local_route_only}@under-nats-1:6222'
+    environment: *under-nats-environment
+    ports:
+      - '10.0.2.12:${NATS_HOST_PORT_3:-4224}:4222'
+      - '127.0.0.1:${NATS_MONITOR_HOST_PORT_3:-8224}:8222'
+    networks:
+      - underchat
+    volumes:
+      - ./infra/nats/nats-server.conf:/etc/nats/nats-server.conf:ro
+      - nats_data_3:/data/jetstream
+    restart: 'no'
+    depends_on:
+      under-nats-1:
+        condition: service_started
+    healthcheck: *under-nats-healthcheck
+
+  under-nats-init:
+    image: natsio/nats-box:0.19.7-nonroot
+    container_name: under-nats-init
+    entrypoint: ['/bin/sh', '/config/init.sh']
+    environment:
+      NATS_URL: 'nats://10.0.2.12:4222,nats://10.0.2.12:4223,nats://10.0.2.12:4224'
+      NATS_USER: '${NATS_ADMIN_USER:-underchat_admin}'
+      NATS_PASSWORD: '${NATS_ADMIN_PASSWORD:-underchat_local_admin_only}'
+      # The bootstrap validates the real runtime ACL as part of readiness; it
+      # never prints either credential.
+      NATS_RUNTIME_USER: '${NATS_USER:-underchat_runtime}'
+      NATS_RUNTIME_PASSWORD: '${NATS_PASSWORD:-underchat_local_runtime_only}'
+      NATS_SYSTEM_USER: '${NATS_SYSTEM_USER:-underchat_system}'
+      NATS_SYSTEM_PASSWORD: '${NATS_SYSTEM_PASSWORD:-underchat_local_system_only}'
+    depends_on:
+      under-nats-1:
+        condition: service_healthy
+      under-nats-2:
+        condition: service_healthy
+      under-nats-3:
+        condition: service_healthy
+    networks:
+      - underchat
+    volumes:
+      - ./infra/nats:/config:ro
+    restart: 'no'
+
   under-kafdrop:
     image: obsidiandynamics/kafdrop:latest
     container_name: under-kafdrop
     ports:
-      - '9000:9000'
+      - '${KAFDROP_HOST_PORT:-9004}:9000'
     environment:
       - TZ=America/Sao_Paulo
       - KAFKA_BROKERCONNECT=under-kafka-1:9092,under-kafka-2:9092,under-kafka-3:9092
@@ -335,5 +509,8 @@ volumes:
   kafka_data_1:
   kafka_data_2:
   kafka_data_3:
+  nats_data_1:
+  nats_data_2:
+  nats_data_3:
   redis_data:
   minio_data:

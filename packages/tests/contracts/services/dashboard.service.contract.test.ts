@@ -151,22 +151,13 @@ describe('DashboardService', () => {
     };
 
     const dashboardOfflineChannelsRepository = {
-      listOfflineChannels: jest.fn(async () => ({
-        channels: [{ id: 'ch-1' }],
-      })),
+      listOfflineChannels: jest.fn(async () => [{ id: 'ch-1' }]),
     };
 
     const dashboardChannelsStatusRepository = {
-      listChannelsStatus: jest.fn(async () => ({
-        channels: [{ id: 'ch-1', status: 'connected' }],
-      })),
-    };
-
-    const redis = {
-      get: jest.fn<Promise<string | null>, [string]>(async () => null),
-      set: jest.fn<Promise<string | null>, [string, string, 'EX', number]>(
-        async () => 'OK'
-      ),
+      listChannelsStatus: jest.fn(async () => [
+        { id: 'ch-1', status: 'connected' },
+      ]),
     };
 
     const service = new DashboardService(
@@ -179,8 +170,7 @@ describe('DashboardService', () => {
       dashboardSchedulesRepository as never,
       dashboardTemplatesRepository as never,
       dashboardOfflineChannelsRepository as never,
-      dashboardChannelsStatusRepository as never,
-      redis as never
+      dashboardChannelsStatusRepository as never
     );
 
     return {
@@ -195,7 +185,6 @@ describe('DashboardService', () => {
       dashboardTemplatesRepository,
       dashboardOfflineChannelsRepository,
       dashboardChannelsStatusRepository,
-      redis,
     };
   };
 
@@ -333,73 +322,53 @@ describe('DashboardService', () => {
       service,
       dashboardOfflineChannelsRepository,
       dashboardChannelsStatusRepository,
-      redis,
     } = makeService();
 
     await expect(service.getDashboardOfflineChannels('acc-1')).resolves.toEqual(
-      {
-        channels: [{ id: 'ch-1' }],
-      }
+      [{ id: 'ch-1' }]
     );
     expect(
       dashboardOfflineChannelsRepository.listOfflineChannels
     ).toHaveBeenCalledWith('acc-1');
-    expect(redis.set).toHaveBeenCalledWith(
-      'manager:dashboard:offline_channels:acc-1:v1',
-      JSON.stringify({ channels: [{ id: 'ch-1' }] }),
-      'EX',
-      expect.any(Number)
-    );
-
-    await expect(service.getDashboardChannelsStatus('acc-1')).resolves.toEqual({
-      channels: [{ id: 'ch-1', status: 'connected' }],
-    });
+    await expect(service.getDashboardChannelsStatus('acc-1')).resolves.toEqual([
+      { id: 'ch-1', status: 'connected' },
+    ]);
     expect(
       dashboardChannelsStatusRepository.listChannelsStatus
     ).toHaveBeenCalledWith('acc-1');
-    expect(redis.set).toHaveBeenCalledWith(
-      'manager:dashboard:channels_status:acc-1:v1',
-      JSON.stringify({ channels: [{ id: 'ch-1', status: 'connected' }] }),
-      'EX',
-      expect.any(Number)
-    );
   });
 
-  it('returns cached dashboard offline channels without querying repository', async () => {
-    const { service, dashboardOfflineChannelsRepository, redis } =
-      makeService();
-    const cached = [{ id: 'ch-cached', name: 'Cached', status: null }];
-    redis.get.mockResolvedValueOnce(JSON.stringify(cached));
+  it('never reuses a stale connectivity snapshot between HTTP reads', async () => {
+    const {
+      service,
+      dashboardOfflineChannelsRepository,
+      dashboardChannelsStatusRepository,
+    } = makeService();
+    dashboardOfflineChannelsRepository.listOfflineChannels
+      .mockResolvedValueOnce([{ id: 'online' }])
+      .mockResolvedValueOnce([{ id: 'offline' }]);
+    dashboardChannelsStatusRepository.listChannelsStatus
+      .mockResolvedValueOnce([{ id: 'channel', status: 'online' }])
+      .mockResolvedValueOnce([{ id: 'channel', status: 'offline' }]);
 
     await expect(service.getDashboardOfflineChannels('acc-1')).resolves.toEqual(
-      cached
+      [{ id: 'online' }]
     );
+    await expect(service.getDashboardOfflineChannels('acc-1')).resolves.toEqual(
+      [{ id: 'offline' }]
+    );
+    await expect(service.getDashboardChannelsStatus('acc-1')).resolves.toEqual([
+      { id: 'channel', status: 'online' },
+    ]);
+    await expect(service.getDashboardChannelsStatus('acc-1')).resolves.toEqual([
+      { id: 'channel', status: 'offline' },
+    ]);
 
-    expect(redis.get).toHaveBeenCalledWith(
-      'manager:dashboard:offline_channels:acc-1:v1'
-    );
     expect(
       dashboardOfflineChannelsRepository.listOfflineChannels
-    ).not.toHaveBeenCalled();
-    expect(redis.set).not.toHaveBeenCalled();
-  });
-
-  it('falls back to repository when dashboard cache payload is invalid', async () => {
-    const { service, dashboardChannelsStatusRepository, redis } = makeService();
-    redis.get.mockResolvedValueOnce('{invalid-json');
-
-    await expect(service.getDashboardChannelsStatus('acc-1')).resolves.toEqual({
-      channels: [{ id: 'ch-1', status: 'connected' }],
-    });
-
+    ).toHaveBeenCalledTimes(2);
     expect(
       dashboardChannelsStatusRepository.listChannelsStatus
-    ).toHaveBeenCalledWith('acc-1');
-    expect(redis.set).toHaveBeenCalledWith(
-      'manager:dashboard:channels_status:acc-1:v1',
-      JSON.stringify({ channels: [{ id: 'ch-1', status: 'connected' }] }),
-      'EX',
-      expect.any(Number)
-    );
+    ).toHaveBeenCalledTimes(2);
   });
 });

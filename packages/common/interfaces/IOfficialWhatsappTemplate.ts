@@ -1,10 +1,13 @@
 export type OfficialTemplateVariableComponent =
   'HEADER' | 'BODY' | 'FOOTER' | 'BUTTON';
 
+export type OfficialTemplateParameterFormat = 'POSITIONAL' | 'NAMED';
+
 export interface IOfficialTemplateVariable {
   key: string;
   component_type: OfficialTemplateVariableComponent;
   index: number;
+  parameter_name?: string | null;
   button_index?: number | null;
   sample?: string | null;
 }
@@ -31,8 +34,9 @@ export interface IOfficialTemplateVariableValue {
   key: string;
   component_type: OfficialTemplateVariableComponent;
   index: number;
+  parameter_name?: string | null;
   button_index?: number | null;
-  value: string;
+  value: string | number;
 }
 
 export interface IOfficialWhatsappTemplate {
@@ -40,6 +44,7 @@ export interface IOfficialWhatsappTemplate {
   name: string;
   language: string;
   status: 'APPROVED';
+  parameter_format?: OfficialTemplateParameterFormat;
   category?: string | null;
   components: IOfficialTemplateComponent[];
   variables: IOfficialTemplateVariable[];
@@ -56,6 +61,7 @@ export interface IOfficialWhatsappTemplateMessage {
   language: string;
   category?: string | null;
   status?: 'APPROVED' | string | null;
+  parameter_format?: OfficialTemplateParameterFormat;
   components?: IOfficialTemplateComponent[];
   variables?: IOfficialTemplateVariableValue[];
   preview?: IOfficialWhatsappTemplate['preview'];

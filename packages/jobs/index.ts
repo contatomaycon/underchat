@@ -1,10 +1,19 @@
 import { FastifyInstance } from 'fastify';
-import { cronJobs } from './cronJobs';
+import { cronJobs, ICronJobsOptions } from './cronJobs';
+
+export interface IStartJobsOptions extends ICronJobsOptions {
+  enabled?: boolean;
+}
 
 export default function startJobs(
   server: FastifyInstance,
-  options?: { enableWarmPoolJobs?: boolean }
+  options?: IStartJobsOptions
 ): void {
+  if (options?.enabled === false) {
+    server.log.info('Cron jobs disabled for this runtime role');
+    return;
+  }
+
   void server.ready().then(
     () => {
       cronJobs(server, options).forEach((job) =>

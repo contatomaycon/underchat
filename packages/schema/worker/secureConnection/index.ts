@@ -2,7 +2,6 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import {
-  workerAuthenticatorDownloadParamsSchema,
   workerSecureConnectionHelperParamsSchema,
   workerSecureConnectionHelperSessionBodySchema,
   workerSecureConnectionHelperStatusBodySchema,
@@ -123,21 +122,6 @@ export const workerSecureConnectionHelperSessionSchema = {
     400: errorResponseSchema,
     404: errorResponseSchema,
     410: errorResponseSchema,
-    500: errorResponseSchema,
-  },
-};
-
-export const workerAuthenticatorDownloadSchema = {
-  description: 'Baixa o instalador do Underchat Authenticator',
-  tags: [ETagSwagger.worker],
-  produces: ['application/octet-stream'],
-  security: [{ authenticateJwt: [] }],
-  headers: headersSchema,
-  params: workerAuthenticatorDownloadParamsSchema,
-  response: {
-    401: errorResponseSchema,
-    403: errorResponseSchema,
-    404: errorResponseSchema,
     500: errorResponseSchema,
   },
 };

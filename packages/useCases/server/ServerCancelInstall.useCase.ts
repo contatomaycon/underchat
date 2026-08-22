@@ -23,14 +23,14 @@ export class ServerCancelInstallUseCase {
       throw new Error(t('server_not_found'));
     }
 
-    const viewServerSshById =
-      await this.serverService.viewServerSshById(serverId);
+    const currentStatus =
+      await this.serverService.viewServerStatusByIdAuthoritative(serverId);
 
-    if (!viewServerSshById) {
+    if (currentStatus === null) {
       throw new Error(t('server_not_found'));
     }
 
-    if (viewServerSshById.server_status_id !== EServerStatus.installing) {
+    if (currentStatus !== EServerStatus.installing) {
       throw new Error(t('server_cancel_install_invalid_status'));
     }
 
@@ -38,7 +38,8 @@ export class ServerCancelInstallUseCase {
 
     return this.serverService.updateServerStatusById(
       serverId,
-      EServerStatus.canceled
+      EServerStatus.canceled,
+      [EServerStatus.installing]
     );
   }
 }

@@ -24,12 +24,17 @@ import { listS3BackupUploads } from './methods/listS3BackupUploads';
 import { reprocessS3BackupUpload } from './methods/reprocessS3BackupUpload';
 import { listWarmChannels } from './methods/listWarmChannels';
 import { listWarmChannelServers } from './methods/listWarmChannelServers';
-import { recreateWarmChannel } from './methods/recreateWarmChannel';
 import { recreateWarmChannelsAll } from './methods/recreateWarmChannelsAll';
 import { viewWarmChannelSettings } from './methods/viewWarmChannelSettings';
 import { updateWarmChannelSettings } from './methods/updateWarmChannelSettings';
 import { viewWhatsappEmbeddedConfig } from './methods/viewWhatsappEmbeddedConfig';
 import { updateWhatsappEmbeddedConfig } from './methods/updateWhatsappEmbeddedConfig';
+import { listDownloadArtifacts } from './methods/listDownloadArtifacts';
+import { updateDownloadArtifacts } from './methods/updateDownloadArtifacts';
+import { createSessionStorageMigration } from './methods/createSessionStorageMigration';
+import { latestSessionStorageMigration } from './methods/latestSessionStorageMigration';
+import { deleteLegacyMigrationVolume } from './methods/deleteLegacyMigrationVolume';
+import { channelConnectionHealth } from './methods/channelConnectionHealth';
 
 @injectable()
 class ConfigController {
@@ -58,12 +63,17 @@ class ConfigController {
   public reprocessS3BackupUpload = reprocessS3BackupUpload;
   public listWarmChannels = listWarmChannels;
   public listWarmChannelServers = listWarmChannelServers;
-  public recreateWarmChannel = recreateWarmChannel;
   public recreateWarmChannelsAll = recreateWarmChannelsAll;
   public viewWarmChannelSettings = viewWarmChannelSettings;
   public updateWarmChannelSettings = updateWarmChannelSettings;
   public viewWhatsappEmbeddedConfig = viewWhatsappEmbeddedConfig;
   public updateWhatsappEmbeddedConfig = updateWhatsappEmbeddedConfig;
+  public listDownloadArtifacts = listDownloadArtifacts;
+  public updateDownloadArtifacts = updateDownloadArtifacts;
+  public createSessionStorageMigration = createSessionStorageMigration;
+  public latestSessionStorageMigration = latestSessionStorageMigration;
+  public deleteLegacyMigrationVolume = deleteLegacyMigrationVolume;
+  public channelConnectionHealth = channelConnectionHealth;
 }
 
 export default ConfigController;

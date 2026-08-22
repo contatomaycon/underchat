@@ -68,6 +68,10 @@ import {
   type MessageReaction,
   type MessageTemplateButton,
   type MessageContentVideo,
+  type OfficialConversationContextResponse,
+  type OfficialDisplayAction,
+  type OfficialDisplayMetadata,
+  type OfficialTemplateVariableValue,
   ETypeUserChat,
 } from '../types/chat';
 import {
@@ -144,7 +148,13 @@ import {
   type ChatContactLookupResult,
   generateAiReply,
   transcribeAudioMessage,
+  viewOfficialConversationContext,
+  sendOfficialTemplateToChat,
 } from '../api/chatApi';
+import {
+  beginWorkerCommandActionAttempt,
+  settleWorkerCommandActionAttempt,
+} from '../storage/workerCommandActionAttemptStorage';
 import {
   addChatSocketListener,
   consumePendingChatUpdates,
@@ -188,6 +198,7 @@ import {
   type SelectOption,
 } from '../components/select';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import { OfficialTemplateFields } from '../components/OfficialTemplateFields';
 import { CHAT_MESSAGES_PER_PAGE } from '../constants/chatMessages';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
@@ -224,16 +235,36 @@ import {
   shouldShowClosureReasonInput,
 } from '../utils/chatClosure';
 import { consumeChatMessagePreload } from '../utils/chatMessagePreload';
+import { mergeChatOfficialWindowSnapshot } from '../utils/officialWindowSnapshot';
 import { normalizeLocationCoordinate } from '../utils/locationPreview';
 import {
   getSystemMessageText,
   shouldRenderChatMessage,
 } from '../utils/chatSystemMessages';
+import { emitChatPinningChange, isPinnableChat } from '../utils/chatPinning';
+import { isOfficialChatWorker } from '../utils/officialChat';
 import {
-  emitChatPinningChange,
-  isPinnableChat,
-} from '../utils/chatPinning';
+  areOfficialTemplateVariablesValid,
+  buildOfficialTemplateRequest,
+  createManualOfficialTemplateVariable,
+  createOfficialTemplateOptions,
+  createOfficialTemplateVariableValues,
+  findOfficialTemplate,
+  refreshOfficialTemplateVariableKey,
+} from '../utils/officialTemplate';
+import {
+  buildOfficialDisplayModel,
+  getFirstVisibleOfficialAction,
+  getOfficialActionDescription,
+  getOfficialActionLabel,
+  getOfficialReplyContextText,
+  getOfficialReplyDescription,
+  getOfficialReplyTitle,
+  isSafeOfficialUrl,
+  type OfficialListOptionSection,
+} from '../utils/officialDisplay';
 import type { UploadProgressState } from '../types/uploadProgress';
+import { mergeMessageDeliveryProjection } from '../../../packages/common/functions/messageDeliveryProjection';
 
 type EmojiDatasetEntry = {
   unified?: string;
@@ -497,10 +528,27 @@ function toPositiveInt(value: unknown, fallback: number): number {
 }
 
 function createClientMessageHash(): string {
-  if (typeof globalThis.crypto?.randomUUID === 'function') {
-    return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
   }
-  return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+
+  let timestamp = Date.now();
+  for (let index = 5; index >= 0; index -= 1) {
+    bytes[index] = timestamp % 256;
+    timestamp = Math.floor(timestamp / 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x70;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (value) =>
+    value.toString(16).padStart(2, '0')
+  ).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function normalizeRecordingMetering(value: unknown): number {
@@ -571,7 +619,6 @@ const WAVEFORM_BAR_GAP = 2;
 const WAVEFORM_HORIZONTAL_INSET = 2;
 const WAVEFORM_FALLBACK_MAX_BARS = 28;
 const AUDIO_WAVEFORM_DEFAULT_BARS = 64;
-const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
 const CHAT_SOCKET_SYNC_PER_PAGE = 20;
 const AUDIO_PREFETCH_LIMIT = 20;
@@ -642,8 +689,6 @@ async function ensureIosPlaybackAudioMode(): Promise<void> {
     await setAudioModeAsync(PLAYBACK_AUDIO_MODE);
   } catch {}
 }
-
-type ChatRoomMode = 'default' | 'history_readonly';
 
 type ProtocolType = 'A' | 'T' | 'U';
 
@@ -719,13 +764,7 @@ type ForwardPickerKind = 'channel' | null;
 type TransferDestinationType = 'user' | 'sector' | 'chatbot' | null;
 
 type TransferPickerKind =
-  | 'channel'
-  | 'type'
-  | 'user'
-  | 'sector'
-  | 'sector_user'
-  | 'chatbot'
-  | null;
+  'channel' | 'type' | 'user' | 'sector' | 'sector_user' | 'chatbot' | null;
 
 type TransferChannelOption = {
   value: string;
@@ -892,7 +931,10 @@ const mapDebugSupportInfo = [
 ].join(' | ');
 
 const hasNativeMapSupport =
-  NativeMapView != null && Platform.OS !== 'web' && !isExpoGoStoreClient;
+  NativeMapView !== null &&
+  NativeMapView !== undefined &&
+  Platform.OS !== 'web' &&
+  !isExpoGoStoreClient;
 
 const hasNativeBlurSupport = Platform.OS !== 'web';
 const MESSAGE_OVERLAY_BLUR_INTENSITY = Platform.OS === 'ios' ? 52 : 28;
@@ -1161,6 +1203,12 @@ const EMessageType = {
   system: 'system',
   annotation: 'annotation',
   view_once: 'view_once',
+  official_template: 'official_template',
+  official_interactive: 'official_interactive',
+  react: 'react',
+  delete_message: 'delete_message',
+  edit_text: 'edit_text',
+  set_disappearing_messages: 'set_disappearing_messages',
 } as const;
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -1494,9 +1542,19 @@ function isDeletedMessage(message: ListMessageResult): boolean {
   return message.deleted === true;
 }
 
+function isOfficialTemplateOpeningMessage(message: ListMessageResult): boolean {
+  if (message.content?.type === EMessageType.official_template) return true;
+  if (!message.content?.official_template) return false;
+  const official = message.content.official;
+  return (
+    official?.type === 'template' || official?.display?.kind === 'template'
+  );
+}
+
 function canInteractWithMessage(message: ListMessageResult): boolean {
   if (isDeletedMessage(message)) return false;
   if (message.summary?.is_sent_to_internal === false) return false;
+  if (isOfficialTemplateOpeningMessage(message)) return false;
   if (message.content?.type === EMessageType.view_once) return false;
   if (message.content?.type === EMessageType.annotation) return false;
   if (message.content?.type === EMessageType.system) return false;
@@ -1513,7 +1571,23 @@ function isRetryableFailedVideoMessage(message: ListMessageResult): boolean {
 }
 
 function isTextMessage(message: ListMessageResult): boolean {
-  return message.content?.type === EMessageType.text;
+  return (
+    message.content?.type === EMessageType.text ||
+    message.content?.type === EMessageType.official_template
+  );
+}
+
+function shouldSuppressOfficialTextMessage(
+  content: MessageContent | null | undefined
+): boolean {
+  const display = content?.official?.display;
+  if (!display) return false;
+  if (display.kind === 'referral') return false;
+  return (
+    display.kind !== 'system' ||
+    content?.type === EMessageType.official_interactive ||
+    content?.type === EMessageType.official_template
+  );
 }
 
 function isDownloadableImage(message: ListMessageResult): boolean {
@@ -1589,7 +1663,7 @@ function canEditMessage(message: ListMessageResult, fromMe: boolean): boolean {
 }
 
 function formatFileSize(bytes: number | null | undefined): string {
-  if (bytes == null || bytes === 0) return '';
+  if (bytes === null || bytes === undefined || bytes === 0) return '';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -2179,6 +2253,20 @@ function getLatestMessageText(msg: ListMessageResult): string {
 
   const messageText = readNonEmptyString(c?.message);
   if (messageText) return messageText;
+  const officialDisplayText =
+    readNonEmptyString(c?.official?.display?.body) ||
+    readNonEmptyString(c?.official?.display?.title) ||
+    readNonEmptyString(c?.official?.display?.action_label) ||
+    readNonEmptyString(c?.official?.interactive?.title) ||
+    readNonEmptyString(c?.official?.interactive?.description) ||
+    readNonEmptyString(c?.official?.button?.text) ||
+    readNonEmptyString(c?.official?.button?.payload) ||
+    readNonEmptyString(c?.official?.order?.text);
+  if (officialDisplayText) return officialDisplayText;
+  const officialTemplateBody = readNonEmptyString(
+    c?.official_template?.preview?.body
+  );
+  if (officialTemplateBody) return officialTemplateBody;
   const systemText = getSystemMessageText(msg);
   if (systemText) return systemText;
   const imageCaption = readNonEmptyString(c?.image?.caption);
@@ -2444,6 +2532,12 @@ function normalizeSocketMessageToListMessage(
       sent_from_platform?: unknown;
     }
   ).sent_from_platform;
+  const deliveryStatusValue = (payload as { delivery_status?: unknown })
+    .delivery_status;
+  const providerErrorCodeValue = (payload as { provider_error_code?: unknown })
+    .provider_error_code;
+  const providerStatusAtValue = (payload as { provider_status_at?: unknown })
+    .provider_status_at;
 
   return {
     message_id: messageId,
@@ -2476,25 +2570,14 @@ function normalizeSocketMessageToListMessage(
     hash: readNonEmptyString((payload as { hash?: unknown }).hash),
     sent_from_platform:
       typeof sentFromPlatformValue === 'boolean' ? sentFromPlatformValue : null,
-  };
-}
-
-function normalizeMessageSummary(
-  summary: ListMessageResult['summary'] | null | undefined
-): ListMessageResult['summary'] | null {
-  if (!summary) {
-    return null;
-  }
-
-  const isSeen = summary.is_seen === true;
-  const isDelivered = summary.is_delivered === true || isSeen;
-  const isSent = summary.is_sent === true || isDelivered;
-
-  return {
-    is_sent: isSent,
-    is_delivered: isDelivered,
-    is_seen: isSeen,
-    is_sent_to_internal: summary.is_sent_to_internal === true,
+    delivery_status:
+      typeof deliveryStatusValue === 'string' ? deliveryStatusValue : null,
+    provider_error_code:
+      typeof providerErrorCodeValue === 'number'
+        ? providerErrorCodeValue
+        : null,
+    provider_status_at:
+      typeof providerStatusAtValue === 'string' ? providerStatusAtValue : null,
   };
 }
 
@@ -2524,7 +2607,7 @@ function isPlainObjectRecord(value: unknown): value is Record<string, unknown> {
 function hasRenderableContentValue(content: Record<string, unknown>): boolean {
   for (const key of RENDERABLE_MESSAGE_CONTENT_KEYS) {
     const value = content[key];
-    if (value == null) continue;
+    if (value === null || value === undefined) continue;
 
     if (typeof value === 'string') {
       if (value.trim().length === 0) continue;
@@ -2548,7 +2631,7 @@ function hasRenderableContentValue(content: Record<string, unknown>): boolean {
 }
 
 function isEmptyRenderableValue(value: unknown): boolean {
-  if (value == null) return true;
+  if (value === null || value === undefined) return true;
   if (typeof value === 'string') {
     return value.trim().length === 0;
   }
@@ -2628,55 +2711,6 @@ function cloneMessageForOverlay(message: ListMessageResult): ListMessageResult {
   }
 }
 
-function mergeMessageSummary(
-  previous: ListMessageResult['summary'] | null | undefined,
-  incoming: ListMessageResult['summary'] | null | undefined
-): ListMessageResult['summary'] | null | undefined {
-  const normalizedPrevious = normalizeMessageSummary(previous);
-  const normalizedIncoming = normalizeMessageSummary(incoming);
-
-  if (!normalizedPrevious && !normalizedIncoming) {
-    return undefined;
-  }
-  if (!normalizedPrevious) {
-    return normalizedIncoming;
-  }
-  if (!normalizedIncoming) {
-    return normalizedPrevious;
-  }
-
-  const previousFailed = normalizedPrevious.is_sent_to_internal === false;
-  const incomingFailed = normalizedIncoming.is_sent_to_internal === false;
-
-  if (incomingFailed) {
-    return {
-      is_sent: false,
-      is_delivered: false,
-      is_seen: false,
-      is_sent_to_internal: false,
-    };
-  }
-
-  if (previousFailed) {
-    return normalizedIncoming;
-  }
-
-  const isSeen = normalizedPrevious.is_seen || normalizedIncoming.is_seen;
-  const isDelivered =
-    normalizedPrevious.is_delivered ||
-    normalizedIncoming.is_delivered ||
-    isSeen;
-  const isSent =
-    normalizedPrevious.is_sent || normalizedIncoming.is_sent || isDelivered;
-
-  return {
-    is_sent: isSent,
-    is_delivered: isDelivered,
-    is_seen: isSeen,
-    is_sent_to_internal: true,
-  };
-}
-
 function mergeSentFromPlatform(
   previous: ListMessageResult['sent_from_platform'],
   incoming: ListMessageResult['sent_from_platform']
@@ -2725,10 +2759,6 @@ function mergeMessageLists(
       incoming.content && typeof incoming.content === 'object'
         ? mergeMessageContent(previous.content, incoming.content)
         : previous.content;
-    const mergedSummary =
-      incoming.summary && typeof incoming.summary === 'object'
-        ? mergeMessageSummary(previous.summary, incoming.summary)
-        : previous.summary;
     const mergedMessageKey =
       incoming.message_key && typeof incoming.message_key === 'object'
         ? {
@@ -2752,12 +2782,12 @@ function mergeMessageLists(
       ...previous,
       ...incoming,
       content: mergedContent,
-      summary: mergedSummary,
       message_key: mergedMessageKey,
       user: mergedUser,
       sent_from_platform: mergedSentFromPlatform,
       hash:
         readNonEmptyString(incoming.hash) ?? readNonEmptyString(previous.hash),
+      ...mergeMessageDeliveryProjection(incoming, previous),
     };
     next[existingIndex] = merged;
     const mergedHash = readNonEmptyString(merged.hash);
@@ -2870,21 +2900,17 @@ function mergeSnapshotMessagesWithCurrent(
     const previous =
       (hash ? currentByHash.get(hash) : undefined) ??
       (messageId ? currentByMessageId.get(messageId) : undefined);
-    const mergedSummary = mergeMessageSummary(
-      previous?.summary,
-      message.summary
-    );
     const reconciledMessage = previous
       ? {
           ...previous,
           ...message,
           content: mergeMessageContent(previous.content, message.content),
           hash: hash ?? readNonEmptyString(previous.hash),
-          summary: mergedSummary,
           sent_from_platform: mergeSentFromPlatform(
             previous.sent_from_platform,
             message.sent_from_platform
           ),
+          ...mergeMessageDeliveryProjection(message, previous),
         }
       : message;
     next = mergeMessageLists(next, reconciledMessage);
@@ -2946,6 +2972,8 @@ function resolveReplyComposerType(
   if (content?.contact) return EMessageType.contact_card;
   if (content?.contacts && content.contacts.length > 0)
     return EMessageType.contacts;
+  if (content?.official_template) return EMessageType.official_template;
+  if (content?.official?.display) return EMessageType.official_interactive;
   return EMessageType.text;
 }
 
@@ -3036,6 +3064,18 @@ function resolveReplyComposerText(
       return groupedMessage ? `${groupName} - ${groupedMessage}` : groupName;
     }
     return pt.contact;
+  }
+
+  if (
+    replyType === EMessageType.official_template ||
+    replyType === EMessageType.official_interactive
+  ) {
+    return (
+      readNonEmptyString(content.official?.display?.body) ||
+      readNonEmptyString(content.official?.display?.title) ||
+      readNonEmptyString(content.official_template?.preview?.body) ||
+      pt.official_whatsapp_interactive
+    );
   }
 
   return (
@@ -4564,6 +4604,517 @@ function QuotedReplyPreview({
   );
 }
 
+function shouldRenderQuotedReplyPreview(message: ListMessageResult): boolean {
+  const content = message.content;
+  if (!content?.quoted) return false;
+  return content.official?.display?.kind !== 'reply';
+}
+
+function OfficialActionRow({
+  action,
+  fromMe,
+}: {
+  action: OfficialDisplayAction;
+  fromMe: boolean;
+}) {
+  const title =
+    getOfficialActionLabel(action) || pt.official_whatsapp_interactive;
+  const url = readNonEmptyString(action.url);
+  const canOpenUrl = isSafeOfficialUrl(url);
+
+  return (
+    <Pressable
+      style={[
+        styles.officialActionRow,
+        fromMe && styles.officialActionRowRight,
+      ]}
+      onPress={() => {
+        if (!canOpenUrl) return;
+        void Linking.openURL(url);
+      }}
+      disabled={!canOpenUrl}
+    >
+      <Ionicons
+        name={canOpenUrl ? 'open-outline' : 'return-up-back-outline'}
+        size={15}
+        color={fromMe ? colors.primary : '#128C52'}
+      />
+      <Text
+        style={[
+          styles.officialActionText,
+          fromMe && styles.officialActionTextRight,
+        ]}
+        numberOfLines={2}
+      >
+        {title}
+      </Text>
+    </Pressable>
+  );
+}
+
+function OfficialItemsList({
+  items,
+  fromMe,
+}: {
+  items: OfficialDisplayAction[] | undefined;
+  fromMe: boolean;
+}) {
+  if (!items || items.length === 0) return null;
+
+  return (
+    <View style={styles.officialItemsList}>
+      {items.map((item, index) => {
+        const title =
+          getOfficialActionLabel(item) || pt.official_whatsapp_interactive;
+        const description = getOfficialActionDescription(item);
+
+        return (
+          <View
+            key={`official-item-${index}-${title}`}
+            style={styles.officialItemRow}
+          >
+            <Text
+              style={[
+                styles.officialItemTitle,
+                fromMe && styles.officialItemTitleRight,
+              ]}
+            >
+              {title}
+            </Text>
+            {description && description !== title ? (
+              <Text style={styles.officialItemDescription}>{description}</Text>
+            ) : null}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+const OFFICIAL_COLLAPSED_ACTION_ICON_BY_KIND: Record<
+  string,
+  keyof typeof Ionicons.glyphMap
+> = {
+  list: 'list-outline',
+  product_list: 'cart-outline',
+  catalog: 'cart-outline',
+  carousel: 'albums-outline',
+  flow: 'git-branch-outline',
+  location_request: 'navigate-outline',
+  address: 'map-outline',
+  call_permission_request: 'call-outline',
+};
+
+function OfficialCollapsedAction({
+  label,
+  kind,
+  onPress,
+}: {
+  label: string;
+  kind: string;
+  onPress?: (() => void) | null;
+}) {
+  const iconName =
+    OFFICIAL_COLLAPSED_ACTION_ICON_BY_KIND[kind] ?? 'apps-outline';
+  const canPress = typeof onPress === 'function';
+
+  if (!canPress) {
+    return (
+      <View style={styles.officialCollapsedAction}>
+        <Ionicons name={iconName} size={15} color={colors.primary} />
+        <Text style={styles.officialActionText}>{label}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Pressable style={styles.officialCollapsedAction} onPress={onPress}>
+      <Ionicons name={iconName} size={15} color={colors.primary} />
+      <Text style={styles.officialActionText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function OfficialReplyMessage({
+  display,
+  content,
+  fromMe,
+}: {
+  display: OfficialDisplayMetadata;
+  content: MessageContent;
+  fromMe: boolean;
+}) {
+  const selectedAction = getFirstVisibleOfficialAction(display.actions);
+  const replyTitle = getOfficialReplyTitle(display, content, selectedAction);
+  const replyDescription = getOfficialReplyDescription(
+    display,
+    selectedAction,
+    replyTitle
+  );
+  const replyContextText = getOfficialReplyContextText(
+    display,
+    content,
+    replyTitle,
+    replyDescription
+  );
+
+  return (
+    <View style={styles.officialReply}>
+      {replyContextText ? (
+        <View
+          style={[
+            styles.officialReplyContext,
+            fromMe && styles.officialReplyContextRight,
+          ]}
+        >
+          <WhatsAppFormattedText
+            text={replyContextText}
+            style={styles.officialReplyContextText}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          />
+        </View>
+      ) : null}
+      <View style={styles.officialReplyAnswer}>
+        <Text
+          style={[
+            styles.officialReplyTitle,
+            fromMe && styles.officialReplyTitleRight,
+          ]}
+          numberOfLines={3}
+        >
+          {replyTitle}
+        </Text>
+        {replyDescription ? (
+          <Text style={styles.officialReplyDescription} numberOfLines={3}>
+            {replyDescription}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function OfficialMessageCard({
+  display,
+  content,
+  fromMe,
+  onOpenOfficialListOptions,
+  onOpenOfficialVideo,
+}: {
+  display: OfficialDisplayMetadata;
+  content: MessageContent;
+  fromMe: boolean;
+  onOpenOfficialListOptions?: (
+    title: string,
+    sections: OfficialListOptionSection[]
+  ) => void;
+  onOpenOfficialVideo?: (url: string, caption: string | null) => void;
+}) {
+  if (display.kind === 'reply') {
+    return (
+      <OfficialReplyMessage
+        display={display}
+        content={content}
+        fromMe={fromMe}
+      />
+    );
+  }
+
+  const model = buildOfficialDisplayModel(display, content);
+  const resolvedMediaUrl = resolveMediaUri(model.mediaUrl) ?? model.mediaUrl;
+  const canOpenOfficialVideo =
+    model.isMediaVideo && !!resolvedMediaUrl && !!onOpenOfficialVideo;
+  const showStandaloneActionLabel =
+    !!model.actionLabel &&
+    model.visibleActions.length === 0 &&
+    !model.collapsedActionLabel;
+
+  if (display.kind === 'unsupported') {
+    return (
+      <View style={styles.officialCard}>
+        <View style={styles.officialCardHeader}>
+          <Ionicons
+            name="alert-circle-outline"
+            size={17}
+            color={colors.grey700}
+          />
+          <Text style={styles.officialCardHeaderText}>
+            {pt.official_whatsapp_unsupported}
+          </Text>
+        </View>
+        <Text style={styles.officialMutedText}>
+          {pt.official_whatsapp_unsupported_hint}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.officialCard}>
+      {model.isMediaVideo && resolvedMediaUrl ? (
+        <Pressable
+          style={styles.officialMediaVideo}
+          onPress={() => {
+            if (!onOpenOfficialVideo) return;
+            onOpenOfficialVideo(resolvedMediaUrl, model.title ?? model.body);
+          }}
+          disabled={!canOpenOfficialVideo}
+        >
+          <Ionicons name="play-circle" size={36} color="#FFFFFF" />
+          <Text style={styles.officialMediaVideoText}>{pt.videos}</Text>
+        </Pressable>
+      ) : resolvedMediaUrl ? (
+        <Image
+          source={{ uri: resolvedMediaUrl }}
+          style={styles.officialMediaImage}
+          resizeMode="cover"
+        />
+      ) : null}
+
+      {model.title ? (
+        <WhatsAppFormattedText
+          text={model.title}
+          style={[styles.officialTitle, fromMe && styles.officialTitleRight]}
+        />
+      ) : null}
+      {model.body ? (
+        <WhatsAppFormattedText text={model.body} style={styles.officialBody} />
+      ) : null}
+      {model.footer ? (
+        <Text style={styles.officialFooter}>{model.footer}</Text>
+      ) : null}
+
+      <OfficialItemsList items={model.visibleItems} fromMe={fromMe} />
+
+      {model.visibleSections.length > 0 && model.shouldShowInlineSections ? (
+        <View style={styles.officialSections}>
+          {model.visibleSections.map((section, sectionIndex) => {
+            const rows = section.rows ?? section.items ?? [];
+            const sectionTitle = readNonEmptyString(section.title);
+            return (
+              <View
+                key={`official-section-${sectionIndex}-${section.id ?? ''}`}
+                style={styles.officialSection}
+              >
+                {sectionTitle ? (
+                  <Text style={styles.officialSectionTitle}>
+                    {sectionTitle}
+                  </Text>
+                ) : null}
+                <OfficialItemsList items={rows} fromMe={fromMe} />
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+
+      {model.visibleCards.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.officialCardsScroll}
+          contentContainerStyle={styles.officialCardsList}
+        >
+          {model.visibleCards.map((card, cardIndex) => {
+            const cardTitle = readNonEmptyString(card.title);
+            const cardBody = readNonEmptyString(card.body);
+            const cardFooter = readNonEmptyString(card.footer);
+            const cardMedia =
+              readNonEmptyString(card.media?.url) ||
+              readNonEmptyString(card.media?.link);
+            const cardMediaType = readNonEmptyString(
+              card.media?.type
+            )?.toLowerCase();
+            const isCardVideo =
+              cardMediaType === 'video' || cardMediaType?.includes('video');
+            return (
+              <View
+                key={`official-card-${cardIndex}-${cardTitle ?? ''}`}
+                style={styles.officialNestedCard}
+              >
+                {cardMedia && !isCardVideo ? (
+                  <Image
+                    source={{ uri: cardMedia }}
+                    style={styles.officialNestedCardImage}
+                    resizeMode="cover"
+                  />
+                ) : cardMedia && isCardVideo ? (
+                  <View style={styles.officialNestedCardVideo}>
+                    <Ionicons
+                      name="play-circle"
+                      size={26}
+                      color={colors.grey700}
+                    />
+                  </View>
+                ) : null}
+                {cardTitle ? (
+                  <Text style={styles.officialItemTitle}>{cardTitle}</Text>
+                ) : null}
+                {cardBody ? (
+                  <Text style={styles.officialItemDescription}>{cardBody}</Text>
+                ) : null}
+                {cardFooter ? (
+                  <Text style={styles.officialFooter}>{cardFooter}</Text>
+                ) : null}
+                <OfficialItemsList items={card.items} fromMe={fromMe} />
+                {card.actions && card.actions.length > 0 ? (
+                  <View style={styles.officialActions}>
+                    {card.actions.map((action, actionIndex) => (
+                      <OfficialActionRow
+                        key={`official-card-action-${cardIndex}-${actionIndex}`}
+                        action={action}
+                        fromMe={fromMe}
+                      />
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+        </ScrollView>
+      ) : null}
+
+      {model.submittedEntries.length > 0 ? (
+        <View style={styles.officialSubmittedData}>
+          {model.submittedEntries.map((entry) => (
+            <View key={entry.key} style={styles.officialSubmittedDataRow}>
+              <Text style={styles.officialSubmittedDataKey}>{entry.key}</Text>
+              <Text style={styles.officialSubmittedDataText}>
+                {entry.value}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {model.collapsedActionLabel ? (
+        <OfficialCollapsedAction
+          label={model.collapsedActionLabel}
+          kind={model.display.kind}
+          onPress={
+            model.listOptionSections.length > 0 && onOpenOfficialListOptions
+              ? () =>
+                  onOpenOfficialListOptions(
+                    model.collapsedActionLabel ?? pt.select_option,
+                    model.listOptionSections
+                  )
+              : null
+          }
+        />
+      ) : null}
+
+      {showStandaloneActionLabel ? (
+        <View style={styles.officialActionLabel}>
+          <Text style={styles.officialActionText}>{model.actionLabel}</Text>
+        </View>
+      ) : null}
+
+      {model.visibleActions.length > 0 && model.shouldShowActionRows ? (
+        <View style={styles.officialActions}>
+          {model.visibleActions.map((action, index) => (
+            <OfficialActionRow
+              key={`official-action-${index}-${action.id ?? action.title ?? ''}`}
+              action={action}
+              fromMe={fromMe}
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function ButtonMessageCard({
+  content,
+  fromMe,
+}: {
+  content: MessageContent;
+  fromMe: boolean;
+}) {
+  const buttons = content.buttons?.buttons ?? [];
+  if (buttons.length === 0) return null;
+
+  return (
+    <View style={styles.officialCard}>
+      {content.buttons?.header ? (
+        <Text style={styles.officialTitle}>{content.buttons.header}</Text>
+      ) : null}
+      {content.buttons?.text ? (
+        <WhatsAppFormattedText
+          text={content.buttons.text}
+          style={styles.officialBody}
+        />
+      ) : null}
+      {content.buttons?.footer ? (
+        <Text style={styles.officialFooter}>{content.buttons.footer}</Text>
+      ) : null}
+      <View style={styles.officialActions}>
+        {buttons.map((button, index) => (
+          <OfficialActionRow
+            key={`button-message-${index}-${button.id ?? ''}`}
+            action={{
+              id: button.id ?? null,
+              title: button.display_text,
+              type:
+                typeof button.type === 'string'
+                  ? button.type
+                  : button.type === null || button.type === undefined
+                    ? null
+                    : String(button.type),
+            }}
+            fromMe={fromMe}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function ListMessageCard({
+  content,
+  fromMe,
+}: {
+  content: MessageContent;
+  fromMe: boolean;
+}) {
+  const sections = content.list?.sections ?? [];
+  if (sections.length === 0) return null;
+
+  return (
+    <View style={styles.officialCard}>
+      {content.list?.text ? (
+        <WhatsAppFormattedText
+          text={content.list.text}
+          style={styles.officialBody}
+        />
+      ) : null}
+      {content.list?.button_text ? (
+        <View style={styles.officialCollapsedAction}>
+          <Ionicons name="list-outline" size={15} color={colors.primary} />
+          <Text style={styles.officialActionText}>
+            {content.list.button_text}
+          </Text>
+        </View>
+      ) : null}
+      <View style={styles.officialSections}>
+        {sections.map((section, sectionIndex) => (
+          <View
+            key={`list-message-section-${sectionIndex}-${section.id ?? ''}`}
+            style={styles.officialSection}
+          >
+            {section.title ? (
+              <Text style={styles.officialSectionTitle}>{section.title}</Text>
+            ) : null}
+            <OfficialItemsList items={section.rows} fromMe={fromMe} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// eslint-disable-next-line complexity -- Rendering branches mirror supported message payload variants.
 function BubbleContent({
   msg,
   fromMe,
@@ -4577,6 +5128,8 @@ function BubbleContent({
   uploadState,
   onOpenImage,
   onOpenVideo,
+  onOpenOfficialListOptions,
+  onOpenOfficialVideo,
   onOpenActions,
   onPressContactCard,
   onPressContactsGroup,
@@ -4597,6 +5150,11 @@ function BubbleContent({
   uploadState?: UploadProgressState | null;
   onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
+  onOpenOfficialListOptions: (
+    title: string,
+    sections: OfficialListOptionSection[]
+  ) => void;
+  onOpenOfficialVideo: (url: string, caption: string | null) => void;
   onOpenActions?: (message: ListMessageResult) => void;
   onPressContactCard?: (
     message: ListMessageResult,
@@ -4691,6 +5249,47 @@ function BubbleContent({
         <Ionicons name="eye-off-outline" size={20} color={colors.grey600} />
         <Text style={styles.viewOnceText}>{pt.view_once_message}</Text>
       </View>
+    );
+  }
+
+  if (content.official?.display) {
+    return renderWithContextCards(
+      <OfficialMessageCard
+        display={content.official.display}
+        content={content}
+        fromMe={fromMe}
+        onOpenOfficialListOptions={onOpenOfficialListOptions}
+        onOpenOfficialVideo={onOpenOfficialVideo}
+      />
+    );
+  }
+
+  if (content.official_template) {
+    return renderWithContextCards(
+      <OfficialMessageCard
+        display={{
+          kind: 'template',
+          title: content.official_template.preview.header ?? null,
+          body: content.official_template.preview.body ?? null,
+          footer: content.official_template.preview.footer ?? null,
+        }}
+        content={content}
+        fromMe={fromMe}
+        onOpenOfficialListOptions={onOpenOfficialListOptions}
+        onOpenOfficialVideo={onOpenOfficialVideo}
+      />
+    );
+  }
+
+  if (content.buttons?.buttons && content.buttons.buttons.length > 0) {
+    return renderWithContextCards(
+      <ButtonMessageCard content={content} fromMe={fromMe} />
+    );
+  }
+
+  if (content.list?.sections && content.list.sections.length > 0) {
+    return renderWithContextCards(
+      <ListMessageCard content={content} fromMe={fromMe} />
     );
   }
 
@@ -4859,8 +5458,10 @@ function BubbleContent({
 
   if (
     type === EMessageType.location &&
-    content.location?.latitude != null &&
-    content.location?.longitude != null
+    content.location?.latitude !== null &&
+    content.location?.latitude !== undefined &&
+    content.location?.longitude !== null &&
+    content.location?.longitude !== undefined
   ) {
     const coordinate = normalizeLocationCoordinate(
       content.location.latitude,
@@ -5295,7 +5896,8 @@ function BubbleContent({
     type !== EMessageType.document &&
     type !== EMessageType.contact_card &&
     type !== EMessageType.contacts &&
-    type !== EMessageType.system
+    type !== EMessageType.system &&
+    !shouldSuppressOfficialTextMessage(content)
   ) {
     const longTextState = resolveLongTextCollapse({
       text,
@@ -5346,14 +5948,36 @@ function BubbleContent({
 function resolveMessageFeedbackIcon(
   message: ListMessageResult,
   fromMe: boolean
-): { name: keyof typeof Ionicons.glyphMap; color: string } | null {
+): {
+  name: keyof typeof Ionicons.glyphMap;
+  color: string;
+  accessibilityLabel?: string;
+} | null {
   if (!fromMe) return null;
   if (message.content?.type === EMessageType.annotation) return null;
 
+  if (message.delivery_status === 'ambiguous') {
+    return {
+      name: 'help-circle',
+      color: '#B54708',
+      accessibilityLabel: pt.official_message_send_confirmation_pending,
+    };
+  }
+
   if (message.summary?.is_sent_to_internal === false) {
+    const errorCode = message.provider_error_code;
     return {
       name: 'alert-circle',
       color: colors.error,
+      accessibilityLabel:
+        errorCode === 132000
+          ? pt.official_message_send_failed_template_parameters
+          : typeof errorCode === 'number'
+            ? pt.official_message_send_failed_provider.replace(
+                '{code}',
+                String(errorCode)
+              )
+            : pt.official_message_send_failed,
     };
   }
 
@@ -5386,6 +6010,7 @@ function isExternalWhatsAppSend(message: ListMessageResult): boolean {
   );
 }
 
+// eslint-disable-next-line complexity -- Bubble state combines the supported message and delivery variants.
 function MessageBubble({
   msg,
   fromMe,
@@ -5403,6 +6028,8 @@ function MessageBubble({
   documentBubbleWidth,
   onOpenImage,
   onOpenVideo,
+  onOpenOfficialListOptions,
+  onOpenOfficialVideo,
   onPressContactCard,
   onPressContactsGroup,
   onTemplateButtonPress,
@@ -5428,6 +6055,11 @@ function MessageBubble({
   documentBubbleWidth: number;
   onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
+  onOpenOfficialListOptions: (
+    title: string,
+    sections: OfficialListOptionSection[]
+  ) => void;
+  onOpenOfficialVideo: (url: string, caption: string | null) => void;
   onPressContactCard?: (
     message: ListMessageResult,
     contact: MessageContentContact
@@ -5457,7 +6089,8 @@ function MessageBubble({
     content?.context_info?.external_ad_reply ||
     hasInlineLinkInText
   );
-  const hasQuoted = !!content?.quoted;
+  const showQuotedPreview = shouldRenderQuotedReplyPreview(msg);
+  const hasQuoted = showQuotedPreview;
   const isSystem = content?.type === EMessageType.system;
   const isAnnotation = content?.type === EMessageType.annotation;
   const isAudio = content?.type === EMessageType.audio && !!content.audio?.url;
@@ -5472,6 +6105,7 @@ function MessageBubble({
   const reactionsSummary = getReactionsSummary(content?.reactions);
   const showReactionsSummary =
     reactionsSummary.length > 0 &&
+    !isOfficialTemplateOpeningMessage(msg) &&
     !isAnnotation &&
     !isSystem &&
     !obfuscateContent;
@@ -5488,6 +6122,10 @@ function MessageBubble({
     !content?.sticker?.url &&
     !content?.location &&
     !content?.template &&
+    !content?.official?.display &&
+    !content?.official_template &&
+    !content?.buttons?.buttons?.length &&
+    !content?.list?.sections?.length &&
     !content?.link_preview &&
     !content?.context_info?.external_ad_reply;
   const hasContent =
@@ -5499,12 +6137,18 @@ function MessageBubble({
       content.sticker?.url ||
       content.link_preview ||
       content.context_info?.external_ad_reply ||
-      (content.location?.latitude != null &&
-        content.location?.longitude != null) ||
+      (content.location?.latitude !== null &&
+        content.location?.latitude !== undefined &&
+        content.location?.longitude !== null &&
+        content.location?.longitude !== undefined) ||
       content.audio?.url ||
       content.document?.url ||
       content.contact ||
       (content.contacts && content.contacts.length > 0) ||
+      content.official?.display ||
+      content.official_template ||
+      content.buttons?.buttons?.length ||
+      content.list?.sections?.length ||
       showForwardedIndicator ||
       content.quoted ||
       readNonEmptyString(content.message) ||
@@ -5594,6 +6238,7 @@ function MessageBubble({
                 name={feedbackIcon.name}
                 size={14}
                 color={feedbackIcon.color}
+                accessibilityLabel={feedbackIcon.accessibilityLabel}
               />
             ) : null}
           </View>
@@ -5663,14 +6308,16 @@ function MessageBubble({
             </Text>
           </View>
         ) : null}
-        <QuotedReplyPreview
-          msg={msg}
-          fromMe={fromMe}
-          chatInfo={chatInfo}
-          currentUserName={currentUserName}
-          onPressQuoted={onPressQuoted}
-          obfuscateContent={obfuscateContent}
-        />
+        {showQuotedPreview ? (
+          <QuotedReplyPreview
+            msg={msg}
+            fromMe={fromMe}
+            chatInfo={chatInfo}
+            currentUserName={currentUserName}
+            onPressQuoted={onPressQuoted}
+            obfuscateContent={obfuscateContent}
+          />
+        ) : null}
         <BubbleContent
           msg={msg}
           fromMe={fromMe}
@@ -5684,6 +6331,8 @@ function MessageBubble({
           uploadState={uploadState}
           onOpenImage={onOpenImage}
           onOpenVideo={onOpenVideo}
+          onOpenOfficialListOptions={onOpenOfficialListOptions}
+          onOpenOfficialVideo={onOpenOfficialVideo}
           onPressContactCard={onPressContactCard}
           onPressContactsGroup={onPressContactsGroup}
           onOpenActions={onOpenActions}
@@ -5736,6 +6385,7 @@ function MessageBubble({
               name={feedbackIcon.name}
               size={14}
               color={feedbackIcon.color}
+              accessibilityLabel={feedbackIcon.accessibilityLabel}
             />
           ) : null}
         </View>
@@ -5821,6 +6471,11 @@ type ChatMessageListRowProps = {
   onReplyFromMessage: (message: ListMessageResult) => void;
   onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
+  onOpenOfficialListOptions: (
+    title: string,
+    sections: OfficialListOptionSection[]
+  ) => void;
+  onOpenOfficialVideo: (url: string, caption: string | null) => void;
   onPressContactCard: (
     message: ListMessageResult,
     contact: MessageContentContact
@@ -5860,6 +6515,8 @@ function ChatMessageListRow({
   onReplyFromMessage,
   onOpenImage,
   onOpenVideo,
+  onOpenOfficialListOptions,
+  onOpenOfficialVideo,
   onPressContactCard,
   onPressContactsGroup,
   onTemplateButtonPress,
@@ -5901,6 +6558,8 @@ function ChatMessageListRow({
       documentBubbleWidth={documentBubbleWidth}
       onOpenImage={onOpenImage}
       onOpenVideo={onOpenVideo}
+      onOpenOfficialListOptions={onOpenOfficialListOptions}
+      onOpenOfficialVideo={onOpenOfficialVideo}
       onPressContactCard={onPressContactCard}
       onPressContactsGroup={onPressContactsGroup}
       onTemplateButtonPress={onTemplateButtonPress}
@@ -5923,7 +6582,7 @@ function ChatMessageListRow({
       friction={MESSAGE_SWIPE_FRICTION}
       leftThreshold={MESSAGE_SWIPE_REPLY_THRESHOLD}
       overshootLeft={false}
-      dragOffsetFromLeft={MESSAGE_SWIPE_DRAG_OFFSET}
+      dragOffsetFromLeftEdge={MESSAGE_SWIPE_DRAG_OFFSET}
       containerStyle={styles.messageSwipeContainer}
       childrenContainerStyle={styles.messageSwipeChildren}
       onSwipeableWillOpen={(direction) => {
@@ -5997,6 +6656,8 @@ function areChatMessageListRowsEqual(
     previous.onReplyFromMessage === next.onReplyFromMessage &&
     previous.onOpenImage === next.onOpenImage &&
     previous.onOpenVideo === next.onOpenVideo &&
+    previous.onOpenOfficialListOptions === next.onOpenOfficialListOptions &&
+    previous.onOpenOfficialVideo === next.onOpenOfficialVideo &&
     previous.onPressContactCard === next.onPressContactCard &&
     previous.onPressContactsGroup === next.onPressContactsGroup &&
     previous.onTemplateButtonPress === next.onTemplateButtonPress
@@ -6009,6 +6670,42 @@ const MemoizedChatMessageListRow = memo(
 );
 MemoizedChatMessageListRow.displayName = 'MemoizedChatMessageListRow';
 
+function updateMessagesWithLocalReaction(
+  messages: ListMessageResult[],
+  messageId: string,
+  emoji: string,
+  userId: string,
+  userName: string
+): ListMessageResult[] {
+  return messages.map((entry) => {
+    if (entry.message_id !== messageId) return entry;
+    const baseContent: MessageContent = {
+      ...(entry.content ?? { type: EMessageType.text }),
+    };
+    const filtered = (baseContent.reactions ?? []).filter(
+      (reaction) => reaction?.user_id !== userId
+    );
+    const nextReactions = emoji
+      ? [
+          ...filtered,
+          {
+            emoji,
+            user_id: userId,
+            user_name: userName,
+          },
+        ]
+      : filtered;
+    return {
+      ...entry,
+      content: {
+        ...baseContent,
+        reactions: nextReactions.length > 0 ? nextReactions : null,
+      },
+    };
+  });
+}
+
+// eslint-disable-next-line complexity, max-statements -- Screen orchestration remains colocated while feature hooks are extracted incrementally.
 export function ChatRoomScreen({ route, navigation }: Props) {
   const { chat, mode = 'default' } = route.params;
   const isHistoryReadonly = mode === 'history_readonly';
@@ -6063,6 +6760,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
   const loadingOlderRef = useRef(false);
+  const officialWindowRequestSequenceRef = useRef(0);
+  const officialWindowAppliedSequenceRef = useRef(0);
   const [initialMessageState] = useState(() => {
     const preloaded = consumeChatMessagePreload(chat.chat_id);
     if (!preloaded) return null;
@@ -6100,7 +6799,44 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const preloadingAudioUrlsRef = useRef<Set<string>>(new Set());
   const audioPrefetchSessionRef = useRef(0);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [chatInfo, setChatInfo] = useState(chat);
+  const [chatInfo, setChatInfo] = useState(() =>
+    mergeChatOfficialWindowSnapshot(
+      chat,
+      chat.chat_id,
+      initialMessageState?.response
+    )
+  );
+  const routeChatRef = useRef(chat);
+  const beginOfficialWindowRequest = useCallback(
+    () => ++officialWindowRequestSequenceRef.current,
+    []
+  );
+  const applyOfficialWindowResponse = useCallback(
+    (
+      requestedChatId: string,
+      response: Parameters<typeof mergeChatOfficialWindowSnapshot>[2],
+      requestSequence: number
+    ) => {
+      if (response?.official_window === undefined) return;
+
+      setChatInfo((current) => {
+        if (
+          current.chat_id !== requestedChatId ||
+          requestSequence < officialWindowAppliedSequenceRef.current
+        ) {
+          return current;
+        }
+
+        officialWindowAppliedSequenceRef.current = requestSequence;
+        return mergeChatOfficialWindowSnapshot(
+          current,
+          requestedChatId,
+          response
+        );
+      });
+    },
+    []
+  );
   const [permissionList, setPermissionList] = useState<string[]>([]);
   const [userSectors, setUserSectors] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -6354,6 +7090,22 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     useState<QuickMessageTemplate | null>(null);
   const [quickMessageInputDirty, setQuickMessageInputDirty] = useState(false);
   const [sendingQuickMessage, setSendingQuickMessage] = useState(false);
+  const [officialTemplateModalVisible, setOfficialTemplateModalVisible] =
+    useState(false);
+  const [officialConversationContext, setOfficialConversationContext] =
+    useState<OfficialConversationContextResponse | null>(null);
+  const [officialTemplateLoading, setOfficialTemplateLoading] = useState(false);
+  const [officialTemplateSubmitting, setOfficialTemplateSubmitting] =
+    useState(false);
+  const [officialTemplateError, setOfficialTemplateError] = useState<
+    string | null
+  >(null);
+  const [officialTemplateSelectVisible, setOfficialTemplateSelectVisible] =
+    useState(false);
+  const [selectedOfficialTemplateKey, setSelectedOfficialTemplateKey] =
+    useState<string | null>(null);
+  const [officialTemplateVariableValues, setOfficialTemplateVariableValues] =
+    useState<OfficialTemplateVariableValue[]>([]);
   const [sending, setSending] = useState(false);
   const [viewer, setViewer] = useState<MediaViewerState>({
     visible: false,
@@ -6364,6 +7116,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     items: [],
     activeIndex: 0,
   });
+  const [officialListOptionsSheet, setOfficialListOptionsSheet] = useState<{
+    title: string;
+    sections: OfficialListOptionSection[];
+  } | null>(null);
   const viewerImageScrollRef = useRef<ScrollView | null>(null);
   const viewerTranslateY = useRef(new Animated.Value(0)).current;
   const [viewerMediaWidth, setViewerMediaWidth] = useState(1);
@@ -6574,7 +7330,33 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [chatInfo.chat_id, clearTrackedAudioPreloads]);
 
   useEffect(() => {
-    setChatInfo(chat);
+    if (routeChatRef.current === chat) return;
+
+    const previousChatId = routeChatRef.current.chat_id;
+    routeChatRef.current = chat;
+
+    if (previousChatId !== chat.chat_id) {
+      const invalidationSequence = ++officialWindowRequestSequenceRef.current;
+      officialWindowAppliedSequenceRef.current = invalidationSequence;
+    }
+
+    setChatInfo((current) => {
+      if (current.chat_id !== chat.chat_id) {
+        return chat;
+      }
+
+      const officialWindowSnapshot = mergeChatOfficialWindowSnapshot(
+        current,
+        current.chat_id,
+        { official_window: chat.official_window }
+      ).official_window;
+
+      return {
+        ...current,
+        ...chat,
+        official_window: officialWindowSnapshot,
+      };
+    });
   }, [chat]);
 
   useEffect(() => {
@@ -7219,6 +8001,50 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     [viewerTranslateY]
   );
 
+  const openOfficialVideoViewer = useCallback(
+    (url: string, caption: string | null) => {
+      const videoSrc = resolveMediaUri(url);
+      if (!videoSrc) return;
+
+      const fallbackName = `video-oficial-${Date.now()}.mp4`;
+      const downloadName = resolveFileNameFromUri(videoSrc, fallbackName);
+      const resolvedCaption = caption ?? '';
+
+      viewerTranslateY.stopAnimation();
+      viewerTranslateY.setValue(0);
+
+      setViewer({
+        visible: true,
+        kind: 'video',
+        src: videoSrc,
+        caption: resolvedCaption,
+        downloadName,
+        items: [
+          {
+            src: videoSrc,
+            caption: resolvedCaption,
+            downloadName,
+          },
+        ],
+        activeIndex: 0,
+      });
+      setDownloadingViewerMedia(false);
+    },
+    [viewerTranslateY]
+  );
+
+  const openOfficialListOptions = useCallback(
+    (title: string, sections: OfficialListOptionSection[]) => {
+      if (sections.length === 0) return;
+      setOfficialListOptionsSheet({ title, sections });
+    },
+    []
+  );
+
+  const closeOfficialListOptions = useCallback(() => {
+    setOfficialListOptionsSheet(null);
+  }, []);
+
   const resolveContactCardForMessage = useCallback(
     async (message: ListMessageResult) => {
       const contact = message.content?.contact;
@@ -7506,13 +8332,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const loadMessages = useCallback(
     async (options?: { silent?: boolean }) => {
       const silent = options?.silent === true;
+      const requestedChatId = chatInfo.chat_id;
+      const requestSequence = beginOfficialWindowRequest();
       if (!silent) {
         setLoading(true);
       }
 
       try {
         const res = await listMessages(
-          chatInfo.chat_id,
+          requestedChatId,
           1,
           CHAT_MESSAGES_PER_PAGE
         );
@@ -7524,12 +8352,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           return;
         }
 
+        applyOfficialWindowResponse(requestedChatId, res, requestSequence);
+
         const baseMessages = [...res.results].reverse();
-        const pending = consumePendingMessages(chatInfo.chat_id);
+        const pending = consumePendingMessages(requestedChatId);
         const mergedMessages = mergePendingSocketMessages(
           baseMessages,
           pending,
-          chatInfo.chat_id
+          requestedChatId
         );
 
         currentPageRef.current = toPositiveInt(res.current_page, 1);
@@ -7541,7 +8371,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           mergeSnapshotMessagesWithCurrent(
             previous,
             mergedMessages,
-            chatInfo.chat_id
+            requestedChatId
           )
         );
       } finally {
@@ -7550,17 +8380,24 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         }
       }
     },
-    [chatInfo.chat_id]
+    [applyOfficialWindowResponse, beginOfficialWindowRequest, chatInfo.chat_id]
   );
 
   const syncLatestMessages = useCallback(async () => {
-    const res = await listMessages(chatInfo.chat_id, 1, CHAT_MESSAGES_PER_PAGE);
+    const requestedChatId = chatInfo.chat_id;
+    const requestSequence = beginOfficialWindowRequest();
+    const res = await listMessages(requestedChatId, 1, CHAT_MESSAGES_PER_PAGE);
     if (!res) return;
+    applyOfficialWindowResponse(requestedChatId, res, requestSequence);
     const latestMessages = [...res.results].reverse();
     setMessages((prev) =>
-      mergeMessageBatch(prev, latestMessages, chatInfo.chat_id)
+      mergeMessageBatch(prev, latestMessages, requestedChatId)
     );
-  }, [chatInfo.chat_id]);
+  }, [
+    applyOfficialWindowResponse,
+    beginOfficialWindowRequest,
+    chatInfo.chat_id,
+  ]);
 
   const syncMessagesStatus = useCallback(
     async (force = false) => {
@@ -7573,19 +8410,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
       lastSocketSyncTimeRef.current = now;
 
+      const requestedChatId = chatInfo.chat_id;
+      const requestSequence = beginOfficialWindowRequest();
       const res = await listMessages(
-        chatInfo.chat_id,
+        requestedChatId,
         1,
         CHAT_SOCKET_SYNC_PER_PAGE
       );
       if (!res) return;
 
+      applyOfficialWindowResponse(requestedChatId, res, requestSequence);
+
       const latestMessages = [...res.results].reverse();
       setMessages((prev) =>
-        mergeMessageBatch(prev, latestMessages, chatInfo.chat_id)
+        mergeMessageBatch(prev, latestMessages, requestedChatId)
       );
     },
-    [chatInfo.chat_id]
+    [applyOfficialWindowResponse, beginOfficialWindowRequest, chatInfo.chat_id]
   );
 
   const loadOlderMessages = useCallback(async () => {
@@ -7601,8 +8442,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     try {
       const nextPage = currentPageRef.current + 1;
+      const requestedChatId = chatInfo.chat_id;
+      const requestSequence = beginOfficialWindowRequest();
       const res = await listMessages(
-        chatInfo.chat_id,
+        requestedChatId,
         nextPage,
         CHAT_MESSAGES_PER_PAGE
       );
@@ -7611,6 +8454,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         preserveScrollOnPrependRef.current = null;
         return;
       }
+
+      applyOfficialWindowResponse(requestedChatId, res, requestSequence);
 
       currentPageRef.current = toPositiveInt(res.current_page, nextPage);
       totalPagesRef.current = Math.max(
@@ -7625,13 +8470,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
 
       setMessages((prev) =>
-        mergeMessageBatch(prev, olderMessages, chatInfo.chat_id)
+        mergeMessageBatch(prev, olderMessages, requestedChatId)
       );
     } finally {
       loadingOlderRef.current = false;
       setLoadingOlder(false);
     }
-  }, [chatInfo.chat_id, loading]);
+  }, [
+    applyOfficialWindowResponse,
+    beginOfficialWindowRequest,
+    chatInfo.chat_id,
+    loading,
+  ]);
 
   const handleListScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -7955,6 +8805,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           };
         }
 
+        if (incoming.worker && typeof incoming.worker === 'object') {
+          next.worker = {
+            ...(next.worker ?? {}),
+            ...(incoming.worker as NonNullable<typeof prev.worker>),
+          };
+        }
+
         if (Array.isArray(incoming.secondary_users)) {
           next.secondary_users = incoming.secondary_users as NonNullable<
             typeof prev.secondary_users
@@ -7966,6 +8823,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             ...(next.sector ?? {}),
             ...(incoming.sector as NonNullable<typeof prev.sector>),
           };
+        }
+
+        if (incoming.official_window === null) {
+          next.official_window = null;
+        } else if (
+          incoming.official_window &&
+          typeof incoming.official_window === 'object'
+        ) {
+          next.official_window = mergeChatOfficialWindowSnapshot(
+            prev,
+            prev.chat_id,
+            {
+              official_window: incoming.official_window as NonNullable<
+                typeof prev.official_window
+              >,
+            }
+          ).official_window;
         }
 
         if (incoming.label === null) {
@@ -8120,8 +8994,30 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     isCurrentUserPrimaryInChat ||
     isCurrentUserMasterOrAdministrator ||
     hasManageInChatLifecyclePermission;
+  const isOfficialActiveChat = isOfficialChatWorker(chatInfo.worker);
+  const officialWindow = isOfficialActiveChat
+    ? (chatInfo.official_window ?? null)
+    : null;
+  const isOfficialAwaitingContactReply =
+    officialWindow?.state === 'awaiting_contact_reply';
+  const isOfficialSendUncertain = officialWindow?.state === 'send_uncertain';
+  const isOfficialOutsideServiceWindow = officialWindow?.state === 'closed';
+  const isOfficialChatLocked =
+    isOfficialAwaitingContactReply ||
+    isOfficialSendUncertain ||
+    isOfficialOutsideServiceWindow;
   const canComposeInChat =
-    !isHistoryReadonly && isInChatStatus && isCurrentUserParticipantInChat;
+    !isHistoryReadonly &&
+    isInChatStatus &&
+    isCurrentUserParticipantInChat &&
+    !isOfficialChatLocked;
+  const canSendOfficialTemplate =
+    !isHistoryReadonly &&
+    isOfficialActiveChat &&
+    isOfficialOutsideServiceWindow &&
+    isInChatStatus &&
+    isCurrentUserParticipantInChat &&
+    officialWindow?.can_send_template !== false;
   const canJoinConversationAction =
     !isHistoryReadonly && isInChatStatus && !isCurrentUserParticipantInChat;
   const canAttendByPermission = canPickQueueChat(permissionList);
@@ -8273,6 +9169,53 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   )
     ? attendantsInfo.secondary_users
     : [];
+  const officialTemplateOptions = useMemo(
+    () =>
+      createOfficialTemplateOptions(
+        officialConversationContext?.templates,
+        'pt'
+      ),
+    [officialConversationContext?.templates]
+  );
+  const selectedOfficialTemplate = useMemo(
+    () =>
+      findOfficialTemplate(
+        officialConversationContext?.templates,
+        selectedOfficialTemplateKey
+      ),
+    [officialConversationContext?.templates, selectedOfficialTemplateKey]
+  );
+  const canSubmitOfficialTemplate =
+    !!selectedOfficialTemplate &&
+    areOfficialTemplateVariablesValid(
+      selectedOfficialTemplate,
+      officialTemplateVariableValues
+    ) &&
+    !officialTemplateSubmitting;
+  const officialWindowNoticeTitle = isOfficialSendUncertain
+    ? pt.official_window_uncertain_title
+    : isOfficialAwaitingContactReply
+      ? pt.official_window_awaiting_title
+      : pt.official_window_closed_title;
+  const officialWindowNoticeDescription = isOfficialSendUncertain
+    ? pt.official_window_uncertain_description
+    : isOfficialAwaitingContactReply
+      ? pt.official_window_awaiting_description
+      : pt.official_window_closed_description;
+
+  useEffect(() => {
+    if (!selectedOfficialTemplate) {
+      setOfficialTemplateVariableValues([]);
+      return;
+    }
+
+    setOfficialTemplateVariableValues((current) =>
+      createOfficialTemplateVariableValues(
+        selectedOfficialTemplate.variables,
+        current
+      )
+    );
+  }, [selectedOfficialTemplate]);
 
   useEffect(() => {
     if (
@@ -9090,8 +10033,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [transferWorkerConfigForChat]);
   const selectedTransferChatbot = useMemo(
     () =>
-      transferChatbots.find((item) => item.value === selectedTransferChatbotId) ??
-      null,
+      transferChatbots.find(
+        (item) => item.value === selectedTransferChatbotId
+      ) ?? null,
     [selectedTransferChatbotId, transferChatbots]
   );
   const selectedForwardChannel = useMemo(
@@ -9425,8 +10369,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       worker_id: selectedTransferChannelId,
       user_id: targetUserId,
       sector_id: transferType === 'sector' ? selectedTransferSectorId : null,
-      chatbot_id:
-        transferType === 'chatbot' ? selectedTransferChatbotId : null,
+      chatbot_id: transferType === 'chatbot' ? selectedTransferChatbotId : null,
       annotation: transferAnnotation.trim() || null,
       keep_in_chat: transferType === 'chatbot' ? false : transferKeepInChat,
     };
@@ -9699,32 +10642,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const applyLocalReaction = useCallback(
     (messageId: string, emoji: string, userId: string, userName: string) => {
       setMessages((previous) =>
-        previous.map((entry) => {
-          if (entry.message_id !== messageId) return entry;
-          const baseContent: MessageContent = {
-            ...(entry.content ?? { type: EMessageType.text }),
-          };
-          const filtered = (baseContent.reactions ?? []).filter(
-            (reaction) => reaction?.user_id !== userId
-          );
-          const nextReactions = emoji
-            ? [
-                ...filtered,
-                {
-                  emoji,
-                  user_id: userId,
-                  user_name: userName,
-                },
-              ]
-            : filtered;
-          return {
-            ...entry,
-            content: {
-              ...baseContent,
-              reactions: nextReactions.length > 0 ? nextReactions : null,
-            },
-          };
-        })
+        updateMessagesWithLocalReaction(
+          previous,
+          messageId,
+          emoji,
+          userId,
+          userName
+        )
       );
     },
     []
@@ -10102,8 +11026,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const handleQuickReaction = useCallback(
     async (emoji: string) => {
+      if (!canComposeInChat) return;
       const target = messageActionTarget;
       if (!target) return;
+      if (isOfficialTemplateOpeningMessage(target)) return;
 
       const previousReactions = target.content?.reactions ?? null;
       const messageWorkerId = currentUserId ?? '';
@@ -10121,12 +11047,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         messageWorkerName
       );
 
-      const ok = await reactToMessage(
+      const attemptKey = `reaction:${chatInfo.chat_id}:${target.message_id}:${emoji}`;
+      const attempt = await beginWorkerCommandActionAttempt(attemptKey);
+      const result = await reactToMessage(
         chatInfo.chat_id,
         target.message_id,
-        emoji
+        emoji,
+        attempt
       );
-      if (ok) return;
+      await settleWorkerCommandActionAttempt(attemptKey, result);
+      if (result.status === 'accepted') return;
 
       setMessages((previous) =>
         previous.map((entry) => {
@@ -10147,6 +11077,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     },
     [
       applyLocalReaction,
+      canComposeInChat,
       chatInfo.chat_id,
       closeMessageOverlay,
       currentUserId,
@@ -10347,7 +11278,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
-    if (canInteract) {
+    if (canInteract && canComposeInChat) {
       actions.push({
         key: 'ai_reply',
         label: pt.chat_action_ai_reply,
@@ -10372,7 +11303,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
-    if (canInteract && canEditMessage(target, fromMe)) {
+    if (
+      canInteract &&
+      !isOfficialActiveChat &&
+      canEditMessage(target, fromMe)
+    ) {
       actions.push({
         key: 'edit',
         label: pt.edit,
@@ -10397,7 +11332,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
-    if (canInteract && fromMe && target.content?.type !== EMessageType.system) {
+    if (
+      canInteract &&
+      !isOfficialActiveChat &&
+      fromMe &&
+      target.content?.type !== EMessageType.system
+    ) {
       actions.push({
         key: 'delete',
         label: pt.delete,
@@ -10416,8 +11356,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           );
 
           void (async () => {
-            const ok = await deleteMessage(chatInfo.chat_id, target.message_id);
-            if (ok) return;
+            const attemptKey = `delete:${chatInfo.chat_id}:${target.message_id}`;
+            const attempt = await beginWorkerCommandActionAttempt(attemptKey);
+            const result = await deleteMessage(
+              chatInfo.chat_id,
+              target.message_id,
+              attempt
+            );
+            await settleWorkerCommandActionAttempt(attemptKey, result);
+            if (result.status === 'accepted') return;
 
             setMessages((previous) =>
               previous.map((entry) =>
@@ -10441,6 +11388,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     handleRetryFailedVideoMessage,
     handleCopyMessageContent,
     handleDownloadMessage,
+    isOfficialActiveChat,
     isHistoryReadonly,
     messageActionTarget,
     shouldObfuscateContent,
@@ -10486,14 +11434,25 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       };
     }
 
+    const targetIdentity = [
+      ...(payload.target_chat_ids ?? []).map((id) => `chat:${id}`),
+      ...(payload.target_contact_ids ?? []).map((id) => `contact:${id}`),
+    ]
+      .sort()
+      .join(',');
+    const attemptKey = `forward:${chatInfo.chat_id}:${forwardSourceMessage.message_id}:${payload.worker_id ?? ''}:${targetIdentity}`;
+    const attempt = await beginWorkerCommandActionAttempt(attemptKey);
     setForwardSubmitting(true);
-    const response = await forwardMessage(
+    const requestResult = await forwardMessage(
       chatInfo.chat_id,
       forwardSourceMessage.message_id,
-      payload
+      payload,
+      attempt
     );
+    await settleWorkerCommandActionAttempt(attemptKey, requestResult);
     setForwardSubmitting(false);
 
+    const response = requestResult.data;
     if (!response) {
       Alert.alert(pt.error_title, pt.chat_forward_error);
       return;
@@ -10510,7 +11469,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       Alert.alert(pt.success_title, pt.chat_forward_success);
     } else {
       const firstFailureMessage =
-        response.results.find((item) => item.status === 'failed')?.reason ??
+        response.results.find((item) => item.status === 'failed')?.message ??
         null;
       Alert.alert(pt.error_title, firstFailureMessage || pt.chat_forward_error);
     }
@@ -10554,14 +11513,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     );
 
     setSavingEditedMessage(true);
-    const ok = await editMessage(
+    const attemptKey = `edit:${chatInfo.chat_id}:${target.message_id}`;
+    const attempt = await beginWorkerCommandActionAttempt(attemptKey);
+    const result = await editMessage(
       chatInfo.chat_id,
       target.message_id,
-      editedText
+      editedText,
+      attempt
     );
+    await settleWorkerCommandActionAttempt(attemptKey, result);
     setSavingEditedMessage(false);
 
-    if (!ok) {
+    if (result.status !== 'accepted') {
       setMessages((entries) =>
         entries.map((entry) =>
           entry.message_id === previous.message_id ? previous : entry
@@ -10942,6 +11905,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   );
 
   const handleSendAiReply = useCallback(async () => {
+    if (!canComposeInChat) return;
     if (!aiReplyResult) return;
 
     const quotedMessageId = aiReplyTarget?.message_id ?? null;
@@ -11012,6 +11976,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     aiReplyResult,
     aiReplyTarget,
     buildOptimisticMessage,
+    canComposeInChat,
     submitFormDataMessage,
     sendTextPayload,
     cleanupAiReplyAudio,
@@ -11556,7 +12521,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const handleMicPressMove = useCallback((pageX: number, pageY: number) => {
     if (!isRecordingVoiceRef.current || isRecordingLockedRef.current) return;
     const startX = micStartXRef.current;
-    if (startX != null) {
+    if (startX !== null && startX !== undefined) {
       const deltaX = pageX - startX;
       const nextCancelArmed = deltaX <= -VOICE_CANCEL_SWIPE_THRESHOLD;
       if (nextCancelArmed !== cancelArmedRef.current) {
@@ -11573,7 +12538,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (cancelArmedRef.current) return;
 
     const startY = micStartYRef.current;
-    if (startY == null) return;
+    if (startY === null || startY === undefined) return;
     const deltaY = startY - pageY;
     if (deltaY < VOICE_LOCK_SWIPE_THRESHOLD) return;
 
@@ -11905,7 +12870,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         return { kind: 'error', message: pt.video_trim_busy };
       }
 
-      return await new Promise<VideoTrimSessionResult>((resolve) => {
+      return new Promise<VideoTrimSessionResult>((resolve) => {
         videoTrimSessionRef.current = {
           settled: false,
           resolve,
@@ -11995,7 +12960,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           name: draft.fileName,
           mimeType: draft.mimeType,
         });
-        if (draft.durationSec != null) {
+        if (draft.durationSec !== null && draft.durationSec !== undefined) {
           formData.append('video_duration', String(draft.durationSec));
         }
 
@@ -13548,7 +14513,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         const normalizedMessage = messageValue.trim();
         if (!normalizedMessage) return false;
 
-        return await sendTextPayload(normalizedMessage, {
+        return sendTextPayload(normalizedMessage, {
           quickMessageTemplateId: template.message_template_id,
         });
       }
@@ -13632,7 +14597,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         content: optimisticContent,
       });
 
-      return await submitFormDataMessage(formData, {
+      return submitFormDataMessage(formData, {
         hash,
         optimisticMessage,
       });
@@ -13741,7 +14706,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   );
 
   const handleTemplateButtonPress = useCallback(
-    (button: MessageTemplateButton, _message: ListMessageResult) => {
+    (button: MessageTemplateButton) => {
       if (!canComposeInChat) return;
       const buttonText = readNonEmptyString(button.displayText);
       if (!buttonText) return;
@@ -13749,6 +14714,158 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     },
     [canComposeInChat, sendTextPayload]
   );
+
+  const resetOfficialTemplateDialogState = useCallback(() => {
+    setOfficialConversationContext(null);
+    setOfficialTemplateError(null);
+    setSelectedOfficialTemplateKey(null);
+    setOfficialTemplateVariableValues([]);
+    setOfficialTemplateSelectVisible(false);
+  }, []);
+
+  const openOfficialTemplateDialog = useCallback(async () => {
+    if (!canSendOfficialTemplate) {
+      Alert.alert(pt.warning_title, pt.official_template_conversation_error);
+      return;
+    }
+
+    resetOfficialTemplateDialogState();
+    setOfficialTemplateModalVisible(true);
+    setOfficialTemplateLoading(true);
+
+    try {
+      const context = await viewOfficialConversationContext(chatInfo.chat_id);
+      if (!context) {
+        setOfficialTemplateError(pt.official_templates_loading_error);
+        return;
+      }
+
+      setOfficialConversationContext(context);
+      setChatInfo((previous) => ({
+        ...previous,
+        official_window: context.official_window,
+      }));
+    } catch {
+      setOfficialTemplateError(pt.official_templates_loading_error);
+    } finally {
+      setOfficialTemplateLoading(false);
+    }
+  }, [
+    canSendOfficialTemplate,
+    chatInfo.chat_id,
+    resetOfficialTemplateDialogState,
+  ]);
+
+  const closeOfficialTemplateDialog = useCallback(() => {
+    if (officialTemplateSubmitting) return;
+    setOfficialTemplateModalVisible(false);
+    resetOfficialTemplateDialogState();
+  }, [officialTemplateSubmitting, resetOfficialTemplateDialogState]);
+
+  const handleChangeOfficialTemplateVariable = useCallback(
+    (key: string, value: string) => {
+      setOfficialTemplateVariableValues((current) =>
+        current.map((variable) =>
+          variable.key === key ? { ...variable, value } : variable
+        )
+      );
+    },
+    []
+  );
+
+  const handleAddManualOfficialTemplateVariable = useCallback(() => {
+    setOfficialTemplateVariableValues((current) => {
+      const nextBodyIndex =
+        current.reduce(
+          (max, variable) =>
+            variable.component_type === 'BODY'
+              ? Math.max(max, variable.index)
+              : max,
+          0
+        ) + 1;
+      return [
+        ...current,
+        createManualOfficialTemplateVariable(nextBodyIndex - 1),
+      ];
+    });
+  }, []);
+
+  const handleChangeManualOfficialTemplateVariable = useCallback(
+    (
+      key: string,
+      patch: Partial<
+        Pick<
+          OfficialTemplateVariableValue,
+          'component_type' | 'index' | 'button_index'
+        >
+      >
+    ) => {
+      setOfficialTemplateVariableValues((current) =>
+        current.map((variable) => {
+          if (variable.key !== key) return variable;
+
+          return refreshOfficialTemplateVariableKey({
+            ...variable,
+            ...patch,
+            value: variable.value,
+          });
+        })
+      );
+    },
+    []
+  );
+
+  const handleRemoveManualOfficialTemplateVariable = useCallback(
+    (key: string) => {
+      setOfficialTemplateVariableValues((current) =>
+        current.filter((variable) => variable.key !== key)
+      );
+    },
+    []
+  );
+
+  const handleSubmitOfficialTemplate = useCallback(async () => {
+    if (!selectedOfficialTemplate || !canSubmitOfficialTemplate) {
+      Alert.alert(pt.warning_title, pt.official_template_required_for_opening);
+      return;
+    }
+
+    setOfficialTemplateSubmitting(true);
+    try {
+      const chat = await sendOfficialTemplateToChat(
+        chatInfo.chat_id,
+        buildOfficialTemplateRequest(
+          selectedOfficialTemplate,
+          officialTemplateVariableValues
+        )
+      );
+
+      if (!chat) {
+        Alert.alert(pt.error_title, pt.official_template_conversation_error);
+        return;
+      }
+
+      setChatInfo(chat);
+      setOfficialTemplateModalVisible(false);
+      resetOfficialTemplateDialogState();
+      await syncLatestMessages();
+      Alert.alert(
+        pt.processing_title,
+        pt.official_template_conversation_queued
+      );
+    } catch {
+      Alert.alert(pt.error_title, pt.official_template_conversation_error);
+    } finally {
+      setOfficialTemplateSubmitting(false);
+    }
+  }, [
+    canSubmitOfficialTemplate,
+    chatInfo.chat_id,
+    officialTemplateVariableValues,
+    resetOfficialTemplateDialogState,
+    selectedOfficialTemplate,
+    syncLatestMessages,
+  ]);
 
   const handleSend = async () => {
     if (selectedQuickMessage) {
@@ -13862,7 +14979,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     hasInputText || selectedQuickMessage !== null;
   const isComposerSendDisabled = selectedQuickMessage
     ? !canSendSelectedQuickMessage || sending || sendingQuickMessage
-    : !hasInputText || sending || sendingQuickMessage;
+    : !hasInputText || !canComposeInChat || sending || sendingQuickMessage;
 
   const focusComposerInput = useCallback(() => {
     if (!canFocusInput) return;
@@ -14045,14 +15162,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const openMessageActionsForListRow = useCallback(
     (message: ListMessageResult) => {
+      if (isOfficialTemplateOpeningMessage(message)) return;
+
       closeOpenedMessageSwipeable();
       setMessageActionTarget(cloneMessageForOverlay(message));
       setMessageOverlayAnchor({
-        showReactions: canInteractWithMessage(message),
+        showReactions: canComposeInChat && canInteractWithMessage(message),
       });
       setReactionPickerVisible(false);
     },
-    [closeOpenedMessageSwipeable]
+    [canComposeInChat, closeOpenedMessageSwipeable]
   );
 
   const chatMessageKeyExtractor = useCallback(
@@ -14095,6 +15214,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             onReplyFromMessage={handleReplyFromMessage}
             onOpenImage={openImageViewer}
             onOpenVideo={openVideoViewer}
+            onOpenOfficialListOptions={openOfficialListOptions}
+            onOpenOfficialVideo={openOfficialVideoViewer}
             onPressContactCard={handlePressMessageContactCard}
             onPressContactsGroup={handlePressMessageContactsGroup}
             onTemplateButtonPress={handleTemplateButtonPress}
@@ -14144,6 +15265,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           onReplyFromMessage={handleReplyFromMessage}
           onOpenImage={openImageViewer}
           onOpenVideo={openVideoViewer}
+          onOpenOfficialListOptions={openOfficialListOptions}
+          onOpenOfficialVideo={openOfficialVideoViewer}
           onPressContactCard={handlePressMessageContactCard}
           onPressContactsGroup={handlePressMessageContactsGroup}
           onTemplateButtonPress={handleTemplateButtonPress}
@@ -14169,6 +15292,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       messageIdSet,
       messageListCapabilityById,
       openImageViewer,
+      openOfficialListOptions,
+      openOfficialVideoViewer,
       openMessageActionsForListRow,
       openVideoViewer,
       quotedTargetIdByMessageId,
@@ -14281,6 +15406,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   imageGallery={null}
                   onOpenImage={openImageViewer}
                   onOpenVideo={openVideoViewer}
+                  onOpenOfficialListOptions={openOfficialListOptions}
+                  onOpenOfficialVideo={openOfficialVideoViewer}
                   onTemplateButtonPress={handleTemplateButtonPress}
                   disableTemplateButtons={!canComposeInChat || sending}
                   forceCollapsedLongText
@@ -14675,6 +15802,65 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <Text style={styles.protectedBannerText}>
               {pt.protected_content}
             </Text>
+          </View>
+        ) : null}
+        {isOfficialChatLocked && !isHistoryReadonly ? (
+          <View
+            style={[
+              styles.officialWindowNotice,
+              isOfficialOutsideServiceWindow &&
+                styles.officialWindowNoticeClosed,
+              isOfficialSendUncertain && styles.officialWindowNoticeUncertain,
+            ]}
+          >
+            <View style={styles.officialWindowNoticeTextWrap}>
+              <View style={styles.officialWindowNoticeTitleRow}>
+                <Ionicons
+                  name={
+                    isOfficialAwaitingContactReply
+                      ? 'lock-closed-outline'
+                      : isOfficialSendUncertain
+                        ? 'help-circle-outline'
+                        : 'time-outline'
+                  }
+                  size={16}
+                  color={
+                    isOfficialOutsideServiceWindow
+                      ? colors.error
+                      : isOfficialSendUncertain
+                        ? '#175CD3'
+                        : '#B45309'
+                  }
+                />
+                <Text style={styles.officialWindowNoticeTitle}>
+                  {officialWindowNoticeTitle}
+                </Text>
+              </View>
+              <Text style={styles.officialWindowNoticeDescription}>
+                {officialWindowNoticeDescription}
+              </Text>
+            </View>
+            {canSendOfficialTemplate ? (
+              <Pressable
+                style={[
+                  styles.officialWindowTemplateBtn,
+                  officialTemplateLoading &&
+                    styles.officialWindowTemplateBtnDisabled,
+                ]}
+                onPress={() => {
+                  void openOfficialTemplateDialog();
+                }}
+                disabled={officialTemplateLoading}
+              >
+                {officialTemplateLoading ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.officialWindowTemplateBtnText}>
+                    {pt.official_window_send_template}
+                  </Text>
+                )}
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
         {isHistoryReadonly ? (
@@ -15369,6 +16555,118 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           {messageActionOverlayContent}
         </Modal>
       )}
+
+      <BottomSheetModal
+        visible={officialListOptionsSheet !== null}
+        onClose={closeOfficialListOptions}
+        title={officialListOptionsSheet?.title ?? pt.select_option}
+        cardStyle={styles.annotationSheetCard}
+      >
+        <View style={styles.officialListOptionsSheet}>
+          {officialListOptionsSheet?.sections.map((section, sectionIndex) => (
+            <View
+              key={`official-list-sheet-section-${sectionIndex}-${
+                section.id ?? ''
+              }`}
+              style={styles.officialListOptionsSection}
+            >
+              {section.title ? (
+                <Text style={styles.officialListOptionsSectionTitle}>
+                  {section.title}
+                </Text>
+              ) : null}
+              {section.rows.map((row, rowIndex) => (
+                <View
+                  key={`official-list-sheet-row-${sectionIndex}-${rowIndex}-${
+                    row.id ?? row.label
+                  }`}
+                  style={styles.officialListOptionsRow}
+                >
+                  <View style={styles.officialListOptionsRowCopy}>
+                    <Text style={styles.officialListOptionsRowTitle}>
+                      {row.label}
+                    </Text>
+                    {row.description_text ? (
+                      <Text style={styles.officialListOptionsRowDescription}>
+                        {row.description_text}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.officialListOptionsRadio} />
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        visible={officialTemplateModalVisible}
+        onClose={closeOfficialTemplateDialog}
+        title={pt.official_template_conversation_modal_title}
+        cardStyle={styles.annotationSheetCard}
+        footer={
+          <>
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={closeOfficialTemplateDialog}
+              disabled={officialTemplateSubmitting}
+            >
+              <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                (!canSubmitOfficialTemplate || officialTemplateLoading) &&
+                  styles.sendBtnDisabled,
+              ]}
+              onPress={() => {
+                void handleSubmitOfficialTemplate();
+              }}
+              disabled={!canSubmitOfficialTemplate || officialTemplateLoading}
+            >
+              {officialTemplateSubmitting ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>
+                  {pt.official_template_conversation_send}
+                </Text>
+              )}
+            </Pressable>
+          </>
+        }
+      >
+        <OfficialTemplateFields
+          templates={officialConversationContext?.templates ?? []}
+          selectedTemplateKey={selectedOfficialTemplateKey}
+          variableValues={officialTemplateVariableValues}
+          loading={officialTemplateLoading}
+          error={officialTemplateError}
+          submitting={officialTemplateSubmitting}
+          onOpenTemplatePicker={() => setOfficialTemplateSelectVisible(true)}
+          onChangeVariableValue={handleChangeOfficialTemplateVariable}
+          onChangeManualVariable={handleChangeManualOfficialTemplateVariable}
+          onAddManualVariable={handleAddManualOfficialTemplateVariable}
+          onRemoveManualVariable={handleRemoveManualOfficialTemplateVariable}
+        />
+      </BottomSheetModal>
+
+      <SelectSheet
+        visible={officialTemplateSelectVisible}
+        title={pt.official_template_model}
+        options={officialTemplateOptions.map((item) => ({
+          value: item.value,
+          label: item.label,
+        }))}
+        selectedValue={selectedOfficialTemplateKey}
+        emptyText={pt.official_templates_empty}
+        searchPlaceholder={pt.select_search_placeholder}
+        onRequestClose={() => setOfficialTemplateSelectVisible(false)}
+        onSelectValue={(value) => {
+          setSelectedOfficialTemplateKey(value);
+          setOfficialTemplateSelectVisible(false);
+        }}
+      />
 
       <BottomSheetModal
         visible={editingMessageTarget !== null}
@@ -18787,6 +20085,293 @@ const styles = StyleSheet.create({
   templateButtonTextRight: {
     color: colors.primary,
   },
+  officialCard: {
+    gap: 8,
+    minWidth: 0,
+    maxWidth: '100%',
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.64)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.12)',
+    padding: 10,
+  },
+  officialCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  officialCardHeaderText: {
+    flex: 1,
+    color: '#047857',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  officialReply: {
+    gap: 8,
+    minWidth: 0,
+    maxWidth: '100%',
+  },
+  officialReplyContext: {
+    alignSelf: 'stretch',
+    minWidth: 0,
+    borderLeftWidth: 4,
+    borderLeftColor: '#35BFE6',
+    borderRadius: 6,
+    backgroundColor: '#EAF3FA',
+    paddingVertical: 6,
+    paddingLeft: 10,
+    paddingRight: 9,
+    overflow: 'hidden',
+  },
+  officialReplyContextRight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.54)',
+  },
+  officialReplyContextText: {
+    color: '#344054',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  officialReplyAnswer: {
+    gap: 2,
+    minWidth: 0,
+  },
+  officialReplyTitle: {
+    color: colors.onSurface,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  officialReplyTitleRight: {
+    color: 'rgba(17, 27, 33, 0.96)',
+  },
+  officialReplyDescription: {
+    color: colors.grey700,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  officialMutedText: {
+    color: colors.grey700,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  officialMediaImage: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    borderRadius: 8,
+    backgroundColor: colors.grey200,
+  },
+  officialMediaVideo: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    borderRadius: 8,
+    backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  officialMediaVideoText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  officialTitle: {
+    color: colors.onSurface,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  officialTitleRight: {
+    color: 'rgba(17, 27, 33, 0.96)',
+  },
+  officialBody: {
+    color: colors.onSurface,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  officialFooter: {
+    color: colors.grey600,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  officialItemsList: {
+    gap: 6,
+  },
+  officialItemRow: {
+    borderRadius: 8,
+    backgroundColor: 'rgba(47, 43, 61, 0.05)',
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    gap: 2,
+  },
+  officialItemTitle: {
+    color: colors.onSurface,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  officialItemTitleRight: {
+    color: 'rgba(17, 27, 33, 0.96)',
+  },
+  officialItemDescription: {
+    color: colors.grey700,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  officialSections: {
+    gap: 8,
+  },
+  officialSection: {
+    gap: 6,
+  },
+  officialSectionTitle: {
+    color: colors.grey700,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  officialCardsScroll: {
+    maxWidth: '100%',
+  },
+  officialCardsList: {
+    gap: 8,
+  },
+  officialNestedCard: {
+    width: 206,
+    gap: 6,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.grey200,
+    padding: 8,
+  },
+  officialNestedCardImage: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    borderRadius: 7,
+    backgroundColor: colors.grey200,
+  },
+  officialNestedCardVideo: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    borderRadius: 7,
+    backgroundColor: colors.grey100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  officialActions: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(47, 43, 61, 0.14)',
+    paddingTop: 4,
+    gap: 2,
+  },
+  officialActionRow: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  officialActionRowRight: {
+    opacity: 0.95,
+  },
+  officialActionText: {
+    flexShrink: 1,
+    color: '#128C52',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  officialActionTextRight: {
+    color: colors.primary,
+  },
+  officialCollapsedAction: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(30, 90, 180, 0.08)',
+    paddingHorizontal: 8,
+  },
+  officialActionLabel: {
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: 'rgba(30, 90, 180, 0.08)',
+    paddingHorizontal: 8,
+  },
+  officialSubmittedData: {
+    gap: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(47, 43, 61, 0.05)',
+    padding: 8,
+  },
+  officialSubmittedDataRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  officialSubmittedDataKey: {
+    width: 92,
+    color: colors.grey700,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  officialSubmittedDataText: {
+    flex: 1,
+    color: colors.grey700,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  officialListOptionsSheet: {
+    gap: 12,
+  },
+  officialListOptionsSection: {
+    gap: 8,
+  },
+  officialListOptionsSectionTitle: {
+    color: colors.grey700,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  officialListOptionsRow: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.grey200,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  officialListOptionsRowCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  officialListOptionsRowTitle: {
+    color: colors.onSurface,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  officialListOptionsRowDescription: {
+    color: colors.grey600,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  officialListOptionsRadio: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: colors.grey300,
+  },
   viewerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.9)',
@@ -18923,6 +20508,61 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.grey700,
     fontWeight: '500',
+  },
+  officialWindowNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FFFBEB',
+    borderTopWidth: 1,
+    borderTopColor: '#FDE68A',
+  },
+  officialWindowNoticeClosed: {
+    backgroundColor: '#FEF2F2',
+    borderTopColor: '#FECACA',
+  },
+  officialWindowNoticeUncertain: {
+    backgroundColor: '#EFF8FF',
+    borderTopColor: '#B2DDFF',
+  },
+  officialWindowNoticeTextWrap: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  officialWindowNoticeTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  officialWindowNoticeTitle: {
+    flex: 1,
+    color: colors.onSurface,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  officialWindowNoticeDescription: {
+    color: colors.grey700,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  officialWindowTemplateBtn: {
+    minHeight: 38,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  officialWindowTemplateBtnDisabled: {
+    opacity: 0.65,
+  },
+  officialWindowTemplateBtnText: {
+    color: colors.onPrimary,
+    fontSize: 12,
+    fontWeight: '700',
   },
   operatorReplyPendingBanner: {
     flexDirection: 'row',

@@ -3,23 +3,28 @@ import { Client } from '@elastic/elasticsearch';
 import { createHash } from 'crypto';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
+import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { IChunk } from '@core/common/interfaces/IChunk';
 import { IEmbeddingDocument } from '@core/common/interfaces/IEmbeddingDocument';
-import { IEmbeddingResponse } from '@core/common/interfaces/IEmbeddingResponse';
-import { IGeminiBatchEmbedContentsResponse } from '@core/common/interfaces/IGeminiBatchEmbedContentsResponse';
 import { IChatHistoryEmbeddingDocument } from '@core/common/interfaces/IChatHistoryEmbeddingDocument';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { aiAgentPromptEmbeddingMappings } from '@core/mappings/aiAgentPromptEmbedding.mappings';
 import { chatHistoryEmbeddingMappings } from '@core/mappings/chatHistoryEmbedding.mappings';
 import { AiAgentViewerRepository } from '@core/repositories/aiAgent/AiAgentViewer.repository';
+import { AiAgentPromptViewerRepository } from '@core/repositories/aiAgent/AiAgentPromptViewer.repository';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import Redis from 'ioredis';
-import { withLock } from '@core/common/functions/withLock';
+import {
+  withLock,
+  type ILockLeaseContext,
+} from '@core/common/functions/withLock';
+import { aiProviderClient } from './aiProviderClient.service';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -30,23 +35,70 @@ export class EmbeddingService {
   private readonly indexName = EElasticIndex.ai_agent_prompt_embedding;
   private readonly chatHistoryIndexName = EElasticIndex.chat_history_embedding;
   private readonly embeddingDimensions = 1536;
+  private readonly embeddingBatchSize = 100;
   private readonly maxChunkTokensForFaq = 800;
+  private promptEmbeddingMappingEnsured = false;
+  private chatHistoryMappingEnsured = false;
 
   constructor(
     @inject('DatabaseElasticClient') private readonly elasticClient: Client,
     @inject(AiAgentViewerRepository)
     private readonly aiAgentViewerRepository: AiAgentViewerRepository,
+    @inject(AiAgentPromptViewerRepository)
+    private readonly aiAgentPromptViewerRepository: AiAgentPromptViewerRepository,
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject('Redis') private readonly redis: Redis
   ) {}
+
+  async withEmbeddingGenerationLock<T>(
+    accountId: string,
+    aiAgentId: string,
+    task: (lockContext: ILockLeaseContext) => Promise<T>
+  ): Promise<T> {
+    const lockKey = `ai-agent-embedding-generation:${accountId}:${aiAgentId}`;
+
+    return withLock(
+      this.redis,
+      lockKey,
+      async (lockContext) => {
+        lockContext.assertActive();
+        const result = await task(lockContext);
+        lockContext.assertActive();
+        return result;
+      },
+      {
+        ttlMs: 120_000,
+        maxWaitMs: 180_000,
+      }
+    );
+  }
 
   private async ensureIndex(): Promise<void> {
     const exists = await this.elasticClient.indices.exists({
       index: this.indexName,
     });
 
+    if (exists && this.promptEmbeddingMappingEnsured) {
+      return;
+    }
+
     if (exists) {
+      await this.elasticClient.indices.putMapping({
+        index: this.indexName,
+        properties: {
+          embedding_generation: {
+            type: 'keyword',
+          },
+          chunk_count: {
+            type: 'integer',
+          },
+          content_revision: {
+            type: 'keyword',
+          },
+        },
+      });
+      this.promptEmbeddingMappingEnsured = true;
       return;
     }
 
@@ -60,6 +112,7 @@ export class EmbeddingService {
         } as any,
         { ignore: [400] }
       );
+      this.promptEmbeddingMappingEnsured = true;
     } catch (error) {
       throw new Error(`Failed to create index: ${error}`);
     }
@@ -299,22 +352,6 @@ export class EmbeddingService {
     );
   }
 
-  private normalizeEmbedding(embedding: number[]): number[] {
-    if (embedding.length === this.embeddingDimensions) {
-      return embedding;
-    }
-
-    if (embedding.length > this.embeddingDimensions) {
-      return embedding.slice(0, this.embeddingDimensions);
-    }
-
-    const padded = embedding.slice();
-    while (padded.length < this.embeddingDimensions) {
-      padded.push(0);
-    }
-    return padded;
-  }
-
   private validateEmbeddingConfig(
     baseUrl: string,
     apiKey: string,
@@ -343,77 +380,35 @@ export class EmbeddingService {
     model: string,
     texts: string[]
   ): Promise<number[][]> {
-    const apiVersion = baseUrl.replace('/v1', '/v1beta');
-    const url = `${apiVersion}/models/${encodeURIComponent(
-      model
-    )}:batchEmbedContents?key=${encodeURIComponent(apiKey)}`;
-
-    const requestBody = {
-      requests: texts.map((text) => ({
-        model: `models/${model}`,
-        content: {
-          parts: [{ text }],
-        },
-      })),
-    };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    return aiProviderClient.generateGeminiEmbeddings({
+      configuration: {
+        provider: EAiAgentType.gemini,
+        baseUrl,
+        apiKey,
+        model,
+        embeddingModel: model,
       },
-      body: JSON.stringify(requestBody),
+      texts,
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Embedding API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = (await response.json()) as IGeminiBatchEmbedContentsResponse;
-
-    const rawEmbeddings =
-      data.embeddings?.map((e) => e.values ?? e.embedding?.values ?? []) ?? [];
-
-    const normalized = rawEmbeddings.map((e) => this.normalizeEmbedding(e));
-
-    return normalized;
   }
 
   private async callOpenAiEmbeddingApi(
     baseUrl: string,
     apiKey: string,
     model: string,
-    texts: string[]
+    texts: string[],
+    aiAgentTypeId: string
   ): Promise<number[][]> {
-    const url = `${baseUrl}/embeddings`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
+    return aiProviderClient.generateOpenAiCompatibleEmbeddings({
+      configuration: {
+        provider: aiAgentTypeId,
+        baseUrl,
+        apiKey,
         model,
-        input: texts,
-      }),
+        embeddingModel: model,
+      },
+      texts,
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Embedding API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = (await response.json()) as IEmbeddingResponse;
-
-    const raw = data.data
-      .sort((a, b) => a.index - b.index)
-      .map((d) => d.embedding);
-
-    const normalized = raw.map((e) => this.normalizeEmbedding(e));
-
-    return normalized;
   }
 
   private async generateEmbeddings(
@@ -429,11 +424,29 @@ export class EmbeddingService {
 
     this.validateEmbeddingConfig(baseUrl, apiKey, model);
 
-    if (this.isGeminiAgent(aiAgentTypeId)) {
-      return this.callGeminiEmbeddingApi(baseUrl, apiKey, model, texts);
+    const embeddings: number[][] = [];
+    for (
+      let batchStart = 0;
+      batchStart < texts.length;
+      batchStart += this.embeddingBatchSize
+    ) {
+      const batch = texts.slice(
+        batchStart,
+        batchStart + this.embeddingBatchSize
+      );
+      const batchEmbeddings = this.isGeminiAgent(aiAgentTypeId)
+        ? await this.callGeminiEmbeddingApi(baseUrl, apiKey, model, batch)
+        : await this.callOpenAiEmbeddingApi(
+            baseUrl,
+            apiKey,
+            model,
+            batch,
+            aiAgentTypeId
+          );
+      embeddings.push(...batchEmbeddings);
     }
 
-    return this.callOpenAiEmbeddingApi(baseUrl, apiKey, model, texts);
+    return embeddings;
   }
 
   private validateAiAgentConfig(
@@ -480,7 +493,8 @@ export class EmbeddingService {
     chunkText: string,
     sourceId: string,
     embeddingModel: string | null,
-    embeddingDimensions: number
+    embeddingDimensions: number,
+    embeddingGeneration: string
   ): string {
     const normalizedText = chunkText.trim().toLowerCase();
     const payload = JSON.stringify({
@@ -488,9 +502,111 @@ export class EmbeddingService {
       source_id: sourceId,
       embedding_model: embeddingModel || '',
       embedding_dimensions: embeddingDimensions,
+      embedding_generation: embeddingGeneration,
     });
 
     return createHash('sha256').update(payload).digest('hex');
+  }
+
+  private computePromptContentRevision(
+    chunks: IChunk[],
+    embeddingGeneration: string
+  ): string {
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          embedding_generation: embeddingGeneration,
+          chunks: chunks.map((chunk) => ({
+            index: chunk.index,
+            text: chunk.text,
+          })),
+        })
+      )
+      .digest('hex');
+  }
+
+  private computeEmbeddingGeneration(aiAgent: {
+    ai_agent_type_id: string;
+    base_url: string | null;
+    embedding_model: string | null;
+    chunk_size: string;
+    chunk_overlap: string;
+  }): string {
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          provider: aiAgent.ai_agent_type_id,
+          base_url: aiAgent.base_url?.trim().replace(/\/+$/, '') ?? '',
+          embedding_model: aiAgent.embedding_model?.trim() ?? '',
+          chunk_size: aiAgent.chunk_size,
+          chunk_overlap: aiAgent.chunk_overlap,
+          dimensions: this.embeddingDimensions,
+        })
+      )
+      .digest('hex');
+  }
+
+  private async assertEmbeddingGenerationIsCurrent(
+    accountId: string,
+    aiAgentId: string,
+    expectedGeneration: string
+  ): Promise<void> {
+    const currentAgent = await this.aiAgentViewerRepository.viewAiAgent(
+      aiAgentId,
+      accountId
+    );
+
+    if (
+      !currentAgent ||
+      currentAgent.status !== EAiAgentStatus.active ||
+      this.computeEmbeddingGeneration(currentAgent) !== expectedGeneration
+    ) {
+      throw new Error(
+        'AI Agent embedding configuration changed while the job was running.'
+      );
+    }
+  }
+
+  private async assertPromptSourceIsCurrent(
+    accountId: string,
+    aiAgentId: string,
+    aiAgentPromptId: string,
+    expectedSourceValue: string
+  ): Promise<void> {
+    const currentPrompt =
+      await this.aiAgentPromptViewerRepository.viewAiAgentPrompt(
+        aiAgentPromptId,
+        accountId
+      );
+
+    if (
+      !currentPrompt ||
+      currentPrompt.ai_agent_id !== aiAgentId ||
+      currentPrompt.status !== EAiAgentStatus.active ||
+      currentPrompt.value !== expectedSourceValue
+    ) {
+      throw new Error(
+        'AI Agent prompt changed while the embedding job was running.'
+      );
+    }
+  }
+
+  private buildLegacyCompatibleEmbeddingModelFilter(
+    embeddingModel: string
+  ): Record<string, unknown> {
+    return {
+      bool: {
+        should: [
+          { term: { embedding_model: embeddingModel } },
+          {
+            bool: {
+              must_not: [{ exists: { field: 'embedding_model' } }],
+            },
+          },
+        ],
+        minimum_should_match: 1,
+      },
+    };
   }
 
   private createEmbeddingDocuments(
@@ -499,10 +615,15 @@ export class EmbeddingService {
     accountId: string,
     aiAgentId: string,
     aiAgentPromptId: string,
-    embeddingModel: string | null
+    embeddingModel: string | null,
+    embeddingGeneration: string
   ): IEmbeddingDocument[] {
     const now = new Date().toISOString();
     const nowEpochMillis = Date.now();
+    const contentRevision = this.computePromptContentRevision(
+      chunks,
+      embeddingGeneration
+    );
 
     return chunks.map((chunk, idx) => {
       const sourceId = `${accountId}:${aiAgentId}:${aiAgentPromptId}:${chunk.index}`;
@@ -510,7 +631,8 @@ export class EmbeddingService {
         chunk.text,
         sourceId,
         embeddingModel,
-        this.embeddingDimensions
+        this.embeddingDimensions,
+        embeddingGeneration
       );
 
       return {
@@ -518,12 +640,15 @@ export class EmbeddingService {
         ai_agent_id: aiAgentId,
         ai_agent_prompt_id: aiAgentPromptId,
         chunk_index: chunk.index,
+        chunk_count: chunks.length,
         chunk_text: chunk.text,
         embedding: embeddings ? embeddings[idx] : null,
         has_embedding: embeddings !== null,
         created_at: now,
         content_fingerprint: contentFingerprint,
+        content_revision: contentRevision,
         embedding_model: embeddingModel,
+        embedding_generation: embeddingGeneration,
         updated_at: now,
         updated_at_epoch_millis: nowEpochMillis,
       };
@@ -531,8 +656,41 @@ export class EmbeddingService {
   }
 
   private buildEmbeddingDocumentId(doc: IEmbeddingDocument): string {
-    const payload = `${doc.account_id}:${doc.ai_agent_id}:${doc.ai_agent_prompt_id}:${doc.chunk_index}`;
+    const payload = `${doc.account_id}:${doc.ai_agent_id}:${doc.ai_agent_prompt_id}:${doc.embedding_generation ?? 'legacy'}:${doc.content_revision ?? 'legacy'}:${doc.chunk_index}`;
     return createHash('sha256').update(payload).digest('hex').substring(0, 32);
+  }
+
+  private async deleteStalePromptEmbeddingDocuments(
+    aiAgentPromptId: string,
+    activeDocuments: IEmbeddingDocument[]
+  ): Promise<void> {
+    if (activeDocuments.length === 0) {
+      const deleted = await this.deletePromptEmbeddings(aiAgentPromptId);
+      if (!deleted) {
+        throw new Error('Failed to remove stale prompt embeddings.');
+      }
+      return;
+    }
+
+    await this.elasticClient.deleteByQuery({
+      index: this.indexName,
+      conflicts: 'proceed',
+      query: {
+        bool: {
+          filter: [{ term: { ai_agent_prompt_id: aiAgentPromptId } }],
+          must_not: [
+            {
+              ids: {
+                values: activeDocuments.map((document) =>
+                  this.buildEmbeddingDocumentId(document)
+                ),
+              },
+            },
+          ],
+        },
+      },
+      refresh: true,
+    });
   }
 
   private async bulkIndexDocuments(
@@ -543,7 +701,15 @@ export class EmbeddingService {
     }
 
     const scriptSource = `
-      if (ctx._source != null && ctx._source.containsKey('content_fingerprint') && ctx._source.content_fingerprint == params.content_fingerprint) {
+      if (ctx.op == 'create') {
+        ctx._source = params.doc;
+      } else if (
+        ctx._source != null &&
+        ctx._source.containsKey('content_fingerprint') &&
+        ctx._source.content_fingerprint == params.content_fingerprint &&
+        ctx._source.embedding_generation == params.embedding_generation &&
+        ctx._source.content_revision == params.content_revision
+      ) {
         ctx.op = 'noop';
       } else {
         ctx._source = params.doc;
@@ -560,6 +726,8 @@ export class EmbeddingService {
           params: {
             doc: doc as unknown as Record<string, unknown>,
             content_fingerprint: doc.content_fingerprint,
+            embedding_generation: doc.embedding_generation,
+            content_revision: doc.content_revision,
           },
         },
         upsert: doc as unknown as Record<string, unknown>,
@@ -572,11 +740,58 @@ export class EmbeddingService {
     );
   }
 
+  private async commitPromptEmbeddingDocuments(
+    accountId: string,
+    aiAgentId: string,
+    aiAgentPromptId: string,
+    expectedSourceValue: string,
+    embeddingGeneration: string,
+    documents: IEmbeddingDocument[]
+  ): Promise<void> {
+    await this.withEmbeddingGenerationLock(
+      accountId,
+      aiAgentId,
+      async (lockContext) => {
+        lockContext.assertActive();
+        await this.assertEmbeddingGenerationIsCurrent(
+          accountId,
+          aiAgentId,
+          embeddingGeneration
+        );
+        await this.assertPromptSourceIsCurrent(
+          accountId,
+          aiAgentId,
+          aiAgentPromptId,
+          expectedSourceValue
+        );
+        lockContext.assertActive();
+        await this.bulkIndexDocuments(documents);
+        await this.assertEmbeddingGenerationIsCurrent(
+          accountId,
+          aiAgentId,
+          embeddingGeneration
+        );
+        await this.assertPromptSourceIsCurrent(
+          accountId,
+          aiAgentId,
+          aiAgentPromptId,
+          expectedSourceValue
+        );
+        lockContext.assertActive();
+        await this.deleteStalePromptEmbeddingDocuments(
+          aiAgentPromptId,
+          documents
+        );
+      }
+    );
+  }
+
   async processAndStoreEmbeddings(
     accountId: string,
     aiAgentId: string,
     aiAgentPromptId: string,
-    text: string
+    text: string,
+    expectedSourceValue: string
   ): Promise<number> {
     await this.ensureIndex();
 
@@ -593,10 +808,9 @@ export class EmbeddingService {
       aiAgent.ai_agent_type_id
     );
     const hasEmbeddingModel = !!aiAgent.embedding_model;
+    const embeddingGeneration = this.computeEmbeddingGeneration(aiAgent);
 
     if (embeddingOptional && !hasEmbeddingModel) {
-      await this.deletePromptEmbeddings(aiAgentPromptId);
-
       const { size, overlap } = this.parseChunkConfig(
         aiAgent.chunk_size,
         aiAgent.chunk_overlap
@@ -605,6 +819,14 @@ export class EmbeddingService {
       const chunks = this.splitTextIntoChunks(text, size, overlap);
 
       if (chunks.length === 0) {
+        await this.commitPromptEmbeddingDocuments(
+          accountId,
+          aiAgentId,
+          aiAgentPromptId,
+          expectedSourceValue,
+          embeddingGeneration,
+          []
+        );
         return 0;
       }
 
@@ -614,10 +836,18 @@ export class EmbeddingService {
         accountId,
         aiAgentId,
         aiAgentPromptId,
-        null
+        null,
+        embeddingGeneration
       );
 
-      await this.bulkIndexDocuments(documents);
+      await this.commitPromptEmbeddingDocuments(
+        accountId,
+        aiAgentId,
+        aiAgentPromptId,
+        expectedSourceValue,
+        embeddingGeneration,
+        documents
+      );
 
       return documents.length;
     }
@@ -630,8 +860,6 @@ export class EmbeddingService {
       );
     }
 
-    await this.deletePromptEmbeddings(aiAgentPromptId);
-
     const { size, overlap } = this.parseChunkConfig(
       aiAgent.chunk_size,
       aiAgent.chunk_overlap
@@ -640,6 +868,14 @@ export class EmbeddingService {
     const chunks = this.splitTextIntoChunks(text, size, overlap);
 
     if (chunks.length === 0) {
+      await this.commitPromptEmbeddingDocuments(
+        accountId,
+        aiAgentId,
+        aiAgentPromptId,
+        expectedSourceValue,
+        embeddingGeneration,
+        []
+      );
       return 0;
     }
 
@@ -658,10 +894,18 @@ export class EmbeddingService {
       accountId,
       aiAgentId,
       aiAgentPromptId,
-      aiAgent.embedding_model
+      aiAgent.embedding_model,
+      embeddingGeneration
     );
 
-    await this.bulkIndexDocuments(documents);
+    await this.commitPromptEmbeddingDocuments(
+      accountId,
+      aiAgentId,
+      aiAgentPromptId,
+      expectedSourceValue,
+      embeddingGeneration,
+      documents
+    );
 
     return documents.length;
   }
@@ -669,6 +913,8 @@ export class EmbeddingService {
   private buildSimilaritySearchQuery(
     accountId: string,
     aiAgentId: string,
+    embeddingModel: string,
+    embeddingGeneration: string,
     queryVector: number[],
     topK: number,
     options?: {
@@ -679,6 +925,8 @@ export class EmbeddingService {
       { term: { account_id: accountId } },
       { term: { ai_agent_id: aiAgentId } },
       { term: { has_embedding: true } },
+      { term: { embedding_model: embeddingModel } },
+      { term: { embedding_generation: embeddingGeneration } },
     ];
 
     if (options?.allowedPromptIds && options.allowedPromptIds.length > 0) {
@@ -733,16 +981,21 @@ export class EmbeddingService {
   private buildTextSearchQuery(
     accountId: string,
     aiAgentId: string,
+    queryText: string,
     topK: number,
     options?: {
       allowedPromptIds?: string[];
+      includeEmbeddedDocuments?: boolean;
     }
   ): any {
     const filterClauses: any[] = [
       { term: { account_id: accountId } },
       { term: { ai_agent_id: aiAgentId } },
-      { term: { has_embedding: false } },
     ];
+
+    if (!options?.includeEmbeddedDocuments) {
+      filterClauses.push({ term: { has_embedding: false } });
+    }
 
     if (options?.allowedPromptIds && options.allowedPromptIds.length > 0) {
       filterClauses.push({
@@ -754,17 +1007,71 @@ export class EmbeddingService {
 
     return {
       index: this.indexName,
-      size: topK,
+      size: topK * 2,
       query: {
         bool: {
+          must: [
+            {
+              match: {
+                chunk_text: {
+                  query: queryText,
+                },
+              },
+            },
+          ],
           filter: filterClauses,
         },
       },
-      sort: [
-        { ai_agent_prompt_id: { order: 'asc' as const } },
-        { chunk_index: { order: 'asc' as const } },
-      ] as any,
     };
+  }
+
+  private parseTextSearchResults(
+    hits: Array<{
+      _score: number;
+      _source: IEmbeddingDocument;
+    }>
+  ): Array<{ text: string; score: number; promptId: string }> {
+    return hits.map((hit) => ({
+      text: hit._source.chunk_text,
+      score:
+        hit._score > 0
+          ? Math.max(0, Math.min(1, hit._score / (hit._score + 1)))
+          : 0,
+      promptId: hit._source.ai_agent_prompt_id,
+    }));
+  }
+
+  private mergeSearchCandidates(
+    semantic: Array<{ text: string; score: number; promptId: string }>,
+    lexical: Array<{ text: string; score: number; promptId: string }>,
+    topK: number
+  ): Array<{ text: string; score: number; promptId: string }> {
+    const merged: Array<{ text: string; score: number; promptId: string }> = [];
+    const seen = new Set<string>();
+    const maxLength = Math.max(semantic.length, lexical.length);
+
+    const append = (
+      candidate: { text: string; score: number; promptId: string } | undefined
+    ): void => {
+      if (!candidate || merged.length >= topK) {
+        return;
+      }
+
+      const key = `${candidate.promptId}:${candidate.text}`;
+      if (seen.has(key)) {
+        return;
+      }
+
+      seen.add(key);
+      merged.push(candidate);
+    };
+
+    for (let index = 0; index < maxLength && merged.length < topK; index += 1) {
+      append(semantic[index]);
+      append(lexical[index]);
+    }
+
+    return merged;
   }
 
   async searchSimilarChunks(
@@ -798,6 +1105,7 @@ export class EmbeddingService {
       const searchQuery = this.buildTextSearchQuery(
         accountId,
         aiAgentId,
+        queryText,
         topK,
         {
           allowedPromptIds: options?.allowedPromptIds,
@@ -811,11 +1119,11 @@ export class EmbeddingService {
         _source: IEmbeddingDocument;
       }>;
 
-      return hits.map((hit) => ({
-        text: hit._source.chunk_text,
-        score: 1.0,
-        promptId: hit._source.ai_agent_prompt_id,
-      }));
+      return this.mergeSearchCandidates(
+        [],
+        this.parseTextSearchResults(hits),
+        topK
+      );
     }
 
     this.validateAiAgentConfig(aiAgent, true);
@@ -826,41 +1134,185 @@ export class EmbeddingService {
       );
     }
 
-    const embeddings = await this.generateEmbeddings(
-      [queryText],
-      aiAgent.base_url,
-      aiAgent.api_key,
-      aiAgent.embedding_model,
-      aiAgent.ai_agent_type_id
-    );
-    const queryVector = embeddings[0];
+    const lexicalSearch = this.elasticClient
+      .search(
+        this.buildTextSearchQuery(accountId, aiAgentId, queryText, topK, {
+          allowedPromptIds: options?.allowedPromptIds,
+          includeEmbeddedDocuments: true,
+        })
+      )
+      .catch((error) => {
+        console.error('[EmbeddingService] lexical prompt search failed', {
+          account_id: accountId,
+          ai_agent_id: aiAgentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      });
 
-    const searchQuery = this.buildSimilaritySearchQuery(
-      accountId,
-      aiAgentId,
-      queryVector,
-      topK,
-      {
-        allowedPromptIds: options?.allowedPromptIds,
-      }
-    );
+    let semanticResults: Array<{
+      text: string;
+      score: number;
+      promptId: string;
+    }> = [];
 
-    const response = await this.elasticClient.search(searchQuery);
+    try {
+      const embeddings = await this.generateEmbeddings(
+        [queryText],
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.embedding_model,
+        aiAgent.ai_agent_type_id
+      );
+      const queryVector = embeddings[0];
+      const searchQuery = this.buildSimilaritySearchQuery(
+        accountId,
+        aiAgentId,
+        aiAgent.embedding_model,
+        this.computeEmbeddingGeneration(aiAgent),
+        queryVector,
+        topK,
+        {
+          allowedPromptIds: options?.allowedPromptIds,
+        }
+      );
+      const response = await this.elasticClient.search(searchQuery);
+      const hits = response.hits.hits as Array<{
+        _score: number;
+        _source: IEmbeddingDocument;
+      }>;
 
-    const hits = response.hits.hits as Array<{
+      semanticResults = this.parseSearchResults(hits);
+    } catch (error) {
+      console.error(
+        '[EmbeddingService] semantic prompt search failed; using lexical fallback',
+        {
+          account_id: accountId,
+          ai_agent_id: aiAgentId,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+
+    const lexicalResponse = await lexicalSearch;
+    if (!lexicalResponse) {
+      return semanticResults.slice(0, topK);
+    }
+
+    const lexicalHits = lexicalResponse.hits.hits as Array<{
       _score: number;
       _source: IEmbeddingDocument;
     }>;
 
-    const results = this.parseSearchResults(hits);
-
-    return results;
+    return this.mergeSearchCandidates(
+      semanticResults,
+      this.parseTextSearchResults(lexicalHits),
+      topK
+    );
   }
 
   private async checkIndexExists(): Promise<boolean> {
     return this.elasticClient.indices.exists({
       index: this.indexName,
     });
+  }
+
+  async hasCompletePromptEmbeddingGeneration(
+    accountId: string,
+    aiAgentId: string,
+    activePromptIds: string[]
+  ): Promise<boolean> {
+    if (activePromptIds.length === 0) {
+      return true;
+    }
+
+    await this.ensureIndex();
+    const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
+      aiAgentId,
+      accountId
+    );
+    if (!aiAgent) {
+      return false;
+    }
+
+    const embeddingGeneration = this.computeEmbeddingGeneration(aiAgent);
+    const response = await this.elasticClient.search({
+      index: this.indexName,
+      size: 0,
+      query: {
+        bool: {
+          filter: [
+            { term: { account_id: accountId } },
+            { term: { ai_agent_id: aiAgentId } },
+            { term: { embedding_generation: embeddingGeneration } },
+            { terms: { ai_agent_prompt_id: activePromptIds } },
+          ],
+        },
+      },
+      aggs: {
+        prompt_ids: {
+          terms: {
+            field: 'ai_agent_prompt_id',
+            size: activePromptIds.length,
+          },
+          aggs: {
+            content_revisions: {
+              terms: {
+                field: 'content_revision',
+                size: 100,
+              },
+              aggs: {
+                expected_chunk_count: {
+                  max: {
+                    field: 'chunk_count',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const aggregation = response.aggregations?.prompt_ids as
+      | {
+          buckets?: Array<{
+            key?: unknown;
+            doc_count?: number;
+            content_revisions?: {
+              buckets?: Array<{
+                doc_count?: number;
+                expected_chunk_count?: { value?: number | null };
+              }>;
+            };
+          }>;
+        }
+      | undefined;
+    const completePromptIds = new Set(
+      (aggregation?.buckets ?? [])
+        .filter((bucket) => {
+          const revisions = bucket.content_revisions?.buckets ?? [];
+          if (revisions.length !== 1) {
+            return false;
+          }
+
+          const [revision] = revisions;
+          const expectedChunkCount = revision.expected_chunk_count?.value;
+          return (
+            typeof expectedChunkCount === 'number' &&
+            expectedChunkCount > 0 &&
+            revision.doc_count === expectedChunkCount &&
+            bucket.doc_count === expectedChunkCount
+          );
+        })
+        .map((bucket) => {
+          return typeof bucket.key === 'string'
+            ? bucket.key
+            : String(bucket.key ?? '');
+        })
+        .filter(Boolean)
+    );
+
+    return activePromptIds.every((promptId) => completePromptIds.has(promptId));
   }
 
   async deletePromptEmbeddings(aiAgentPromptId: string): Promise<boolean> {
@@ -941,6 +1393,63 @@ export class EmbeddingService {
     }
   }
 
+  async invalidateChatHistoryEmbeddingGeneration(
+    accountId: string,
+    aiAgentId: string
+  ): Promise<void> {
+    const chatIndexExists = await this.elasticClient.indices.exists({
+      index: EElasticIndex.chat,
+    });
+
+    if (!chatIndexExists) {
+      return;
+    }
+
+    const result = await this.elasticDatabaseService.updateByQueryWithScript(
+      EElasticIndex.chat,
+      {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: { 'account.id': accountId },
+                },
+              },
+            },
+          ],
+          filter: [{ term: { embedded_for_ai_agents: aiAgentId } }],
+        },
+      },
+      {
+        source: `
+          if (ctx._source.embedded_for_ai_agents == null) {
+            ctx.op = 'noop';
+            return;
+          }
+          for (int index = ctx._source.embedded_for_ai_agents.size() - 1; index >= 0; index--) {
+            if (ctx._source.embedded_for_ai_agents[index] == params.ai_agent_id) {
+              ctx._source.embedded_for_ai_agents.remove(index);
+            }
+          }
+        `,
+        params: { ai_agent_id: aiAgentId },
+      },
+      {
+        conflicts: 'proceed',
+        refresh: true,
+        maxRetries: 5,
+      }
+    );
+
+    if (result.failures.length > 0) {
+      throw new Error(
+        `Failed to invalidate ${result.failures.length} chat embedding marker(s).`
+      );
+    }
+  }
+
   private async checkChatHistoryIndexExists(): Promise<boolean> {
     return this.elasticClient.indices.exists({
       index: this.chatHistoryIndexName,
@@ -959,7 +1468,132 @@ export class EmbeddingService {
         settings: mappings.settings,
         mappings: mappings.mappings,
       });
+      this.chatHistoryMappingEnsured = true;
+      return;
     }
+
+    if (!this.chatHistoryMappingEnsured) {
+      await this.elasticClient.indices.putMapping({
+        index: this.chatHistoryIndexName,
+        properties: {
+          embedding_model: {
+            type: 'keyword',
+          },
+          embedding_generation: {
+            type: 'keyword',
+          },
+        },
+      });
+      this.chatHistoryMappingEnsured = true;
+    }
+  }
+
+  private buildChatHistoryEmbeddingDocumentId(
+    document: IChatHistoryEmbeddingDocument
+  ): string {
+    const contentRevision = createHash('sha256')
+      .update(document.message_text)
+      .digest('hex');
+    const payload = `${document.account_id}:${document.chat_id}:${document.ai_agent_id}:${document.embedding_generation ?? 'legacy'}:${document.message_id}:${contentRevision}`;
+    return createHash('sha256').update(payload).digest('hex');
+  }
+
+  private async bulkIndexChatHistoryDocuments(
+    documents: IChatHistoryEmbeddingDocument[]
+  ): Promise<void> {
+    const result = await this.elasticDatabaseService.bulkCreateIdempotent(
+      this.chatHistoryIndexName,
+      documents,
+      (document) => this.buildChatHistoryEmbeddingDocumentId(document)
+    );
+
+    if (result.created + result.conflicts !== documents.length) {
+      throw new Error(
+        `Failed to persist all chat history embeddings (${result.created + result.conflicts}/${documents.length}).`
+      );
+    }
+
+    await this.elasticClient.indices.refresh({
+      index: this.chatHistoryIndexName,
+    });
+  }
+
+  private async deleteStaleChatHistoryDocuments(
+    accountId: string,
+    chatId: string,
+    aiAgentId: string,
+    activeDocuments: IChatHistoryEmbeddingDocument[]
+  ): Promise<void> {
+    await this.elasticClient.deleteByQuery({
+      index: this.chatHistoryIndexName,
+      conflicts: 'proceed',
+      query: {
+        bool: {
+          filter: [
+            { term: { account_id: accountId } },
+            { term: { chat_id: chatId } },
+            { term: { ai_agent_id: aiAgentId } },
+          ],
+          must_not: [
+            {
+              ids: {
+                values: activeDocuments.map((document) =>
+                  this.buildChatHistoryEmbeddingDocumentId(document)
+                ),
+              },
+            },
+          ],
+        },
+      },
+      refresh: true,
+    });
+  }
+
+  private async commitChatHistoryDocuments(
+    accountId: string,
+    chatId: string,
+    aiAgentId: string,
+    embeddingGeneration: string,
+    documents: IChatHistoryEmbeddingDocument[]
+  ): Promise<void> {
+    await this.withEmbeddingGenerationLock(
+      accountId,
+      aiAgentId,
+      async (lockContext) => {
+        lockContext.assertActive();
+        await this.assertEmbeddingGenerationIsCurrent(
+          accountId,
+          aiAgentId,
+          embeddingGeneration
+        );
+        lockContext.assertActive();
+        await this.bulkIndexChatHistoryDocuments(documents);
+        await this.assertEmbeddingGenerationIsCurrent(
+          accountId,
+          aiAgentId,
+          embeddingGeneration
+        );
+        lockContext.assertActive();
+        await this.deleteStaleChatHistoryDocuments(
+          accountId,
+          chatId,
+          aiAgentId,
+          documents
+        );
+
+        lockContext.assertActive();
+        const marked = await this.markChatAsEmbedded(
+          accountId,
+          chatId,
+          aiAgentId
+        );
+        if (!marked) {
+          throw new Error(
+            'Failed to mark chat history embeddings as complete.'
+          );
+        }
+      }
+    );
   }
 
   async processChatHistoryEmbeddings(
@@ -1001,20 +1635,9 @@ export class EmbeddingService {
       aiAgent.ai_agent_type_id
     );
     const hasEmbeddingModel = !!aiAgent.embedding_model;
+    const embeddingGeneration = this.computeEmbeddingGeneration(aiAgent);
 
     if (embeddingOptional && !hasEmbeddingModel) {
-      const alreadyEmbedded = await this.hasChatHistoryEmbeddings(
-        accountId,
-        chatId,
-        aiAgentId
-      );
-
-      if (alreadyEmbedded) {
-        return 0;
-      }
-
-      await this.deleteChatHistoryEmbeddings(accountId, chatId, aiAgentId);
-
       const queryElastic = {
         size: 100,
         sort: [{ date: { order: 'desc' } }],
@@ -1104,6 +1727,8 @@ export class EmbeddingService {
           message_text: msg.text,
           embedding: null,
           has_embedding: false,
+          embedding_model: null,
+          embedding_generation: embeddingGeneration,
           created_at: now,
           phone: msg.phone,
           quality_score: initialQualityScore,
@@ -1112,19 +1737,13 @@ export class EmbeddingService {
         };
       });
 
-      const body = documents.flatMap((doc) => [
-        {
-          create: {
-            _index: this.chatHistoryIndexName,
-            _id: `${accountId}:${chatId}:${aiAgentId}:${doc.message_id}`,
-          },
-        },
-        doc,
-      ]);
-
-      await this.elasticClient.bulk({ body, refresh: 'wait_for' });
-
-      await this.markChatAsEmbedded(accountId, chatId, aiAgentId);
+      await this.commitChatHistoryDocuments(
+        accountId,
+        chatId,
+        aiAgentId,
+        embeddingGeneration,
+        documents
+      );
 
       return documents.length;
     }
@@ -1136,18 +1755,6 @@ export class EmbeddingService {
         'AI Agent embedding_model is not configured.'
       );
     }
-
-    const alreadyEmbedded = await this.hasChatHistoryEmbeddings(
-      accountId,
-      chatId,
-      aiAgentId
-    );
-
-    if (alreadyEmbedded) {
-      return 0;
-    }
-
-    await this.deleteChatHistoryEmbeddings(accountId, chatId, aiAgentId);
 
     const queryElastic = {
       size: 100,
@@ -1248,6 +1855,8 @@ export class EmbeddingService {
           message_text: msg.text,
           embedding: embeddings[idx],
           has_embedding: true,
+          embedding_model: aiAgent.embedding_model,
+          embedding_generation: embeddingGeneration,
           created_at: now,
           phone: msg.phone,
           quality_score: initialQualityScore,
@@ -1257,19 +1866,13 @@ export class EmbeddingService {
       }
     );
 
-    const body = documents.flatMap((doc) => [
-      {
-        create: {
-          _index: this.chatHistoryIndexName,
-          _id: `${accountId}:${chatId}:${aiAgentId}:${doc.message_id}`,
-        },
-      },
-      doc,
-    ]);
-
-    await this.elasticClient.bulk({ body, refresh: 'wait_for' });
-
-    await this.markChatAsEmbedded(accountId, chatId, aiAgentId);
+    await this.commitChatHistoryDocuments(
+      accountId,
+      chatId,
+      aiAgentId,
+      embeddingGeneration,
+      documents
+    );
 
     return documents.length;
   }
@@ -1277,7 +1880,8 @@ export class EmbeddingService {
   async processMultipleChatHistoryEmbeddings(
     accountId: string,
     phone: string,
-    aiAgentId: string
+    aiAgentId: string,
+    excludeChatId?: string
   ): Promise<number> {
     if (!phone) {
       return 0;
@@ -1287,7 +1891,8 @@ export class EmbeddingService {
       accountId,
       phone,
       aiAgentId,
-      10
+      10,
+      excludeChatId
     );
 
     if (unembeddedChats.length === 0) {
@@ -1295,19 +1900,10 @@ export class EmbeddingService {
     }
 
     let totalProcessed = 0;
+    let failedChats = 0;
 
     for (const chat of unembeddedChats) {
       try {
-        const alreadyEmbedded = await this.hasChatHistoryEmbeddings(
-          accountId,
-          chat.chat_id,
-          aiAgentId
-        );
-
-        if (alreadyEmbedded) {
-          continue;
-        }
-
         const chatPhone = chat.phone || phone;
         const count = await this.processChatHistoryEmbeddings(
           accountId,
@@ -1317,6 +1913,7 @@ export class EmbeddingService {
         );
         totalProcessed += count;
       } catch (error) {
+        failedChats += 1;
         console.error(
           `[processMultipleChatHistoryEmbeddings] Erro ao processar chat ${chat.chat_id}:`,
           error
@@ -1324,24 +1921,28 @@ export class EmbeddingService {
       }
     }
 
+    if (failedChats > 0) {
+      throw new Error(
+        `Failed to process ${failedChats} chat history embedding(s).`
+      );
+    }
+
     return totalProcessed;
   }
 
-  private buildChatHistoryTextSearchQuery(
+  private buildChatHistoryFilterClauses(
     accountId: string,
     aiAgentId: string,
-    topK: number,
     chatIds: string[],
     options?: {
       minQualityScore?: number;
       onlyUseful?: boolean;
       onlyAssistantResponses?: boolean;
     }
-  ): any {
+  ): any[] {
     const filterClauses: any[] = [
       { term: { account_id: accountId } },
       { term: { ai_agent_id: aiAgentId } },
-      { term: { has_embedding: false } },
     ];
 
     if (chatIds.length > 0) {
@@ -1412,15 +2013,207 @@ export class EmbeddingService {
       });
     }
 
+    return filterClauses;
+  }
+
+  private buildChatHistoryTextSearchQuery(
+    accountId: string,
+    aiAgentId: string,
+    queryText: string,
+    topK: number,
+    chatIds: string[],
+    options?: {
+      minQualityScore?: number;
+      onlyUseful?: boolean;
+      onlyAssistantResponses?: boolean;
+      includeEmbeddedDocuments?: boolean;
+    }
+  ): any {
+    const filterClauses = this.buildChatHistoryFilterClauses(
+      accountId,
+      aiAgentId,
+      chatIds,
+      options
+    );
+
+    if (!options?.includeEmbeddedDocuments) {
+      filterClauses.push({ term: { has_embedding: false } });
+    }
+
     return {
       index: this.chatHistoryIndexName,
       size: topK * 2,
       query: {
         bool: {
+          must: [
+            {
+              match: {
+                message_text: {
+                  query: queryText,
+                },
+              },
+            },
+          ],
           filter: filterClauses,
         },
       },
-      sort: [{ created_at: { order: 'desc' as const } }] as any,
+    };
+  }
+
+  private parseChatHistoryLexicalResults(
+    hits: Array<{
+      _score: number;
+      _source: IChatHistoryEmbeddingDocument;
+    }>,
+    minQualityScore: number
+  ): Array<{ text: string; score: number; message_id: string }> {
+    return hits
+      .map((hit) => {
+        const qualityScore = hit._source.quality_score || 0.0;
+        const lexicalScore = hit._score > 0 ? hit._score / (hit._score + 1) : 0;
+        const combinedScore = lexicalScore * 0.7 + qualityScore * 0.3;
+
+        return {
+          text: hit._source.message_text,
+          score: Math.max(0, Math.min(1, combinedScore)),
+          message_id: hit._source.message_id,
+        };
+      })
+      .filter((result) => result.score >= minQualityScore);
+  }
+
+  private parseChatHistorySemanticResults(
+    hits: Array<{
+      _score: number;
+      _source: IChatHistoryEmbeddingDocument;
+    }>,
+    minQualityScore: number
+  ): Array<{ text: string; score: number; message_id: string }> {
+    return hits
+      .map((hit) => {
+        const qualityScore = hit._source.quality_score || 0.0;
+        const similarityScore = hit._score / (1.0 + qualityScore * 0.5) - 1.0;
+        const combinedScore = similarityScore * 0.7 + qualityScore * 0.3;
+
+        return {
+          text: hit._source.message_text,
+          score: Math.max(0, Math.min(1, combinedScore)),
+          message_id: hit._source.message_id,
+        };
+      })
+      .filter((result) => result.score >= minQualityScore);
+  }
+
+  private mergeChatHistorySearchCandidates(
+    semantic: Array<{ text: string; score: number; message_id: string }>,
+    lexical: Array<{ text: string; score: number; message_id: string }>,
+    topK: number
+  ): Array<{ text: string; score: number; message_id: string }> {
+    const merged: Array<{ text: string; score: number; message_id: string }> =
+      [];
+    const seen = new Set<string>();
+    const maxLength = Math.max(semantic.length, lexical.length);
+
+    const append = (
+      candidate: { text: string; score: number; message_id: string } | undefined
+    ): void => {
+      if (
+        !candidate ||
+        merged.length >= topK ||
+        seen.has(candidate.message_id)
+      ) {
+        return;
+      }
+
+      seen.add(candidate.message_id);
+      merged.push(candidate);
+    };
+
+    for (let index = 0; index < maxLength && merged.length < topK; index += 1) {
+      append(semantic[index]);
+      append(lexical[index]);
+    }
+
+    return merged;
+  }
+
+  private async resolveChatHistorySearchChatIds(
+    accountId: string,
+    chatId: string,
+    phone: string | undefined,
+    searchMultipleChats: boolean
+  ): Promise<string[]> {
+    if (!searchMultipleChats || !phone) {
+      return [chatId];
+    }
+
+    const chatIds = await this.getChatIdsByPhone(accountId, phone);
+    return chatIds.length > 0 ? chatIds : [chatId];
+  }
+
+  private buildChatHistorySimilaritySearchQuery(
+    accountId: string,
+    aiAgentId: string,
+    chatIds: string[],
+    embeddingModel: string,
+    embeddingGeneration: string,
+    queryVector: number[],
+    topK: number,
+    options?: {
+      minQualityScore?: number;
+      onlyUseful?: boolean;
+      onlyAssistantResponses?: boolean;
+    }
+  ): any {
+    const filterClauses = this.buildChatHistoryFilterClauses(
+      accountId,
+      aiAgentId,
+      chatIds,
+      options
+    );
+    filterClauses.push({ term: { has_embedding: true } });
+    filterClauses.push(
+      this.buildLegacyCompatibleEmbeddingModelFilter(embeddingModel)
+    );
+    filterClauses.push({
+      term: { embedding_generation: embeddingGeneration },
+    });
+
+    return {
+      index: this.chatHistoryIndexName,
+      size: topK * 2,
+      query: {
+        bool: {
+          must: [
+            {
+              script_score: {
+                query: {
+                  bool: {
+                    filter: filterClauses,
+                  },
+                },
+                script: {
+                  source: `
+                    double similarity = cosineSimilarity(params.query_vector, 'embedding') + 1.0;
+                    double qualityBoost = 0.0;
+                    if (doc['quality_score'].size() > 0) {
+                      qualityBoost = doc['quality_score'].value;
+                    }
+                    return similarity * (1.0 + qualityBoost * 0.5);
+                  `,
+                  params: {
+                    query_vector: queryVector,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+      sort: [
+        { _score: { order: 'desc' as const } },
+        { created_at: { order: 'desc' as const } },
+      ] as any,
     };
   }
 
@@ -1453,21 +2246,20 @@ export class EmbeddingService {
       aiAgent.ai_agent_type_id
     );
     const hasEmbeddingModel = !!aiAgent.embedding_model;
+    const searchMultipleChats = options?.searchMultipleChats ?? true;
+    const minQualityScore = options?.minQualityScore ?? 0.0;
+    const chatIds = await this.resolveChatHistorySearchChatIds(
+      accountId,
+      chatId,
+      phone,
+      searchMultipleChats
+    );
 
     if (embeddingOptional && !hasEmbeddingModel) {
-      const searchMultipleChats = options?.searchMultipleChats ?? true;
-      let chatIds: string[] = [chatId];
-
-      if (searchMultipleChats && phone) {
-        const foundChatIds = await this.getChatIdsByPhone(accountId, phone);
-        if (foundChatIds.length > 0) {
-          chatIds = foundChatIds;
-        }
-      }
-
       const searchQuery = this.buildChatHistoryTextSearchQuery(
         accountId,
         aiAgentId,
+        queryText,
         topK,
         chatIds,
         options
@@ -1481,23 +2273,10 @@ export class EmbeddingService {
           _source: IChatHistoryEmbeddingDocument;
         }>;
 
-        const minQualityScore = options?.minQualityScore ?? 0.0;
-
-        const results = hits
-          .map((hit) => {
-            const qualityScore = hit._source.quality_score || 0.0;
-            const combinedScore = 0.7 + qualityScore * 0.3;
-
-            return {
-              text: hit._source.message_text,
-              score: Math.max(0, Math.min(1, combinedScore)),
-              message_id: hit._source.message_id,
-            };
-          })
-          .filter((result) => result.score >= minQualityScore)
-          .slice(0, topK);
-
-        return results;
+        return this.parseChatHistoryLexicalResults(hits, minQualityScore).slice(
+          0,
+          topK
+        );
       } catch (error) {
         console.error('[searchChatHistory] Erro ao buscar histórico:', error);
         return [];
@@ -1510,165 +2289,87 @@ export class EmbeddingService {
       return [];
     }
 
-    const embeddings = await this.generateEmbeddings(
-      [queryText],
-      aiAgent.base_url,
-      aiAgent.api_key,
-      aiAgent.embedding_model,
-      aiAgent.ai_agent_type_id
-    );
-    const queryVector = embeddings[0];
-
-    const filterClauses: any[] = [
-      { term: { account_id: accountId } },
-      { term: { ai_agent_id: aiAgentId } },
-    ];
-
-    const searchMultipleChats = options?.searchMultipleChats ?? true;
-    const minQualityScore = options?.minQualityScore ?? 0.0;
-    const onlyUseful = options?.onlyUseful ?? false;
-    const onlyAssistantResponses = options?.onlyAssistantResponses ?? false;
-
-    if (searchMultipleChats && phone) {
-      const chatIds = await this.getChatIdsByPhone(accountId, phone);
-      if (chatIds.length > 0) {
-        filterClauses.push({ terms: { chat_id: chatIds } });
-      } else {
-        filterClauses.push({ term: { chat_id: chatId } });
-      }
-    } else {
-      filterClauses.push({ term: { chat_id: chatId } });
-    }
-
-    if (minQualityScore > 0) {
-      filterClauses.push({
-        bool: {
-          should: [
-            {
-              range: {
-                quality_score: {
-                  gte: minQualityScore,
-                },
-              },
-            },
-            {
-              bool: {
-                must_not: {
-                  exists: {
-                    field: 'quality_score',
-                  },
-                },
-              },
-            },
-          ],
-        },
+    const lexicalSearch = this.elasticClient
+      .search(
+        this.buildChatHistoryTextSearchQuery(
+          accountId,
+          aiAgentId,
+          queryText,
+          topK,
+          chatIds,
+          {
+            ...options,
+            includeEmbeddedDocuments: true,
+          }
+        )
+      )
+      .then((response) => {
+        const hits = response.hits.hits as Array<{
+          _score: number;
+          _source: IChatHistoryEmbeddingDocument;
+        }>;
+        return this.parseChatHistoryLexicalResults(hits, minQualityScore);
+      })
+      .catch((error) => {
+        console.error('[EmbeddingService] lexical chat history search failed', {
+          account_id: accountId,
+          ai_agent_id: aiAgentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return [];
       });
-    }
 
-    if (onlyUseful) {
-      filterClauses.push({
-        bool: {
-          should: [
-            { term: { is_useful: true } },
-            {
-              bool: {
-                must_not: {
-                  exists: {
-                    field: 'is_useful',
-                  },
-                },
-              },
-            },
-          ],
-        },
-      });
-    }
-
-    if (onlyAssistantResponses) {
-      filterClauses.push({
-        bool: {
-          should: [
-            { term: { is_assistant_response: true } },
-            {
-              bool: {
-                must_not: {
-                  exists: {
-                    field: 'is_assistant_response',
-                  },
-                },
-              },
-            },
-          ],
-        },
-      });
-    }
-
-    filterClauses.push({ term: { has_embedding: true } });
-
-    const searchQuery: any = {
-      index: this.chatHistoryIndexName,
-      size: topK * 2,
-      query: {
-        bool: {
-          must: [
-            {
-              script_score: {
-                query: {
-                  bool: {
-                    filter: filterClauses,
-                  },
-                },
-                script: {
-                  source: `
-                    double similarity = cosineSimilarity(params.query_vector, 'embedding') + 1.0;
-                    double qualityBoost = 0.0;
-                    if (doc['quality_score'].size() > 0) {
-                      qualityBoost = doc['quality_score'].value;
-                    }
-                    double finalScore = similarity * (1.0 + qualityBoost * 0.5);
-                    return finalScore;
-                  `,
-                  params: {
-                    query_vector: queryVector,
-                  },
-                },
-              },
-            },
-          ],
-        },
-      },
-      sort: ['_score', { created_at: { order: 'desc' as const } }] as any,
-    };
+    let semanticResults: Array<{
+      text: string;
+      score: number;
+      message_id: string;
+    }> = [];
 
     try {
+      const embeddings = await this.generateEmbeddings(
+        [queryText],
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.embedding_model,
+        aiAgent.ai_agent_type_id
+      );
+      const queryVector = embeddings[0];
+      const searchQuery = this.buildChatHistorySimilaritySearchQuery(
+        accountId,
+        aiAgentId,
+        chatIds,
+        aiAgent.embedding_model,
+        this.computeEmbeddingGeneration(aiAgent),
+        queryVector,
+        topK,
+        options
+      );
       const response = await this.elasticClient.search(searchQuery);
-
       const hits = response.hits.hits as Array<{
         _score: number;
         _source: IChatHistoryEmbeddingDocument;
       }>;
 
-      const results = hits
-        .map((hit) => {
-          const similarityScore =
-            hit._score / (1.0 + (hit._source.quality_score || 0.0) * 0.5) - 1.0;
-          const qualityScore = hit._source.quality_score || 0.0;
-          const combinedScore = similarityScore * 0.7 + qualityScore * 0.3;
-
-          return {
-            text: hit._source.message_text,
-            score: Math.max(0, Math.min(1, combinedScore)),
-            message_id: hit._source.message_id,
-          };
-        })
-        .filter((result) => result.score >= minQualityScore)
-        .slice(0, topK);
-
-      return results;
+      semanticResults = this.parseChatHistorySemanticResults(
+        hits,
+        minQualityScore
+      );
     } catch (error) {
-      console.error('[searchChatHistory] Erro ao buscar histórico:', error);
-      return [];
+      console.error(
+        '[EmbeddingService] semantic chat history search failed; using lexical fallback',
+        {
+          account_id: accountId,
+          ai_agent_id: aiAgentId,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
     }
+
+    return this.mergeChatHistorySearchCandidates(
+      semanticResults,
+      await lexicalSearch,
+      topK
+    );
   }
 
   private async getChatIdsByPhone(
@@ -1734,59 +2435,6 @@ export class EmbeddingService {
     } catch (error) {
       console.error('[getChatIdsByPhone] Erro ao buscar chat IDs:', error);
       return [];
-    }
-  }
-
-  async hasChatHistoryEmbeddings(
-    accountId: string,
-    chatId: string,
-    aiAgentId: string
-  ): Promise<boolean> {
-    try {
-      const queryElastic = {
-        size: 1,
-        _source: ['embedded_for_ai_agents'],
-        query: {
-          bool: {
-            must: [
-              {
-                nested: {
-                  path: 'account',
-                  query: {
-                    term: {
-                      'account.id': accountId,
-                    },
-                  },
-                },
-              },
-            ],
-            filter: [
-              {
-                term: {
-                  chat_id: chatId,
-                },
-              },
-            ],
-          },
-        },
-      };
-
-      const result = await this.elasticDatabaseService.select<IChat>(
-        EElasticIndex.chat,
-        queryElastic
-      );
-
-      const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
-      const chat = hit?._source;
-
-      if (!chat) {
-        return false;
-      }
-
-      const embeddedAgents = chat.embedded_for_ai_agents || [];
-      return embeddedAgents.includes(aiAgentId);
-    } catch {
-      return false;
     }
   }
 
@@ -1863,7 +2511,8 @@ export class EmbeddingService {
     accountId: string,
     phone: string,
     aiAgentId: string,
-    limit = 10
+    limit = 10,
+    excludeChatId?: string
   ): Promise<IChat[]> {
     try {
       const candidates = buildCandidates(phone);
@@ -1875,6 +2524,21 @@ export class EmbeddingService {
 
       if (shouldClauses.length === 0) {
         return [];
+      }
+
+      const mustNotClauses: any[] = [
+        {
+          term: {
+            embedded_for_ai_agents: aiAgentId,
+          },
+        },
+      ];
+      if (excludeChatId) {
+        mustNotClauses.push({
+          term: {
+            chat_id: excludeChatId,
+          },
+        });
       }
 
       const queryElastic = {
@@ -1900,13 +2564,8 @@ export class EmbeddingService {
                 },
               },
             ],
-            must_not: [
-              {
-                term: {
-                  embedded_for_ai_agents: aiAgentId,
-                },
-              },
-            ],
+            filter: [{ term: { status: EChatStatus.closed } }],
+            must_not: mustNotClauses,
           },
         },
       };
@@ -1934,7 +2593,7 @@ export class EmbeddingService {
         '[findUnembeddedChatsByPhone] Erro ao buscar chats:',
         error
       );
-      return [];
+      throw error;
     }
   }
 
@@ -1967,6 +2626,11 @@ export class EmbeddingService {
                   chat_id: chatId,
                 },
               },
+              {
+                term: {
+                  status: EChatStatus.closed,
+                },
+              },
             ],
           },
         },
@@ -1984,27 +2648,36 @@ export class EmbeddingService {
         return false;
       }
 
-      const embeddedAgents = chat.embedded_for_ai_agents || [];
-      if (embeddedAgents.includes(aiAgentId)) {
-        return true;
-      }
-
-      const updatedEmbeddedAgents = [...embeddedAgents, aiAgentId];
-
-      const updatedChat: IChat = {
-        ...chat,
-        embedded_for_ai_agents: updatedEmbeddedAgents,
-      };
-
-      const updateResult = await this.elasticDatabaseService.updateWithOCC(
-        EElasticIndex.chat,
-        chatId,
-        updatedChat as unknown as Record<string, unknown>,
-        {
-          upsert: true,
-          maxRetries: 5,
-        }
-      );
+      const updateResult =
+        await this.elasticDatabaseService.updateWithScriptOCC(
+          EElasticIndex.chat,
+          chatId,
+          {
+            source: `
+            if (ctx._source.status != params.closed_status) {
+              ctx.op = 'noop';
+              return;
+            }
+            if (ctx._source.embedded_for_ai_agents == null) {
+              ctx._source.embedded_for_ai_agents = [];
+            }
+            if (ctx._source.embedded_for_ai_agents.contains(params.ai_agent_id)) {
+              ctx.op = 'noop';
+              return;
+            }
+            ctx._source.embedded_for_ai_agents.add(params.ai_agent_id);
+          `,
+            params: {
+              ai_agent_id: aiAgentId,
+              closed_status: EChatStatus.closed,
+            },
+          },
+          {
+            upsert: false,
+            maxRetries: 5,
+            refresh: true,
+          }
+        );
 
       if (
         updateResult !== 'updated' &&
@@ -2014,43 +2687,48 @@ export class EmbeddingService {
         return false;
       }
 
-      return true;
+      const confirmationResult =
+        await this.elasticDatabaseService.select<IChat>(EElasticIndex.chat, {
+          size: 1,
+          _source: false,
+          query: {
+            bool: {
+              must: [
+                {
+                  nested: {
+                    path: 'account',
+                    query: {
+                      term: {
+                        'account.id': accountId,
+                      },
+                    },
+                  },
+                },
+              ],
+              filter: [
+                {
+                  term: {
+                    chat_id: chatId,
+                  },
+                },
+                {
+                  term: {
+                    status: EChatStatus.closed,
+                  },
+                },
+                {
+                  term: {
+                    embedded_for_ai_agents: aiAgentId,
+                  },
+                },
+              ],
+            },
+          },
+        });
+
+      return Boolean(confirmationResult?.hits?.hits?.[0]);
     } catch (error) {
       console.error('[markChatAsEmbedded] Erro ao marcar chat:', error);
-      return false;
-    }
-  }
-
-  private async deleteChatHistoryEmbeddings(
-    accountId: string,
-    chatId: string,
-    aiAgentId: string
-  ): Promise<boolean> {
-    try {
-      const exists = await this.elasticClient.indices.exists({
-        index: this.chatHistoryIndexName,
-      });
-
-      if (!exists) {
-        return true;
-      }
-
-      await this.elasticClient.deleteByQuery({
-        index: this.chatHistoryIndexName,
-        query: {
-          bool: {
-            filter: [
-              { term: { account_id: accountId } },
-              { term: { chat_id: chatId } },
-              { term: { ai_agent_id: aiAgentId } },
-            ],
-          },
-        },
-        refresh: true,
-      });
-
-      return true;
-    } catch {
       return false;
     }
   }

@@ -10,6 +10,10 @@ import type {
   IOfficialWhatsappTemplateMessage,
   OfficialTemplateVariableComponent,
 } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+import {
+  hasExactOfficialWhatsappTemplatePlaceholderBoundaries,
+  META_TEMPLATE_PLACEHOLDER_PATTERN,
+} from '@core/common/functions/officialWhatsappTemplateSyntax';
 
 type MetaRecord = Record<string, unknown>;
 
@@ -587,11 +591,14 @@ const findTemplateComponentText = (
 const buildTemplateVariableKey = (
   componentType: OfficialTemplateVariableComponent,
   index: number,
-  buttonIndex?: number | null
-): string =>
-  componentType === 'BUTTON'
-    ? `${componentType}:${buttonIndex ?? 0}:${index}`
-    : `${componentType}:${index}`;
+  buttonIndex?: number | null,
+  parameterName?: string | null
+): string => {
+  const identifier = parameterName?.trim() || String(index);
+  return componentType === 'BUTTON'
+    ? `${componentType}:${buttonIndex ?? 0}:${identifier}`
+    : `${componentType}:${identifier}`;
+};
 
 const buildTemplateVariableValueMap = (
   template: IOfficialWhatsappTemplateMessage
@@ -599,7 +606,12 @@ const buildTemplateVariableValueMap = (
   const valueMap = new Map<string, string>();
 
   for (const variable of template.variables ?? []) {
-    const value = variable.value?.trim();
+    const value =
+      typeof variable.value === 'number' && Number.isFinite(variable.value)
+        ? String(variable.value)
+        : typeof variable.value === 'string'
+          ? variable.value.trim()
+          : '';
     if (!value) {
       continue;
     }
@@ -609,7 +621,8 @@ const buildTemplateVariableValueMap = (
       buildTemplateVariableKey(
         variable.component_type,
         variable.index,
-        variable.button_index ?? null
+        variable.button_index ?? null,
+        variable.parameter_name ?? null
       ),
       value
     );
@@ -630,14 +643,28 @@ const fillTemplateText = (
 
   const valueMap = buildTemplateVariableValueMap(template);
 
-  return text.replace(/\{\{\s*(\d+)\s*\}\}/gu, (match, index: string) => {
-    const key = buildTemplateVariableKey(
-      componentType,
-      Number(index),
-      buttonIndex
-    );
-    return valueMap.get(key) ?? match;
-  });
+  return text.replace(
+    META_TEMPLATE_PLACEHOLDER_PATTERN,
+    (match, token: string, offset: number, source: string) => {
+      if (
+        !hasExactOfficialWhatsappTemplatePlaceholderBoundaries(
+          source,
+          offset,
+          match.length
+        )
+      ) {
+        return match;
+      }
+      const numericIndex = Number(token);
+      const key = buildTemplateVariableKey(
+        componentType,
+        Number.isInteger(numericIndex) ? numericIndex : 0,
+        buttonIndex,
+        Number.isInteger(numericIndex) ? null : token
+      );
+      return valueMap.get(key) ?? match;
+    }
+  );
 };
 
 export const buildOfficialWhatsappDisplayFromTemplate = (

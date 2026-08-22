@@ -26,8 +26,8 @@ describe('ChannelViewerRepository', () => {
         name: 'Official',
       },
     ]);
-    const dbRo = { select: chain.select };
-    const repository = new ChannelViewerRepository(dbRo as never);
+    const dbRw = { select: chain.select };
+    const repository = new ChannelViewerRepository(dbRw as never);
 
     await expect(repository.viewChannelContext('channel-1')).resolves.toEqual({
       worker_id: 'channel-1',
@@ -40,12 +40,30 @@ describe('ChannelViewerRepository', () => {
 
   it('returns null when channel is not found', async () => {
     const chain = createChain([]);
-    const dbRo = { select: chain.select };
-    const repository = new ChannelViewerRepository(dbRo as never);
+    const dbRw = { select: chain.select };
+    const repository = new ChannelViewerRepository(dbRw as never);
 
     await expect(
       repository.viewChannelBalancer('channel-1')
     ).resolves.toBeNull();
+  });
+
+  it('checks active account existence through the primary database', async () => {
+    const found = createChain([{ account_id: 'acc-1' }]);
+    const foundRepository = new ChannelViewerRepository({
+      select: found.select,
+    } as never);
+    await expect(
+      foundRepository.existsActiveAccountByIdConsistent('acc-1')
+    ).resolves.toBe(true);
+
+    const missing = createChain([]);
+    const missingRepository = new ChannelViewerRepository({
+      select: missing.select,
+    } as never);
+    await expect(
+      missingRepository.existsActiveAccountByIdConsistent('acc-1')
+    ).resolves.toBe(false);
   });
 
   it('returns balancer data when channel exists', async () => {
@@ -59,8 +77,8 @@ describe('ChannelViewerRepository', () => {
         account_id: 'acc-1',
       },
     ]);
-    const dbRo = { select: chain.select };
-    const repository = new ChannelViewerRepository(dbRo as never);
+    const dbRw = { select: chain.select };
+    const repository = new ChannelViewerRepository(dbRw as never);
 
     await expect(repository.viewChannelBalancer('channel-1')).resolves.toEqual({
       server_id: 'srv-1',

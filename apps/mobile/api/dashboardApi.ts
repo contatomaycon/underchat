@@ -1,4 +1,5 @@
 import { apiGet } from './client';
+import type { WhatsappConnectionPublicStatus } from '../../../packages/common/functions/whatsappConnectionStatus';
 
 export type OfflineChannelStatus = {
   id: string;
@@ -8,7 +9,13 @@ export type OfflineChannelStatus = {
 export type OfflineChannel = {
   id: string;
   name: string;
+  worker_type_id?: string;
   status: OfflineChannelStatus | null;
+  connection_status?: WhatsappConnectionPublicStatus | null;
+  connection_status_source_id?: string | null;
+  connection_status_order?: string | null;
+  connection_online_acknowledged?: boolean;
+  runtime_generation?: number | null;
 };
 
 export async function getOfflineChannels(): Promise<OfflineChannel[]> {
@@ -20,7 +27,13 @@ export async function getOfflineChannels(): Promise<OfflineChannel[]> {
 export type ChannelWithStatus = {
   id: string;
   name: string;
+  worker_type_id?: string;
   status: OfflineChannelStatus | null;
+  connection_status?: WhatsappConnectionPublicStatus | null;
+  connection_status_source_id?: string | null;
+  connection_status_order?: string | null;
+  connection_online_acknowledged?: boolean;
+  runtime_generation?: number | null;
 };
 
 export async function getAllChannelsStatus(): Promise<ChannelWithStatus[]> {

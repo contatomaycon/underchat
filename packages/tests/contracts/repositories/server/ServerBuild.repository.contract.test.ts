@@ -397,6 +397,57 @@ describe('ServerBuildRepository', () => {
     });
   });
 
+  it('getBuildVersionById returns the selected worker version', async () => {
+    const version = {
+      server_build_version_id: 'version-1',
+      build_type: EServerBuildType.baileys,
+      version: 'v20260811170500000',
+      harbor_registry: 'harbor.example',
+      harbor_repository: 'underchat/under-worker-baileys',
+      image_reference:
+        'harbor.example/underchat/under-worker-baileys:v20260811170500000',
+      is_default: false,
+      created_at: '2026-08-11T17:05:00.000Z',
+      updated_at: '2026-08-11T17:05:00.000Z',
+    };
+    const select = createSelectSequence([[version]]);
+    const repository = new ServerBuildRepository(
+      { select } as never,
+      {} as never
+    );
+
+    await expect(repository.getBuildVersionById('version-1')).resolves.toEqual(
+      version
+    );
+  });
+
+  it('detects active jobs for the selected version', async () => {
+    const select = createSelectSequence([
+      [{ server_build_job_id: 'active-job-1' }],
+    ]);
+    const repository = new ServerBuildRepository(
+      { select } as never,
+      {} as never
+    );
+
+    await expect(
+      repository.hasActiveBuildJobForVersion('v20260811170500000')
+    ).resolves.toBe(true);
+  });
+
+  it('deletes only a non-default version row by id', async () => {
+    const deleteVersion = jest.fn(() => createChain({ rowCount: 1 }));
+    const repository = new ServerBuildRepository(
+      { delete: deleteVersion } as never,
+      {} as never
+    );
+
+    await expect(
+      repository.hardDeleteBuildVersionById('version-1')
+    ).resolves.toBe(true);
+    expect(deleteVersion).toHaveBeenCalledTimes(1);
+  });
+
   it('isBuildVersionDefault returns false when no row matches', async () => {
     const select = createSelectSequence([[]]);
     const repository = new ServerBuildRepository(
@@ -419,6 +470,61 @@ describe('ServerBuildRepository', () => {
     );
 
     await expect(repository.isBuildVersionDefault('1.0.0')).resolves.toBe(true);
+  });
+
+  it('pairs a solitary Harbor image without creating absent build types', async () => {
+    (uuidv7 as unknown as jest.Mock)
+      .mockReturnValueOnce('version-wwebjs')
+      .mockReturnValueOnce('job-wwebjs')
+      .mockReturnValueOnce('item-wwebjs');
+
+    const select = createSelectSequence([[], [], []]);
+    const insert = jest.fn(() => createChain({ rowCount: 1 }));
+    const update = jest.fn(() => createChain({ rowCount: 1 }));
+    const transaction = jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+      cb({
+        insert,
+        select,
+        update,
+      })
+    );
+    const repository = new ServerBuildRepository(
+      { transaction } as never,
+      {} as never
+    );
+    const version = 'v20260811170500000';
+    const imageReference = `harbor.devunder.com/underchat/balance/under-worker-wwebjs:${version}`;
+
+    await expect(
+      repository.pairBuildVersionFromHarbor({
+        version,
+        created_at: '2026-08-11T17:05:00.000Z',
+        harbor_repositories: {
+          [EServerBuildType.wwebjs]: 'underchat/balance/under-worker-wwebjs',
+        },
+        image_references: {
+          [EServerBuildType.wwebjs]: imageReference,
+        },
+      })
+    ).resolves.toEqual({
+      imported: true,
+      created_jobs: 1,
+      created_versions: 1,
+    });
+
+    expect(insert).toHaveBeenCalledTimes(3);
+    expect(insert.mock.results[0].value.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        build_type: EServerBuildType.wwebjs,
+        image_reference: imageReference,
+      })
+    );
+    expect(insert.mock.results[2].value.values).toHaveBeenCalledWith([
+      expect.objectContaining({
+        build_type: EServerBuildType.wwebjs,
+        image_reference: imageReference,
+      }),
+    ]);
   });
 
   it('getDefaultImages returns null when any default image is missing', async () => {

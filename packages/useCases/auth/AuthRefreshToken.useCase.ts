@@ -267,7 +267,9 @@ export class AuthRefreshTokenUseCase {
           decodeToken.user_id,
           accountId
         ),
-        this.accountService.listActivePlanProductIds(accountId),
+        this.accountService.listActivePlanProductIds(accountId, {
+          bypassIntegrationCache: true,
+        }),
       ]);
 
     await Promise.all([

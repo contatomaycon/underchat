@@ -1,4 +1,5 @@
 import {
+  durableWorkerIdFromKafkaTopic,
   isRecoverableKafkaTopicError,
   isWorkerScopedKafkaTopic,
   resolveKafkaTopicConfig,
@@ -35,6 +36,18 @@ describe('kafkaTopicConfig', () => {
       numPartitions: 30,
       replicationFactor: 3,
     });
+  });
+
+  it('keeps the protected durable worker topic parser fail-closed', () => {
+    expect(
+      durableWorkerIdFromKafkaTopic('worker.w1.schedule.send.message')
+    ).toBe('w1');
+    expect(
+      durableWorkerIdFromKafkaTopic('worker.w1.webhook.integration.dlq')
+    ).toBe('w1');
+    expect(durableWorkerIdFromKafkaTopic('worker.w1.consumer.dlq')).toBe('w1');
+    expect(durableWorkerIdFromKafkaTopic('worker.config.update')).toBeNull();
+    expect(durableWorkerIdFromKafkaTopic('worker.server-1')).toBeNull();
   });
 
   it('detects recoverable topic metadata errors', () => {

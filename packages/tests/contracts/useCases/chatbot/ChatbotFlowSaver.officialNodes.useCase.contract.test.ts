@@ -2,6 +2,7 @@ import 'reflect-metadata';
 
 import { ChatbotFlowSaverUseCase } from '@core/useCases/chatbot/ChatbotFlowSaver.useCase';
 import { SaveChatbotFlowRequestData } from '@core/schema/chatbot/saveChatbotFlow/request.schema';
+import { OfficialWhatsappInteractiveValidationError } from '@core/common/exceptions/OfficialWhatsappInteractiveValidationError';
 
 const t = ((key: string) => key) as never;
 
@@ -86,6 +87,7 @@ const makeMultiProductFlow = (
       data: {
         title: 'Lista de produtos',
         message: 'Veja os produtos',
+        header: 'Catálogo',
         catalogId: 'catalog-1',
         sections: [
           {
@@ -193,6 +195,7 @@ const makeUseCase = (options?: {
     hasNonOfficialLinkedChannel: jest.fn(
       async () => options?.hasNonOfficialLinkedChannel ?? false
     ),
+    findChatbotFlowByChatbotId: jest.fn(async () => null),
     saveChatbotFlow: jest.fn(async () => 'flow-1'),
   };
 
@@ -203,6 +206,7 @@ const makeUseCase = (options?: {
   const useCase = new ChatbotFlowSaverUseCase(
     chatbotService as never,
     accountService as never,
+    {} as never,
     {} as never,
     {} as never
   );
@@ -277,6 +281,93 @@ describe('ChatbotFlowSaverUseCase official nodes', () => {
       useCase.validate(t, flow, { request: flow }, 'account-1')
     ).rejects.toThrow('chatbot_flow_validation_official_options_limit');
     expect(chatbotService.hasOfficialOnlineChannel).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized official text with a typed HTTP 400 error', async () => {
+    const { useCase, chatbotService } = makeUseCase();
+    const flow = makeFlow({ message: 'M'.repeat(1025) });
+
+    const validation = useCase.execute(
+      t,
+      { request: JSON.stringify(flow) } as never,
+      'account-1'
+    );
+    await expect(validation).rejects.toBeInstanceOf(
+      OfficialWhatsappInteractiveValidationError
+    );
+    await expect(validation).rejects.toMatchObject({ httpStatusCode: 400 });
+    expect(chatbotService.saveChatbotFlow).not.toHaveBeenCalled();
+  });
+
+  it('defers dynamic text length validation until variables are resolved', async () => {
+    const { useCase } = makeUseCase();
+    const flow = makeFlow({
+      message: `{{ ${'runtime_value_'.repeat(100)} }}`,
+    });
+
+    await expect(
+      useCase.validate(t, flow, { request: flow }, 'account-1')
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects emoji in an official Flow CTA', async () => {
+    const { useCase } = makeUseCase();
+    const flow = makeFlow({
+      message: 'Abra o fluxo',
+      buttonText: 'Abrir 🚀',
+      flowId: 'flow-1',
+    });
+    flow.nodes[1].type = 'officialFlow';
+
+    await expect(
+      useCase.validate(t, flow, { request: flow }, 'account-1')
+    ).rejects.toThrow('chatbot_flow_validation_official_emoji_not_allowed');
+  });
+
+  it('rejects a CTA destination that is not an HTTP or HTTPS URL', async () => {
+    const { useCase } = makeUseCase();
+    const flow = makeFlow({
+      message: 'Abrir link',
+      buttonText: 'Clique aqui',
+      url: 'sites.google.com/contabilidadehohl',
+    });
+    flow.nodes[1].type = 'officialCtaUrl';
+    flow.edges = [
+      flow.edges[0],
+      {
+        id: 'edge-cta-finish',
+        source: 'official-1',
+        target: 'finish-1',
+      },
+    ];
+
+    await expect(
+      useCase.validate(t, flow, { request: flow }, 'account-1')
+    ).rejects.toThrow('chatbot_flow_validation_official_url_invalid');
+  });
+
+  it('requires body and header on official product lists', async () => {
+    const { useCase } = makeUseCase();
+    const flow = makeMultiProductFlow({ header: undefined });
+
+    await expect(
+      useCase.validate(t, flow, { request: flow }, 'account-1')
+    ).rejects.toThrow('chatbot_flow_validation_official_field_required');
+  });
+
+  it('accepts a stale legacy header on a single-product node', async () => {
+    const { useCase } = makeUseCase();
+    const flow = makeFlow({
+      message: 'Produto',
+      header: 'Cabeçalho legado',
+      catalogId: 'catalog-1',
+      productRetailerId: 'product-1',
+    });
+    flow.nodes[1].type = 'officialSingleProduct';
+
+    await expect(
+      useCase.validate(t, flow, { request: flow }, 'account-1')
+    ).resolves.toBeUndefined();
   });
 
   it('rejects official product list without product ids', async () => {

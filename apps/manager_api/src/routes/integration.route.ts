@@ -1,4 +1,8 @@
-import { FastifyInstance } from 'fastify';
+import {
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify';
 import { container } from 'tsyringe';
 import {
   integrationPermissions,
@@ -21,150 +25,245 @@ import { listIntegrationUsersSchema } from '@core/schema/integration/listUsers';
 import { listIntegrationSectorsSchema } from '@core/schema/integration/listSectors';
 import { listIntegrationSectorUsersSchema } from '@core/schema/integration/listSectorUsers';
 import { listIntegrationInputChatbotsSchema } from '@core/schema/integration/listInputChatbots';
+import {
+  generatePublicApiTokenSchema,
+  revokePublicApiTokenSchema,
+  viewPublicApiTokenSchema,
+} from '@core/schema/integration/apiToken';
+import {
+  activateOutboundWebhookSchema,
+  createOutboundWebhookSchema,
+  deleteOutboundWebhookSchema,
+  listOutboundWebhookDeliveriesSchema,
+  listOutboundWebhookEventsSchema,
+  listOutboundWebhooksSchema,
+  redeliverOutboundWebhookDeliverySchema,
+  rotateOutboundWebhookSecretSchema,
+  testOutboundWebhookSchema,
+  updateOutboundWebhookSchema,
+  viewOutboundWebhookDeliverySchema,
+  viewOutboundWebhookSchema,
+} from '@core/schema/integration/outboundWebhook';
+import { planProductGuard } from '@/plugins/planProductGuard';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import type { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import {
+  integrationEntitlementEpochMismatchResponseSchema,
+  integrationPlanErrorResponses,
+} from '@core/schema/integration/planEntitlementError.schema';
+
+const withIntegrationPlanResponses = <T extends { response: object }>(
+  schema: T
+): T =>
+  ({
+    ...schema,
+    response: {
+      ...schema.response,
+      ...integrationPlanErrorResponses,
+    },
+  }) as T;
 
 export default function integrationRoutes(server: FastifyInstance) {
   const integrationController = container.resolve(IntegrationController);
+  const integrationProductGuard = planProductGuard(EPlanProduct.integration);
+  const integrationPreHandlers = (permissions: EPermissionsRoles[]) => [
+    (request: FastifyRequest, reply: FastifyReply) =>
+      server.authenticateJwt(request, reply, permissions),
+    integrationProductGuard,
+  ];
+
+  server.get('/integration/outbound-webhooks/events', {
+    schema: withIntegrationPlanResponses(listOutboundWebhookEventsSchema),
+    handler: integrationController.listOutboundWebhookEvents,
+    preHandler: integrationPreHandlers(integrationPermissions),
+  });
+
+  server.get('/integration/outbound-webhooks', {
+    schema: withIntegrationPlanResponses(listOutboundWebhooksSchema),
+    handler: integrationController.listOutboundWebhooks,
+    preHandler: integrationPreHandlers(integrationPermissions),
+  });
+
+  server.get('/integration/outbound-webhooks/:id', {
+    schema: withIntegrationPlanResponses(viewOutboundWebhookSchema),
+    handler: integrationController.viewOutboundWebhook,
+    preHandler: integrationPreHandlers(integrationPermissions),
+  });
+
+  server.post('/integration/outbound-webhooks', {
+    schema: withIntegrationPlanResponses(createOutboundWebhookSchema),
+    handler: integrationController.createOutboundWebhook,
+    preHandler: integrationPreHandlers(integrationPermissions),
+  });
+
+  server.patch('/integration/outbound-webhooks/:id', {
+    schema: withIntegrationPlanResponses(updateOutboundWebhookSchema),
+    handler: integrationController.updateOutboundWebhook,
+    preHandler: integrationPreHandlers(integrationPermissions),
+  });
+
+  server.delete('/integration/outbound-webhooks/:id', {
+    schema: withIntegrationPlanResponses(deleteOutboundWebhookSchema),
+    handler: integrationController.deleteOutboundWebhook,
+    preHandler: integrationPreHandlers(integrationPermissions),
+  });
+
+  server.post('/integration/outbound-webhooks/:id/test', {
+    schema: withIntegrationPlanResponses({
+      ...testOutboundWebhookSchema,
+      response: {
+        ...testOutboundWebhookSchema.response,
+        409: integrationEntitlementEpochMismatchResponseSchema,
+      },
+    }),
+    handler: integrationController.testOutboundWebhook,
+    preHandler: integrationPreHandlers(integrationPermissions),
+  });
+
+  server.post('/integration/outbound-webhooks/:id/secret/rotate', {
+    schema: withIntegrationPlanResponses(rotateOutboundWebhookSecretSchema),
+    handler: integrationController.rotateOutboundWebhookSecret,
+    preHandler: integrationPreHandlers(integrationGenerateKeyPermissions),
+  });
+
+  server.patch('/integration/outbound-webhooks/:id/activate', {
+    schema: withIntegrationPlanResponses(activateOutboundWebhookSchema),
+    handler: integrationController.activateOutboundWebhook,
+    preHandler: integrationPreHandlers(integrationStatusUpdatePermissions),
+  });
+
+  server.get('/integration/outbound-webhooks/:id/deliveries', {
+    schema: withIntegrationPlanResponses(listOutboundWebhookDeliveriesSchema),
+    handler: integrationController.listOutboundWebhookDeliveries,
+    preHandler: integrationPreHandlers(integrationPermissions),
+  });
+
+  server.get('/integration/outbound-webhooks/:id/deliveries/:deliveryId', {
+    schema: withIntegrationPlanResponses(viewOutboundWebhookDeliverySchema),
+    handler: integrationController.viewOutboundWebhookDelivery,
+    preHandler: integrationPreHandlers(integrationPermissions),
+  });
+
+  server.post(
+    '/integration/outbound-webhooks/:id/deliveries/:deliveryId/redeliver',
+    {
+      schema: withIntegrationPlanResponses({
+        ...redeliverOutboundWebhookDeliverySchema,
+        response: {
+          ...redeliverOutboundWebhookDeliverySchema.response,
+          409: integrationEntitlementEpochMismatchResponseSchema,
+        },
+      }),
+      handler: integrationController.redeliverOutboundWebhookDelivery,
+      preHandler: integrationPreHandlers(integrationPermissions),
+    }
+  );
+
+  server.get('/integration/api-token', {
+    schema: withIntegrationPlanResponses(viewPublicApiTokenSchema),
+    handler: integrationController.viewPublicApiToken,
+    preHandler: integrationPreHandlers(integrationGenerateKeyPermissions),
+  });
+
+  server.post('/integration/api-token/generate', {
+    schema: withIntegrationPlanResponses(generatePublicApiTokenSchema),
+    handler: integrationController.generatePublicApiToken,
+    preHandler: integrationPreHandlers(integrationGenerateKeyPermissions),
+  });
+
+  server.delete('/integration/api-token', {
+    schema: withIntegrationPlanResponses(revokePublicApiTokenSchema),
+    handler: integrationController.revokePublicApiToken,
+    preHandler: integrationPreHandlers(integrationGenerateKeyPermissions),
+  });
 
   server.get('/integration', {
-    schema: listIntegrationsSchema,
+    schema: withIntegrationPlanResponses(listIntegrationsSchema),
     handler: integrationController.listIntegrations,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.post('/integration', {
-    schema: createIntegrationSchema,
+    schema: withIntegrationPlanResponses(createIntegrationSchema),
     handler: integrationController.createIntegration,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.get('/integration/view', {
-    schema: viewIntegrationByIdSchema,
+    schema: withIntegrationPlanResponses(viewIntegrationByIdSchema),
     handler: integrationController.viewIntegrationById,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.patch('/integration/update', {
-    schema: updateIntegrationSchema,
+    schema: withIntegrationPlanResponses(updateIntegrationSchema),
     handler: integrationController.updateIntegration,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.delete('/integration/delete', {
-    schema: deleteIntegrationSchema,
+    schema: withIntegrationPlanResponses(deleteIntegrationSchema),
     handler: integrationController.deleteIntegration,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.patch('/integration/status', {
-    schema: updateIntegrationStatusSchema,
+    schema: withIntegrationPlanResponses(updateIntegrationStatusSchema),
     handler: integrationController.updateIntegrationStatus,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(
-          request,
-          reply,
-          integrationStatusUpdatePermissions
-        ),
-    ],
+    preHandler: integrationPreHandlers(integrationStatusUpdatePermissions),
   });
 
   server.post('/integration/generate-key', {
-    schema: generateIntegrationKeySchema,
+    schema: withIntegrationPlanResponses(generateIntegrationKeySchema),
     handler: integrationController.generateIntegrationKey,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(
-          request,
-          reply,
-          integrationGenerateKeyPermissions
-        ),
-    ],
+    preHandler: integrationPreHandlers(integrationGenerateKeyPermissions),
   });
 
   server.get('/integration/available-channels', {
-    schema: listAvailableChannelsSchema,
+    schema: withIntegrationPlanResponses(listAvailableChannelsSchema),
     handler: integrationController.listAvailableChannels,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.get('/integration/webhook-mapping', {
-    schema: viewWebhookMappingSchema,
+    schema: withIntegrationPlanResponses(viewWebhookMappingSchema),
     handler: integrationController.viewWebhookMapping,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.post('/integration/webhook-mapping', {
-    schema: saveWebhookMappingSchema,
+    schema: withIntegrationPlanResponses(saveWebhookMappingSchema),
     handler: integrationController.saveWebhookMapping,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.get('/integration/webhook-data', {
-    schema: viewWebhookDataSchema,
+    schema: withIntegrationPlanResponses(viewWebhookDataSchema),
     handler: integrationController.viewWebhookData,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.get('/integration/users', {
-    schema: listIntegrationUsersSchema,
+    schema: withIntegrationPlanResponses(listIntegrationUsersSchema),
     handler: integrationController.listUsers,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.get('/integration/sectors', {
-    schema: listIntegrationSectorsSchema,
+    schema: withIntegrationPlanResponses(listIntegrationSectorsSchema),
     handler: integrationController.listSectors,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.get('/integration/sectors/:sector_id/users', {
-    schema: listIntegrationSectorUsersSchema,
+    schema: withIntegrationPlanResponses(listIntegrationSectorUsersSchema),
     handler: integrationController.listSectorUsers,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 
   server.get('/integration/input-chatbots', {
-    schema: listIntegrationInputChatbotsSchema,
+    schema: withIntegrationPlanResponses(listIntegrationInputChatbotsSchema),
     handler: integrationController.listInputChatbots,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, integrationPermissions),
-    ],
+    preHandler: integrationPreHandlers(integrationPermissions),
   });
 }

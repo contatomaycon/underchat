@@ -25,7 +25,9 @@ export const editContactGroup = async (
     const response = await contactGroupUpdaterUseCase.execute(
       t,
       request.params.contact_group_id,
-      request.body
+      request.body,
+      request.tokenJwtData.account_id,
+      request.tokenJwtData.user_id
     );
 
     if (response) {

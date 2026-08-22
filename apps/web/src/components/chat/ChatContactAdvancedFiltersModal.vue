@@ -10,6 +10,11 @@ import AppDateTimePicker from '@/@webcore/components/app-form-elements/AppDateTi
 import moment from 'moment-timezone';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
+import {
+  formatCnpj,
+  normalizeCnpj,
+} from '@core/common/functions/validateCnpj';
+import { cnpjAlphanumericMask } from '@/@webcore/utils/masks';
 
 const { t } = useI18n();
 
@@ -99,44 +104,33 @@ const formatCpfDigits = (digits: string) => {
   return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9, 11)}`;
 };
 
-const formatCnpjDigits = (digits: string) => {
-  const clean = digits.slice(0, 14);
-  if (clean.length <= 2) return clean;
-  if (clean.length <= 5) {
-    return `${clean.slice(0, 2)}.${clean.slice(2)}`;
-  }
-  if (clean.length <= 8) {
-    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
-  }
-  if (clean.length <= 12) {
-    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
-  }
-  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
-};
-
 const documentMask = computed(() => {
   const digits = (filterDocument.value || '').replaceAll(/\D/g, '');
-  if (digits.length === 0) return undefined;
-  if (digits.length <= 11) {
+  const cnpj = normalizeCnpj(filterDocument.value || '');
+  if (cnpj.length === 0) return undefined;
+  if (cnpj.length <= 11 && !/[A-Z]/.test(cnpj)) {
     return '###.###.###-##';
   }
-  return '##.###.###/####-##';
+  return cnpjAlphanumericMask;
 });
 
 const documentFormatted = computed({
   get: () => {
     if (!filterDocument.value) return '';
     const digits = filterDocument.value.replaceAll(/\D/g, '');
-    if (digits.length <= 11) {
+    const cnpj = normalizeCnpj(filterDocument.value);
+    if (cnpj.length <= 11 && !/[A-Z]/.test(cnpj)) {
       return formatCpfDigits(digits);
     }
-    return formatCnpjDigits(digits);
+    return formatCnpj(filterDocument.value);
   },
   set: (value: string) => {
     const digits = value.replaceAll(/\D/g, '');
-    filterDocument.value = digits || null;
+    const cnpj = normalizeCnpj(value);
+    const shouldUseCnpj = cnpj.length > 11 || /[A-Z]/.test(cnpj);
+    filterDocument.value = shouldUseCnpj ? cnpj || null : digits || null;
 
-    if (digits.length <= 11) {
+    if (!shouldUseCnpj) {
       documentType.value = EContactDocumentType.cpf;
     } else {
       documentType.value = EContactDocumentType.cnpj;
@@ -150,7 +144,8 @@ watch(filterDocument, (value) => {
     return;
   }
   const digits = value.replaceAll(/\D/g, '');
-  if (digits.length <= 11) {
+  const cnpj = normalizeCnpj(value);
+  if (cnpj.length <= 11 && !/[A-Z]/.test(cnpj)) {
     documentType.value = EContactDocumentType.cpf;
   } else {
     documentType.value = EContactDocumentType.cnpj;
@@ -514,11 +509,11 @@ watch(
                 isCPF
                   ? '000.000.000-00'
                   : isCNPJ
-                    ? '00.000.000/0000-00'
+                    ? '00.AAA.000/00AA-00'
                     : $t('document')
               "
               v-maska="documentMask"
-              inputmode="numeric"
+              :inputmode="isCNPJ ? undefined : 'numeric'"
             >
               <template #append-inner>
                 <VIcon

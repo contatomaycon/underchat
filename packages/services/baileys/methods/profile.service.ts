@@ -8,20 +8,59 @@ export class BaileysProfileService {
     private readonly baileysHelpersService: BaileysHelpersService
   ) {}
 
-  async updateProfileName(name: string): Promise<void> {
+  async updateProfileName(
+    name: string,
+    beforeProviderInvoke?: () => Promise<void>
+  ): Promise<void> {
+    if (beforeProviderInvoke) {
+      await this.baileysHelpersService.updateProfileName(
+        name,
+        beforeProviderInvoke
+      );
+      return;
+    }
     await this.baileysHelpersService.updateProfileName(name);
   }
 
-  async updateProfileStatus(status: string): Promise<void> {
+  async updateProfileStatus(
+    status: string,
+    beforeProviderInvoke?: () => Promise<void>
+  ): Promise<void> {
+    if (beforeProviderInvoke) {
+      await this.baileysHelpersService.updateProfileStatus(
+        status,
+        beforeProviderInvoke
+      );
+      return;
+    }
     await this.baileysHelpersService.updateProfileStatus(status);
   }
 
-  async updateProfilePicture(photoUrl: string): Promise<void> {
+  async updateProfilePicture(
+    photoUrl: string,
+    beforeProviderInvoke?: () => Promise<void>
+  ): Promise<void> {
+    if (beforeProviderInvoke) {
+      await this.baileysHelpersService.updateProfilePicture(
+        photoUrl,
+        beforeProviderInvoke
+      );
+      return;
+    }
     await this.baileysHelpersService.updateProfilePicture(photoUrl);
   }
 
-  async removeProfilePicture(): Promise<void> {
+  async removeProfilePicture(
+    beforeProviderInvoke?: () => Promise<void>
+  ): Promise<void> {
     const jid = this.baileysHelpersService.getOwnJid();
+    if (beforeProviderInvoke) {
+      await this.baileysHelpersService.removeProfilePicture(
+        jid,
+        beforeProviderInvoke
+      );
+      return;
+    }
     await this.baileysHelpersService.removeProfilePicture(jid);
   }
 }

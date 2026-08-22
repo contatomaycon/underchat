@@ -16,7 +16,8 @@ export const listScheduleWorkers = async (
 
   try {
     const response = await scheduleWorkersListerUseCase.execute(
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.channels
     );
 
     if (response) {

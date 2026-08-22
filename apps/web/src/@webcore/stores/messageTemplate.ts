@@ -270,7 +270,7 @@ export const useMessageTemplateStore = defineStore('message-template', {
       }
     },
 
-    async listMessageTemplateChannels(): Promise<ListMessageTemplateChannelsResponse> {
+    async listMessageTemplateChannels(): Promise<ListMessageTemplateChannelsResponse | null> {
       try {
         const response = await axios.get<
           IApiResponse<ListMessageTemplateChannelsResponse>
@@ -279,12 +279,12 @@ export const useMessageTemplateStore = defineStore('message-template', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          return [];
+          return null;
         }
 
         return data.data;
       } catch {
-        return [];
+        return null;
       }
     },
   },

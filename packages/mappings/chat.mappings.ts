@@ -5,6 +5,38 @@ export const chatMappings = () => {
         chat_id: {
           type: 'keyword',
         },
+        meta: {
+          type: 'object',
+          properties: {
+            status_epoch: {
+              type: 'long',
+            },
+            status_event_id: {
+              type: 'keyword',
+            },
+            status_source: {
+              type: 'keyword',
+            },
+            assignment_epoch: {
+              type: 'long',
+            },
+            assignment_event_id: {
+              type: 'keyword',
+            },
+            labels_epoch: {
+              type: 'long',
+            },
+            labels_event_id: {
+              type: 'keyword',
+            },
+            outbound_webhook_event_ids: {
+              type: 'keyword',
+            },
+            clear_summary_operation_ids: {
+              type: 'keyword',
+            },
+          },
+        },
         message_key: {
           type: 'nested',
           properties: {
@@ -19,6 +51,9 @@ export const chatMappings = () => {
         summary: {
           type: 'nested',
           properties: {
+            revision: {
+              type: 'long',
+            },
             last_message: {
               type: 'text',
             },
@@ -41,6 +76,12 @@ export const chatMappings = () => {
             },
             name: {
               type: 'text',
+            },
+            type_id: {
+              type: 'keyword',
+            },
+            is_official: {
+              type: 'boolean',
             },
           },
         },
@@ -208,6 +249,53 @@ export const chatMappings = () => {
         },
         chatbot_transfer_id: {
           type: 'keyword',
+        },
+        official_window: {
+          type: 'object',
+          properties: {
+            is_official: {
+              type: 'boolean',
+            },
+            state: {
+              type: 'keyword',
+            },
+            reason: {
+              type: 'keyword',
+            },
+            can_send_freeform: {
+              type: 'boolean',
+            },
+            can_send_template: {
+              type: 'boolean',
+            },
+            service_window_started_at: {
+              type: 'date',
+            },
+            last_inbound_at: {
+              type: 'date',
+            },
+            service_window_expires_at: {
+              type: 'date',
+            },
+            awaiting_contact_reply_since: {
+              type: 'date',
+            },
+            awaiting_contact_reply_expires_at: {
+              type: 'date',
+            },
+            awaiting_template_message_id: {
+              type: 'keyword',
+            },
+            last_template_sent_at: {
+              type: 'date',
+            },
+            last_meta_error_code: {
+              type: 'integer',
+            },
+            closed_reason: {
+              type: 'keyword',
+            },
+          },
         },
         satisfaction_response: {
           type: 'object',

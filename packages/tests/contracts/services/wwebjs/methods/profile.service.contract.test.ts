@@ -34,9 +34,15 @@ describe('WwebjsProfileService', () => {
     await service.updateProfilePicture('https://img');
     await service.removeProfilePicture();
 
-    expect(helpers.updateProfileName).toHaveBeenCalledWith('Name');
-    expect(helpers.updateProfileStatus).toHaveBeenCalledWith('Status');
-    expect(helpers.updateProfilePicture).toHaveBeenCalledWith('https://img');
-    expect(helpers.removeProfilePicture).toHaveBeenCalled();
+    expect(helpers.updateProfileName).toHaveBeenCalledWith('Name', undefined);
+    expect(helpers.updateProfileStatus).toHaveBeenCalledWith(
+      'Status',
+      undefined
+    );
+    expect(helpers.updateProfilePicture).toHaveBeenCalledWith(
+      'https://img',
+      undefined
+    );
+    expect(helpers.removeProfilePicture).toHaveBeenCalledWith(undefined);
   });
 });

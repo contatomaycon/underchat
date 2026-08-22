@@ -42,9 +42,27 @@ const SECURE_IMPORT_VALIDATION_TIMEOUT_MS = Math.max(
   20_000,
   Number(process.env.SECURE_CONNECTION_WORKER_VALIDATION_TIMEOUT_MS) || 60_000
 );
+const SECURE_IMPORT_WWEBJS_VALIDATION_TIMEOUT_MS = Math.max(
+  SECURE_IMPORT_VALIDATION_TIMEOUT_MS,
+  Number(process.env.SECURE_CONNECTION_WWEBJS_WORKER_VALIDATION_TIMEOUT_MS) ||
+    180_000
+);
+const SECURE_IMPORT_WWEBJS_NO_PROGRESS_TIMEOUT_MS = Math.min(
+  SECURE_IMPORT_WWEBJS_VALIDATION_TIMEOUT_MS,
+  Math.max(
+    15_000,
+    Number(process.env.SECURE_CONNECTION_WWEBJS_NO_PROGRESS_TIMEOUT_MS) ||
+      30_000
+  )
+);
 const SECURE_IMPORT_VALIDATION_STABLE_MS = Math.max(
   5_000,
   Number(process.env.SECURE_CONNECTION_WORKER_VALIDATION_STABLE_MS) || 20_000
+);
+const SECURE_IMPORT_WWEBJS_VALIDATION_STABLE_MS = Math.max(
+  5_000,
+  Number(process.env.SECURE_CONNECTION_WWEBJS_WORKER_VALIDATION_STABLE_MS) ||
+    5_000
 );
 const SECURE_IMPORT_VALIDATION_POLL_MS = Math.max(
   500,
@@ -204,6 +222,8 @@ export class WorkerSecureConnectionSessionUseCase {
       deep_link: this.buildDeepLink(token, input.apiBaseUrl),
       status: 'created',
       connection_attempt_id: uuidv7(),
+      authorized_connection_epoch:
+        workerTypeId === EWorkerType.baileys ? uuidv7() : undefined,
       runtime_generation: runtime?.runtime_generation ?? undefined,
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
@@ -570,12 +590,22 @@ export class WorkerSecureConnectionSessionUseCase {
     );
 
     try {
+      const serverId = await this.resolveSessionServerId(t, importing);
+      const authorizedImporting =
+        await this.authorizeBaileysSecureImportConnectionEpoch(
+          t,
+          importing,
+          serverId,
+          input.debugTraceId
+        );
       const importRequest: ISecureConnectionImportRequest = {
-        worker_id: importing.worker_id,
-        account_id: importing.account_id,
-        worker_type_id: importing.worker_type_id,
-        connection_attempt_id: importing.connection_attempt_id,
-        runtime_generation: importing.runtime_generation,
+        worker_id: authorizedImporting.worker_id,
+        account_id: authorizedImporting.account_id,
+        worker_type_id: authorizedImporting.worker_type_id,
+        connection_attempt_id: authorizedImporting.connection_attempt_id,
+        authorized_connection_epoch:
+          authorizedImporting.authorized_connection_epoch,
+        runtime_generation: authorizedImporting.runtime_generation,
         format_version: input.package.format_version,
         source: input.package.source,
         target_provider: input.package.target_provider,
@@ -584,16 +614,21 @@ export class WorkerSecureConnectionSessionUseCase {
         debug_trace_id: input.debugTraceId,
       };
 
-      const serverId = await this.resolveSessionServerId(t, importing);
-
-      this.logFlow('manager.secure_connection.import.grpc_call', importing, {
-        trace_id: input.debugTraceId,
-        payload_ref: importRequest.payload_ref,
-        format_version: importRequest.format_version,
-        target_provider: importRequest.target_provider,
-        runtime_generation: importRequest.runtime_generation,
-        server_id: serverId,
-      });
+      this.logFlow(
+        'manager.secure_connection.import.grpc_call',
+        authorizedImporting,
+        {
+          trace_id: input.debugTraceId,
+          payload_ref: importRequest.payload_ref,
+          format_version: importRequest.format_version,
+          target_provider: importRequest.target_provider,
+          runtime_generation: importRequest.runtime_generation,
+          authorized_connection_epoch_set: Boolean(
+            importRequest.authorized_connection_epoch
+          ),
+          server_id: serverId,
+        }
+      );
 
       const imported = await this.workerGrpcClientService.importSecureSession(
         serverId,
@@ -603,7 +638,7 @@ export class WorkerSecureConnectionSessionUseCase {
       const currentAfterImport = await this.getSessionForImportContinuation(
         t,
         input.token,
-        importing,
+        authorizedImporting,
         'after_grpc_import'
       );
       if (this.isTerminalStatus(currentAfterImport.status)) {
@@ -638,76 +673,61 @@ export class WorkerSecureConnectionSessionUseCase {
           immediate_readiness_ready: importedReadiness.ready,
           immediate_readiness_reason: importedReadiness.reason,
           phone_present: Boolean(imported.phone),
-          validation_timeout_ms: SECURE_IMPORT_VALIDATION_TIMEOUT_MS,
+          validation_timeout_ms:
+            this.resolveSecureImportValidationTimeoutMs(validating),
           validation_stable_ms: validationStableMs,
+          background_validation:
+            this.shouldContinueImportValidationInBackground(
+              validating,
+              imported,
+              importedReadiness
+            ),
         }
       );
 
-      const validation = await this.waitForStableImportedRuntimeHealth(
-        validating,
-        serverId,
+      if (
+        this.shouldContinueImportValidationInBackground(
+          validating,
+          imported,
+          importedReadiness
+        )
+      ) {
+        void this.completeImportValidation(t, {
+          debugTraceId: input.debugTraceId,
+          imported,
+          importedReadiness,
+          serverId,
+          session: validating,
+          token: input.token,
+        }).catch((error) => {
+          void this.failBackgroundImportValidation(t, {
+            debugTraceId: input.debugTraceId,
+            error,
+            session: validating,
+            token: input.token,
+          }).catch((failure) => {
+            this.logFlow(
+              'manager.secure_connection.import.validation_background_error_failed',
+              validating,
+              {
+                trace_id: input.debugTraceId,
+                reason: this.sanitizeError(failure),
+              }
+            );
+          });
+        });
+
+        return this.toResponse(validating);
+      }
+
+      const connected = await this.completeImportValidation(t, {
+        debugTraceId: input.debugTraceId,
         imported,
         importedReadiness,
-        input.debugTraceId
-      );
-
-      if (validation.ready) {
-        await this.persistConnectedWorker(
-          validating,
-          validation.imported,
-          validation
-        );
-      }
-
-      const currentBeforeFinalize = await this.getSessionForImportContinuation(
-        t,
-        input.token,
-        validating,
-        'before_validation_result'
-      );
-      if (this.isTerminalStatus(currentBeforeFinalize.status)) {
-        return this.toResponse(currentBeforeFinalize);
-      }
-
-      const connected = await this.updateSession(currentBeforeFinalize, {
-        status: validation.ready ? 'connected_confirmed' : 'failed',
-        phone: validation.phone ?? importedReadiness.phone ?? imported.phone,
-        error: validation.ready
-          ? undefined
-          : this.resolveImportFailureMessage(imported, validation),
-        fail_reason: validation.ready
-          ? undefined
-          : (validation.reason ?? 'worker_runtime_validation_failed'),
+        serverId,
+        session: validating,
+        token: input.token,
       });
-      await this.publishStatus(connected);
-      this.logFlow(
-        'manager.secure_connection.import.validation_result',
-        connected,
-        {
-          trace_id: input.debugTraceId,
-          imported_status: imported.status,
-          imported_code: imported.code,
-          imported_reason: imported.reason,
-          session_ready: imported.session_ready,
-          authenticated: imported.authenticated,
-          can_send: imported.can_send,
-          can_receive_runtime: imported.can_receive_runtime,
-          worker_status_id: imported.worker_status_id,
-          immediate_readiness_ready: importedReadiness.ready,
-          immediate_readiness_reason: importedReadiness.reason,
-          validation_ready: validation.ready,
-          validation_reason: validation.reason,
-          validation_elapsed_ms: validation.elapsedMs,
-          health_provider_state: validation.health?.provider_state,
-          health_degraded_reason: validation.health?.degraded_reason,
-          health_session_ready: validation.health?.session_ready,
-          health_authenticated: validation.health?.authenticated,
-          health_can_send: validation.health?.can_send,
-          health_can_receive_runtime: validation.health?.can_receive_runtime,
-          health_phone_present: Boolean(validation.health?.phone),
-          phone_present: Boolean(imported.phone),
-        }
-      );
 
       return this.toResponse(connected);
     } catch (error) {
@@ -734,6 +754,256 @@ export class WorkerSecureConnectionSessionUseCase {
 
       return this.toResponse(failed);
     }
+  }
+
+  /**
+   * Reuses the same one-shot pairing activation grant used by QR reconnects.
+   * An explicit disconnect deliberately tombstones the old connection epoch;
+   * the authenticated plugin import must consume a different manager-owned
+   * epoch before the provider opens or writes its PostgreSQL session store.
+   */
+  private async authorizeBaileysSecureImportConnectionEpoch(
+    t: TFunction<'translation', undefined>,
+    session: ISecureConnectionSession,
+    serverId: string,
+    debugTraceId?: string
+  ): Promise<ISecureConnectionSession> {
+    if (session.worker_type_id !== EWorkerType.baileys) {
+      return session;
+    }
+
+    const authorizedConnectionEpoch =
+      session.authorized_connection_epoch?.trim() || uuidv7();
+    const authorizedSession = session.authorized_connection_epoch
+      ? session
+      : await this.updateSession(session, {
+          authorized_connection_epoch: authorizedConnectionEpoch,
+        });
+    const runtime = await this.workerRuntimeRepository
+      .viewByWorkerIdConsistent(session.worker_id)
+      .catch(() => null);
+    const containerId = runtime?.container_id?.trim();
+    const runtimeGeneration = runtime?.runtime_generation;
+    if (
+      !runtime ||
+      !containerId ||
+      typeof runtimeGeneration !== 'number' ||
+      !Number.isSafeInteger(runtimeGeneration) ||
+      runtimeGeneration <= 0 ||
+      (authorizedSession.runtime_generation !== undefined &&
+        authorizedSession.runtime_generation !== runtimeGeneration)
+    ) {
+      throw new Error(t('worker_qrcode_not_ready'));
+    }
+
+    const health = await this.workerGrpcClientService
+      .runtimeHealth(
+        serverId,
+        { worker_id: authorizedSession.worker_id },
+        5_000
+      )
+      .catch(() => null);
+    const healthGeneration = this.normalizeOptionalNumber(
+      health?.runtime_generation
+    );
+    const verifiedRunningContainerId =
+      health?.worker_id === authorizedSession.worker_id &&
+      health.account_id === authorizedSession.account_id &&
+      health.worker_type_id === EWorkerType.baileys &&
+      healthGeneration === runtimeGeneration &&
+      health.activated === true &&
+      health.standby !== true &&
+      !health.error
+        ? containerId
+        : undefined;
+
+    const prepared =
+      await this.workerRuntimeRepository.prepareWorkerConnectionPairingActivation(
+        {
+          worker_id: authorizedSession.worker_id,
+          account_id: authorizedSession.account_id,
+          provider: 'baileys',
+          expected_runtime_generation: runtimeGeneration,
+          expected_container_id: containerId,
+          expected_connection_epoch: runtime.connection_epoch ?? null,
+          verified_running_container_id: verifiedRunningContainerId,
+          connection_attempt_id: authorizedSession.connection_attempt_id,
+          authorized_connection_epoch: authorizedConnectionEpoch,
+          expires_at: authorizedSession.expires_at,
+        }
+      );
+    this.logFlow(
+      'manager.secure_connection.import.connection_epoch_authorized',
+      authorizedSession,
+      {
+        trace_id: debugTraceId,
+        authorization_status: prepared.status,
+        already_granted:
+          prepared.status === 'granted' ? prepared.already_granted : undefined,
+        runtime_generation: runtimeGeneration,
+        verified_running_container: Boolean(verifiedRunningContainerId),
+      }
+    );
+    if (prepared.status !== 'granted') {
+      throw new Error(
+        `secure_import_connection_epoch_authorization_${prepared.status}`
+      );
+    }
+
+    return authorizedSession;
+  }
+
+  private shouldContinueImportValidationInBackground(
+    session: ISecureConnectionSession,
+    imported: IBaileysConnectionState,
+    importedReadiness: { ready: boolean; reason?: string }
+  ): boolean {
+    if (importedReadiness.ready) {
+      return false;
+    }
+
+    if (session.worker_type_id === EWorkerType.whatsmeow) {
+      const providerState = (imported.provider_state ?? '')
+        .trim()
+        .toLowerCase();
+      const degradedReason = (imported.degraded_reason ?? '')
+        .trim()
+        .toLowerCase();
+
+      return (
+        imported.authenticated === true &&
+        providerState === 'connected' &&
+        degradedReason === 'command_ingress_positioning'
+      );
+    }
+
+    return session.worker_type_id === EWorkerType.wwebjs
+      ? imported.status === 'connecting' ||
+          imported.code === ECodeMessage.awaitConnection ||
+          imported.reason === 'secure_import_restore_started'
+      : false;
+  }
+
+  private async completeImportValidation(
+    t: TFunction<'translation', undefined>,
+    input: {
+      debugTraceId?: string;
+      imported: IBaileysConnectionState;
+      importedReadiness: {
+        phone: string | null;
+        ready: boolean;
+        reason?: string;
+      };
+      serverId: string;
+      session: ISecureConnectionSession;
+      token: string;
+    }
+  ): Promise<ISecureConnectionSession> {
+    const validation = await this.waitForStableImportedRuntimeHealth(
+      input.session,
+      input.serverId,
+      input.imported,
+      input.importedReadiness,
+      input.debugTraceId
+    );
+
+    if (validation.ready) {
+      await this.persistConnectedWorker(
+        input.session,
+        validation.imported,
+        validation
+      );
+    }
+
+    const currentBeforeFinalize = await this.getSessionForImportContinuation(
+      t,
+      input.token,
+      input.session,
+      'before_validation_result'
+    );
+    if (this.isTerminalStatus(currentBeforeFinalize.status)) {
+      return currentBeforeFinalize;
+    }
+
+    const connected = await this.updateSession(currentBeforeFinalize, {
+      status: validation.ready ? 'connected_confirmed' : 'failed',
+      phone:
+        validation.phone ??
+        input.importedReadiness.phone ??
+        input.imported.phone,
+      error: validation.ready
+        ? undefined
+        : this.resolveImportFailureMessage(input.imported, validation),
+      fail_reason: validation.ready
+        ? undefined
+        : (validation.reason ?? 'worker_runtime_validation_failed'),
+    });
+    await this.publishStatus(connected);
+    this.logFlow(
+      'manager.secure_connection.import.validation_result',
+      connected,
+      {
+        trace_id: input.debugTraceId,
+        imported_status: input.imported.status,
+        imported_code: input.imported.code,
+        imported_reason: input.imported.reason,
+        session_ready: input.imported.session_ready,
+        authenticated: input.imported.authenticated,
+        can_send: input.imported.can_send,
+        can_receive_runtime: input.imported.can_receive_runtime,
+        worker_status_id: input.imported.worker_status_id,
+        immediate_readiness_ready: input.importedReadiness.ready,
+        immediate_readiness_reason: input.importedReadiness.reason,
+        validation_ready: validation.ready,
+        validation_reason: validation.reason,
+        validation_elapsed_ms: validation.elapsedMs,
+        health_provider_state: validation.health?.provider_state,
+        health_degraded_reason: validation.health?.degraded_reason,
+        health_session_ready: validation.health?.session_ready,
+        health_authenticated: validation.health?.authenticated,
+        health_can_send: validation.health?.can_send,
+        health_can_receive_runtime: validation.health?.can_receive_runtime,
+        health_phone_present: Boolean(validation.health?.phone),
+        phone_present: Boolean(input.imported.phone),
+      }
+    );
+
+    return connected;
+  }
+
+  private async failBackgroundImportValidation(
+    t: TFunction<'translation', undefined>,
+    input: {
+      debugTraceId?: string;
+      error: unknown;
+      session: ISecureConnectionSession;
+      token: string;
+    }
+  ): Promise<void> {
+    const currentBeforeFailure = await this.getSessionForImportContinuation(
+      t,
+      input.token,
+      input.session,
+      'background_validation_error'
+    );
+    if (this.isTerminalStatus(currentBeforeFailure.status)) {
+      return;
+    }
+
+    const failed = await this.updateSession(currentBeforeFailure, {
+      status: 'failed',
+      error: this.sanitizeError(input.error),
+      fail_reason: 'worker_runtime_validation_error',
+    });
+    await this.publishStatus(failed);
+    this.logFlow(
+      'manager.secure_connection.import.validation_background_error',
+      failed,
+      {
+        trace_id: input.debugTraceId,
+        reason: this.sanitizeError(input.error),
+      }
+    );
   }
 
   private async resolveWorker(
@@ -1028,6 +1298,16 @@ export class WorkerSecureConnectionSessionUseCase {
       return 0;
     }
 
+    if (session.worker_type_id === EWorkerType.wwebjs) {
+      /*
+       * WWebJS reaches RuntimeHealth only after the canonical activation
+       * checkpoint, two native ONLINE samples and command-ingress readiness.
+       * Keep a short manager-side observation window for an immediate
+       * post-ready logout without duplicating the generic 20-second window.
+       */
+      return SECURE_IMPORT_WWEBJS_VALIDATION_STABLE_MS;
+    }
+
     return SECURE_IMPORT_VALIDATION_STABLE_MS;
   }
 
@@ -1050,7 +1330,9 @@ export class WorkerSecureConnectionSessionUseCase {
     elapsedMs: number;
   }> {
     const startedAt = Date.now();
-    const deadlineAt = startedAt + SECURE_IMPORT_VALIDATION_TIMEOUT_MS;
+    const validationTimeoutMs =
+      this.resolveSecureImportValidationTimeoutMs(session);
+    const deadlineAt = startedAt + validationTimeoutMs;
     const stableRequiredMs = this.resolveSecureImportValidationStableMs(
       session,
       importedReadiness
@@ -1078,10 +1360,22 @@ export class WorkerSecureConnectionSessionUseCase {
             elapsed_ms: Date.now() - startedAt,
             stable_elapsed_ms:
               stableSince === null ? 0 : Date.now() - stableSince,
+            validation_timeout_ms: validationTimeoutMs,
           }
         );
 
         if (stableSince !== null) {
+          break;
+        }
+
+        const noProgressReason = this.resolveWwebjsNoProgressReason(
+          session,
+          undefined,
+          lastReason,
+          Date.now() - startedAt
+        );
+        if (noProgressReason) {
+          lastReason = noProgressReason;
           break;
         }
 
@@ -1108,6 +1402,7 @@ export class WorkerSecureConnectionSessionUseCase {
           stable_elapsed_ms:
             stableSince === null ? 0 : Date.now() - stableSince,
           stable_required_ms: stableRequiredMs,
+          validation_timeout_ms: validationTimeoutMs,
           worker_type_id: health.worker_type_id,
           runtime_generation: health.runtime_generation,
           session_ready: health.session_ready,
@@ -1125,6 +1420,17 @@ export class WorkerSecureConnectionSessionUseCase {
       );
 
       if (readiness.hardFailure) {
+        break;
+      }
+
+      const noProgressReason = this.resolveWwebjsNoProgressReason(
+        session,
+        health,
+        lastReason,
+        Date.now() - startedAt
+      );
+      if (noProgressReason) {
+        lastReason = noProgressReason;
         break;
       }
 
@@ -1299,11 +1605,16 @@ export class WorkerSecureConnectionSessionUseCase {
       session.runtime_generation !== undefined &&
       healthGeneration !== undefined &&
       session.runtime_generation !== healthGeneration;
+    // Kafka consumers are deliberately fenced while a promoted runtime seeks
+    // to the durable command position. During that short handoff window the
+    // health endpoint reports Kafka as unavailable even though the provider is
+    // authenticated and the consumer barrier becomes authorized moments
+    // later. Keep Kafka fail-closed as a readiness requirement, but do not
+    // mistake this recoverable positioning state for terminal session loss.
+    // A persistent Kafka failure still times out validation without ever
+    // confirming the import.
     const hardFailure = Boolean(
-      health?.error ||
-      terminalDegradedReason ||
-      health?.kafka_unhealthy === true ||
-      generationMismatch
+      health?.error || terminalDegradedReason || generationMismatch
     );
     const ready =
       health?.session_ready === true &&
@@ -1315,6 +1626,8 @@ export class WorkerSecureConnectionSessionUseCase {
       (!health?.worker_type_id ||
         health.worker_type_id === session.worker_type_id) &&
       health?.kafka_unhealthy !== true &&
+      (Number(health?.runtime_health_schema_version ?? 0) < 2 ||
+        health?.kafka_consumers_authorized === true) &&
       !health?.error &&
       !health?.degraded_reason &&
       providerStateReady &&
@@ -1335,6 +1648,12 @@ export class WorkerSecureConnectionSessionUseCase {
     if (health?.activated !== true) missing.push('activated');
     if (health?.standby === true) missing.push('standby');
     if (
+      Number(health?.runtime_health_schema_version ?? 0) >= 2 &&
+      health?.kafka_consumers_authorized !== true
+    ) {
+      missing.push('kafka_consumers_authorized');
+    }
+    if (
       health?.worker_type_id &&
       health.worker_type_id !== session.worker_type_id
     ) {
@@ -1347,11 +1666,14 @@ export class WorkerSecureConnectionSessionUseCase {
     if (generationMismatch) missing.push('runtime_generation_mismatch');
     if (!phone) missing.push('phone');
 
+    const detail = health?.error || health?.degraded_reason || undefined;
+    const detailSuffix = detail ? `:${this.sanitizeError(detail)}` : '';
+
     return {
       hardFailure,
       phone,
       ready: false,
-      reason: `secure_import_runtime_not_ready:${missing.join(',')}`,
+      reason: `secure_import_runtime_not_ready:${missing.join(',')}${detailSuffix}`,
     };
   }
 
@@ -1373,6 +1695,57 @@ export class WorkerSecureConnectionSessionUseCase {
     }
 
     return normalized === 'connected';
+  }
+
+  private resolveWwebjsNoProgressReason(
+    session: ISecureConnectionSession,
+    health: IWorkerRuntimeHealthResponseProto | undefined,
+    reason: string | undefined,
+    elapsedMs: number
+  ): string | null {
+    if (session.worker_type_id !== EWorkerType.wwebjs) {
+      return null;
+    }
+
+    if (elapsedMs < SECURE_IMPORT_WWEBJS_NO_PROGRESS_TIMEOUT_MS) {
+      return null;
+    }
+
+    const providerState = (health?.provider_state ?? '').trim().toLowerCase();
+    const degradedReason = (health?.degraded_reason ?? '').trim().toLowerCase();
+    const normalizedReason = (reason ?? '').trim().toLowerCase();
+    const noProgress =
+      !health ||
+      providerState === 'client_launching' ||
+      providerState === 'state_probe_pending' ||
+      providerState === 'state_unavailable' ||
+      providerState === 'missing_client' ||
+      degradedReason.includes('no client instance') ||
+      normalizedReason.includes('runtime_health_error') ||
+      normalizedReason.includes('no client instance');
+
+    if (!noProgress) {
+      return null;
+    }
+
+    const detail =
+      health?.error ||
+      health?.degraded_reason ||
+      health?.provider_state ||
+      reason ||
+      'runtime_not_started';
+
+    return `secure_import_wwebjs_no_progress:${this.sanitizeError(detail)}`;
+  }
+
+  private resolveSecureImportValidationTimeoutMs(
+    session: ISecureConnectionSession
+  ): number {
+    if (session.worker_type_id === EWorkerType.wwebjs) {
+      return SECURE_IMPORT_WWEBJS_VALIDATION_TIMEOUT_MS;
+    }
+
+    return SECURE_IMPORT_VALIDATION_TIMEOUT_MS;
   }
 
   private isTerminalRuntimeDegradedReason(
@@ -1446,13 +1819,44 @@ export class WorkerSecureConnectionSessionUseCase {
     imported: IBaileysConnectionState,
     readiness: { reason?: string }
   ): string {
-    return (
+    const rawMessage =
       imported.error?.trim() ||
-      imported.reason?.trim() ||
-      imported.degraded_reason?.trim() ||
       readiness.reason ||
-      'secure_import_not_ready'
-    );
+      imported.degraded_reason?.trim() ||
+      imported.reason?.trim() ||
+      'secure_import_not_ready';
+
+    return this.normalizeImportFailureMessage(rawMessage);
+  }
+
+  private normalizeImportFailureMessage(message: string): string {
+    if (message === 'secure_import_restore_started') {
+      return 'A sessão foi enviada e o WWebJS iniciou a restauração, mas não confirmou a conexão.';
+    }
+
+    if (message.startsWith('secure_import_wwebjs_no_progress')) {
+      return 'A sessão foi enviada, mas o WWebJS não conseguiu inicializar o cliente a partir da sessão importada. Gere um novo token e tente novamente.';
+    }
+
+    if (
+      message.includes('No client instance') ||
+      message.includes('missing_client')
+    ) {
+      return 'A sessão foi enviada, mas o worker WWebJS não criou a instância do cliente. Gere um novo token e tente novamente.';
+    }
+
+    if (
+      message.startsWith('secure_import_runtime_not_ready') &&
+      message.includes('Waiting failed')
+    ) {
+      return 'A sessão foi enviada, mas o WWebJS não confirmou a conexão dentro do tempo esperado.';
+    }
+
+    if (message === 'secure_import_runtime_validation_timeout') {
+      return 'A sessão foi enviada, mas a Underchat não confirmou a conexão dentro do tempo esperado.';
+    }
+
+    return message;
   }
 
   private async persistConnectedWorker(

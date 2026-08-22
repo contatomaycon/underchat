@@ -5,6 +5,7 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
 import { INotificationMessageRequest } from '@core/common/interfaces/INotificationMessageRequest';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import { SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS } from '@core/common/functions/serviceApiWhatsappConsumerBindings';
 
 @singleton()
 export class NotificationMessageConsume {
@@ -28,20 +29,26 @@ export class NotificationMessageConsume {
     this.runner = new KafkaConsumerRunner<INotificationMessageRequest>({
       kafka: this.kafka,
       topic,
-      groupId: 'group-underchat-notification-message',
+      groupId: SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS.notificationMessage,
       parse: (message) => this.parseNotificationMessageRequest(message.value),
       resolveEntityKey: (data) =>
         `${data.account_id}:${data.notification_type_id}`,
-      handle: async (data) => {
-        try {
-          await this.notificationMessageService.sendNotificationMessage(
-            data.notification_type_id,
-            data.account_id
-          );
-        } catch (error) {
-          console.error('Error processing notification message:', error);
-        }
-      },
+      preserveEntityOrder: true,
+      maxRetries: 3,
+      retryDelaysMs: [250, 1_000, 5_000],
+      handle: (data, context) =>
+        this.processNotificationMessage(
+          {
+            ...data,
+            operation_id: this.resolveOperationId(
+              data,
+              context.topic,
+              context.partition,
+              context.offset
+            ),
+          },
+          context.assertActive
+        ),
       logger: console,
     });
 
@@ -77,7 +84,9 @@ export class NotificationMessageConsume {
       if (
         parsed &&
         'notification_type_id' in parsed &&
-        'account_id' in parsed
+        'account_id' in parsed &&
+        (parsed.operation_id === undefined ||
+          typeof parsed.operation_id === 'string')
       ) {
         return parsed;
       }
@@ -85,5 +94,30 @@ export class NotificationMessageConsume {
     } catch {
       return null;
     }
+  }
+
+  private resolveOperationId(
+    data: INotificationMessageRequest,
+    topic: string,
+    partition: number,
+    offset: number
+  ): string {
+    return (
+      data.operation_id?.trim() ||
+      ['notification_message_v1', topic, partition, offset].join(':')
+    );
+  }
+
+  private async processNotificationMessage(
+    data: INotificationMessageRequest,
+    assertActive: () => void
+  ): Promise<void> {
+    assertActive();
+    await this.notificationMessageService.sendNotificationMessage(
+      data.notification_type_id,
+      data.account_id,
+      assertActive,
+      data.operation_id
+    );
   }
 }

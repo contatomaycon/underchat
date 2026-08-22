@@ -1,39 +1,93 @@
 import { inject, injectable } from 'tsyringe';
-import { loadSync } from '@grpc/proto-loader';
-import {
-  loadPackageDefinition,
-  credentials,
+import type {
+  Client,
   Metadata,
+  ServiceClientConstructor,
   ServiceError,
 } from '@grpc/grpc-js';
 import { balanceEnvironment } from '@core/config/environments';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
-import { connectionStateToProto } from '@core/common/functions/workerConnectionStateProtoMapper';
 import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
 import { IGetTypingSimulationConfigRequestProto } from '@core/common/interfaces/IGetTypingSimulationConfigRequestProto';
 import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces/IGetTypingSimulationConfigResponseProto';
 import { IWorkerSelfHealingRequestProto } from '@core/common/interfaces/IWorkerSelfHealingRequestProto';
-import { normalizeTypingSimulationConfig } from '@core/common/functions/typingSimulationConfig';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
-import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
-import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
+import { IWhatsappRuntimeFenceActivationRequestProto } from '@core/common/interfaces/IWhatsappRuntimeFenceActivationProto';
+import {
+  IChromiumLockCleanupAuthorizationRequestProto,
+  IChromiumLockCleanupAuthorizationResponseProto,
+} from '@core/common/interfaces/IChromiumLockCleanupAuthorizationProto';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
+import {
+  BALANCER_RUNTIME_FENCE_TOKEN_METADATA,
+  balancerRuntimeFenceToken,
+} from '@core/common/functions/balancerRuntimeFenceAuth';
+import {
+  WorkerRuntimeDatabaseService,
+  type WorkerRuntimeOwnedConnectionFence,
+  type WorkerRuntimeEventPersistenceOptions,
+} from '@core/services/workerRuntimeDatabase.service';
 
-const protoPath = resolveProtoPath('worker_command.proto');
-const packageDefinition = loadSync(protoPath, {
-  keepCase: true,
-  longs: String,
-  enums: String,
-  defaults: true,
-  oneofs: true,
-});
-const protoDescriptor = loadPackageDefinition(packageDefinition);
-const WorkerCommandClient = (protoDescriptor as any).worker_command
-  ?.WorkerCommand;
+interface LegacyWorkerCommandClient extends Client {
+  AuthorizeChromiumLockCleanup(
+    request: IChromiumLockCleanupAuthorizationRequestProto,
+    metadata: Metadata,
+    options: { deadline: Date },
+    callback: (
+      error: ServiceError | null,
+      response?: IChromiumLockCleanupAuthorizationResponseProto
+    ) => void
+  ): void;
+}
 
-if (!WorkerCommandClient) {
-  throw new Error('WorkerCommand client not found in proto');
+interface LegacyWorkerCommandRuntime {
+  grpc: typeof import('@grpc/grpc-js');
+  WorkerCommandClient: ServiceClientConstructor;
+}
+
+let legacyWorkerCommandRuntimePromise:
+  Promise<LegacyWorkerCommandRuntime> | undefined;
+
+async function loadLegacyWorkerCommandRuntime(): Promise<LegacyWorkerCommandRuntime> {
+  if (!legacyWorkerCommandRuntimePromise) {
+    legacyWorkerCommandRuntimePromise = Promise.all([
+      import('@grpc/grpc-js'),
+      import('@grpc/proto-loader'),
+    ])
+      .then(([grpc, protoLoader]) => {
+        const protoPath = resolveProtoPath('worker_command.proto');
+        const packageDefinition = protoLoader.loadSync(protoPath, {
+          keepCase: true,
+          longs: String,
+          enums: String,
+          defaults: true,
+          oneofs: true,
+        });
+        const protoDescriptor = grpc.loadPackageDefinition(packageDefinition);
+        const workerCommandClient = (
+          protoDescriptor as unknown as {
+            worker_command?: { WorkerCommand?: unknown };
+          }
+        ).worker_command?.WorkerCommand;
+
+        if (typeof workerCommandClient !== 'function') {
+          throw new Error('WorkerCommand client not found in proto');
+        }
+
+        return {
+          grpc,
+          WorkerCommandClient: workerCommandClient as ServiceClientConstructor,
+        };
+      })
+      .catch((error: unknown) => {
+        legacyWorkerCommandRuntimePromise = undefined;
+        throw error;
+      });
+  }
+
+  return legacyWorkerCommandRuntimePromise;
 }
 
 const GRPC_DEADLINE_MS = 10000;
@@ -41,305 +95,68 @@ const GRPC_DEADLINE_MS = 10000;
 @injectable()
 export class BalanceWorkerStatusGrpcClientService {
   constructor(
-    @inject(ConnectionLifecycleDebugService)
-    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
-      log: async () => undefined,
-    } as unknown as ConnectionLifecycleDebugService
+    @inject(WorkerRuntimeDatabaseService)
+    private readonly workerRuntimeDatabaseService: WorkerRuntimeDatabaseService = new WorkerRuntimeDatabaseService()
   ) {}
 
-  private createClient(): any {
+  private async createClient(): Promise<{
+    client: LegacyWorkerCommandClient;
+    grpc: typeof import('@grpc/grpc-js');
+  }> {
+    const { grpc, WorkerCommandClient } =
+      await loadLegacyWorkerCommandRuntime();
     const address = `${balanceEnvironment.grpcHost}:${balanceEnvironment.grpcPort}`;
-    return new WorkerCommandClient(address, credentials.createInsecure());
+    const client = new WorkerCommandClient(
+      address,
+      grpc.credentials.createInsecure()
+    ) as unknown as LegacyWorkerCommandClient;
+    return { client, grpc };
   }
 
-  async notifyWorkerStatus(payload: IBaileysConnectionState): Promise<void> {
-    const client = this.createClient();
-    const workerId = payload.worker_id?.trim();
-    const accountId = payload.account_id?.trim();
-    const workerStatusId = payload.worker_status_id;
-
-    if (!workerId || !accountId || !workerStatusId) {
-      client.close();
-      throw new Error(
-        'NotifyWorkerStatus requires worker_id, account_id and worker_status_id'
-      );
-    }
-
-    const protoPayload = connectionStateToProto({
-      ...payload,
-      worker_id: workerId,
-      account_id: accountId,
-      worker_status_id: workerStatusId,
-    });
-
-    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
-    const metadata = new Metadata();
-
-    void this.connectionLifecycleDebugService.log(
-      'worker.notify_status_grpc.call',
-      {
-        trace_id: payload.debug_trace_id,
-        layer: payload.worker_type_id ?? 'worker',
-        worker_id: workerId,
-        account_id: accountId,
-        worker_type_id: payload.worker_type_id,
-        connection_attempt_id: payload.connection_attempt_id,
-        runtime_generation: payload.runtime_generation,
-        status: payload.status,
-        code: payload.code,
-        reason: payload.reason,
-        qrcode: payload.qrcode,
-        pairing_code: payload.pairing_code,
-      }
-    );
-    logLocalConnectionStatus('worker.notify_status_grpc.call', {
-      layer: payload.worker_type_id ?? 'worker',
-      provider: payload.worker_type_id,
-      worker_id: workerId,
-      account_id: accountId,
-      worker_type_id: payload.worker_type_id,
-      worker_status_id: workerStatusId,
-      status: payload.status,
-      code: payload.code,
-      session_ready: payload.session_ready,
-      can_send: payload.can_send,
-      can_receive_runtime: payload.can_receive_runtime,
-      authenticated: payload.authenticated,
-      provider_state: payload.provider_state,
-      degraded_reason: payload.degraded_reason,
-      reason: payload.reason,
-      phone: payload.phone,
-      connection_attempt_id: payload.connection_attempt_id,
-      runtime_generation: payload.runtime_generation,
-      qrcode: payload.qrcode,
-      pairing_code: payload.pairing_code,
-    });
-    await new Promise<void>((resolve, reject) => {
-      (client as any).NotifyWorkerStatus(
-        protoPayload,
-        metadata,
-        { deadline },
-        (err: ServiceError | null) => {
-          client.close();
-          if (err) {
-            logLocalConnectionStatus('worker.notify_status_grpc.error', {
-              layer: payload.worker_type_id ?? 'worker',
-              provider: payload.worker_type_id,
-              worker_id: workerId,
-              account_id: accountId,
-              worker_type_id: payload.worker_type_id,
-              worker_status_id: workerStatusId,
-              status: payload.status,
-              code: payload.code,
-              session_ready: payload.session_ready,
-              reason: err.message,
-              connection_attempt_id: payload.connection_attempt_id,
-              runtime_generation: payload.runtime_generation,
-            });
-            reject(err);
-            return;
-          }
-          resolve();
-        }
-      );
-    });
-    void this.connectionLifecycleDebugService.log(
-      'worker.notify_status_grpc.ok',
-      {
-        trace_id: payload.debug_trace_id,
-        layer: payload.worker_type_id ?? 'worker',
-        worker_id: workerId,
-        account_id: accountId,
-        worker_type_id: payload.worker_type_id,
-        connection_attempt_id: payload.connection_attempt_id,
-        runtime_generation: payload.runtime_generation,
-        status: payload.status,
-        code: payload.code,
-        reason: payload.reason,
-      }
-    );
-    logLocalConnectionStatus('worker.notify_status_grpc.ok', {
-      layer: payload.worker_type_id ?? 'worker',
-      provider: payload.worker_type_id,
-      worker_id: workerId,
-      account_id: accountId,
-      worker_type_id: payload.worker_type_id,
-      worker_status_id: workerStatusId,
-      status: payload.status,
-      code: payload.code,
-      session_ready: payload.session_ready,
-      can_send: payload.can_send,
-      can_receive_runtime: payload.can_receive_runtime,
-      authenticated: payload.authenticated,
-      provider_state: payload.provider_state,
-      degraded_reason: payload.degraded_reason,
-      reason: payload.reason,
-      phone: payload.phone,
-      connection_attempt_id: payload.connection_attempt_id,
-      runtime_generation: payload.runtime_generation,
-    });
-  }
-
-  async registerS3BackupFallbackUpload(
-    payload: IRegisterS3BackupFallbackUploadRequestProto
-  ): Promise<void> {
-    const client = this.createClient();
-
-    const accountId = payload.account_id?.trim();
-    const bucket = payload.bucket?.trim();
-    const objectKey = payload.object_key?.trim();
-
-    if (!accountId || !bucket || !objectKey) {
-      client.close();
-      throw new Error(
-        'RegisterS3BackupFallbackUpload requires account_id, bucket and object_key'
-      );
-    }
-
-    const sizeBytesRaw = payload.size_bytes;
-    const sizeBytesNumber =
-      typeof sizeBytesRaw === 'number'
-        ? sizeBytesRaw
-        : Number.parseInt(sizeBytesRaw ?? '0', 10);
-
-    if (!Number.isFinite(sizeBytesNumber) || sizeBytesNumber < 0) {
-      client.close();
-      throw new Error(
-        'RegisterS3BackupFallbackUpload requires valid size_bytes'
-      );
-    }
-
-    const protoPayload = {
-      account_id: accountId,
-      bucket,
-      object_key: objectKey,
-      file_name: payload.file_name?.trim() ?? '',
-      content_type: payload.content_type?.trim() ?? '',
-      size_bytes: Math.trunc(sizeBytesNumber),
-      primary_attempts: payload.primary_attempts ?? 0,
-      backup_attempts: payload.backup_attempts ?? 0,
-      primary_error: payload.primary_error ?? '',
-      backup_error: payload.backup_error ?? '',
+  async authorizeChromiumLockCleanup(
+    payload: IChromiumLockCleanupAuthorizationRequestProto
+  ): Promise<IChromiumLockCleanupAuthorizationResponseProto> {
+    const request = {
+      request_id: payload.request_id?.trim(),
+      worker_id: payload.worker_id?.trim(),
+      account_id: payload.account_id?.trim(),
+      worker_type_id: payload.worker_type_id?.trim().toLowerCase(),
+      runtime_generation: Number(payload.runtime_generation),
+      requester_container_id: payload.requester_container_id
+        ?.trim()
+        .toLowerCase(),
+      session_volume_name: payload.session_volume_name?.trim(),
+      singleton_lock_target: payload.singleton_lock_target?.trim(),
     };
-
-    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
-
-    await new Promise<void>((resolve, reject) => {
-      (client as any).RegisterS3BackupFallbackUpload(
-        protoPayload,
-        { deadline },
-        (err: ServiceError | null) => {
-          client.close();
-          if (err) {
-            reject(err);
-            return;
-          }
-          resolve();
-        }
-      );
-    });
-  }
-
-  async requestWorkerSelfHealing(
-    payload: IWorkerSelfHealingRequestProto
-  ): Promise<void> {
-    const client = this.createClient();
-    const workerId = payload.worker_id?.trim();
-    const accountId = payload.account_id?.trim();
-    const workerTypeId = payload.worker_type_id?.trim();
-
-    if (!workerId || !accountId || !workerTypeId) {
-      client.close();
-      throw new Error(
-        'RequestWorkerSelfHealing requires worker_id, account_id and worker_type_id'
-      );
+    if (
+      !request.request_id ||
+      !request.worker_id ||
+      !request.account_id ||
+      request.worker_type_id !== EWorkerType.wwebjs ||
+      !Number.isSafeInteger(request.runtime_generation) ||
+      request.runtime_generation <= 0 ||
+      !request.requester_container_id ||
+      !request.session_volume_name ||
+      !request.singleton_lock_target
+    ) {
+      throw new Error('Invalid Chromium lock cleanup authorization payload');
     }
 
-    const runtimeGeneration =
-      typeof payload.runtime_generation === 'number'
-        ? payload.runtime_generation
-        : Number.parseInt(String(payload.runtime_generation ?? '0'), 10);
-    const recoveryWindowSeconds =
-      typeof payload.recovery_window_seconds === 'number'
-        ? payload.recovery_window_seconds
-        : Number.parseInt(String(payload.recovery_window_seconds ?? '0'), 10);
-
-    const protoPayload: IWorkerSelfHealingRequestProto = {
-      worker_id: workerId,
-      account_id: accountId,
-      worker_type_id: workerTypeId,
-      source: payload.source ?? '',
-      reason: payload.reason ?? '',
-      provider_state: payload.provider_state ?? '',
-      degraded_reason: payload.degraded_reason ?? '',
-      kafka_unhealthy: payload.kafka_unhealthy === true,
-      runtime_generation: Number.isFinite(runtimeGeneration)
-        ? Math.trunc(runtimeGeneration)
-        : 0,
-      debug_trace_id: payload.debug_trace_id ?? '',
-      recovery_window_seconds: Number.isFinite(recoveryWindowSeconds)
-        ? Math.trunc(recoveryWindowSeconds)
-        : 0,
-    };
-
-    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
-    const metadata = new Metadata();
-
-    logLocalConnectionStatus('worker.self_heal_grpc.call', {
-      layer: payload.worker_type_id ?? 'worker',
-      provider: payload.worker_type_id,
-      worker_id: workerId,
-      account_id: accountId,
-      worker_type_id: workerTypeId,
-      source: protoPayload.source,
-      reason: protoPayload.reason,
-      provider_state: protoPayload.provider_state,
-      degraded_reason: protoPayload.degraded_reason,
-      kafka_unhealthy: protoPayload.kafka_unhealthy,
-      runtime_generation: protoPayload.runtime_generation,
-      recovery_window_seconds: protoPayload.recovery_window_seconds,
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      (client as any).RequestWorkerSelfHealing(
-        protoPayload,
-        metadata,
-        { deadline },
-        (err: ServiceError | null) => {
-          client.close();
-          if (err) {
-            reject(err);
-            return;
-          }
-          resolve();
-        }
-      );
-    });
-  }
-
-  async resolveIncomingCallAction(
-    payload: IResolveIncomingCallActionRequestProto
-  ): Promise<IResolveIncomingCallActionResponseProto> {
-    const client = this.createClient();
-
-    const protoPayload = {
-      worker_id: payload.worker_id ?? '',
-      account_id: payload.account_id ?? '',
-      call_jid: payload.call_jid ?? '',
-      call_phone: payload.call_phone ?? '',
-      is_video: payload.is_video ?? false,
-    };
-
+    const runtimeFenceToken = balancerRuntimeFenceToken();
+    const { client, grpc } = await this.createClient();
+    const metadata = new grpc.Metadata();
+    metadata.set(BALANCER_RUNTIME_FENCE_TOKEN_METADATA, runtimeFenceToken);
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
 
-    return new Promise<IResolveIncomingCallActionResponseProto>(
-      (resolve, reject) => {
-        (client as any).ResolveIncomingCallAction(
-          protoPayload,
+    return new Promise((resolve, reject) => {
+      try {
+        client.AuthorizeChromiumLockCleanup(
+          request,
+          metadata,
           { deadline },
           (
             err: ServiceError | null,
-            response?: IResolveIncomingCallActionResponseProto
+            response?: IChromiumLockCleanupAuthorizationResponseProto
           ) => {
             client.close();
             if (err) {
@@ -349,40 +166,81 @@ export class BalanceWorkerStatusGrpcClientService {
             resolve(response ?? {});
           }
         );
+      } catch (error) {
+        client.close();
+        reject(error);
       }
+    });
+  }
+
+  async activateWhatsappRuntimeFence(
+    payload: IWhatsappRuntimeFenceActivationRequestProto
+  ): Promise<{
+    connection_sequence: number;
+    already_active: boolean;
+  }> {
+    return this.workerRuntimeDatabaseService.activateWhatsappRuntimeFence(
+      payload
     );
+  }
+
+  async resolveWhatsappRuntimeOwnedConnectionFence(input: {
+    worker_id?: string;
+    account_id?: string;
+    source_provider?: string;
+    runtime_generation?: number;
+  }): Promise<WorkerRuntimeOwnedConnectionFence | null> {
+    return this.workerRuntimeDatabaseService.resolveWhatsappRuntimeOwnedConnectionFence(
+      input
+    );
+  }
+
+  async notifyWorkerStatus(
+    payload: IBaileysConnectionState,
+    options: WorkerRuntimeEventPersistenceOptions = {}
+  ): Promise<void> {
+    await this.workerRuntimeDatabaseService.notifyWorkerStatus(
+      payload,
+      options
+    );
+  }
+
+  async publishWorkerRuntimeEvent(
+    payload: IBaileysConnectionState,
+    options: WorkerRuntimeEventPersistenceOptions = {}
+  ): Promise<void> {
+    await this.workerRuntimeDatabaseService.publishWorkerRuntimeEvent(
+      payload,
+      options
+    );
+  }
+
+  async registerS3BackupFallbackUpload(
+    payload: IRegisterS3BackupFallbackUploadRequestProto
+  ): Promise<void> {
+    await this.workerRuntimeDatabaseService.registerS3BackupFallbackUpload(
+      payload
+    );
+  }
+
+  async requestWorkerSelfHealing(
+    payload: IWorkerSelfHealingRequestProto
+  ): Promise<void> {
+    await this.workerRuntimeDatabaseService.requestWorkerSelfHealing(payload);
+  }
+
+  async resolveIncomingCallAction(
+    payload: IResolveIncomingCallActionRequestProto
+  ): Promise<IResolveIncomingCallActionResponseProto> {
+    return this.workerRuntimeDatabaseService.resolveIncomingCallAction(payload);
   }
 
   async getTypingSimulationConfig(
     payload: IGetTypingSimulationConfigRequestProto
   ): Promise<IGetTypingSimulationConfigResponseProto> {
-    const client = this.createClient();
-
-    const protoPayload = {
-      worker_id: payload.worker_id ?? '',
-      account_id: payload.account_id ?? '',
-    };
-
-    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
-
-    return new Promise<IGetTypingSimulationConfigResponseProto>(
-      (resolve, reject) => {
-        (client as any).GetTypingSimulationConfig(
-          protoPayload,
-          { deadline },
-          (
-            err: ServiceError | null,
-            response?: IGetTypingSimulationConfigResponseProto
-          ) => {
-            client.close();
-            if (err) {
-              reject(err);
-              return;
-            }
-            resolve(normalizeTypingSimulationConfig(response));
-          }
-        );
-      }
+    return this.workerRuntimeDatabaseService.getTypingSimulationConfig(
+      payload.worker_id ?? '',
+      payload.account_id ?? ''
     );
   }
 }

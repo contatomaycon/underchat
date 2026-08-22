@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 
+import { EChatbotStatus } from '@core/common/enums/EChatbotStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { UpdateChatbotUseCase } from '@core/useCases/worker/UpdateChatbot.useCase';
 
@@ -48,8 +49,18 @@ const makeUseCase = (workerTypeId: EWorkerType) => {
   };
   const chatbotService = {
     listChatbots: jest.fn(async () => [
-      { chatbot_id: inputChatbotId, name: 'Entrada', type: 'input' },
-      { chatbot_id: outputChatbotId, name: 'Saída', type: 'output' },
+      {
+        chatbot_id: inputChatbotId,
+        name: 'Entrada',
+        type: 'input',
+        status: EChatbotStatus.active,
+      },
+      {
+        chatbot_id: outputChatbotId,
+        name: 'Saída',
+        type: 'output',
+        status: EChatbotStatus.active,
+      },
     ]),
     findChatbotFlowByChatbotId: jest.fn(async () => officialFlow),
   };

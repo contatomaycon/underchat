@@ -1,9 +1,11 @@
+import { describe, expect, it } from '@jest/globals';
 import { CONTACT_DOCUMENT_TYPE } from '../types/contact';
 import {
   formatDocumentByType,
   getDocumentMaskMaxLength,
   isValidCnpj,
   isValidCpf,
+  normalizeCnpj,
   normalizeDocumentDigits,
 } from '../utils/contactDocument';
 
@@ -18,6 +20,9 @@ describe('contactDocument utils', () => {
     expect(
       formatDocumentByType('04252011000110', CONTACT_DOCUMENT_TYPE.cnpj)
     ).toBe('04.252.011/0001-10');
+    expect(
+      formatDocumentByType('12abc34501de35', CONTACT_DOCUMENT_TYPE.cnpj)
+    ).toBe('12.ABC.345/01DE-35');
   });
 
   it('validates CPF check digits', () => {
@@ -27,7 +32,16 @@ describe('contactDocument utils', () => {
 
   it('validates CNPJ check digits', () => {
     expect(isValidCnpj('04.252.011/0001-10')).toBe(true);
+    expect(isValidCnpj('12.ABC.345/01DE-35')).toBe(true);
+    expect(isValidCnpj('12.abc.345/01de-35')).toBe(true);
     expect(isValidCnpj('00.000.000/0000-00')).toBe(false);
+    expect(isValidCnpj('12.ABC.345/01DE-AA')).toBe(false);
+    expect(isValidCnpj('AB.123.CDE/4567-89')).toBe(false);
+    expect(isValidCnpj('12.ABC.345/01DE-35XYZ')).toBe(false);
+  });
+
+  it('normalizes alphanumeric CNPJ to uppercase', () => {
+    expect(normalizeCnpj('12.abc.345/01de-35')).toBe('12ABC34501DE35');
   });
 
   it('respects max lengths by document type', () => {
@@ -42,9 +56,9 @@ describe('contactDocument utils', () => {
     ).toBe('52998224725');
     expect(
       normalizeDocumentDigits(
-        '04.252.011/0001-109999',
+        '12.abc.345/01de-359999',
         CONTACT_DOCUMENT_TYPE.cnpj
       )
-    ).toBe('04252011000110');
+    ).toBe('12ABC34501DE35');
   });
 });

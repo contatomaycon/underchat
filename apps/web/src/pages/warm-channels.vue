@@ -51,11 +51,9 @@ const headers: DataTableHeader<ListWarmChannelsResponse>[] = [
   { title: t('status'), key: 'state' },
   { title: t('container_id'), key: 'container_id' },
   { title: t('container_name'), key: 'container_name' },
-  { title: t('session_volume_name'), key: 'session_volume_name' },
   { title: t('last_health_at'), key: 'last_health_at' },
   { title: t('updated_date'), key: 'updated_at' },
   { title: t('created_at'), key: 'created_at' },
-  { title: t('actions'), key: 'actions', sortable: false },
 ];
 
 const options = ref({
@@ -67,7 +65,6 @@ const options = ref({
   warm_pool_id: null as string | null,
   container_id: null as string | null,
   container_name: null as string | null,
-  session_volume_name: null as string | null,
   search: null as string | null,
   created_at_from: null as string | null,
   created_at_to: null as string | null,
@@ -91,7 +88,6 @@ const query = computed(() => ({
   warm_pool_id: options.value.warm_pool_id || undefined,
   container_id: options.value.container_id || undefined,
   container_name: options.value.container_name || undefined,
-  session_volume_name: options.value.session_volume_name || undefined,
   search: debouncedSearch.value || undefined,
   created_at_from: options.value.created_at_from || undefined,
   created_at_to: options.value.created_at_to || undefined,
@@ -112,8 +108,6 @@ const totalReady = computed(() => warmChannelsStore.pagings.total);
 const canRecreateWarmChannels = computed(
   () => warmChannelsStore.settings?.warmup_enabled === true
 );
-const warmChannelToRecreate = ref<string | null>(null);
-const isDialogRecreatorShow = ref(false);
 const isDialogRecreateAllShow = ref(false);
 const isSettingsDialogShow = ref(false);
 
@@ -147,7 +141,6 @@ const clearAdvancedFilters = () => {
   options.value.warm_pool_id = null;
   options.value.container_id = null;
   options.value.container_name = null;
-  options.value.session_volume_name = null;
   options.value.created_at_from = null;
   options.value.created_at_to = null;
   options.value.updated_at_from = null;
@@ -167,26 +160,6 @@ const handleTableChange = (payload: {
   options.value.sortBy = payload.sortBy;
 };
 
-const recreateWarmChannel = (warmPoolId: string) => {
-  if (!canRecreateWarmChannels.value) return;
-
-  warmChannelToRecreate.value = warmPoolId;
-  isDialogRecreatorShow.value = true;
-};
-
-const handleRecreate = async () => {
-  if (!warmChannelToRecreate.value) return;
-
-  const result = await warmChannelsStore.recreateWarmChannel(
-    warmChannelToRecreate.value
-  );
-  if (result) {
-    await warmChannelsStore.listWarmChannels(query.value);
-  }
-
-  warmChannelToRecreate.value = null;
-};
-
 const handleRecreateAll = async () => {
   const result = await warmChannelsStore.recreateWarmChannelsAll({
     server_id: query.value.server_id,
@@ -194,7 +167,6 @@ const handleRecreateAll = async () => {
     warm_pool_id: query.value.warm_pool_id,
     container_id: query.value.container_id,
     container_name: query.value.container_name,
-    session_volume_name: query.value.session_volume_name,
     search: query.value.search,
     created_at_from: query.value.created_at_from,
     created_at_to: query.value.created_at_to,
@@ -216,12 +188,6 @@ watch(
   },
   { immediate: true, deep: true }
 );
-
-watch(isDialogRecreatorShow, (isOpen) => {
-  if (!isOpen) {
-    warmChannelToRecreate.value = null;
-  }
-});
 
 onMounted(async () => {
   await Promise.all([
@@ -352,12 +318,6 @@ onMounted(async () => {
                   @update:modelValue="resetToFirstPage"
                 />
                 <AppTextField
-                  v-model="options.session_volume_name"
-                  :label="$t('session_volume_name')"
-                  hide-details
-                  @update:modelValue="resetToFirstPage"
-                />
-                <AppTextField
                   v-model="options.last_health_at_from"
                   type="datetime-local"
                   :label="$t('last_health_at_from')"
@@ -456,10 +416,6 @@ onMounted(async () => {
             <span class="mono-value">{{ item.container_name ?? '-' }}</span>
           </template>
 
-          <template #item.session_volume_name="{ item }">
-            <span class="mono-value">{{ item.session_volume_name }}</span>
-          </template>
-
           <template #item.last_health_at="{ item }">
             <span>
               {{
@@ -478,22 +434,6 @@ onMounted(async () => {
             <span>{{
               item.created_at ? formatDateTime(item.created_at) : '-'
             }}</span>
-          </template>
-
-          <template #item.actions="{ item }">
-            <IconBtn
-              :disabled="!canRecreateWarmChannels"
-              @click="recreateWarmChannel(item.warm_pool_id)"
-            >
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('recreate') }}</span>
-              </VTooltip>
-              <VIcon icon="tabler-refresh" />
-            </IconBtn>
           </template>
 
           <template #bottom>
@@ -515,13 +455,6 @@ onMounted(async () => {
     >
       {{ warmChannelsStore.snackbar.message }}
     </VSnackbar>
-
-    <VDialogHandler
-      v-model="isDialogRecreatorShow"
-      :title="$t('recreate') + ' ' + $t('warm_channel')"
-      :message="$t('recreate_warm_channel_confirmation')"
-      @confirm="handleRecreate"
-    />
 
     <VDialogHandler
       v-model="isDialogRecreateAllShow"

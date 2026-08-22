@@ -1,8 +1,12 @@
 import { injectable, inject } from 'tsyringe';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
-import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
+import {
+  IConfigChannelsRecreateAllFilters,
+  IConfigChannelsRecreateAllPayload,
+} from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class EnqueueRecreateChannelsAllUseCase {
@@ -15,9 +19,10 @@ export class EnqueueRecreateChannelsAllUseCase {
 
   async execute(
     accountId: string,
-    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+    filters: IConfigChannelsRecreateAllFilters
   ): Promise<void> {
     const payload: IConfigChannelsRecreateAllPayload = {
+      request_id: uuidv7(),
       account_id: accountId,
       ...this.normalizeFilters(filters),
     };
@@ -28,12 +33,15 @@ export class EnqueueRecreateChannelsAllUseCase {
   }
 
   private normalizeFilters(
-    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
-  ): Omit<IConfigChannelsRecreateAllPayload, 'account_id'> {
+    filters: IConfigChannelsRecreateAllFilters
+  ): IConfigChannelsRecreateAllFilters {
     return {
       ...filters,
       status: filters.status ?? EWorkerStatus.online,
       type: filters.type ?? undefined,
+      ...(filters.session_storage
+        ? { session_storage: filters.session_storage }
+        : {}),
       account: filters.account || undefined,
       name: filters.name || undefined,
       number: filters.number || undefined,

@@ -235,6 +235,12 @@ export class BucketManager {
     const lifecycleConfig = {
       Rules: [
         {
+          ID: 'ExpireChatbotApiTemporaryAfter7Days',
+          Status: ExpirationStatus.Enabled,
+          Filter: { Prefix: 'chatbot-api-temporary/' },
+          Expiration: { Days: 7 },
+        },
+        {
           ID: 'ExpireAfter6Months',
           Status: ExpirationStatus.Enabled,
           Filter: {},

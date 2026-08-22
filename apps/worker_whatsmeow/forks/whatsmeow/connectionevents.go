@@ -8,6 +8,7 @@ package whatsmeow
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
@@ -24,6 +25,9 @@ func (cli *Client) handleStreamError(ctx context.Context, node *waBinary.Node) {
 	conflictType := conflict.AttrGetter().OptionalString("type")
 	switch {
 	case code == "515":
+		cli.logSessionDebug("internal_reconnect.server_login_restart_received", map[string]any{
+			"disabled": cli.DisableLoginAutoReconnect,
+		})
 		if cli.DisableLoginAutoReconnect {
 			cli.Log.Infof("Got 515 code, but login autoreconnect is disabled, not reconnecting")
 			cli.dispatchEvent(&events.ManualLoginReconnect{})
@@ -31,14 +35,22 @@ func (cli *Client) handleStreamError(ctx context.Context, node *waBinary.Node) {
 		}
 		cli.Log.Infof("Got 515 code, reconnecting...")
 		go func() {
-			cli.Disconnect()
-			err := cli.connect(ctx)
+			if !cli.disconnectForReconnect("server_login_restart") {
+				cli.Log.Debugf("Cancelling 515 reconnect because the client entered a terminal lifecycle")
+				return
+			}
+			err := cli.connectAfterInternalReconnect(ctx)
+			if errors.Is(err, errConnectionStatusTerminal) {
+				cli.Log.Debugf("Cancelling 515 reconnect because the client entered a terminal lifecycle")
+				return
+			}
 			if err != nil {
 				cli.Log.Errorf("Failed to reconnect after 515 code: %v", err)
 			}
 		}()
 	case code == "401" && conflictType == "device_removed":
 		cli.expectDisconnect()
+		cli.paired.Store(false)
 		cli.Log.Infof("Got device removed stream error, sending LoggedOut event and deleting session")
 		go cli.dispatchEvent(&events.LoggedOut{OnConnect: false, Reason: events.ConnectFailureLoggedOut})
 		err := cli.Store.Delete(ctx)
@@ -88,6 +100,8 @@ func (cli *Client) handleIB(ctx context.Context, node *waBinary.Node) {
 			cli.dispatchEvent(&events.OfflineSyncCompleted{
 				Count: ag.Int("count"),
 			})
+		case "edge_routing":
+			cli.persistTransportRoutingInfo(ctx, &child)
 		case "dirty":
 			//ts := ag.UnixTime("timestamp")
 			//typ := ag.String("type") // account_sync
@@ -97,6 +111,37 @@ func (cli *Client) handleIB(ctx context.Context, node *waBinary.Node) {
 			//}()
 		}
 	}
+}
+
+func (cli *Client) persistTransportRoutingInfo(ctx context.Context, edgeRouting *waBinary.Node) {
+	if cli == nil || cli.Store == nil || edgeRouting == nil {
+		return
+	}
+	routingNodes := edgeRouting.GetChildrenByTag("routing_info")
+	if len(routingNodes) != 1 {
+		cli.Log.Warnf("Ignoring edge routing update with invalid routing_info count: %d", len(routingNodes))
+		return
+	}
+	routingInfo, ok := routingNodes[0].Content.([]byte)
+	if !ok || store.ValidateWhatsAppTransportRoutingInfo(routingInfo) != nil {
+		payloadSize := 0
+		if ok {
+			payloadSize = len(routingInfo)
+		}
+		cli.Log.Warnf("Ignoring invalid edge routing update (payload_size=%d)", payloadSize)
+		return
+	}
+	if cli.Store.Transport == nil {
+		cli.Log.Warnf("Ignoring edge routing update because the transport store is unavailable")
+		return
+	}
+	// Keep the transport value opaque and detached from the network decoder's
+	// backing buffer. In particular, never protobuf round-trip or log it.
+	if err := cli.Store.Transport.PutTransportRoutingInfo(ctx, append([]byte(nil), routingInfo...)); err != nil {
+		cli.Log.Errorf("Failed to persist edge routing update (payload_size=%d): %v", len(routingInfo), err)
+		return
+	}
+	cli.Log.Debugf("Persisted edge routing update (payload_size=%d)", len(routingInfo))
 }
 
 func (cli *Client) handleConnectFailure(ctx context.Context, node *waBinary.Node) {
@@ -124,6 +169,7 @@ func (cli *Client) handleConnectFailure(ctx context.Context, node *waBinary.Node
 		)
 	}
 	if reason.IsLoggedOut() {
+		cli.paired.Store(false)
 		cli.Log.Infof("Got %s connect failure, sending LoggedOut event and deleting session", reason)
 		go cli.dispatchEvent(&events.LoggedOut{OnConnect: true, Reason: reason})
 		err := cli.Store.Delete(ctx)
@@ -156,6 +202,16 @@ func (cli *Client) handleConnectFailure(ctx context.Context, node *waBinary.Node
 }
 
 func (cli *Client) handleConnectSuccess(ctx context.Context, node *waBinary.Node) {
+	binding, ok := socketBindingFromContext(ctx)
+	if !ok {
+		binding = cli.currentSocketBinding()
+	}
+	if !cli.isCurrentSocketBinding(binding) {
+		cli.logSessionDebug("connect_success.stale_generation_ignored", map[string]any{
+			"generation": binding.generation,
+		})
+		return
+	}
 	if !cli.paired.Load() {
 		cli.Log.Warnf("Received connect success without pairing, ignoring")
 		return
@@ -163,7 +219,12 @@ func (cli *Client) handleConnectSuccess(ctx context.Context, node *waBinary.Node
 	cli.Log.Infof("Successfully authenticated")
 	cli.LastSuccessfulConnect = time.Now()
 	cli.AutoReconnectErrors = 0
-	cli.isLoggedIn.Store(true)
+	if !cli.markSocketBindingLoggedIn(binding) {
+		cli.logSessionDebug("connect_success.login_stale_generation_ignored", map[string]any{
+			"generation": binding.generation,
+		})
+		return
+	}
 	ag := node.AttrGetter()
 	nodeLID := ag.JID("lid")
 	cli.serverTimeOffset.Store(int64(ag.UnixTime("t").Sub(time.Now().Round(time.Second))))
@@ -185,6 +246,9 @@ func (cli *Client) handleConnectSuccess(ctx context.Context, node *waBinary.Node
 	}
 	cli.deleteExpiredPrivacyTokens()
 	go func() {
+		if !cli.isCurrentSocketBinding(binding) {
+			return
+		}
 		if dbCount, err := cli.Store.PreKeys.UploadedPreKeyCount(ctx); err != nil {
 			cli.Log.Errorf("Failed to get number of prekeys in database: %v", err)
 		} else if serverCount, err := cli.getServerPreKeyCount(ctx); err != nil {
@@ -201,8 +265,20 @@ func (cli *Client) handleConnectSuccess(ctx context.Context, node *waBinary.Node
 		if err != nil {
 			cli.Log.Warnf("Failed to send post-connect passive IQ: %v", err)
 		}
-		cli.dispatchEvent(&events.Connected{})
-		cli.closeSocketWaitChan()
+		// A post-pair reconnect is the first stable connection on which this
+		// heartbeat is valid. Sending it synchronously with the connection
+		// context prevents it from leaking into a later socket generation.
+		heartbeatCtx, cancelHeartbeat := context.WithTimeout(ctx, unifiedSessionAuxiliarySendTimeout)
+		_ = cli.sendUnifiedSession(heartbeatCtx, binding)
+		cancelHeartbeat()
+		if !cli.isCurrentSocketBinding(binding) {
+			cli.logSessionDebug("connect_success.completion_stale_generation_ignored", map[string]any{
+				"generation": binding.generation,
+			})
+			return
+		}
+		cli.dispatchConnectedFor(binding)
+		cli.closeSocketWaitChanFor(binding)
 	}()
 }
 

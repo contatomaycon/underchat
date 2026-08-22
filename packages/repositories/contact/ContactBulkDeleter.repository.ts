@@ -5,7 +5,13 @@ import {
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { inArray, ExtractTablesWithRelations } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  inArray,
+  isNull,
+  ExtractTablesWithRelations,
+} from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { currentTime } from '@core/common/functions/currentTime';
 import { ContactLabelTemplateDeleterRepository } from './ContactLabelTemplateDeleter.repository';
@@ -24,7 +30,8 @@ export class ContactBulkDeleterRepository {
       typeof schema,
       ExtractTablesWithRelations<typeof schema>
     >,
-    contactIds: string[]
+    contactIds: string[],
+    accountId: string
   ): Promise<number> => {
     if (contactIds.length === 0) {
       return 0;
@@ -37,20 +44,42 @@ export class ContactBulkDeleterRepository {
       .set({
         deleted_at: date,
       })
-      .where(inArray(contact.contact_id, contactIds))
+      .where(
+        and(
+          inArray(contact.contact_id, contactIds),
+          eq(contact.account_id, accountId),
+          isNull(contact.deleted_at)
+        )
+      )
       .execute();
 
     return result.rowCount ?? 0;
   };
 
-  deleteContactsByIds = async (contactIds: string[]): Promise<number> => {
+  deleteContactsByIds = async (
+    contactIds: string[],
+    accountId: string
+  ): Promise<number> => {
     if (contactIds.length === 0) {
       return 0;
     }
 
     return this.dbRw.transaction(async (tx) => {
+      const authorizedContacts = await tx
+        .select({ contact_id: contact.contact_id })
+        .from(contact)
+        .where(
+          and(
+            inArray(contact.contact_id, contactIds),
+            eq(contact.account_id, accountId),
+            isNull(contact.deleted_at)
+          )
+        )
+        .execute();
+      const authorizedIds = authorizedContacts.map((row) => row.contact_id);
+
       await Promise.all(
-        contactIds.map((contactId) =>
+        authorizedIds.map((contactId) =>
           this.contactLabelTemplateDeleterRepository.deleteContactLabelTemplatesByContactId(
             tx,
             contactId
@@ -58,7 +87,7 @@ export class ContactBulkDeleterRepository {
         )
       );
 
-      return this.deleteContactsInTransaction(tx, contactIds);
+      return this.deleteContactsInTransaction(tx, authorizedIds, accountId);
     });
   };
 }

@@ -20,7 +20,9 @@ export const viewContactEmail = async (
   try {
     const response = await chatContactEmailViewerUseCase.execute(
       t,
-      request.params.contact_id
+      request.params.contact_id,
+      request.tokenJwtData.account_id,
+      request.tokenJwtData.channels?.map((channel) => channel.id) ?? []
     );
 
     if (response) {

@@ -7,6 +7,7 @@ import {
 } from '@core/services/workerExternalConnectionToken.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { WorkerConnectionQrCodeRequesterUseCase } from '@core/useCases/worker/WorkerConnectionQrCodeRequester.useCase';
+import type { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 
 @injectable()
 export class WorkerExternalConnectionQrCodeRequesterUseCase {
@@ -24,14 +25,16 @@ export class WorkerExternalConnectionQrCodeRequesterUseCase {
     token: string
   ): Promise<IBaileysConnectionState> {
     const payload = this.validateToken(t, token);
-    const existsWorker = await this.workerService.existsWorkerById(
+    const worker = await this.workerService.viewWorker(
       payload.account_id,
       payload.worker_id
     );
 
-    if (!existsWorker) {
+    if (!worker) {
       throw new Error(t('worker_not_found'));
     }
+
+    this.validateWorkerSnapshot(t, payload, worker);
 
     return this.workerConnectionQrCodeRequesterUseCase.execute(
       t,
@@ -47,6 +50,30 @@ export class WorkerExternalConnectionQrCodeRequesterUseCase {
   ): WorkerExternalConnectionTokenPayload {
     try {
       return this.workerExternalConnectionTokenService.validate(token);
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(t(error.message));
+      }
+
+      throw error;
+    }
+  }
+
+  private validateWorkerSnapshot(
+    t: TFunction<'translation', undefined>,
+    payload: WorkerExternalConnectionTokenPayload,
+    worker: ViewWorkerResponse
+  ): void {
+    try {
+      this.workerExternalConnectionTokenService.validateWorkerSnapshot(
+        payload,
+        {
+          server_id: worker.server?.id,
+          worker_type_id: worker.type?.id,
+          worker_updated_at: worker.updated_at,
+          external_connection_revision: worker.external_connection_revision,
+        }
+      );
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(t(error.message));

@@ -2,7 +2,7 @@ import { injectable } from 'tsyringe';
 import { getDashboardStats } from './methods/getDashboardStats';
 import { getDashboardConversations } from './methods/getDashboardConversations';
 import { getDashboardAdditional } from './methods/getDashboardAdditional';
-import { listOfflineChannels } from './methods/listOfflineChannels';
+import { listOfflineChannels } from '@core/controllers/dashboard/methods/listOfflineChannels';
 
 @injectable()
 class DashboardController {

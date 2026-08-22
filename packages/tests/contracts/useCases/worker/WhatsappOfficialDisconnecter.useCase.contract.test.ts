@@ -1,9 +1,5 @@
 import 'reflect-metadata';
 
-jest.mock('@core/services/chat.service', () => ({
-  ChatService: class {},
-}));
-
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
@@ -31,9 +27,6 @@ function buildDeps() {
         type: { id: EWorkerType.whatsapp },
       })),
       deleteWorkerById: jest.fn(async () => true),
-    },
-    chatService: {
-      countOpenChatsByWorkerId: jest.fn(async () => 0),
     },
     centrifugoService: {
       publishSub: jest.fn(async () => undefined),
@@ -65,7 +58,6 @@ function buildDeps() {
 function buildUseCase(deps = buildDeps()) {
   return new WhatsappOfficialDisconnecterUseCase(
     deps.workerService as never,
-    deps.chatService as never,
     deps.centrifugoService as never,
     deps.officialConnectionRepository as never
   );
@@ -206,17 +198,21 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     ).not.toHaveBeenCalled();
   });
 
-  it('rejects official workers with open conversations', async () => {
+  it('disconnects without applying the deletion open-conversation rule', async () => {
     const deps = buildDeps();
-    deps.chatService.countOpenChatsByWorkerId.mockResolvedValue(2);
     const useCase = buildUseCase(deps);
 
-    await expect(useCase.execute(t, 'account-1', 'worker-1')).rejects.toThrow(
-      'channel_delete_has_open_conversations:2'
-    );
-    expect(deps.workerService.deleteWorkerById).not.toHaveBeenCalled();
+    await expect(
+      useCase.execute(t, 'account-1', 'worker-1')
+    ).resolves.toMatchObject({
+      worker_id: 'worker-1',
+      disconnected: true,
+    });
     expect(
       deps.officialConnectionRepository.disconnectPreservingWorker
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledWith({
+      accountId: 'account-1',
+      workerId: 'worker-1',
+    });
   });
 });

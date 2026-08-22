@@ -55,6 +55,11 @@ type CachedUserAccessScope = {
 };
 
 const USER_ACCESS_SCOPE_CACHE_TTL_SECONDS = 120;
+const JWT_ONLY_ROUTE_PATHS = new Set(['/user/me/attendance-hours/status']);
+
+export const shouldBypassJwtAttendanceGuard = (
+  routePath: string | null
+): boolean => routePath !== null && JWT_ONLY_ROUTE_PATHS.has(routePath);
 
 function logAuthFailure(
   request: FastifyRequest,
@@ -293,8 +298,7 @@ async function authenticateJwt(
 ): Promise<void> {
   const { Redis } = request.server;
   const routePath = routePathWithoutPrefix(request);
-  const shouldBypassAttendanceGuard =
-    routePath === '/user/me/attendance-hours/status';
+  const shouldBypassAttendanceGuard = shouldBypassJwtAttendanceGuard(routePath);
 
   let decoded: DecodedJwtPayload;
 

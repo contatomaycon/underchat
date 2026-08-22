@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { planCrossSellAccount, planAccount } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 @injectable()
 export class AccountAddonCancellerRepository {
@@ -17,8 +17,9 @@ export class AccountAddonCancellerRepository {
   ): Promise<{
     plan_cross_sell_account_id: string;
     cancellation_date: string | null;
+    plan_product_id: string;
   } | null> => {
-    const addon = await this.dbRo.query.planCrossSellAccount.findFirst({
+    const addon = await this.dbRw.query.planCrossSellAccount.findFirst({
       where: and(
         eq(planCrossSellAccount.account_id, accountId),
         eq(
@@ -31,27 +32,40 @@ export class AccountAddonCancellerRepository {
         plan_cross_sell_account_id: true,
         cancellation_date: true,
       },
+      with: {
+        pca: {
+          columns: {
+            plan_product_id: true,
+          },
+        },
+      },
     });
 
-    return addon || null;
+    return addon
+      ? {
+          plan_cross_sell_account_id: addon.plan_cross_sell_account_id,
+          cancellation_date: addon.cancellation_date,
+          plan_product_id: addon.pca.plan_product_id,
+        }
+      : null;
   };
 
   hasActivePlanCycle = async (accountId: string): Promise<boolean> => {
-    const rows = await this.dbRo
+    const rows = await this.dbRw
       .select({
-        plan_account_id: planAccount.plan_account_id,
+        active: sql<boolean>`${planAccount.next_payment_date} > NOW()`,
       })
       .from(planAccount)
-      .where(
-        and(
-          eq(planAccount.account_id, accountId),
-          gt(planAccount.next_payment_date, sql`NOW()`)
-        )
+      .where(eq(planAccount.account_id, accountId))
+      .orderBy(
+        sql`${planAccount.updated_at} DESC NULLS LAST`,
+        sql`${planAccount.created_at} DESC NULLS LAST`,
+        sql`${planAccount.plan_account_id} DESC`
       )
       .limit(1)
       .execute();
 
-    return rows.length > 0;
+    return rows[0]?.active === true;
   };
 
   scheduleAddonCancellation = async (data: {
@@ -59,25 +73,46 @@ export class AccountAddonCancellerRepository {
     planCrossSellAccountId: string;
     cancellationDate: string;
   }): Promise<boolean> => {
-    const result = await this.dbRw
-      .update(planCrossSellAccount)
-      .set({
-        cancellation_date: data.cancellationDate,
-        updated_at: data.cancellationDate,
-      })
-      .where(
-        and(
-          eq(planCrossSellAccount.account_id, data.accountId),
-          eq(
-            planCrossSellAccount.plan_cross_sell_account_id,
-            data.planCrossSellAccountId
-          ),
-          isNull(planCrossSellAccount.deleted_at),
-          isNull(planCrossSellAccount.cancellation_date)
+    return this.dbRw.transaction(async (tx) => {
+      const currentPlans = await tx
+        .select({
+          active: sql<boolean>`${planAccount.next_payment_date} > NOW()`,
+        })
+        .from(planAccount)
+        .where(eq(planAccount.account_id, data.accountId))
+        .orderBy(
+          sql`${planAccount.updated_at} DESC NULLS LAST`,
+          sql`${planAccount.created_at} DESC NULLS LAST`,
+          sql`${planAccount.plan_account_id} DESC`
         )
-      )
-      .execute();
+        .limit(1)
+        .for('update')
+        .execute();
 
-    return (result.rowCount ?? 0) > 0;
+      if (currentPlans[0]?.active !== true) {
+        return false;
+      }
+
+      const result = await tx
+        .update(planCrossSellAccount)
+        .set({
+          cancellation_date: data.cancellationDate,
+          updated_at: data.cancellationDate,
+        })
+        .where(
+          and(
+            eq(planCrossSellAccount.account_id, data.accountId),
+            eq(
+              planCrossSellAccount.plan_cross_sell_account_id,
+              data.planCrossSellAccountId
+            ),
+            isNull(planCrossSellAccount.deleted_at),
+            isNull(planCrossSellAccount.cancellation_date)
+          )
+        )
+        .execute();
+
+      return (result.rowCount ?? 0) > 0;
+    });
   };
 }

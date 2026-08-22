@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { DeleteContactRequest } from '@core/schema/contact/deleteContact/request.schema';
 import { ContactDeleterUseCase } from '@core/useCases/contact/ContactDeleter.useCase';
+import { resolveOutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 
 export const deleteContact = async (
   request: FastifyRequest<{
@@ -13,12 +14,15 @@ export const deleteContact = async (
   reply: FastifyReply
 ) => {
   const contactDeleterUseCase = container.resolve(ContactDeleterUseCase);
-  const { t } = request;
+  const { t, tokenJwtData } = request;
 
   try {
     const response = await contactDeleterUseCase.execute(
       t,
-      request.params.contact_id
+      request.params.contact_id,
+      tokenJwtData.account_id,
+      tokenJwtData.user_id,
+      resolveOutboundWebhookRequestSource(request.module)
     );
 
     if (response) {

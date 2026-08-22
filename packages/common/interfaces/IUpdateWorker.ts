@@ -1,10 +1,12 @@
 import { EWorkerStatus } from '../enums/EWorkerStatus';
+import { EWorkerSessionStorage } from '../enums/EWorkerSessionStorage';
 import { EWorkerType } from '../enums/EWorkerType';
 
 export interface IUpdateWorker {
   worker_id: string;
   worker_status_id?: EWorkerStatus;
   worker_type_id?: EWorkerType;
+  session_storage?: EWorkerSessionStorage;
   server_id?: string;
   name?: string;
   number?: string | null;

@@ -1,14 +1,34 @@
 <script lang="ts" setup>
-import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
-import { serverSshCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
-import { formatDateTimeSeconds } from '@core/common/functions/formatDateTimeSeconds';
-import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
+import {
+  computed,
+  onMounted,
+  onUnmounted,
+  shallowRef,
+  toRef,
+  watch,
+} from 'vue';
+import {
+  addCentrifugoLifecycleListener,
+  onMessage,
+  unsubscribe,
+} from '@/@webcore/centrifugo';
+import { useServerStore } from '@/@webcore/stores/server';
+import {
+  serverSshCentrifugoQueue,
+  statusServerCentrifugoQueue,
+} from '@core/common/functions/centrifugoQueue';
+import { ESortOrder } from '@core/common/enums/ESortOrder';
+import type { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
+import type { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
+import AppInstallConsolePanel from './AppInstallConsolePanel.vue';
+import type { InstallConsoleSourceItem } from './installConsole';
 
-const { t } = useI18n();
+const serverStore = useServerStore();
 
 const props = defineProps<{
   modelValue: boolean;
   serverId: string | null;
+  serverStatus?: string | null;
 }>();
 
 const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
@@ -19,95 +39,171 @@ const isVisible = computed({
 });
 
 const serverId = toRef(props, 'serverId');
+const items = shallowRef<InstallConsoleSourceItem[]>([]);
+const isLoadingHistory = shallowRef(false);
+const authoritativeStatus = shallowRef<string | null>(
+  props.serverStatus ?? null
+);
+let statusReconciliationTimer: ReturnType<typeof setInterval> | null = null;
+let removeLifecycleListener: (() => void) | null = null;
 
-const items = ref<{ command: string; output: string; date: string }[]>([
-  {
-    command: t('installation_pending'),
-    output: t('installation_pending'),
-    date: formatDateTimeSeconds(new Date()),
-  },
-]);
+const itemIdentity = (item: InstallConsoleSourceItem): string =>
+  item.event_id ??
+  [
+    item.installation_id ?? '',
+    new Date(item.date).getTime(),
+    item.command ?? '',
+    item.output ?? '',
+  ].join(':');
 
-const listContainer = ref<HTMLElement | null>(null);
-const isLoading = ref(true);
+const mergeItems = (
+  ...sources: InstallConsoleSourceItem[][]
+): InstallConsoleSourceItem[] => {
+  const byId = new Map<string, InstallConsoleSourceItem>();
 
-const scrollToBottom = () => {
-  nextTick(() => {
-    if (listContainer.value) {
-      listContainer.value.scrollTop = listContainer.value.scrollHeight;
-    }
-  });
+  for (const item of sources.flat()) {
+    byId.set(itemIdentity(item), item);
+  }
+
+  return [...byId.values()]
+    .sort(
+      (left, right) =>
+        new Date(left.date).getTime() - new Date(right.date).getTime()
+    )
+    .slice(-500);
 };
 
-watch(isVisible, (visible) => {
-  if (visible) {
-    items.value = [];
-    isLoading.value = true;
+const loadRecentLogs = async (): Promise<void> => {
+  const requestedServerId = serverId.value;
+  if (!requestedServerId) return;
 
-    scrollToBottom();
+  isLoadingHistory.value = true;
+  try {
+    const response = await serverStore.searchInstallLogs(requestedServerId, {
+      from: 0,
+      size: 300,
+      sort: ESortOrder.desc,
+    });
+
+    if (serverId.value !== requestedServerId) return;
+    items.value = mergeItems([...response].reverse(), items.value);
+  } finally {
+    if (serverId.value === requestedServerId) {
+      isLoadingHistory.value = false;
+    }
   }
+};
+
+const appendLiveItem = (data: IServerSshCentrifugo): void => {
+  if (data.server_id !== serverId.value) return;
+
+  items.value = mergeItems(items.value, [data]);
+};
+
+const handleStatusItem = (data: IStatusServerCentrifugo): void => {
+  if (data.server_id !== serverId.value) return;
+  authoritativeStatus.value = data.status;
+};
+
+const refreshAuthoritativeStatus = async (): Promise<void> => {
+  const requestedServerId = serverId.value;
+  if (!requestedServerId || !isVisible.value) return;
+
+  const server = await serverStore.getServerById(requestedServerId, {
+    silent: true,
+  });
+  if (server && serverId.value === requestedServerId && isVisible.value) {
+    authoritativeStatus.value = server.status.id;
+  }
+};
+
+const stopStatusReconciliation = (): void => {
+  if (!statusReconciliationTimer) return;
+  clearInterval(statusReconciliationTimer);
+  statusReconciliationTimer = null;
+};
+
+const startStatusReconciliation = (): void => {
+  stopStatusReconciliation();
+  statusReconciliationTimer = setInterval(() => {
+    void refreshAuthoritativeStatus();
+  }, 2_000);
+};
+
+watch(
+  [isVisible, serverId],
+  async ([visible, currentServerId]) => {
+    if (!visible || !currentServerId) return;
+
+    items.value = [];
+    authoritativeStatus.value = props.serverStatus ?? null;
+    await Promise.all([loadRecentLogs(), refreshAuthoritativeStatus()]);
+    if (!isVisible.value || serverId.value !== currentServerId) return;
+    startStatusReconciliation();
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.serverStatus,
+  (status) => {
+    if (status) authoritativeStatus.value = status;
+  }
+);
+
+watch(isVisible, (visible) => {
+  if (!visible) stopStatusReconciliation();
 });
 
 onMounted(async () => {
-  await onMessage(serverSshCentrifugoQueue(), (data: IServerSshCentrifugo) => {
-    if (data.server_id !== serverId.value) return;
+  await Promise.all([
+    onMessage(serverSshCentrifugoQueue(), appendLiveItem),
+    onMessage(statusServerCentrifugoQueue(), handleStatusItem),
+  ]);
 
-    isLoading.value = false;
-    items.value.push({
-      command: data.command,
-      output: data.output,
-      date: formatDateTimeSeconds(data.date),
-    });
+  removeLifecycleListener = addCentrifugoLifecycleListener((event) => {
+    if (event.type !== 'recovery_failed' || !isVisible.value) return;
 
-    if (items.value.length > 200) {
-      items.value.splice(0, items.value.length - 200);
+    if (event.channel === serverSshCentrifugoQueue()) {
+      void loadRecentLogs();
     }
-
-    scrollToBottom();
+    if (event.channel === statusServerCentrifugoQueue()) {
+      void refreshAuthoritativeStatus();
+    }
   });
 });
 
 onUnmounted(() => {
-  unsubscribe(serverSshCentrifugoQueue());
+  stopStatusReconciliation();
+  removeLifecycleListener?.();
+  void unsubscribe(serverSshCentrifugoQueue(), appendLiveItem);
+  void unsubscribe(statusServerCentrifugoQueue(), handleStatusItem);
 });
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
+  <VDialog v-model="isVisible" max-width="980">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VOverlay
-      :model-value="isLoading"
-      class="align-center justify-center"
-      contained
-    >
-      <VProgressCircular color="primary" indeterminate size="64" />
-    </VOverlay>
-
-    <VCard :title="$t('console_installation')">
-      <VCardText>
-        <div
-          ref="listContainer"
-          class="app-bar-search-list py-0"
-          style="max-height: 60vh; overflow-y: auto"
-        >
-          <VList density="compact" v-show="items.length">
-            <template v-for="(item, index) in items" :key="index">
-              <VListItem :id="index">
-                <VListItemTitle class="wrap-text">
-                  <strong>{{ item.date }}:</strong> {{ item.command }}
-                </VListItemTitle>
-                <VListItemSubtitle class="wrap-text">
-                  {{ item.output }}
-                </VListItemSubtitle>
-              </VListItem>
-            </template>
-          </VList>
-        </div>
+    <VCard class="server-install-console-card">
+      <VCardText class="server-install-console-card__body">
+        <AppInstallConsolePanel
+          :items="items"
+          :loading="isLoadingHistory"
+          :server-status="authoritativeStatus"
+          live
+        />
       </VCardText>
 
-      <VCardText class="d-flex justify-end gap-3">
-        <VBtn variant="tonal" color="secondary" @click="isVisible = false">
+      <VCardText
+        class="server-install-console-card__footer d-flex justify-end gap-3"
+      >
+        <VBtn
+          color="secondary"
+          prepend-icon="tabler-x"
+          variant="tonal"
+          @click="isVisible = false"
+        >
           {{ $t('close') }}
         </VBtn>
       </VCardText>
@@ -116,8 +212,21 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.wrap-text {
-  white-space: pre-wrap;
-  word-break: break-word;
+.server-install-console-card {
+  display: flex;
+  flex-direction: column;
+  block-size: min(940px, calc(100vh - 32px));
+}
+
+.server-install-console-card__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+.server-install-console-card__footer {
+  flex: 0 0 auto;
 }
 </style>

@@ -3,9 +3,10 @@ import { worker, workerConfig } from '@core/models';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 
 export interface ILinkedChatbotWorkerType {
   worker_id: string;
@@ -33,6 +34,12 @@ export class ChatbotOfficialCompatibilityRepository {
         and(
           eq(worker.account_id, accountId),
           isNull(worker.deleted_at),
+          notInArray(worker.worker_status_id, [
+            EWorkerStatus.blocked,
+            EWorkerStatus.stopped,
+            EWorkerStatus.delete,
+            EWorkerStatus.deleting,
+          ]),
           eq(workerConfig.chatbot_id, chatbotId),
           eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.active),
           inArray(workerConfig.worker_config_type_id, [

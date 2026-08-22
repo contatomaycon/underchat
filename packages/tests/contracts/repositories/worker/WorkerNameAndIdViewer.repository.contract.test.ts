@@ -5,7 +5,10 @@ import { createSelectDbMock } from '../../../helpers/drizzleMock';
 describe('WorkerNameAndIdViewerRepository', () => {
   it('returns null when query has no rows', async () => {
     const dbMock = createSelectDbMock([]);
-    const repository = new WorkerNameAndIdViewerRepository(dbMock.db as never);
+    const repository = new WorkerNameAndIdViewerRepository(
+      dbMock.db as never,
+      dbMock.db as never
+    );
 
     await expect(
       repository.viewWorkerNameAndId('a-1', 'w-1')
@@ -15,10 +18,29 @@ describe('WorkerNameAndIdViewerRepository', () => {
   it('returns first worker id and name when found', async () => {
     const row = { id: 'w-1', name: 'Worker 1' };
     const dbMock = createSelectDbMock([row]);
-    const repository = new WorkerNameAndIdViewerRepository(dbMock.db as never);
+    const repository = new WorkerNameAndIdViewerRepository(
+      dbMock.db as never,
+      dbMock.db as never
+    );
 
     await expect(repository.viewWorkerNameAndId('a-1', 'w-1')).resolves.toEqual(
       row
     );
+  });
+
+  it('uses the primary database for the consistent lookup', async () => {
+    const replica = createSelectDbMock([]);
+    const primary = createSelectDbMock([{ id: 'w-1', name: 'Primary Worker' }]);
+    const repository = new WorkerNameAndIdViewerRepository(
+      replica.db as never,
+      primary.db as never
+    );
+
+    await expect(
+      repository.viewWorkerNameAndId('a-1', 'w-1')
+    ).resolves.toBeNull();
+    await expect(
+      repository.viewWorkerNameAndIdConsistent('a-1', 'w-1')
+    ).resolves.toEqual({ id: 'w-1', name: 'Primary Worker' });
   });
 });

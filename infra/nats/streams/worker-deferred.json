@@ -1,0 +1,31 @@
+{
+  "name": "UC_WORKER_DEFERRED_V1",
+  "description": "Short-lived R3 scheduler used to release blocked worker-command consumer slots",
+  "subjects": ["uc.worker.deferred.schedule.>", "uc.worker.deferred.ready.*"],
+  "retention": "workqueue",
+  "max_consumers": 8,
+  "max_msgs": -1,
+  "max_bytes": -1,
+  "max_age": 300000000000,
+  "max_msgs_per_subject": -1,
+  "max_msg_size": 65536,
+  "storage": "file",
+  "compression": "s2",
+  "num_replicas": 3,
+  "no_ack": false,
+  "discard": "old",
+  "duplicate_window": 300000000000,
+  "sealed": false,
+  "deny_delete": true,
+  "deny_purge": false,
+  "allow_rollup_hdrs": true,
+  "allow_direct": false,
+  "mirror_direct": false,
+  "discard_new_per_subject": false,
+  "allow_msg_ttl": true,
+  "allow_msg_schedules": true,
+  "metadata": {
+    "underchat.contract": "worker-command-deferred-v1",
+    "underchat.owner": "worker-command-transport"
+  }
+}

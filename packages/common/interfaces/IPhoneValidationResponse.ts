@@ -6,4 +6,7 @@ export interface IPhoneValidationResponse {
   jid?: string | null;
   phone?: string | null;
   error?: string | null;
+  source_provider?: string;
+  runtime_generation?: number;
+  connection_epoch?: string;
 }

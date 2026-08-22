@@ -2,8 +2,7 @@ import * as schema from '@core/models';
 import { planAccount, worker, accountPaymentNfSe, account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull, isNotNull, or } from 'drizzle-orm';
-import { currentTime } from '@core/common/functions/currentTime';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { IPlanAccountWithCancellation } from '@core/common/interfaces/IPlanAccountWithCancellation';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
@@ -15,17 +14,15 @@ export class PlanAccountCancellerRepository {
   ) {}
 
   findPlanAccountWithPayment = async (accountId: string) => {
-    return this.dbRo.query.planAccount.findFirst({
-      where: and(
-        eq(planAccount.account_id, accountId),
-        isNull(planAccount.cancellation_date)
-      ),
+    const currentPlan = await this.dbRw.query.planAccount.findFirst({
+      where: eq(planAccount.account_id, accountId),
       columns: {
         plan_account_id: true,
         account_payment_id: true,
         last_payment_date: true,
         next_payment_date: true,
         cancellation_date: true,
+        created_at: true,
       },
       with: {
         apy: {
@@ -36,7 +33,14 @@ export class PlanAccountCancellerRepository {
           },
         },
       },
+      orderBy: (currentPlan) => [
+        sql`${currentPlan.updated_at} DESC NULLS LAST`,
+        sql`${currentPlan.created_at} DESC NULLS LAST`,
+        sql`${currentPlan.plan_account_id} DESC`,
+      ],
     });
+
+    return currentPlan?.cancellation_date ? undefined : currentPlan;
   };
 
   findPlanAccountWithCancellation = async (
@@ -51,11 +55,11 @@ export class PlanAccountCancellerRepository {
       })
       .from(planAccount)
       .innerJoin(account, eq(planAccount.account_id, account.account_id))
-      .where(
-        and(
-          eq(planAccount.account_id, accountId),
-          isNull(planAccount.cancellation_date)
-        )
+      .where(eq(planAccount.account_id, accountId))
+      .orderBy(
+        sql`${planAccount.updated_at} DESC NULLS LAST`,
+        sql`${planAccount.created_at} DESC NULLS LAST`,
+        sql`${planAccount.plan_account_id} DESC`
       )
       .limit(1)
       .execute();
@@ -68,7 +72,7 @@ export class PlanAccountCancellerRepository {
   };
 
   findPlanAccountById = async (planAccountId: string) => {
-    return this.dbRo.query.planAccount.findFirst({
+    return this.dbRw.query.planAccount.findFirst({
       where: and(
         eq(planAccount.plan_account_id, planAccountId),
         isNull(planAccount.cancellation_date)
@@ -80,6 +84,7 @@ export class PlanAccountCancellerRepository {
         last_payment_date: true,
         next_payment_date: true,
         cancellation_date: true,
+        created_at: true,
       },
       with: {
         apy: {
@@ -91,40 +96,6 @@ export class PlanAccountCancellerRepository {
         },
       },
     });
-  };
-
-  cancelPlanAccount = async (
-    accountId: string,
-    cancellationDate: string,
-    shouldCancelNextPayment: boolean
-  ): Promise<boolean> => {
-    const updateData: {
-      cancellation_date: string;
-      next_payment_date?: null;
-      recurring_payment: boolean;
-      updated_at: string;
-    } = {
-      cancellation_date: cancellationDate,
-      recurring_payment: false,
-      updated_at: currentTime(),
-    };
-
-    if (shouldCancelNextPayment) {
-      updateData.next_payment_date = null;
-    }
-
-    const result = await this.dbRw
-      .update(planAccount)
-      .set(updateData)
-      .where(
-        and(
-          eq(planAccount.account_id, accountId),
-          isNull(planAccount.cancellation_date)
-        )
-      )
-      .execute();
-
-    return (result.rowCount ?? 0) > 0;
   };
 
   findWorkersByAccountId = async (accountId: string): Promise<string[]> => {
@@ -161,29 +132,60 @@ export class PlanAccountCancellerRepository {
       cancellation_date: string;
       next_payment_date?: null;
       recurring_payment: boolean;
-      updated_at: string;
     } = {
       cancellation_date: cancellationDate,
       recurring_payment: false,
-      updated_at: currentTime(),
     };
 
     if (shouldCancelNextPayment) {
       updateData.next_payment_date = null;
     }
 
-    const result = await this.dbRw
-      .update(planAccount)
-      .set(updateData)
-      .where(
-        and(
-          eq(planAccount.plan_account_id, planAccountId),
-          isNull(planAccount.cancellation_date)
-        )
-      )
-      .execute();
+    return this.dbRw.transaction(async (tx) => {
+      const targetAccountId = tx
+        .select({ account_id: planAccount.account_id })
+        .from(planAccount)
+        .where(eq(planAccount.plan_account_id, planAccountId))
+        .limit(1);
 
-    return (result.rowCount ?? 0) > 0;
+      const currentPlans = await tx
+        .select({
+          plan_account_id: planAccount.plan_account_id,
+          cancellation_date: planAccount.cancellation_date,
+        })
+        .from(planAccount)
+        .where(sql`${planAccount.account_id} = (${targetAccountId})`)
+        .orderBy(
+          sql`${planAccount.updated_at} DESC NULLS LAST`,
+          sql`${planAccount.created_at} DESC NULLS LAST`,
+          sql`${planAccount.plan_account_id} DESC`
+        )
+        .limit(1)
+        .for('update')
+        .execute();
+
+      const currentPlan = currentPlans[0];
+      if (
+        !currentPlan ||
+        currentPlan.plan_account_id !== planAccountId ||
+        currentPlan.cancellation_date
+      ) {
+        return false;
+      }
+
+      const result = await tx
+        .update(planAccount)
+        .set(updateData)
+        .where(
+          and(
+            eq(planAccount.plan_account_id, currentPlan.plan_account_id),
+            isNull(planAccount.cancellation_date)
+          )
+        )
+        .execute();
+
+      return (result.rowCount ?? 0) > 0;
+    });
   };
 
   findCancelledPlanAccount = async (accountId: string) => {
@@ -193,21 +195,36 @@ export class PlanAccountCancellerRepository {
         account_id: planAccount.account_id,
         cancellation_date: planAccount.cancellation_date,
         next_payment_date: planAccount.next_payment_date,
+        account_status_id: account.account_status_id,
+        account_deleted_at: account.deleted_at,
       })
       .from(planAccount)
       .innerJoin(account, eq(planAccount.account_id, account.account_id))
-      .where(
-        and(
-          eq(planAccount.account_id, accountId),
-          or(
-            isNotNull(planAccount.cancellation_date),
-            eq(account.account_status_id, EAccountStatus.inactive)
-          )
-        )
+      .where(eq(planAccount.account_id, accountId))
+      .orderBy(
+        sql`${planAccount.updated_at} DESC NULLS LAST`,
+        sql`${planAccount.created_at} DESC NULLS LAST`,
+        sql`${planAccount.plan_account_id} DESC`
       )
       .limit(1)
       .execute();
 
-    return result[0] || null;
+    const currentPlan = result[0];
+    if (
+      !currentPlan ||
+      currentPlan.account_deleted_at ||
+      currentPlan.account_status_id === EAccountStatus.blocked ||
+      (!currentPlan.cancellation_date &&
+        currentPlan.account_status_id !== EAccountStatus.inactive)
+    ) {
+      return null;
+    }
+
+    return {
+      plan_account_id: currentPlan.plan_account_id,
+      account_id: currentPlan.account_id,
+      cancellation_date: currentPlan.cancellation_date,
+      next_payment_date: currentPlan.next_payment_date,
+    };
   };
 }

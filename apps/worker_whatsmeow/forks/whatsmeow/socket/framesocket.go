@@ -8,9 +8,11 @@ package socket
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 
@@ -35,6 +37,10 @@ type FrameSocket struct {
 	OnDisconnect func(ctx context.Context, remote bool)
 
 	Header []byte
+	// WireHeader overrides Header only for the first frame written on the
+	// transport. Header remains the Noise prologue, so edge-routing metadata
+	// never changes the authenticated Noise transcript.
+	WireHeader []byte
 
 	closed atomic.Bool
 
@@ -97,7 +103,7 @@ func (fs *FrameSocket) Connect(ctx context.Context) error {
 	fs.parentCtx = ctx
 	fs.cancelCtx, fs.cancel = context.WithCancel(ctx)
 
-	fs.log.Debugf("Dialing %s", fs.URL)
+	fs.log.Debugf("Dialing %s", safeDialURL(fs.URL))
 	conn, resp, err := websocket.Dial(ctx, fs.URL, fs.makeDialOptions())
 	if err != nil {
 		if resp != nil {
@@ -128,15 +134,20 @@ func (fs *FrameSocket) SendFrame(data []byte) error {
 		return fmt.Errorf("%w (got %d bytes, max %d bytes)", ErrFrameTooLarge, len(data), FrameMaxSize)
 	}
 
-	headerLength := len(fs.Header)
+	wireHeader := fs.Header
+	if fs.WireHeader != nil {
+		wireHeader = fs.WireHeader
+	}
+	headerLength := len(wireHeader)
 	// Whole frame is header + 3 bytes for length + data
 	wholeFrame := make([]byte, headerLength+FrameLengthSize+dataLength)
 
 	// Copy the header if it's there
-	if fs.Header != nil {
-		copy(wholeFrame[:headerLength], fs.Header)
+	if wireHeader != nil {
+		copy(wholeFrame[:headerLength], wireHeader)
 		// We only want to send the header once
 		fs.Header = nil
+		fs.WireHeader = nil
 	}
 
 	// Encode length of frame
@@ -148,6 +159,51 @@ func (fs *FrameSocket) SendFrame(data []byte) error {
 	copy(wholeFrame[headerLength+FrameLengthSize:], data)
 
 	return conn.Write(fs.cancelCtx, websocket.MessageBinary, wholeFrame)
+}
+
+// BuildRoutingIntroHeader creates WhatsApp's one-shot edge-routing transport
+// prefix. WAConnHeader remains at the end of the wire intro and separately as
+// the Noise prologue.
+func BuildRoutingIntroHeader(routingInfo []byte) ([]byte, error) {
+	if len(routingInfo) == 0 || len(routingInfo) > 65535 {
+		return nil, errors.New("invalid edge routing info length")
+	}
+	header := make([]byte, 7+len(routingInfo)+len(WAConnHeader))
+	header[0], header[1] = 'E', 'D'
+	header[2], header[3] = 0, 1
+	header[4] = byte(len(routingInfo) >> 16)
+	header[5] = byte(len(routingInfo) >> 8)
+	header[6] = byte(len(routingInfo))
+	copy(header[7:], routingInfo)
+	copy(header[7+len(routingInfo):], WAConnHeader)
+	return header, nil
+}
+
+// URLWithRoutingInfo attaches the same opaque route as unpadded base64url.
+func URLWithRoutingInfo(rawURL string, routingInfo []byte) (string, error) {
+	if len(routingInfo) == 0 || len(routingInfo) > 65535 {
+		return "", errors.New("invalid edge routing info length")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	} else if parsed.Scheme != "wss" {
+		return "", errors.New("edge routing requires a secure websocket URL")
+	}
+	query := parsed.Query()
+	query.Set("ED", base64.RawURLEncoding.EncodeToString(routingInfo))
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+func safeDialURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "<invalid websocket URL>"
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.Redacted()
 }
 
 func (fs *FrameSocket) frameComplete() {

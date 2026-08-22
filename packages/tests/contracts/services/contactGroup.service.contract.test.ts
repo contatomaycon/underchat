@@ -32,20 +32,27 @@ describe('ContactGroupService', () => {
       { contact_group_id: 'cg1' },
     ]);
     await expect(
-      service.createContactGroup(((k: string) => k) as never, 'a1', {} as never)
+      service.createContactGroup(
+        ((k: string) => k) as never,
+        'a1',
+        {} as never,
+        'u1'
+      )
     ).resolves.toBe(true);
     await expect(service.existsContactGroupById('cg1')).resolves.toBe(true);
     await expect(service.viewContactGroupById('cg1')).resolves.toEqual({
       contact_group_id: 'cg1',
     });
     await expect(
-      service.deleteContactGroup(((k: string) => k) as never, 'cg1')
+      service.deleteContactGroup(((k: string) => k) as never, 'cg1', 'a1', 'u1')
     ).resolves.toBe(true);
     await expect(
       service.updateContactGroupById(
         ((k: string) => k) as never,
         'cg1',
-        {} as never
+        {} as never,
+        'a1',
+        'u1'
       )
     ).resolves.toBe(true);
   });

@@ -7,10 +7,16 @@
 export {}
 declare global {
   const $api: typeof import('./src/utils/api').$api
+  const CHATBOT_NODE_PALETTE_PREFERENCES_VERSION: typeof import('./src/composables/useChatbotNodePalette').CHATBOT_NODE_PALETTE_PREFERENCES_VERSION
   const COOKIE_MAX_AGE_1_YEAR: typeof import('./src/utils/constants').COOKIE_MAX_AGE_1_YEAR
   const CreateUrl: (typeof import('./src/@webcore/composable/CreateUrl'))['CreateUrl']
+  const DEFAULT_CHATBOT_NODE_PALETTE_MARGIN: typeof import('./src/composables/useChatbotNodePalette').DEFAULT_CHATBOT_NODE_PALETTE_MARGIN
+  const DEFAULT_CHATBOT_NODE_PALETTE_POSITION: typeof import('./src/composables/useChatbotNodePalette').DEFAULT_CHATBOT_NODE_PALETTE_POSITION
   const EPasswordStrength: typeof import('./src/@webcore/utils/passwordStrength').EPasswordStrength
   const EffectScope: typeof import('vue').EffectScope
+  const OFFICIAL_INTERACTIVE_LIMITS: typeof import('./src/utils/officialInteractiveLimits').OFFICIAL_INTERACTIVE_LIMITS
+  const OFFICIAL_WINDOW_REQUIRES_TEMPLATE_REFRESH: typeof import('./src/utils/apiError').OFFICIAL_WINDOW_REQUIRES_TEMPLATE_REFRESH
+  const PerKeyPromiseQueue: typeof import('./src/@webcore/utils/perKeyPromiseQueue').PerKeyPromiseQueue
   const acceptHMRUpdate: typeof import('pinia').acceptHMRUpdate
   const alphaDashValidator: typeof import('./src/@webcore/utils/validators').alphaDashValidator
   const alphaValidator: typeof import('./src/@webcore/utils/validators').alphaValidator
@@ -19,22 +25,30 @@ declare global {
   const autoResetRef: typeof import('@vueuse/core').autoResetRef
   const avatarText: typeof import('./src/@webcore/utils/formatters').avatarText
   const betweenValidator: typeof import('./src/@webcore/utils/validators').betweenValidator
+  const buildConnectionHealthMetricRows: typeof import('./src/utils/connectionHealthPresentation').buildConnectionHealthMetricRows
   const buildOfficialTemplateKey: typeof import('./src/utils/officialTemplate').buildOfficialTemplateKey
   const buildOfficialTemplatePreview: typeof import('./src/utils/officialTemplate').buildOfficialTemplatePreview
   const buildOfficialTemplateVariablePayload: typeof import('./src/utils/officialTemplate').buildOfficialTemplateVariablePayload
   const calculatePasswordStrength: typeof import('./src/@webcore/utils/passwordStrength').calculatePasswordStrength
+  const canViewConnectionHealth: typeof import('./src/utils/connectionHealthPresentation').canViewConnectionHealth
+  const clampChatbotNodePalettePosition: typeof import('./src/composables/useChatbotNodePalette').clampChatbotNodePalettePosition
   const clearAllCookies: typeof import('./src/@webcore/utils/clearAllData').clearAllCookies
   const clearAllData: typeof import('./src/@webcore/utils/clearAllData').clearAllData
   const clearAllStorages: typeof import('./src/@webcore/utils/clearAllData').clearAllStorages
+  const cnpjAlphanumericMask: typeof import('./src/@webcore/utils/masks').cnpjAlphanumericMask
   const computed: typeof import('vue').computed
   const computedAsync: typeof import('@vueuse/core').computedAsync
   const computedEager: typeof import('@vueuse/core').computedEager
   const computedInject: typeof import('@vueuse/core').computedInject
   const computedWithControl: typeof import('@vueuse/core').computedWithControl
   const confirmedValidator: typeof import('./src/@webcore/utils/validators').confirmedValidator
+  const connectionHealthDiagnosticTranslationKey: typeof import('./src/utils/connectionHealthPresentation').connectionHealthDiagnosticTranslationKey
   const connectionLifecycleDebugHeaders: typeof import('./src/@webcore/utils/connectionLifecycleDebug').connectionLifecycleDebugHeaders
+  const containsOfficialInteractiveEmoji: typeof import('./src/utils/officialInteractiveLimits').containsOfficialInteractiveEmoji
+  const containsUnderchatVariableTag: typeof import('./src/utils/officialTemplate').containsUnderchatVariableTag
   const controlledComputed: typeof import('@vueuse/core').controlledComputed
   const controlledRef: typeof import('@vueuse/core').controlledRef
+  const countOfficialInteractiveCharacters: typeof import('./src/utils/officialInteractiveLimits').countOfficialInteractiveCharacters
   const createApp: typeof import('vue').createApp
   const createConnectionLifecycleDebugTraceId: typeof import('./src/@webcore/utils/connectionLifecycleDebug').createConnectionLifecycleDebugTraceId
   const createEventHook: typeof import('@vueuse/core').createEventHook
@@ -43,6 +57,7 @@ declare global {
   const createInjectionState: typeof import('@vueuse/core').createInjectionState
   const createManualOfficialTemplateVariable: typeof import('./src/utils/officialTemplate').createManualOfficialTemplateVariable
   const createOfficialTemplateOptions: typeof import('./src/utils/officialTemplate').createOfficialTemplateOptions
+  const createOfficialTemplateVariableValueRecord: typeof import('./src/utils/officialTemplate').createOfficialTemplateVariableValueRecord
   const createOfficialTemplateVariableValues: typeof import('./src/utils/officialTemplate').createOfficialTemplateVariableValues
   const createPinia: typeof import('pinia').createPinia
   const createProjection: typeof import('@vueuse/math').createProjection
@@ -51,6 +66,7 @@ declare global {
   const createReusableTemplate: typeof import('@vueuse/core').createReusableTemplate
   const createSharedComposable: typeof import('@vueuse/core').createSharedComposable
   const createTemplatePromise: typeof import('@vueuse/core').createTemplatePromise
+  const createUnderchatVariableCatalog: typeof import('./src/utils/underchatVariableCatalog').createUnderchatVariableCatalog
   const createUnrefFn: typeof import('@vueuse/core').createUnrefFn
   const createUrl: typeof import('./src/@webcore/composable/createUrl').createUrl
   const customRef: typeof import('vue').customRef
@@ -65,15 +81,25 @@ declare global {
   const effectScope: typeof import('vue').effectScope
   const emailValidator: typeof import('./src/@webcore/utils/validators').emailValidator
   const emitInternalChatNotificationMessage: typeof import('./src/composables/useInternalChatNotifications').emitInternalChatNotificationMessage
+  const evaluateConnectionModalPublication: typeof import('./src/composables/useWhatsappConnectionStatus').evaluateConnectionModalPublication
   const extendRef: typeof import('@vueuse/core').extendRef
   const fillOfficialTemplateText: typeof import('./src/utils/officialTemplate').fillOfficialTemplateText
+  const findOfficialInteractiveLimitViolation: typeof import('./src/utils/officialInteractiveLimits').findOfficialInteractiveLimitViolation
   const findOfficialTemplate: typeof import('./src/utils/officialTemplate').findOfficialTemplate
+  const formatConnectionBytes: typeof import('./src/utils/connectionHealthPresentation').formatConnectionBytes
+  const formatConnectionDuration: typeof import('./src/utils/connectionHealthPresentation').formatConnectionDuration
+  const formatConnectionHealthDiagnosticFallback: typeof import('./src/utils/connectionHealthPresentation').formatConnectionHealthDiagnosticFallback
   const formatDate: typeof import('./src/@webcore/utils/formatters').formatDate
   const formatDateLong: typeof import('./src/@webcore/utils/formatters').formatDateLong
   const formatDateToMonthShort: typeof import('./src/@webcore/utils/formatters').formatDateToMonthShort
   const formatNotificationBody: typeof import('./src/composables/useChatNotifications').formatNotificationBody
   const formatOfficialTemplateLanguage: typeof import('./src/utils/officialTemplate').formatOfficialTemplateLanguage
+  const formatOfficialTemplateVariableLabel: typeof import('./src/utils/officialTemplate').formatOfficialTemplateVariableLabel
+  const formatOfficialTemplateVariableToken: typeof import('./src/utils/officialTemplate').formatOfficialTemplateVariableToken
   const getActivePinia: typeof import('pinia').getActivePinia
+  const getApiErrorReason: typeof import('./src/utils/apiError').getApiErrorReason
+  const getApiErrorRequestId: typeof import('./src/utils/apiError').getApiErrorRequestId
+  const getApiErrorStatus: typeof import('./src/utils/apiError').getApiErrorStatus
   const getCurrentInstance: typeof import('vue').getCurrentInstance
   const getCurrentScope: typeof import('vue').getCurrentScope
   const getCurrentWatcher: typeof import('vue').getCurrentWatcher
@@ -97,6 +123,7 @@ declare global {
   const isLocalConnectionStatusLogEnabled: typeof import('./src/@webcore/utils/localConnectionStatusLog').isLocalConnectionStatusLogEnabled
   const isNullOrUndefined: typeof import('./src/@webcore/utils/helpers').isNullOrUndefined
   const isObject: typeof import('./src/@webcore/utils/helpers').isObject
+  const isOfficialWindowRefreshConflict: typeof import('./src/utils/apiError').isOfficialWindowRefreshConflict
   const isProxy: typeof import('vue').isProxy
   const isReactive: typeof import('vue').isReactive
   const isReadonly: typeof import('vue').isReadonly
@@ -105,6 +132,7 @@ declare global {
   const isSilentWhatsappEmbeddedSignupError: typeof import('./src/composables/useWhatsappEmbeddedSignup').isSilentWhatsappEmbeddedSignupError
   const isToday: typeof import('./src/@webcore/utils/helpers').isToday
   const isValidIP: typeof import('./src/@webcore/utils/validators').isValidIP
+  const isWhatsappProviderHandoffTargetOnline: typeof import('./src/composables/useWhatsappProviderHandoffRecovery').isWhatsappProviderHandoffTargetOnline
   const kFormatter: typeof import('./src/@webcore/utils/formatters').kFormatter
   const lengthValidator: typeof import('./src/@webcore/utils/validators').lengthValidator
   const logConnectionLifecycleDebug: typeof import('./src/@webcore/utils/connectionLifecycleDebug').logConnectionLifecycleDebug
@@ -125,6 +153,9 @@ declare global {
   const maxNumberValidator: typeof import('./src/@webcore/utils/validators').maxNumberValidator
   const nextTick: typeof import('vue').nextTick
   const normalizeBaseUrl: typeof import('./src/@webcore/utils/helpers').normalizeBaseUrl
+  const normalizeChatbotNodePalettePosition: typeof import('./src/composables/useChatbotNodePalette').normalizeChatbotNodePalettePosition
+  const normalizeChatbotNodePalettePreferences: typeof import('./src/composables/useChatbotNodePalette').normalizeChatbotNodePalettePreferences
+  const normalizeEditableOfficialTemplateVariables: typeof import('./src/utils/officialTemplate').normalizeEditableOfficialTemplateVariables
   const normalizeOfficialTemplateLanguageCode: typeof import('./src/utils/officialTemplate').normalizeOfficialTemplateLanguageCode
   const onActivated: typeof import('vue').onActivated
   const onBeforeMount: typeof import('vue').onBeforeMount
@@ -161,6 +192,7 @@ declare global {
   const reactiveOmit: typeof import('@vueuse/core').reactiveOmit
   const reactivePick: typeof import('@vueuse/core').reactivePick
   const readonly: typeof import('vue').readonly
+  const reconcileMessageTemplateChannelIds: typeof import('./src/utils/messageTemplateChannelSelection').reconcileMessageTemplateChannelIds
   const ref: typeof import('vue').ref
   const refAutoReset: typeof import('@vueuse/core').refAutoReset
   const refDebounced: typeof import('@vueuse/core').refDebounced
@@ -178,16 +210,21 @@ declare global {
   const resetAbility: (typeof import('./src/plugins/casl/composables/useAbility'))['resetAbility']
   const resetAllPiniaStores: typeof import('./src/@webcore/utils/clearAllData').resetAllPiniaStores
   const resolveAvatarBadgeVariant: typeof import('./src/@webcore/utils/formatters').resolveAvatarBadgeVariant
+  const resolveChannelStatusPresentation: typeof import('./src/@webcore/utils/channelStatusPresentation').resolveChannelStatusPresentation
   const resolveComponent: typeof import('vue').resolveComponent
+  const resolveConnectionHealthTone: typeof import('./src/utils/connectionHealthPresentation').resolveConnectionHealthTone
   const resolveRef: typeof import('@vueuse/core').resolveRef
   const resolveUnref: typeof import('@vueuse/core').resolveUnref
   const resolveVuetifyTheme: typeof import('./src/@webcore/utils/vuetify').resolveVuetifyTheme
   const rgbaToHex: typeof import('./src/@webcore/utils/colorConverter').rgbaToHex
+  const sanitizeConnectionStatusLogContext: typeof import('./src/@webcore/utils/connectionStatusLogSanitizer').sanitizeConnectionStatusLogContext
+  const sanitizeConnectionStatusLogLabel: typeof import('./src/@webcore/utils/connectionStatusLogSanitizer').sanitizeConnectionStatusLogLabel
   const setActivePinia: typeof import('pinia').setActivePinia
   const setMapStoreSuffix: typeof import('pinia').setMapStoreSuffix
   const shallowReactive: typeof import('vue').shallowReactive
   const shallowReadonly: typeof import('vue').shallowReadonly
   const shallowRef: typeof import('vue').shallowRef
+  const shouldClearConnectionModalQr: typeof import('./src/composables/useWhatsappConnectionStatus').shouldClearConnectionModalQr
   const storeToRefs: typeof import('pinia').storeToRefs
   const syncRef: typeof import('@vueuse/core').syncRef
   const syncRefs: typeof import('@vueuse/core').syncRefs
@@ -245,11 +282,15 @@ declare global {
   const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
   const useCached: typeof import('@vueuse/core').useCached
   const useCeil: typeof import('@vueuse/math').useCeil
+  const useChannelConnectionHealth: typeof import('./src/composables/useChannelConnectionHealth').useChannelConnectionHealth
+  const useChannelMigrationRollbackContext: typeof import('./src/composables/useChannelMigrationRollbackContext').useChannelMigrationRollbackContext
   const useChannelRecreateCooldown: typeof import('./src/composables/useChannelRecreateCooldown').useChannelRecreateCooldown
   const useChatAttendanceHistory: typeof import('./src/composables/useChatAttendanceHistory').useChatAttendanceHistory
   const useChatNotificationToast: typeof import('./src/composables/useChatNotificationToast').useChatNotificationToast
   const useChatNotifications: typeof import('./src/composables/useChatNotifications').useChatNotifications
   const useChatSocket: typeof import('./src/composables/useChatSocket').useChatSocket
+  const useChatbotInactivityTargets: typeof import('./src/composables/useChatbotInactivityTargets').useChatbotInactivityTargets
+  const useChatbotNodePalette: typeof import('./src/composables/useChatbotNodePalette').useChatbotNodePalette
   const useClamp: typeof import('@vueuse/math').useClamp
   const useClipboard: typeof import('@vueuse/core').useClipboard
   const useClipboardItems: typeof import('@vueuse/core').useClipboardItems
@@ -295,6 +336,7 @@ declare global {
   const useFloor: typeof import('@vueuse/math').useFloor
   const useFocus: typeof import('@vueuse/core').useFocus
   const useFocusWithin: typeof import('@vueuse/core').useFocusWithin
+  const useForgotPasswordFlow: typeof import('./src/composables/useForgotPasswordFlow').useForgotPasswordFlow
   const useFps: typeof import('@vueuse/core').useFps
   const useFullscreen: typeof import('@vueuse/core').useFullscreen
   const useGamepad: typeof import('@vueuse/core').useGamepad
@@ -333,6 +375,7 @@ declare global {
   const useNetwork: typeof import('@vueuse/core').useNetwork
   const useNow: typeof import('@vueuse/core').useNow
   const useObjectUrl: typeof import('@vueuse/core').useObjectUrl
+  const useOfficialOpeningContext: typeof import('./src/composables/useOfficialOpeningContext').useOfficialOpeningContext
   const useOffsetPagination: typeof import('@vueuse/core').useOffsetPagination
   const useOnline: typeof import('@vueuse/core').useOnline
   const usePageLeave: typeof import('@vueuse/core').usePageLeave
@@ -357,6 +400,7 @@ declare global {
   const useRafFn: typeof import('@vueuse/core').useRafFn
   const useRefHistory: typeof import('@vueuse/core').useRefHistory
   const useRegisterStatesAndCities: typeof import('./src/composables/useRegisterStatesAndCities').useRegisterStatesAndCities
+  const useResilientCentrifugoSubscription: typeof import('./src/composables/useResilientCentrifugoSubscription').useResilientCentrifugoSubscription
   const useResizeObserver: typeof import('@vueuse/core').useResizeObserver
   const useResponsiveLeftSidebar: typeof import('./src/@webcore/composable/useResponsiveSidebar').useResponsiveLeftSidebar
   const useRound: typeof import('@vueuse/math').useRound
@@ -416,7 +460,10 @@ declare global {
   const useWebSocket: typeof import('@vueuse/core').useWebSocket
   const useWebWorker: typeof import('@vueuse/core').useWebWorker
   const useWebWorkerFn: typeof import('@vueuse/core').useWebWorkerFn
+  const useWhatsappConnectionStatus: typeof import('./src/composables/useWhatsappConnectionStatus').useWhatsappConnectionStatus
   const useWhatsappEmbeddedSignup: typeof import('./src/composables/useWhatsappEmbeddedSignup').useWhatsappEmbeddedSignup
+  const useWhatsappProviderHandoffRecovery: typeof import('./src/composables/useWhatsappProviderHandoffRecovery').useWhatsappProviderHandoffRecovery
+  const useWhatsappProviderHandoffSourceRecovery: typeof import('./src/composables/useWhatsappProviderHandoffSourceRecovery').useWhatsappProviderHandoffSourceRecovery
   const useWindowFocus: typeof import('@vueuse/core').useWindowFocus
   const useWindowScroll: typeof import('@vueuse/core').useWindowScroll
   const useWindowSize: typeof import('@vueuse/core').useWindowSize
@@ -437,13 +484,18 @@ declare global {
   const watchThrottled: typeof import('@vueuse/core').watchThrottled
   const watchTriggerable: typeof import('@vueuse/core').watchTriggerable
   const watchWithFilter: typeof import('@vueuse/core').watchWithFilter
+  const whatsappProviderToWorkerType: typeof import('./src/composables/useWhatsappProviderHandoffRecovery').whatsappProviderToWorkerType
   const whenever: typeof import('@vueuse/core').whenever
+  const workerTypeToWhatsappProvider: typeof import('./src/composables/useWhatsappProviderHandoffRecovery').workerTypeToWhatsappProvider
 }
 // for type re-export
 declare global {
   // @ts-ignore
   export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, ShallowRef, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
   import('vue')
+  // @ts-ignore
+  export type { ChannelStatusPresentationInput, ChannelStatusPresentation } from './src/@webcore/utils/channelStatusPresentation'
+  import('./src/@webcore/utils/channelStatusPresentation')
   // @ts-ignore
   export type { ConnectionLifecycleDebugContext } from './src/@webcore/utils/connectionLifecycleDebug'
   import('./src/@webcore/utils/connectionLifecycleDebug')
@@ -454,19 +506,46 @@ declare global {
   export type { EPasswordStrength, IPasswordStrength } from './src/@webcore/utils/passwordStrength'
   import('./src/@webcore/utils/passwordStrength')
   // @ts-ignore
+  export type { PerKeyPromiseQueue } from './src/@webcore/utils/perKeyPromiseQueue'
+  import('./src/@webcore/utils/perKeyPromiseQueue')
+  // @ts-ignore
   export type { CookieOptions, CookieRef } from './src/@webcore/composable/useCookie'
   import('./src/@webcore/composable/useCookie')
   // @ts-ignore
   export type { ActiveWhatsappValidationHandler, ActiveWhatsappValidationConfig } from './src/composables/useActiveWhatsappValidation'
   import('./src/composables/useActiveWhatsappValidation')
   // @ts-ignore
+  export type { ConnectionHealthPeriodHours, ChannelConnectionHealthScope } from './src/composables/useChannelConnectionHealth'
+  import('./src/composables/useChannelConnectionHealth')
+  // @ts-ignore
+  export type { ChannelMigrationRollbackContext } from './src/composables/useChannelMigrationRollbackContext'
+  import('./src/composables/useChannelMigrationRollbackContext')
+  // @ts-ignore
   export type { ChatTransferNotificationPayload, ChatNotificationToastPayload } from './src/composables/useChatNotificationToast'
   import('./src/composables/useChatNotificationToast')
+  // @ts-ignore
+  export type { ChatbotNodePaletteBounds, UseChatbotNodePaletteOptions } from './src/composables/useChatbotNodePalette'
+  import('./src/composables/useChatbotNodePalette')
+  // @ts-ignore
+  export type { OfficialOpeningContextWithWindow, OfficialOpeningContextError } from './src/composables/useOfficialOpeningContext'
+  import('./src/composables/useOfficialOpeningContext')
+  // @ts-ignore
+  export type { WhatsappConnectionStatusAcceptance, WhatsappConnectionStatusResolution, ConnectionModalPublicationDecision } from './src/composables/useWhatsappConnectionStatus'
+  import('./src/composables/useWhatsappConnectionStatus')
   // @ts-ignore
   export type { WhatsappEmbeddedSignupResult } from './src/composables/useWhatsappEmbeddedSignup'
   import('./src/composables/useWhatsappEmbeddedSignup')
   // @ts-ignore
-  export type { OfficialTemplate, OfficialTemplateVariable, OfficialTemplateVariableValue, OfficialTemplateOption, OfficialTemplatePreview } from './src/utils/officialTemplate'
+  export type { WhatsappProviderHandoffMonitorContext, WhatsappProviderHandoffDecisionReason, WhatsappProviderHandoffTargetProjection } from './src/composables/useWhatsappProviderHandoffRecovery'
+  import('./src/composables/useWhatsappProviderHandoffRecovery')
+  // @ts-ignore
+  export type { ConnectionHealthTone, ConnectionHealthMetricKey, ConnectionHealthMetricDetailRow } from './src/utils/connectionHealthPresentation'
+  import('./src/utils/connectionHealthPresentation')
+  // @ts-ignore
+  export type { OfficialInteractiveLimitField, OfficialInteractiveLimitViolation } from './src/utils/officialInteractiveLimits'
+  import('./src/utils/officialInteractiveLimits')
+  // @ts-ignore
+  export type { OfficialTemplate, OfficialTemplateParameterFormat, OfficialTemplateVariable, OfficialTemplateVariableValue, OfficialTemplateOption, OfficialTemplatePreview } from './src/utils/officialTemplate'
   import('./src/utils/officialTemplate')
 }
 
@@ -475,9 +554,15 @@ import { UnwrapRef } from 'vue'
 declare module 'vue' {
   interface GlobalComponents {}
   interface ComponentCustomProperties {
+    readonly CHATBOT_NODE_PALETTE_PREFERENCES_VERSION: UnwrapRef<typeof import('./src/composables/useChatbotNodePalette')['CHATBOT_NODE_PALETTE_PREFERENCES_VERSION']>
     readonly COOKIE_MAX_AGE_1_YEAR: UnwrapRef<typeof import('./src/utils/constants')['COOKIE_MAX_AGE_1_YEAR']>
+    readonly DEFAULT_CHATBOT_NODE_PALETTE_MARGIN: UnwrapRef<typeof import('./src/composables/useChatbotNodePalette')['DEFAULT_CHATBOT_NODE_PALETTE_MARGIN']>
+    readonly DEFAULT_CHATBOT_NODE_PALETTE_POSITION: UnwrapRef<typeof import('./src/composables/useChatbotNodePalette')['DEFAULT_CHATBOT_NODE_PALETTE_POSITION']>
     readonly EPasswordStrength: UnwrapRef<typeof import('./src/@webcore/utils/passwordStrength')['EPasswordStrength']>
     readonly EffectScope: UnwrapRef<typeof import('vue')['EffectScope']>
+    readonly OFFICIAL_INTERACTIVE_LIMITS: UnwrapRef<typeof import('./src/utils/officialInteractiveLimits')['OFFICIAL_INTERACTIVE_LIMITS']>
+    readonly OFFICIAL_WINDOW_REQUIRES_TEMPLATE_REFRESH: UnwrapRef<typeof import('./src/utils/apiError')['OFFICIAL_WINDOW_REQUIRES_TEMPLATE_REFRESH']>
+    readonly PerKeyPromiseQueue: UnwrapRef<typeof import('./src/@webcore/utils/perKeyPromiseQueue')['PerKeyPromiseQueue']>
     readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
     readonly alphaDashValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['alphaDashValidator']>
     readonly alphaValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['alphaValidator']>
@@ -486,22 +571,30 @@ declare module 'vue' {
     readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
     readonly avatarText: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['avatarText']>
     readonly betweenValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['betweenValidator']>
+    readonly buildConnectionHealthMetricRows: UnwrapRef<typeof import('./src/utils/connectionHealthPresentation')['buildConnectionHealthMetricRows']>
     readonly buildOfficialTemplateKey: UnwrapRef<typeof import('./src/utils/officialTemplate')['buildOfficialTemplateKey']>
     readonly buildOfficialTemplatePreview: UnwrapRef<typeof import('./src/utils/officialTemplate')['buildOfficialTemplatePreview']>
     readonly buildOfficialTemplateVariablePayload: UnwrapRef<typeof import('./src/utils/officialTemplate')['buildOfficialTemplateVariablePayload']>
     readonly calculatePasswordStrength: UnwrapRef<typeof import('./src/@webcore/utils/passwordStrength')['calculatePasswordStrength']>
+    readonly canViewConnectionHealth: UnwrapRef<typeof import('./src/utils/connectionHealthPresentation')['canViewConnectionHealth']>
+    readonly clampChatbotNodePalettePosition: UnwrapRef<typeof import('./src/composables/useChatbotNodePalette')['clampChatbotNodePalettePosition']>
     readonly clearAllCookies: UnwrapRef<typeof import('./src/@webcore/utils/clearAllData')['clearAllCookies']>
     readonly clearAllData: UnwrapRef<typeof import('./src/@webcore/utils/clearAllData')['clearAllData']>
     readonly clearAllStorages: UnwrapRef<typeof import('./src/@webcore/utils/clearAllData')['clearAllStorages']>
+    readonly cnpjAlphanumericMask: UnwrapRef<typeof import('./src/@webcore/utils/masks')['cnpjAlphanumericMask']>
     readonly computed: UnwrapRef<typeof import('vue')['computed']>
     readonly computedAsync: UnwrapRef<typeof import('@vueuse/core')['computedAsync']>
     readonly computedEager: UnwrapRef<typeof import('@vueuse/core')['computedEager']>
     readonly computedInject: UnwrapRef<typeof import('@vueuse/core')['computedInject']>
     readonly computedWithControl: UnwrapRef<typeof import('@vueuse/core')['computedWithControl']>
     readonly confirmedValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['confirmedValidator']>
+    readonly connectionHealthDiagnosticTranslationKey: UnwrapRef<typeof import('./src/utils/connectionHealthPresentation')['connectionHealthDiagnosticTranslationKey']>
     readonly connectionLifecycleDebugHeaders: UnwrapRef<typeof import('./src/@webcore/utils/connectionLifecycleDebug')['connectionLifecycleDebugHeaders']>
+    readonly containsOfficialInteractiveEmoji: UnwrapRef<typeof import('./src/utils/officialInteractiveLimits')['containsOfficialInteractiveEmoji']>
+    readonly containsUnderchatVariableTag: UnwrapRef<typeof import('./src/utils/officialTemplate')['containsUnderchatVariableTag']>
     readonly controlledComputed: UnwrapRef<typeof import('@vueuse/core')['controlledComputed']>
     readonly controlledRef: UnwrapRef<typeof import('@vueuse/core')['controlledRef']>
+    readonly countOfficialInteractiveCharacters: UnwrapRef<typeof import('./src/utils/officialInteractiveLimits')['countOfficialInteractiveCharacters']>
     readonly createApp: UnwrapRef<typeof import('vue')['createApp']>
     readonly createConnectionLifecycleDebugTraceId: UnwrapRef<typeof import('./src/@webcore/utils/connectionLifecycleDebug')['createConnectionLifecycleDebugTraceId']>
     readonly createEventHook: UnwrapRef<typeof import('@vueuse/core')['createEventHook']>
@@ -510,13 +603,16 @@ declare module 'vue' {
     readonly createInjectionState: UnwrapRef<typeof import('@vueuse/core')['createInjectionState']>
     readonly createManualOfficialTemplateVariable: UnwrapRef<typeof import('./src/utils/officialTemplate')['createManualOfficialTemplateVariable']>
     readonly createOfficialTemplateOptions: UnwrapRef<typeof import('./src/utils/officialTemplate')['createOfficialTemplateOptions']>
+    readonly createOfficialTemplateVariableValueRecord: UnwrapRef<typeof import('./src/utils/officialTemplate')['createOfficialTemplateVariableValueRecord']>
     readonly createOfficialTemplateVariableValues: UnwrapRef<typeof import('./src/utils/officialTemplate')['createOfficialTemplateVariableValues']>
     readonly createPinia: UnwrapRef<typeof import('pinia')['createPinia']>
     readonly createProjection: UnwrapRef<typeof import('@vueuse/math')['createProjection']>
     readonly createReactiveFn: UnwrapRef<typeof import('@vueuse/core')['createReactiveFn']>
+    readonly createRef: UnwrapRef<typeof import('@vueuse/core')['createRef']>
     readonly createReusableTemplate: UnwrapRef<typeof import('@vueuse/core')['createReusableTemplate']>
     readonly createSharedComposable: UnwrapRef<typeof import('@vueuse/core')['createSharedComposable']>
     readonly createTemplatePromise: UnwrapRef<typeof import('@vueuse/core')['createTemplatePromise']>
+    readonly createUnderchatVariableCatalog: UnwrapRef<typeof import('./src/utils/underchatVariableCatalog')['createUnderchatVariableCatalog']>
     readonly createUnrefFn: UnwrapRef<typeof import('@vueuse/core')['createUnrefFn']>
     readonly createUrl: UnwrapRef<typeof import('./src/@webcore/composable/createUrl')['createUrl']>
     readonly customRef: UnwrapRef<typeof import('vue')['customRef']>
@@ -529,15 +625,25 @@ declare module 'vue' {
     readonly effectScope: UnwrapRef<typeof import('vue')['effectScope']>
     readonly emailValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['emailValidator']>
     readonly emitInternalChatNotificationMessage: UnwrapRef<typeof import('./src/composables/useInternalChatNotifications')['emitInternalChatNotificationMessage']>
+    readonly evaluateConnectionModalPublication: UnwrapRef<typeof import('./src/composables/useWhatsappConnectionStatus')['evaluateConnectionModalPublication']>
     readonly extendRef: UnwrapRef<typeof import('@vueuse/core')['extendRef']>
     readonly fillOfficialTemplateText: UnwrapRef<typeof import('./src/utils/officialTemplate')['fillOfficialTemplateText']>
+    readonly findOfficialInteractiveLimitViolation: UnwrapRef<typeof import('./src/utils/officialInteractiveLimits')['findOfficialInteractiveLimitViolation']>
     readonly findOfficialTemplate: UnwrapRef<typeof import('./src/utils/officialTemplate')['findOfficialTemplate']>
+    readonly formatConnectionBytes: UnwrapRef<typeof import('./src/utils/connectionHealthPresentation')['formatConnectionBytes']>
+    readonly formatConnectionDuration: UnwrapRef<typeof import('./src/utils/connectionHealthPresentation')['formatConnectionDuration']>
+    readonly formatConnectionHealthDiagnosticFallback: UnwrapRef<typeof import('./src/utils/connectionHealthPresentation')['formatConnectionHealthDiagnosticFallback']>
     readonly formatDate: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDate']>
     readonly formatDateLong: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDateLong']>
     readonly formatDateToMonthShort: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDateToMonthShort']>
     readonly formatNotificationBody: UnwrapRef<typeof import('./src/composables/useChatNotifications')['formatNotificationBody']>
     readonly formatOfficialTemplateLanguage: UnwrapRef<typeof import('./src/utils/officialTemplate')['formatOfficialTemplateLanguage']>
+    readonly formatOfficialTemplateVariableLabel: UnwrapRef<typeof import('./src/utils/officialTemplate')['formatOfficialTemplateVariableLabel']>
+    readonly formatOfficialTemplateVariableToken: UnwrapRef<typeof import('./src/utils/officialTemplate')['formatOfficialTemplateVariableToken']>
     readonly getActivePinia: UnwrapRef<typeof import('pinia')['getActivePinia']>
+    readonly getApiErrorReason: UnwrapRef<typeof import('./src/utils/apiError')['getApiErrorReason']>
+    readonly getApiErrorRequestId: UnwrapRef<typeof import('./src/utils/apiError')['getApiErrorRequestId']>
+    readonly getApiErrorStatus: UnwrapRef<typeof import('./src/utils/apiError')['getApiErrorStatus']>
     readonly getCurrentInstance: UnwrapRef<typeof import('vue')['getCurrentInstance']>
     readonly getCurrentScope: UnwrapRef<typeof import('vue')['getCurrentScope']>
     readonly getCurrentWatcher: UnwrapRef<typeof import('vue')['getCurrentWatcher']>
@@ -559,6 +665,7 @@ declare module 'vue' {
     readonly isLocalConnectionStatusLogEnabled: UnwrapRef<typeof import('./src/@webcore/utils/localConnectionStatusLog')['isLocalConnectionStatusLogEnabled']>
     readonly isNullOrUndefined: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isNullOrUndefined']>
     readonly isObject: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isObject']>
+    readonly isOfficialWindowRefreshConflict: UnwrapRef<typeof import('./src/utils/apiError')['isOfficialWindowRefreshConflict']>
     readonly isProxy: UnwrapRef<typeof import('vue')['isProxy']>
     readonly isReactive: UnwrapRef<typeof import('vue')['isReactive']>
     readonly isReadonly: UnwrapRef<typeof import('vue')['isReadonly']>
@@ -567,6 +674,7 @@ declare module 'vue' {
     readonly isSilentWhatsappEmbeddedSignupError: UnwrapRef<typeof import('./src/composables/useWhatsappEmbeddedSignup')['isSilentWhatsappEmbeddedSignupError']>
     readonly isToday: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isToday']>
     readonly isValidIP: UnwrapRef<typeof import('./src/@webcore/utils/validators')['isValidIP']>
+    readonly isWhatsappProviderHandoffTargetOnline: UnwrapRef<typeof import('./src/composables/useWhatsappProviderHandoffRecovery')['isWhatsappProviderHandoffTargetOnline']>
     readonly kFormatter: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['kFormatter']>
     readonly lengthValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['lengthValidator']>
     readonly logConnectionLifecycleDebug: UnwrapRef<typeof import('./src/@webcore/utils/connectionLifecycleDebug')['logConnectionLifecycleDebug']>
@@ -586,6 +694,9 @@ declare module 'vue' {
     readonly maxNumberValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['maxNumberValidator']>
     readonly nextTick: UnwrapRef<typeof import('vue')['nextTick']>
     readonly normalizeBaseUrl: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['normalizeBaseUrl']>
+    readonly normalizeChatbotNodePalettePosition: UnwrapRef<typeof import('./src/composables/useChatbotNodePalette')['normalizeChatbotNodePalettePosition']>
+    readonly normalizeChatbotNodePalettePreferences: UnwrapRef<typeof import('./src/composables/useChatbotNodePalette')['normalizeChatbotNodePalettePreferences']>
+    readonly normalizeEditableOfficialTemplateVariables: UnwrapRef<typeof import('./src/utils/officialTemplate')['normalizeEditableOfficialTemplateVariables']>
     readonly normalizeOfficialTemplateLanguageCode: UnwrapRef<typeof import('./src/utils/officialTemplate')['normalizeOfficialTemplateLanguageCode']>
     readonly onActivated: UnwrapRef<typeof import('vue')['onActivated']>
     readonly onBeforeMount: UnwrapRef<typeof import('vue')['onBeforeMount']>
@@ -595,6 +706,7 @@ declare module 'vue' {
     readonly onBeforeUpdate: UnwrapRef<typeof import('vue')['onBeforeUpdate']>
     readonly onClickOutside: UnwrapRef<typeof import('@vueuse/core')['onClickOutside']>
     readonly onDeactivated: UnwrapRef<typeof import('vue')['onDeactivated']>
+    readonly onElementRemoval: UnwrapRef<typeof import('@vueuse/core')['onElementRemoval']>
     readonly onErrorCaptured: UnwrapRef<typeof import('vue')['onErrorCaptured']>
     readonly onKeyStroke: UnwrapRef<typeof import('@vueuse/core')['onKeyStroke']>
     readonly onLongPress: UnwrapRef<typeof import('@vueuse/core')['onLongPress']>
@@ -621,6 +733,7 @@ declare module 'vue' {
     readonly reactiveOmit: UnwrapRef<typeof import('@vueuse/core')['reactiveOmit']>
     readonly reactivePick: UnwrapRef<typeof import('@vueuse/core')['reactivePick']>
     readonly readonly: UnwrapRef<typeof import('vue')['readonly']>
+    readonly reconcileMessageTemplateChannelIds: UnwrapRef<typeof import('./src/utils/messageTemplateChannelSelection')['reconcileMessageTemplateChannelIds']>
     readonly ref: UnwrapRef<typeof import('vue')['ref']>
     readonly refAutoReset: UnwrapRef<typeof import('@vueuse/core')['refAutoReset']>
     readonly refDebounced: UnwrapRef<typeof import('@vueuse/core')['refDebounced']>
@@ -635,16 +748,21 @@ declare module 'vue' {
     readonly requiredValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['requiredValidator']>
     readonly resetAllPiniaStores: UnwrapRef<typeof import('./src/@webcore/utils/clearAllData')['resetAllPiniaStores']>
     readonly resolveAvatarBadgeVariant: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['resolveAvatarBadgeVariant']>
+    readonly resolveChannelStatusPresentation: UnwrapRef<typeof import('./src/@webcore/utils/channelStatusPresentation')['resolveChannelStatusPresentation']>
     readonly resolveComponent: UnwrapRef<typeof import('vue')['resolveComponent']>
+    readonly resolveConnectionHealthTone: UnwrapRef<typeof import('./src/utils/connectionHealthPresentation')['resolveConnectionHealthTone']>
     readonly resolveRef: UnwrapRef<typeof import('@vueuse/core')['resolveRef']>
     readonly resolveUnref: UnwrapRef<typeof import('@vueuse/core')['resolveUnref']>
     readonly resolveVuetifyTheme: UnwrapRef<typeof import('./src/@webcore/utils/vuetify')['resolveVuetifyTheme']>
     readonly rgbaToHex: UnwrapRef<typeof import('./src/@webcore/utils/colorConverter')['rgbaToHex']>
+    readonly sanitizeConnectionStatusLogContext: UnwrapRef<typeof import('./src/@webcore/utils/connectionStatusLogSanitizer')['sanitizeConnectionStatusLogContext']>
+    readonly sanitizeConnectionStatusLogLabel: UnwrapRef<typeof import('./src/@webcore/utils/connectionStatusLogSanitizer')['sanitizeConnectionStatusLogLabel']>
     readonly setActivePinia: UnwrapRef<typeof import('pinia')['setActivePinia']>
     readonly setMapStoreSuffix: UnwrapRef<typeof import('pinia')['setMapStoreSuffix']>
     readonly shallowReactive: UnwrapRef<typeof import('vue')['shallowReactive']>
     readonly shallowReadonly: UnwrapRef<typeof import('vue')['shallowReadonly']>
     readonly shallowRef: UnwrapRef<typeof import('vue')['shallowRef']>
+    readonly shouldClearConnectionModalQr: UnwrapRef<typeof import('./src/composables/useWhatsappConnectionStatus')['shouldClearConnectionModalQr']>
     readonly storeToRefs: UnwrapRef<typeof import('pinia')['storeToRefs']>
     readonly syncRef: UnwrapRef<typeof import('@vueuse/core')['syncRef']>
     readonly syncRefs: UnwrapRef<typeof import('@vueuse/core')['syncRefs']>
@@ -700,11 +818,15 @@ declare module 'vue' {
     readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
     readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>
     readonly useCeil: UnwrapRef<typeof import('@vueuse/math')['useCeil']>
+    readonly useChannelConnectionHealth: UnwrapRef<typeof import('./src/composables/useChannelConnectionHealth')['useChannelConnectionHealth']>
+    readonly useChannelMigrationRollbackContext: UnwrapRef<typeof import('./src/composables/useChannelMigrationRollbackContext')['useChannelMigrationRollbackContext']>
     readonly useChannelRecreateCooldown: UnwrapRef<typeof import('./src/composables/useChannelRecreateCooldown')['useChannelRecreateCooldown']>
     readonly useChatAttendanceHistory: UnwrapRef<typeof import('./src/composables/useChatAttendanceHistory')['useChatAttendanceHistory']>
     readonly useChatNotificationToast: UnwrapRef<typeof import('./src/composables/useChatNotificationToast')['useChatNotificationToast']>
     readonly useChatNotifications: UnwrapRef<typeof import('./src/composables/useChatNotifications')['useChatNotifications']>
     readonly useChatSocket: UnwrapRef<typeof import('./src/composables/useChatSocket')['useChatSocket']>
+    readonly useChatbotInactivityTargets: UnwrapRef<typeof import('./src/composables/useChatbotInactivityTargets')['useChatbotInactivityTargets']>
+    readonly useChatbotNodePalette: UnwrapRef<typeof import('./src/composables/useChatbotNodePalette')['useChatbotNodePalette']>
     readonly useClamp: UnwrapRef<typeof import('@vueuse/math')['useClamp']>
     readonly useClipboard: UnwrapRef<typeof import('@vueuse/core')['useClipboard']>
     readonly useClipboardItems: UnwrapRef<typeof import('@vueuse/core')['useClipboardItems']>
@@ -712,6 +834,7 @@ declare module 'vue' {
     readonly useColorMode: UnwrapRef<typeof import('@vueuse/core')['useColorMode']>
     readonly useConfirmDialog: UnwrapRef<typeof import('@vueuse/core')['useConfirmDialog']>
     readonly useCookie: UnwrapRef<typeof import('./src/@webcore/composable/useCookie')['useCookie']>
+    readonly useCountdown: UnwrapRef<typeof import('@vueuse/core')['useCountdown']>
     readonly useCounter: UnwrapRef<typeof import('@vueuse/core')['useCounter']>
     readonly useCountryCodes: UnwrapRef<typeof import('./src/composables/useCountryCodes')['useCountryCodes']>
     readonly useCssModule: UnwrapRef<typeof import('vue')['useCssModule']>
@@ -748,6 +871,7 @@ declare module 'vue' {
     readonly useFloor: UnwrapRef<typeof import('@vueuse/math')['useFloor']>
     readonly useFocus: UnwrapRef<typeof import('@vueuse/core')['useFocus']>
     readonly useFocusWithin: UnwrapRef<typeof import('@vueuse/core')['useFocusWithin']>
+    readonly useForgotPasswordFlow: UnwrapRef<typeof import('./src/composables/useForgotPasswordFlow')['useForgotPasswordFlow']>
     readonly useFps: UnwrapRef<typeof import('@vueuse/core')['useFps']>
     readonly useFullscreen: UnwrapRef<typeof import('@vueuse/core')['useFullscreen']>
     readonly useGamepad: UnwrapRef<typeof import('@vueuse/core')['useGamepad']>
@@ -785,6 +909,7 @@ declare module 'vue' {
     readonly useNetwork: UnwrapRef<typeof import('@vueuse/core')['useNetwork']>
     readonly useNow: UnwrapRef<typeof import('@vueuse/core')['useNow']>
     readonly useObjectUrl: UnwrapRef<typeof import('@vueuse/core')['useObjectUrl']>
+    readonly useOfficialOpeningContext: UnwrapRef<typeof import('./src/composables/useOfficialOpeningContext')['useOfficialOpeningContext']>
     readonly useOffsetPagination: UnwrapRef<typeof import('@vueuse/core')['useOffsetPagination']>
     readonly useOnline: UnwrapRef<typeof import('@vueuse/core')['useOnline']>
     readonly usePageLeave: UnwrapRef<typeof import('@vueuse/core')['usePageLeave']>
@@ -802,17 +927,20 @@ declare module 'vue' {
     readonly usePreferredDark: UnwrapRef<typeof import('@vueuse/core')['usePreferredDark']>
     readonly usePreferredLanguages: UnwrapRef<typeof import('@vueuse/core')['usePreferredLanguages']>
     readonly usePreferredReducedMotion: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedMotion']>
+    readonly usePreferredReducedTransparency: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedTransparency']>
     readonly usePrevious: UnwrapRef<typeof import('@vueuse/core')['usePrevious']>
     readonly useProjection: UnwrapRef<typeof import('@vueuse/math')['useProjection']>
     readonly useQrPendingRecovery: UnwrapRef<typeof import('./src/composables/useQrPendingRecovery')['useQrPendingRecovery']>
     readonly useRafFn: UnwrapRef<typeof import('@vueuse/core')['useRafFn']>
     readonly useRefHistory: UnwrapRef<typeof import('@vueuse/core')['useRefHistory']>
     readonly useRegisterStatesAndCities: UnwrapRef<typeof import('./src/composables/useRegisterStatesAndCities')['useRegisterStatesAndCities']>
+    readonly useResilientCentrifugoSubscription: UnwrapRef<typeof import('./src/composables/useResilientCentrifugoSubscription')['useResilientCentrifugoSubscription']>
     readonly useResizeObserver: UnwrapRef<typeof import('@vueuse/core')['useResizeObserver']>
     readonly useResponsiveLeftSidebar: UnwrapRef<typeof import('./src/@webcore/composable/useResponsiveSidebar')['useResponsiveLeftSidebar']>
     readonly useRound: UnwrapRef<typeof import('@vueuse/math')['useRound']>
     readonly useRoute: UnwrapRef<typeof import('vue-router')['useRoute']>
     readonly useRouter: UnwrapRef<typeof import('vue-router')['useRouter']>
+    readonly useSSRWidth: UnwrapRef<typeof import('@vueuse/core')['useSSRWidth']>
     readonly useScreenOrientation: UnwrapRef<typeof import('@vueuse/core')['useScreenOrientation']>
     readonly useScreenSafeArea: UnwrapRef<typeof import('@vueuse/core')['useScreenSafeArea']>
     readonly useScriptTag: UnwrapRef<typeof import('@vueuse/core')['useScriptTag']>
@@ -842,6 +970,7 @@ declare module 'vue' {
     readonly useThrottleFn: UnwrapRef<typeof import('@vueuse/core')['useThrottleFn']>
     readonly useThrottledRefHistory: UnwrapRef<typeof import('@vueuse/core')['useThrottledRefHistory']>
     readonly useTimeAgo: UnwrapRef<typeof import('@vueuse/core')['useTimeAgo']>
+    readonly useTimeAgoIntl: UnwrapRef<typeof import('@vueuse/core')['useTimeAgoIntl']>
     readonly useTimeout: UnwrapRef<typeof import('@vueuse/core')['useTimeout']>
     readonly useTimeoutFn: UnwrapRef<typeof import('@vueuse/core')['useTimeoutFn']>
     readonly useTimeoutPoll: UnwrapRef<typeof import('@vueuse/core')['useTimeoutPoll']>
@@ -863,7 +992,10 @@ declare module 'vue' {
     readonly useWebSocket: UnwrapRef<typeof import('@vueuse/core')['useWebSocket']>
     readonly useWebWorker: UnwrapRef<typeof import('@vueuse/core')['useWebWorker']>
     readonly useWebWorkerFn: UnwrapRef<typeof import('@vueuse/core')['useWebWorkerFn']>
+    readonly useWhatsappConnectionStatus: UnwrapRef<typeof import('./src/composables/useWhatsappConnectionStatus')['useWhatsappConnectionStatus']>
     readonly useWhatsappEmbeddedSignup: UnwrapRef<typeof import('./src/composables/useWhatsappEmbeddedSignup')['useWhatsappEmbeddedSignup']>
+    readonly useWhatsappProviderHandoffRecovery: UnwrapRef<typeof import('./src/composables/useWhatsappProviderHandoffRecovery')['useWhatsappProviderHandoffRecovery']>
+    readonly useWhatsappProviderHandoffSourceRecovery: UnwrapRef<typeof import('./src/composables/useWhatsappProviderHandoffSourceRecovery')['useWhatsappProviderHandoffSourceRecovery']>
     readonly useWindowFocus: UnwrapRef<typeof import('@vueuse/core')['useWindowFocus']>
     readonly useWindowScroll: UnwrapRef<typeof import('@vueuse/core')['useWindowScroll']>
     readonly useWindowSize: UnwrapRef<typeof import('@vueuse/core')['useWindowSize']>
@@ -883,6 +1015,8 @@ declare module 'vue' {
     readonly watchThrottled: UnwrapRef<typeof import('@vueuse/core')['watchThrottled']>
     readonly watchTriggerable: UnwrapRef<typeof import('@vueuse/core')['watchTriggerable']>
     readonly watchWithFilter: UnwrapRef<typeof import('@vueuse/core')['watchWithFilter']>
+    readonly whatsappProviderToWorkerType: UnwrapRef<typeof import('./src/composables/useWhatsappProviderHandoffRecovery')['whatsappProviderToWorkerType']>
     readonly whenever: UnwrapRef<typeof import('@vueuse/core')['whenever']>
+    readonly workerTypeToWhatsappProvider: UnwrapRef<typeof import('./src/composables/useWhatsappProviderHandoffRecovery')['workerTypeToWhatsappProvider']>
   }
 }

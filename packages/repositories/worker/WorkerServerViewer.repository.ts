@@ -35,6 +35,7 @@ export class WorkerServerViewerRepository {
           eq(worker.server_id, server.server_id),
           isNull(worker.deleted_at),
           notInArray(worker.worker_status_id, [
+            EWorkerStatus.blocked,
             EWorkerStatus.stopped,
             EWorkerStatus.delete,
           ])

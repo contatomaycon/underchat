@@ -1,7 +1,7 @@
 import * as schema from '@core/models';
 import { workerConfig } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig';
@@ -20,8 +20,10 @@ export class WorkerConfigUpserterRepository {
   upsertWorkerConfig = async (
     workerId: string,
     input: IUpdateWorkerConfig
-  ): Promise<void> => {
-    await this.dbRw.transaction(async (tx) => {
+  ): Promise<{ reject_call_revision: string | null }> => {
+    return this.dbRw.transaction(async (tx) => {
+      let rejectCallRevision: string | null = null;
+
       if (input.show_attendee_name !== undefined) {
         await this.upsertBooleanConfig(
           tx,
@@ -59,7 +61,7 @@ export class WorkerConfigUpserterRepository {
       }
 
       if (input.reject_call !== undefined) {
-        await this.upsertBooleanConfig(
+        rejectCallRevision = await this.upsertBooleanConfig(
           tx,
           workerId,
           EWorkerConfigType.reject_call,
@@ -88,7 +90,31 @@ export class WorkerConfigUpserterRepository {
       if (input.proxy_enabled !== undefined) {
         await this.upsertProxyConfig(tx, workerId, input);
       }
+
+      return {
+        reject_call_revision: rejectCallRevision,
+      };
     });
+  };
+
+  viewRejectCallRevision = async (workerId: string): Promise<string | null> => {
+    const result = await this.dbRw
+      .select({
+        revision: sql<string>`(
+          FLOOR(EXTRACT(EPOCH FROM ${workerConfig.updated_at}) * 1000000)
+        )::bigint::text`,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_type_id, EWorkerConfigType.reject_call)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return result[0]?.revision?.trim() || null;
   };
 
   updateTransferProtocolText = async (
@@ -383,6 +409,27 @@ export class WorkerConfigUpserterRepository {
     );
   };
 
+  updateOperatorReplyPendingRedistribution = async (
+    workerId: string,
+    value: string | null,
+    statusId: string
+  ): Promise<string | null> => {
+    await this.dbRw.transaction(async (tx) => {
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.operator_reply_pending_redistribution,
+        value
+      );
+    });
+
+    return this.getConfigValue(
+      workerId,
+      EWorkerConfigType.operator_reply_pending_redistribution
+    );
+  };
+
   updateChatbot = async (
     workerId: string,
     chatbotId: string | null,
@@ -561,29 +608,47 @@ export class WorkerConfigUpserterRepository {
     workerId: string,
     type: EWorkerConfigType,
     isActive: boolean
-  ): Promise<void> {
-    const activeStatusId = EWorkerConfigStatus.active;
-    const inactiveStatusId = EWorkerConfigStatus.inactive;
+  ): Promise<string> {
+    const targetStatusId = isActive
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+    const monotonicUpdatedAt = sql`GREATEST(
+      clock_timestamp(),
+      COALESCE(${workerConfig.updated_at}, '-infinity'::timestamptz)
+        + interval '1 microsecond'
+    )`;
+    const result = await tx
+      .insert(workerConfig)
+      .values({
+        worker_config_id: uuidv7(),
+        worker_id: workerId,
+        worker_config_status_id: targetStatusId,
+        worker_config_type_id: type,
+        value: null,
+        chatbot_id: null,
+        updated_at: sql`clock_timestamp()`,
+      })
+      .onConflictDoUpdate({
+        target: [workerConfig.worker_id, workerConfig.worker_config_type_id],
+        targetWhere: sql`${workerConfig.worker_config_type_id} <> '019f41a5-2f8b-7700-9c7b-1f4f7a67f002'::uuid`,
+        set: {
+          worker_config_status_id: targetStatusId,
+          value: null,
+          updated_at: monotonicUpdatedAt,
+        },
+      })
+      .returning({
+        revision: sql<string>`(
+          FLOOR(EXTRACT(EPOCH FROM ${workerConfig.updated_at}) * 1000000)
+        )::bigint::text`,
+      })
+      .execute();
 
-    const existingConfig = await this.findConfigByWorkerAndTypeId(
-      tx,
-      workerId,
-      type
-    );
-
-    if (existingConfig) {
-      const targetStatusId = isActive ? activeStatusId : inactiveStatusId;
-      await this.updateConfigStatus(
-        tx,
-        existingConfig.worker_config_id,
-        targetStatusId,
-        null
-      );
-      return;
+    const revision = result[0]?.revision?.trim();
+    if (!revision) {
+      throw new Error('worker_config_revision_missing_after_upsert');
     }
-
-    const targetStatusId = isActive ? activeStatusId : inactiveStatusId;
-    await this.createBooleanConfig(tx, workerId, targetStatusId, type);
+    return revision;
   }
 
   private async upsertProxyConfig(
@@ -642,39 +707,6 @@ export class WorkerConfigUpserterRepository {
       EWorkerConfigType.proxy_password,
       input.proxy_password?.trim() || null
     );
-  }
-
-  private async updateConfigStatus(
-    tx: Transaction,
-    configId: string,
-    statusId: string,
-    value: string | null
-  ): Promise<void> {
-    await tx
-      .update(workerConfig)
-      .set({
-        worker_config_status_id: statusId,
-        value: value,
-        updated_at: new Date().toISOString(),
-      })
-      .where(eq(workerConfig.worker_config_id, configId))
-      .execute();
-  }
-
-  private async createBooleanConfig(
-    tx: Transaction,
-    workerId: string,
-    statusId: string,
-    typeId: string
-  ): Promise<void> {
-    await tx.insert(workerConfig).values({
-      worker_config_id: uuidv7(),
-      worker_id: workerId,
-      worker_config_status_id: statusId,
-      worker_config_type_id: typeId,
-      value: null,
-      chatbot_id: null,
-    });
   }
 
   private async upsertConfigValue(

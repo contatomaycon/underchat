@@ -9,7 +9,10 @@ import {
   MetaWhatsappPhoneNumber,
 } from '@core/services/metaWhatsappEmbedded.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
-import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
+import {
+  OfficialWhatsappPhoneAlreadyConnectedError,
+  WorkerWhatsappOfficialConnectionRepository,
+} from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import { ConnectWhatsappOfficialRequest } from '@core/schema/worker/connectWhatsappOfficial/request.schema';
 import { ConnectWhatsappOfficialResponse } from '@core/schema/worker/connectWhatsappOfficial/response.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -87,6 +90,10 @@ export class WhatsappOfficialConnectorUseCase {
       throw new Error(t('worker_not_found'));
     }
 
+    if (worker.status?.id === EWorkerStatus.blocked) {
+      throw new Error(t('worker_blocked_by_plan'));
+    }
+
     if (worker.type?.id !== EWorkerType.whatsapp) {
       throw new Error(t('whatsapp_official_disconnect_only_official'));
     }
@@ -155,27 +162,36 @@ export class WhatsappOfficialConnectorUseCase {
       token.access_token
     );
 
-    const connected =
-      await this.workerWhatsappOfficialConnectionRepository.createForExistingWorker(
-        {
-          worker_whatsapp_official_connection_id: uuidv7(),
-          worker_id: workerId,
-          account_id: accountId,
-          number,
-          connection_date: connectedAt,
-          business_id: input.business_id ?? null,
-          waba_id: input.waba_id,
-          phone_number_id: phone.id,
-          display_phone_number: phone.display_phone_number,
-          verified_name: phone.verified_name,
-          access_token_encrypted: accessTokenEncrypted,
-          token_type: token.token_type,
-          expires_at: token.expires_at,
-          scope: token.scope,
-          api_version: config.api_version,
-          connected_at: connectedAt,
-        }
-      );
+    let connected: boolean;
+    try {
+      connected =
+        await this.workerWhatsappOfficialConnectionRepository.createForExistingWorker(
+          {
+            worker_whatsapp_official_connection_id: uuidv7(),
+            worker_id: workerId,
+            account_id: accountId,
+            number,
+            connection_date: connectedAt,
+            business_id: input.business_id ?? null,
+            waba_id: input.waba_id,
+            phone_number_id: phone.id,
+            display_phone_number: phone.display_phone_number,
+            verified_name: phone.verified_name,
+            access_token_encrypted: accessTokenEncrypted,
+            token_type: token.token_type,
+            expires_at: token.expires_at,
+            scope: token.scope,
+            api_version: config.api_version,
+            connected_at: connectedAt,
+          }
+        );
+    } catch (error) {
+      if (error instanceof OfficialWhatsappPhoneAlreadyConnectedError) {
+        throw new Error(t('whatsapp_official_phone_already_connected'));
+      }
+
+      throw error;
+    }
 
     if (!connected) {
       throw new Error(t('whatsapp_official_reconnect_error'));

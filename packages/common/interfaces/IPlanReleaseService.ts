@@ -18,6 +18,9 @@ export interface IPlanReleaseUpdatePaymentStatusInput {
   releaseStatus?: string | null;
   releaseProcessedAt?: string | null;
   releaseLastError?: string | null;
+  statusObservedAt?: string;
+  statusEventId?: string;
+  allowFinancialReversal?: boolean;
 }
 
 export interface IPlanReleaseAddonOnlyPaymentInput {
@@ -28,6 +31,9 @@ export interface IPlanReleaseAddonOnlyPaymentInput {
   accountId: string;
   planId: string;
   paymentAsaasId: string;
+  allowFinancialReversal?: boolean;
+  statusObservedAt?: string;
+  statusEventId?: string;
 }
 
 export interface IPlanReleasePaymentInput {
@@ -42,6 +48,9 @@ export interface IPlanReleasePaymentInput {
   value: string;
   paymentAsaasId: string;
   shouldSendNotification?: boolean;
+  allowFinancialReversal?: boolean;
+  statusObservedAt?: string;
+  statusEventId?: string;
 }
 
 export interface IPlanReleaseCreditCardInput {
@@ -71,4 +80,6 @@ export interface IPlanReleaseAccountPaymentData {
   payment_date: string | null;
   payment_status_id: string;
   release_status: string | null;
+  payment_status_observed_at: string | null;
+  payment_status_event_id: string | null;
 }

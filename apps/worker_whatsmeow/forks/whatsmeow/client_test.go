@@ -37,7 +37,8 @@ func Example() {
 	if err != nil {
 		panic(err)
 	}
-	// If you want multiple sessions, remember their JIDs and use .GetDevice(jid) or .GetAllDevices() instead.
+	// Shared/multi-session stores must use a stable session ID plus an explicit
+	// revision ID with GetDeviceForSession. JIDs are not ownership keys.
 	deviceStore, err := container.GetFirstDevice(ctx)
 	if err != nil {
 		panic(err)

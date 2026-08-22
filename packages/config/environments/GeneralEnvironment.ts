@@ -115,9 +115,21 @@ export class GeneralEnvironment {
   }
 
   public get protocol(): string {
-    return process.env.appEnvironment === EAppEnvironment.local
-      ? 'http'
-      : 'https';
+    return this.appEnvironment === EAppEnvironment.local ? 'http' : 'https';
+  }
+
+  public get chatbotApiRequestAllowLocalhostHttp(): boolean {
+    const enabled =
+      process.env.CHATBOT_API_REQUEST_ALLOW_LOCALHOST_HTTP?.trim().toLowerCase() ===
+      'true';
+    if (!enabled) {
+      return false;
+    }
+
+    return (
+      this.appEnvironment === EAppEnvironment.local ||
+      this.appEnvironment === EAppEnvironment.dev
+    );
   }
 
   public get gitRepo(): string {
@@ -156,20 +168,6 @@ export class GeneralEnvironment {
     return ip;
   }
 
-  public get messageSendIdempotencyTtlSeconds(): number {
-    const raw = process.env.MESSAGE_SEND_IDEMPOTENCY_TTL_SECONDS;
-    if (!raw) {
-      return 86400;
-    }
-
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return 86400;
-    }
-
-    return Math.floor(parsed);
-  }
-
   public get automationSendDedupeTtlSeconds(): number {
     const raw = process.env.AUTOMATION_SEND_DEDUPE_TTL_SECONDS;
     if (!raw) {
@@ -182,5 +180,22 @@ export class GeneralEnvironment {
     }
 
     return Math.floor(parsed);
+  }
+
+  public get publicApiRateLimitPerMinute(): number {
+    const raw = process.env.PUBLIC_API_RATE_LIMIT_PER_MINUTE?.trim();
+    if (!raw) {
+      return 120;
+    }
+
+    const parsed = Number(raw);
+    const normalized = Math.floor(parsed);
+    if (!Number.isFinite(parsed) || normalized < 1) {
+      throw new InvalidConfigurationError(
+        'PUBLIC_API_RATE_LIMIT_PER_MINUTE must be a positive number.'
+      );
+    }
+
+    return normalized;
   }
 }

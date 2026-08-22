@@ -6,6 +6,7 @@ import {
   updateForwardToOutputChatbotBodySchema,
 } from './request.schema';
 import { updateForwardToOutputChatbotResponseSchema } from './response.schema';
+import { chatMutationErrorResponseSchema } from '../mutationErrorResponse.schema';
 
 export const updateForwardToOutputChatbotSchema = {
   description: 'Atualizar encaminhamento para chatbot de saída do chat',
@@ -64,6 +65,7 @@ export const updateForwardToOutputChatbotSchema = {
       },
       { description: 'Forbidden' }
     ),
+    404: chatMutationErrorResponseSchema('Not Found'),
     500: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

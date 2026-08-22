@@ -6,6 +6,7 @@ import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
 import { IJwtPermissionsWithPlan } from '@core/common/interfaces/IJwtPermissionsWithPlan';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
+import { EPermissionRoleStatus } from '@core/common/enums/EPermissionRoleStatus';
 
 @injectable()
 export class MiddlewareJwtRepository {
@@ -40,7 +41,7 @@ export class MiddlewareJwtRepository {
           JOIN "user" u ON u.user_id = pa.user_id AND u.user_status_id = '${EUserStatus.active}' AND u.deleted_at IS NULL
           JOIN "account" ac ON ac.account_id =  u.account_id AND ac.deleted_at IS NULL
           LEFT JOIN "plan_account" pac ON pac.account_id = ac.account_id
-          JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+          JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id AND pr.status = '${EPermissionRoleStatus.active}'
           JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
           JOIN "permission_action" paa ON paa.permission_action_id = pra.permission_action_id
           JOIN "permission_module" pm ON paa.permission_module_id = pm.module_id
@@ -66,7 +67,7 @@ export class MiddlewareJwtRepository {
           JOIN "user" u ON u.user_id = pa.user_id AND u.user_status_id = '${EUserStatus.active}' AND u.deleted_at IS NULL
           JOIN "account" ac ON ac.account_id =  u.account_id AND ac.deleted_at IS NULL
           LEFT JOIN "plan_account" pac ON pac.account_id = ac.account_id
-          JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+          JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id AND pr.status = '${EPermissionRoleStatus.active}'
           JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
           JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
           JOIN "permission_action" paa ON paa.permission_action_group_id = pag.permission_action_group_id
@@ -93,7 +94,7 @@ export class MiddlewareJwtRepository {
           JOIN "user" u ON u.user_id = pa.user_id AND u.user_status_id = '${EUserStatus.active}' AND u.deleted_at IS NULL
           JOIN "account" ac ON ac.account_id =  u.account_id AND ac.deleted_at IS NULL
           LEFT JOIN "plan_account" pac ON pac.account_id = ac.account_id
-          JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+          JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id AND pr.status = '${EPermissionRoleStatus.active}'
           JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
           JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
           JOIN "permission_action" paa ON paa.permission_action_group_id = pag.permission_action_group_id

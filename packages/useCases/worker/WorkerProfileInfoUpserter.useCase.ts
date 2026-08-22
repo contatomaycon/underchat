@@ -2,13 +2,12 @@ import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerProfileInfoService } from '@core/services/workerProfileInfo.service';
 import { WorkerService } from '@core/services/worker.service';
-import { StreamProducerService } from '@core/services/streamProducer.service';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { UploadProfileInfoResponse } from '@core/schema/worker/uploadProfileInfo/response.schema';
 import { UploadProfileInfoRequest } from '@core/schema/worker/uploadProfileInfo/request.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { IProfileInfoMessage } from '@core/common/interfaces/IProfileInfoMessage';
 import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialCapabilities';
+import { WorkerCommandAdmissionService } from '@core/services/workerCommandAdmission.service';
 
 @injectable()
 export class WorkerProfileInfoUpserterUseCase {
@@ -19,10 +18,8 @@ export class WorkerProfileInfoUpserterUseCase {
     private readonly workerProfileInfoService: WorkerProfileInfoService,
     @inject(WorkerService)
     private readonly workerService: WorkerService,
-    @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
+    @inject(WorkerCommandAdmissionService)
+    private readonly workerCommandAdmissionService: WorkerCommandAdmissionService
   ) {}
 
   private normalizeField(field: unknown): string | undefined {
@@ -127,13 +124,15 @@ export class WorkerProfileInfoUpserterUseCase {
       photo: result.photo,
     };
 
-    const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
-
-    await this.streamProducerService.send(
-      topic,
-      profileInfoMessage,
-      `profile_info:${workerId}:${accountId}`
-    );
+    await this.workerCommandAdmissionService.admit({
+      accountId,
+      workerId,
+      commandType: 'provider_command',
+      entityKey: `control:${accountId}:${workerId}:profile`,
+      operationId: `profile-info:${result.updated_at ?? result.photo ?? result.name ?? result.message ?? 'update'}`,
+      payload: profileInfoMessage as unknown as Record<string, never>,
+      source: 'worker_profile_info',
+    });
 
     return result;
   }

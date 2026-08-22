@@ -9,6 +9,7 @@ import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/w
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { OfficialOpeningContextResponse } from '@core/schema/chat/officialOpeningContext/response.schema';
 import { OfficialOpeningContextRequest } from '@core/schema/chat/officialOpeningContext/request.schema';
+import { OfficialWhatsappConversationWindowService } from '@core/services/officialWhatsappConversationWindow.service';
 
 @injectable()
 export class OfficialOpeningContextViewerUseCase {
@@ -24,7 +25,9 @@ export class OfficialOpeningContextViewerUseCase {
     @inject(OfficialWhatsappTemplateService)
     private readonly officialWhatsappTemplateService: OfficialWhatsappTemplateService,
     @inject(WorkerWhatsappOfficialConnectionRepository)
-    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository
+    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository,
+    @inject(OfficialWhatsappConversationWindowService)
+    private readonly officialWindowService: OfficialWhatsappConversationWindowService
   ) {}
 
   async execute(
@@ -53,6 +56,25 @@ export class OfficialOpeningContextViewerUseCase {
       throw new Error(t('official_opening_only_official_channel'));
     }
 
+    const sensitiveData =
+      await this.contactService.getContactSensitiveDataDecrypted(
+        input.contact_id
+      );
+    if (!sensitiveData?.phone) {
+      throw new Error(t('contact_phone_required'));
+    }
+
+    const officialWindow =
+      await this.officialWindowService.resolveAuthoritativeForIdentity(
+        {
+          accountId,
+          workerId: input.worker_id,
+          contactId: input.contact_id,
+          phone: `${contact.phone_ddi ?? '55'}${sensitiveData.phone}`,
+        },
+        new Date()
+      );
+
     const connection =
       await this.workerWhatsappOfficialConnectionRepository.findActiveByWorkerId(
         input.worker_id
@@ -60,6 +82,20 @@ export class OfficialOpeningContextViewerUseCase {
 
     if (!connection) {
       throw new Error(t('official_opening_connection_not_found'));
+    }
+
+    if (
+      officialWindow.state === 'open' ||
+      officialWindow.state === 'awaiting_contact_reply' ||
+      officialWindow.state === 'send_uncertain'
+    ) {
+      return {
+        worker_id: input.worker_id,
+        is_official: true,
+        requires_template: false,
+        official_window: officialWindow,
+        templates: [],
+      };
     }
 
     const accessToken = this.passwordEncryptorService.decrypt(
@@ -76,6 +112,7 @@ export class OfficialOpeningContextViewerUseCase {
       worker_id: input.worker_id,
       is_official: true,
       requires_template: true,
+      official_window: officialWindow,
       templates:
         this.officialWhatsappTemplateService.normalizeTemplates(
           approvedTemplates

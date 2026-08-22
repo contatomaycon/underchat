@@ -1,8 +1,11 @@
 import { singleton, inject } from 'tsyringe';
+import { createHash, randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import type { KafkaConsumer } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import Redis from 'ioredis';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS } from '@core/common/functions/serviceApiWhatsappConsumerBindings';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import {
   MetaWhatsappDownloadedMedia,
@@ -21,6 +24,7 @@ import {
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
+import { OfficialWhatsappConversationWindowService } from '@core/services/officialWhatsappConversationWindow.service';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 import type {
   KafkaConsumerRunnerContext,
@@ -41,6 +45,8 @@ import { IOfficialWhatsappContentMetadata } from '@core/common/interfaces/IOffic
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
+import { ensureInboundEventId } from '@core/common/functions/inboundEventIdentity';
+import { buildOfficialWhatsappMessageStatusEventId } from '@core/common/functions/officialWhatsappEventIdentity';
 import { buildOfficialWhatsappDisplayFromMetaMessage } from '@core/common/functions/officialWhatsappDisplay';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
@@ -50,8 +56,25 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { isKafkaConsumerDispatchRevokedError } from '@core/common/exceptions/KafkaConsumerDispatchRevokedError';
+import {
+  classifyOfficialWhatsappProviderTimestampForEffects,
+  OfficialWhatsappProviderEffectTimestampClassification,
+  resolveOfficialWhatsappEffectMaxAgeMs,
+  resolveOfficialWhatsappFutureToleranceMs,
+  resolveOfficialWhatsappProviderTimestamp,
+} from '@core/common/functions/officialWhatsappInboundTimestamp';
 
 type MetaRecord = Record<string, unknown>;
+
+const OFFICIAL_WHATSAPP_REPLAY_EFFECT_MAX_AGE_MS =
+  resolveOfficialWhatsappEffectMaxAgeMs(
+    process.env.OFFICIAL_WHATSAPP_REPLAY_EFFECT_MAX_AGE_MS
+  );
+const OFFICIAL_WHATSAPP_PROVIDER_FUTURE_TOLERANCE_MS =
+  resolveOfficialWhatsappFutureToleranceMs(
+    process.env.OFFICIAL_WHATSAPP_PROVIDER_FUTURE_TOLERANCE_MS
+  );
 
 interface IResolvedChangeContext {
   event: IMetaWhatsappWebhookEvent;
@@ -60,14 +83,65 @@ interface IResolvedChangeContext {
   value: IMetaWhatsappWebhookChangeValue;
   phoneNumberId: string | null;
   connection: IActiveWorkerWhatsappOfficialConnectionWithWorker | null;
+  assertActive: () => void;
 }
+
+class OfficialWhatsappProcessedBusyError extends Error {
+  constructor() {
+    super('official_whatsapp_processed_busy');
+    this.name = 'OfficialWhatsappProcessedBusyError';
+  }
+}
+
+class OfficialWhatsappProcessedLeaseLostError extends Error {
+  constructor() {
+    super('official_whatsapp_processed_lease_lost');
+    this.name = 'OfficialWhatsappProcessedLeaseLostError';
+  }
+}
+
+const CLAIM_PROCESSED_EVENT_SCRIPT = `
+local current = redis.call('GET', KEYS[1])
+if current == 'done' then
+  return 'done'
+end
+if current then
+  return 'busy'
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+return 'acquired'
+`;
+
+const COMPLETE_PROCESSED_EVENT_SCRIPT = `
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+  return 0
+end
+redis.call('SET', KEYS[1], 'done', 'EX', ARGV[2])
+return 1
+`;
+
+const RELEASE_PROCESSED_EVENT_SCRIPT = `
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+  return 0
+end
+return redis.call('DEL', KEYS[1])
+`;
+
+const REFRESH_PROCESSED_EVENT_SCRIPT = `
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+  return 0
+end
+return redis.call('EXPIRE', KEYS[1], ARGV[2])
+`;
 
 @singleton()
 export class OfficialWhatsappWebhookConsume {
   private consumer: KafkaConsumer | null = null;
   private runner: KafkaConsumerRunner<IMetaWhatsappWebhookEvent> | null = null;
   private isRunning = false;
-  private readonly processedTtlSeconds = 60 * 60 * 24 * 7;
+  private readonly processedTtlSeconds = 60 * 60 * 24 * 30;
+  private readonly processedReservationTtlSeconds = 5 * 60;
+  private readonly processedReservationHeartbeatMs = 30_000;
   private readonly mediaCacheTtlSeconds = 60 * 60 * 24 * 7;
   private readonly processedPrefix = 'official-whatsapp:webhook:processed:v1';
   private readonly mediaCachePrefix = 'official-whatsapp:media:v1';
@@ -87,14 +161,16 @@ export class OfficialWhatsappWebhookConsume {
     private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository,
     @inject(StorageService)
     private readonly storageService: StorageService,
-    @inject(MessageStatusService)
-    private readonly messageStatusService: MessageStatusService,
     @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(InboundMessageSpoolService)
-    private readonly inboundMessageSpoolService: InboundMessageSpoolService
+    private readonly inboundMessageSpoolService: InboundMessageSpoolService,
+    @inject(OfficialWhatsappConversationWindowService)
+    private readonly officialWindowService: OfficialWhatsappConversationWindowService = {
+      recordInboundMessage: async () => undefined,
+    } as unknown as OfficialWhatsappConversationWindowService
   ) {}
 
   public async execute(): Promise<void> {
@@ -104,13 +180,15 @@ export class OfficialWhatsappWebhookConsume {
     this.runner = new KafkaConsumerRunner<IMetaWhatsappWebhookEvent>({
       kafka: this.kafka,
       topic,
-      groupId: 'group-underchat-official-whatsapp-webhook',
+      groupId: SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS.officialWhatsappWebhook,
       parse: (message) => this.parseMessage(message.value),
       resolveEntityKey: (payload, message) =>
         this.resolveEventEntityKey(payload.payload, message),
       preserveEntityOrder: true,
       maxRetries: 3,
       retryDelaysMs: [500, 2_000, 5_000],
+      shouldContinueRetryWithoutCommit: (_payload, _context, error) =>
+        this.shouldContinueProcessedRetry(error),
       processingTimeoutMs: 120_000,
       handle: (payload, context) => this.processWebhookEvent(payload, context),
       onInvalidMessage: (message) => this.parkInvalidMessage(message),
@@ -224,6 +302,7 @@ export class OfficialWhatsappWebhookConsume {
       value,
       phoneNumberId,
       connection,
+      assertActive: context.assertActive,
     };
 
     if (value.messages?.length) {
@@ -264,6 +343,7 @@ export class OfficialWhatsappWebhookConsume {
       );
       return;
     }
+    const connection = context.connection;
 
     for (const rawMessage of context.value.messages ?? []) {
       const message = this.toRecord(rawMessage);
@@ -275,34 +355,158 @@ export class OfficialWhatsappWebhookConsume {
         this.toNonEmptyString(message.id) ??
         this.syntheticMessageId(context, message);
       const processedKey = this.processedKey(
-        context.connection.account_id,
+        connection.account_id,
+        connection.worker_id,
         'message',
         messageId
       );
 
-      if (await this.isProcessed(processedKey)) {
-        continue;
-      }
+      await this.runProcessedOnce(
+        processedKey,
+        context.assertActive,
+        async (assertProcessedActive) => {
+          const processedContext: IResolvedChangeContext = {
+            ...context,
+            assertActive: assertProcessedActive,
+          };
+          const freshness = this.isEchoField(context.field)
+            ? null
+            : classifyOfficialWhatsappProviderTimestampForEffects({
+                providerTimestamp: message.timestamp,
+                maxAgeMs: OFFICIAL_WHATSAPP_REPLAY_EFFECT_MAX_AGE_MS,
+                futureToleranceMs:
+                  OFFICIAL_WHATSAPP_PROVIDER_FUTURE_TOLERANCE_MS,
+              });
+          if (freshness && !freshness.accepted) {
+            assertProcessedActive();
+            await this.parkRejectedOfficialInbound(
+              processedContext,
+              message,
+              messageId,
+              freshness
+            );
+            assertProcessedActive();
+            return;
+          }
+          assertProcessedActive();
+          const upsert = await this.buildUpsertFromMetaMessage(
+            processedContext,
+            message
+          );
+          assertProcessedActive();
+          if (!upsert) {
+            assertProcessedActive();
+            await this.parkUnresolvedConnection(
+              processedContext,
+              'message_not_mapped'
+            );
+            assertProcessedActive();
+            return;
+          }
 
-      const upsert = await this.buildUpsertFromMetaMessage(context, message);
-      if (!upsert) {
-        await this.parkUnresolvedConnection(context, 'message_not_mapped');
-        continue;
-      }
+          const remoteJid = upsert.message.key.remoteJid;
+          if (upsert.message.key.fromMe !== true && remoteJid) {
+            if (freshness?.accepted && freshness.providerTimestampMs !== null) {
+              const inboundAt = new Date(
+                freshness.providerTimestampMs
+              ).toISOString();
+              assertProcessedActive();
+              await this.officialWindowService.recordInboundMessage({
+                accountId: connection.account_id,
+                workerId: connection.worker_id,
+                phone: remoteJid,
+                remoteJid,
+                messageId: upsert.message.key.id ?? messageId,
+                replyToMessageId: upsert.content?.message_quoted_id ?? null,
+                inboundAt,
+              });
+              assertProcessedActive();
+            }
+          }
 
-      await this.streamProducerService.send(
-        this.kafkaServiceQueueService.upsertMessage(),
-        upsert,
-        buildUpsertMessageKafkaKey(upsert, messageId)
+          ensureInboundEventId(upsert);
+          assertProcessedActive();
+          await this.streamProducerService.send(
+            this.kafkaServiceQueueService.upsertMessage(),
+            upsert,
+            buildUpsertMessageKafkaKey(upsert, messageId),
+            undefined,
+            assertProcessedActive
+          );
+          assertProcessedActive();
+          await this.markIncomingMessageAsReadIfEnabled(
+            processedContext,
+            upsert,
+            assertProcessedActive
+          );
+          assertProcessedActive();
+        }
       );
-      await this.markIncomingMessageAsReadIfEnabled(context, upsert);
-      await this.markProcessed(processedKey);
     }
+  }
+
+  private async parkRejectedOfficialInbound(
+    context: IResolvedChangeContext,
+    message: MetaRecord,
+    messageId: string,
+    freshness: OfficialWhatsappProviderEffectTimestampClassification
+  ): Promise<void> {
+    const connection = context.connection;
+    if (!connection) {
+      throw new Error(
+        'Official WhatsApp connection is required for quarantine'
+      );
+    }
+    const reason =
+      freshness.reason === 'future'
+        ? 'official_message_timestamp_future'
+        : freshness.reason === 'stale'
+          ? 'official_stale_webhook_replay'
+          : 'official_message_timestamp_missing';
+    const dedupeKey = createHash('sha256')
+      .update(connection.account_id)
+      .update('\0')
+      .update(connection.worker_id)
+      .update('\0')
+      .update(context.event.raw_body_sha256)
+      .update('\0')
+      .update(messageId)
+      .update('\0')
+      .update(JSON.stringify(message))
+      .digest('hex');
+    const providerTimestamp =
+      freshness.providerTimestampMs === null
+        ? null
+        : new Date(freshness.providerTimestampMs).toISOString();
+
+    await this.inboundMessageSpoolService.parkConsumerMessage({
+      provider: 'message_upsert_consumer',
+      account_id: connection.account_id,
+      worker_id: connection.worker_id,
+      event_source: 'official_whatsapp_webhook',
+      reason,
+      stage: 'message_upsert.discard.terminal',
+      parked_at: new Date().toISOString(),
+      kafka_topic: this.kafkaServiceQueueService.upsertMessage(),
+      kafka_key: dedupeKey,
+      dedupe_key: dedupeKey,
+      retry_count: 0,
+      error: reason,
+      raw_meta: {
+        webhook_field: context.field,
+        provider_timestamp: providerTimestamp,
+        provider_timestamp_ms: freshness.providerTimestampMs,
+        age_ms: freshness.ageMs,
+        max_age_ms: OFFICIAL_WHATSAPP_REPLAY_EFFECT_MAX_AGE_MS,
+        future_tolerance_ms: OFFICIAL_WHATSAPP_PROVIDER_FUTURE_TOLERANCE_MS,
+      },
+    });
   }
 
   private async markIncomingMessageAsReadIfEnabled(
     context: IResolvedChangeContext,
-    upsert: IUpsertMessage
+    upsert: IUpsertMessage,
+    assertProcessedActive: () => void
   ): Promise<void> {
     const connection = context.connection;
     const key = upsert.message.key;
@@ -317,6 +521,7 @@ export class OfficialWhatsappWebhookConsume {
         return;
       }
 
+      assertProcessedActive();
       await this.metaWhatsappEmbeddedService.markMessageAsRead({
         apiVersion: connection.api_version,
         accessToken: this.passwordEncryptorService.decrypt(
@@ -325,26 +530,47 @@ export class OfficialWhatsappWebhookConsume {
         phoneNumberId: connection.phone_number_id,
         messageId,
       });
+      assertProcessedActive();
 
       const statusUpdate: IMessageStatusUpdate = {
+        event_id: buildOfficialWhatsappMessageStatusEventId({
+          accountId: connection.account_id,
+          workerId: connection.worker_id,
+          providerMessageId: messageId,
+          status: 'read',
+        }),
         account_id: connection.account_id,
+        worker_id: connection.worker_id,
+        source_provider: 'official_whatsapp',
         message_id: messageId,
         patch: { is_seen: true },
         key,
       };
 
+      assertProcessedActive();
       await this.streamProducerService.send(
         this.kafkaServiceQueueService.updateMessageStatus(),
         statusUpdate,
-        MessageStatusService.statusKafkaKey(connection.account_id, messageId)
+        MessageStatusService.statusKafkaKey(
+          connection.account_id,
+          messageId,
+          connection.worker_id
+        ),
+        undefined,
+        assertProcessedActive
       );
+      assertProcessedActive();
     } catch (error) {
+      if (isKafkaConsumerDispatchRevokedError(error)) {
+        throw error;
+      }
       console.error('Error marking official WhatsApp message as read:', {
         worker_id: connection.worker_id,
         account_id: connection.account_id,
         message_id: messageId,
         error,
       });
+      throw error;
     }
   }
 
@@ -374,6 +600,7 @@ export class OfficialWhatsappWebhookConsume {
       );
       return;
     }
+    const connection = context.connection;
 
     for (const rawStatus of context.value.statuses ?? []) {
       const status = this.toRecord(rawStatus);
@@ -388,55 +615,92 @@ export class OfficialWhatsappWebhookConsume {
 
       const statusValue = this.toNonEmptyString(status.status)?.toLowerCase();
       const processedKey = this.processedKey(
-        context.connection.account_id,
+        connection.account_id,
+        connection.worker_id,
         'status',
         `${messageId}:${statusValue ?? 'unknown'}`
       );
 
-      if (await this.isProcessed(processedKey)) {
-        continue;
-      }
+      await this.runProcessedOnce(
+        processedKey,
+        context.assertActive,
+        async (assertProcessedActive) => {
+          const recipientPhone = this.toNonEmptyString(status.recipient_id);
+          const remoteJid = this.toRemoteJid(recipientPhone);
+          const key = {
+            id: messageId,
+            remoteJid: remoteJid ?? undefined,
+            fromMe: true,
+          };
+          const failed = statusValue === 'failed';
+          const providerErrorCode = failed
+            ? this.statusErrorCode(status)
+            : null;
+          const statusFreshness =
+            classifyOfficialWhatsappProviderTimestampForEffects({
+              providerTimestamp: status.timestamp,
+              maxAgeMs: OFFICIAL_WHATSAPP_REPLAY_EFFECT_MAX_AGE_MS,
+              futureToleranceMs: OFFICIAL_WHATSAPP_PROVIDER_FUTURE_TOLERANCE_MS,
+            });
+          const patch = failed ? {} : this.statusToPatch(statusValue);
+          if (!failed && !patch) {
+            return;
+          }
 
-      const recipientPhone = this.toNonEmptyString(status.recipient_id);
-      const remoteJid = this.toRemoteJid(recipientPhone);
-      const key = {
-        id: messageId,
-        remoteJid: remoteJid ?? undefined,
-        fromMe: true,
-      };
+          const statusUpdate: IMessageStatusUpdate = {
+            event_id: buildOfficialWhatsappMessageStatusEventId({
+              accountId: connection.account_id,
+              workerId: connection.worker_id,
+              providerMessageId: messageId,
+              status: statusValue ?? 'unknown',
+            }),
+            account_id: connection.account_id,
+            worker_id: connection.worker_id,
+            source_provider: 'official_whatsapp',
+            message_id: messageId,
+            patch: patch ?? {},
+            failed,
+            provider_error_code: providerErrorCode ?? undefined,
+            provider_status_at:
+              resolveOfficialWhatsappProviderTimestamp(
+                status.timestamp,
+                context.event.received_at
+              ) ?? undefined,
+            key,
+          };
 
-      if (statusValue === 'failed') {
-        await this.messageStatusService.markMessageAsNotSentByWhatsAppId(
-          context.connection.account_id,
-          messageId,
-          key
-        );
-        await this.markProcessed(processedKey);
-        continue;
-      }
+          if (
+            providerErrorCode === 131047 &&
+            remoteJid &&
+            statusFreshness.accepted
+          ) {
+            assertProcessedActive();
+            await this.officialWindowService.markClosedByMetaReengagementForIdentity(
+              {
+                accountId: connection.account_id,
+                workerId: connection.worker_id,
+                phone: remoteJid,
+                remoteJid,
+              },
+              providerErrorCode
+            );
+          }
 
-      const patch = this.statusToPatch(statusValue);
-      if (!patch) {
-        await this.markProcessed(processedKey);
-        continue;
-      }
-
-      const statusUpdate: IMessageStatusUpdate = {
-        account_id: context.connection.account_id,
-        message_id: messageId,
-        patch,
-        key,
-      };
-
-      await this.streamProducerService.send(
-        this.kafkaServiceQueueService.updateMessageStatus(),
-        statusUpdate,
-        MessageStatusService.statusKafkaKey(
-          context.connection.account_id,
-          messageId
-        )
+          assertProcessedActive();
+          await this.streamProducerService.send(
+            this.kafkaServiceQueueService.updateMessageStatus(),
+            statusUpdate,
+            MessageStatusService.statusKafkaKey(
+              connection.account_id,
+              messageId,
+              connection.worker_id
+            ),
+            undefined,
+            assertProcessedActive
+          );
+          assertProcessedActive();
+        }
       );
-      await this.markProcessed(processedKey);
     }
   }
 
@@ -458,27 +722,35 @@ export class OfficialWhatsappWebhookConsume {
     for (const connection of connections) {
       const processedKey = this.processedKey(
         connection.account_id,
+        connection.worker_id,
         'account_update',
-        `partner_removed:${connection.worker_id}`
+        'partner_removed'
       );
 
-      if (await this.isProcessed(processedKey)) {
-        continue;
-      }
+      await this.runProcessedOnce(
+        processedKey,
+        context.assertActive,
+        async (assertProcessedActive) => {
+          assertProcessedActive();
+          const disconnected =
+            await this.workerWhatsappOfficialConnectionRepository.disconnectPreservingWorker(
+              {
+                accountId: connection.account_id,
+                workerId: connection.worker_id,
+              }
+            );
+          assertProcessedActive();
 
-      const disconnected =
-        await this.workerWhatsappOfficialConnectionRepository.disconnectPreservingWorker(
-          {
-            accountId: connection.account_id,
-            workerId: connection.worker_id,
+          if (disconnected) {
+            assertProcessedActive();
+            await this.publishOfficialDisconnect(
+              connection,
+              assertProcessedActive
+            );
+            assertProcessedActive();
           }
-        );
-
-      if (disconnected) {
-        await this.publishOfficialDisconnect(connection);
-      }
-
-      await this.markProcessed(processedKey);
+        }
+      );
     }
   }
 
@@ -523,6 +795,7 @@ export class OfficialWhatsappWebhookConsume {
       worker_id: connection.worker_id,
       account_id: connection.account_id,
       source_provider: 'official_whatsapp',
+      source_received_at: context.event.received_at,
       type: mapped.type,
       message: {
         key: {
@@ -682,6 +955,7 @@ export class OfficialWhatsappWebhookConsume {
       const reaction = this.toRecord(message.reaction) ?? {};
       const targetId = this.toNonEmptyString(reaction.message_id);
       const emoji = this.toNonEmptyString(reaction.emoji) ?? '';
+      const reactionTimestamp = this.toTimestampSeconds(message.timestamp);
       const remoteJid = this.toRemoteJid(
         this.resolveMessageRemotePhone(message, input.context.value, false)
       );
@@ -703,8 +977,9 @@ export class OfficialWhatsappWebhookConsume {
               fromMe: false,
             },
             text: emoji,
-            senderTimestampMs:
-              this.toTimestampSeconds(message.timestamp) * 1000,
+            ...(reactionTimestamp !== undefined
+              ? { senderTimestampMs: reactionTimestamp * 1000 }
+              : {}),
           },
         },
       };
@@ -824,6 +1099,7 @@ export class OfficialWhatsappWebhookConsume {
   private async mediaMapping(
     input: {
       connection: IActiveWorkerWhatsappOfficialConnectionWithWorker;
+      context: IResolvedChangeContext;
       message: MetaRecord;
       metaType: string;
       official: IOfficialWhatsappContentMetadata;
@@ -849,7 +1125,8 @@ export class OfficialWhatsappWebhookConsume {
     try {
       const uploaded = await this.downloadAndUploadMedia(
         input.connection,
-        media
+        media,
+        input.context.assertActive
       );
       if (!uploaded) {
         content.media_download_failed = true;
@@ -878,6 +1155,9 @@ export class OfficialWhatsappWebhookConsume {
         };
       }
     } catch (error) {
+      if (isKafkaConsumerDispatchRevokedError(error)) {
+        throw error;
+      }
       content.media_download_failed = true;
       input.official.errors = [
         {
@@ -910,7 +1190,8 @@ export class OfficialWhatsappWebhookConsume {
 
   private async downloadAndUploadMedia(
     connection: IActiveWorkerWhatsappOfficialConnectionWithWorker,
-    media: MetaRecord
+    media: MetaRecord,
+    assertActive: () => void
   ): Promise<UploadFileResponse | null> {
     const mediaId = this.toNonEmptyString(media.id);
     if (!mediaId) {
@@ -926,11 +1207,13 @@ export class OfficialWhatsappWebhookConsume {
     const accessToken = this.passwordEncryptorService.decrypt(
       connection.access_token_encrypted
     );
+    assertActive();
     const mediaInfo = await this.metaWhatsappEmbeddedService.getMediaUrl({
       apiVersion: connection.api_version,
       accessToken,
       mediaId,
     });
+    assertActive();
     const downloaded: MetaWhatsappDownloadedMedia =
       await this.metaWhatsappEmbeddedService.downloadMedia({
         accessToken,
@@ -941,6 +1224,7 @@ export class OfficialWhatsappWebhookConsume {
           `${mediaId}`,
         mimetype: this.toNonEmptyString(media.mime_type) ?? mediaInfo.mime_type,
       });
+    assertActive();
     const uploaded = await this.storageService.uploadFromBuffer(
       downloaded.buffer,
       connection.account_id,
@@ -1205,7 +1489,8 @@ export class OfficialWhatsappWebhookConsume {
   }
 
   private async publishOfficialDisconnect(
-    connection: IActiveWorkerWhatsappOfficialConnectionWithWorker
+    connection: IActiveWorkerWhatsappOfficialConnectionWithWorker,
+    assertActive: () => void
   ): Promise<void> {
     const payload: IBaileysConnectionState = {
       code: ECodeMessage.loggedOut,
@@ -1223,9 +1508,11 @@ export class OfficialWhatsappWebhookConsume {
       provider_state: 'disconnected',
     };
 
+    assertActive();
     await this.centrifugoService.publishSub(
       workerCentrifugoQueue(connection.account_id),
-      payload
+      payload,
+      assertActive
     );
   }
 
@@ -1259,13 +1546,13 @@ export class OfficialWhatsappWebhookConsume {
     return `${context.field}:${phone ?? 'unknown'}:${type}:${timestamp}`;
   }
 
-  private toTimestampSeconds(value: unknown): number {
+  private toTimestampSeconds(value: unknown): number | undefined {
     const raw = Number(value);
     if (Number.isFinite(raw) && raw > 0) {
       return raw > 1_000_000_000_000 ? Math.floor(raw / 1000) : Math.floor(raw);
     }
 
-    return Math.floor(Date.now() / 1000);
+    return undefined;
   }
 
   private toRemoteJid(phone: string | null | undefined): string | null {
@@ -1280,6 +1567,19 @@ export class OfficialWhatsappWebhookConsume {
   private toFiniteNumber(value: unknown): number | null {
     const numberValue = Number(value);
     return Number.isFinite(numberValue) ? numberValue : null;
+  }
+
+  private statusErrorCode(status: MetaRecord): number | null {
+    const errors = Array.isArray(status.errors) ? status.errors : [];
+    for (const rawError of errors) {
+      const error = this.toRecord(rawError);
+      const code = this.toFiniteNumber(error?.code);
+      if (code !== null) {
+        return code;
+      }
+    }
+
+    return null;
   }
 
   private toNonEmptyString(value: unknown): string | undefined {
@@ -1305,22 +1605,149 @@ export class OfficialWhatsappWebhookConsume {
       : [];
   }
 
-  private processedKey(accountId: string, kind: string, id: string): string {
-    return `${this.processedPrefix}:${accountId}:${kind}:${id}`;
+  private processedKey(
+    accountId: string,
+    workerId: string,
+    kind: string,
+    id: string
+  ): string {
+    return `${this.processedPrefix}:${accountId}:${workerId}:${kind}:${id}`;
   }
 
-  private async isProcessed(key: string): Promise<boolean> {
-    try {
-      return (await this.redis.exists(key)) === 1;
-    } catch {
+  private shouldContinueProcessedRetry(error: unknown): boolean {
+    return error instanceof OfficialWhatsappProcessedBusyError;
+  }
+
+  private async runProcessedOnce(
+    key: string,
+    assertActive: () => void,
+    effect: (assertProcessedActive: () => void) => Promise<void>
+  ): Promise<boolean> {
+    assertActive();
+    const reservationToken = randomUUID();
+    const reservationOwner = `reserved:${reservationToken}`;
+    const reservationTtlMs = this.processedReservationTtlSeconds * 1_000;
+    const claimStartedAt = performance.now();
+    const claimResult = await this.redis.eval(
+      CLAIM_PROCESSED_EVENT_SCRIPT,
+      1,
+      key,
+      reservationOwner,
+      String(this.processedReservationTtlSeconds)
+    );
+    assertActive();
+    const claimStatus = String(claimResult);
+    if (claimStatus === 'done') {
       return false;
     }
-  }
+    if (claimStatus === 'busy') {
+      throw new OfficialWhatsappProcessedBusyError();
+    }
+    if (claimStatus !== 'acquired') {
+      throw new Error('official_whatsapp_processed_claim_failed');
+    }
 
-  private async markProcessed(key: string): Promise<void> {
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    let heartbeatRenewal: Promise<void> | null = null;
+    let leaseError: Error | null = null;
+    // Start the local deadline before the Redis round trip. It can therefore
+    // expire earlier, never later, than the server-side reservation.
+    let reservationValidUntil = claimStartedAt + reservationTtlMs;
+
+    const renewReservation = async (): Promise<void> => {
+      try {
+        assertActive();
+        const renewalStartedAt = performance.now();
+        const refreshed = await this.redis.eval(
+          REFRESH_PROCESSED_EVENT_SCRIPT,
+          1,
+          key,
+          reservationOwner,
+          String(this.processedReservationTtlSeconds)
+        );
+        assertActive();
+        if (Number(refreshed) !== 1) {
+          throw new OfficialWhatsappProcessedLeaseLostError();
+        }
+        reservationValidUntil = renewalStartedAt + reservationTtlMs;
+      } catch (error) {
+        leaseError =
+          error instanceof Error
+            ? error
+            : new OfficialWhatsappProcessedLeaseLostError();
+        if (heartbeat) {
+          clearInterval(heartbeat);
+          heartbeat = null;
+        }
+      }
+    };
+
+    const assertReservationActive = (): void => {
+      assertActive();
+      if (!leaseError && performance.now() >= reservationValidUntil) {
+        leaseError = new OfficialWhatsappProcessedLeaseLostError();
+      }
+      if (leaseError) {
+        throw leaseError;
+      }
+    };
+
+    const stopHeartbeat = async (): Promise<void> => {
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
+      const activeRenewal = heartbeatRenewal;
+      if (activeRenewal) {
+        await activeRenewal;
+      }
+    };
+
+    heartbeat = setInterval(() => {
+      if (heartbeatRenewal || leaseError) {
+        return;
+      }
+      heartbeatRenewal = renewReservation().finally(() => {
+        heartbeatRenewal = null;
+      });
+    }, this.processedReservationHeartbeatMs);
+    heartbeat.unref?.();
+
     try {
-      await this.redis.set(key, '1', 'EX', this.processedTtlSeconds);
-    } catch {}
+      await effect(assertReservationActive);
+      await stopHeartbeat();
+      assertReservationActive();
+      const completed = await this.redis.eval(
+        COMPLETE_PROCESSED_EVENT_SCRIPT,
+        1,
+        key,
+        reservationOwner,
+        String(this.processedTtlSeconds)
+      );
+      assertActive();
+      if (Number(completed) !== 1) {
+        throw new OfficialWhatsappProcessedLeaseLostError();
+      }
+      return true;
+    } catch (error) {
+      await stopHeartbeat();
+      try {
+        await this.redis.eval(
+          RELEASE_PROCESSED_EVENT_SCRIPT,
+          1,
+          key,
+          reservationOwner
+        );
+      } catch (releaseError) {
+        console.error(
+          '[OfficialWhatsappWebhookConsume] processed reservation release failed',
+          { key, error: releaseError }
+        );
+      }
+      throw error;
+    } finally {
+      await stopHeartbeat();
+    }
   }
 
   private async parkInvalidMessage(message: KafkaRunnerMessage): Promise<void> {

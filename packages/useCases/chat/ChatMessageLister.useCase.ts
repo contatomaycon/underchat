@@ -17,6 +17,7 @@ import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy'
 import { ChatClosureCommentListerRepository } from '@core/repositories/chat/ChatClosureCommentLister.repository';
 import { enrichMessagesWithClosureAnnotationSubtype } from '@core/common/functions/enrichMessagesWithClosureAnnotationSubtype';
 import { filterMessagesForChat } from '@core/common/functions/chatMessageOwnership';
+import { OfficialWhatsappConversationWindowService } from '@core/services/officialWhatsappConversationWindow.service';
 
 @injectable()
 export class ChatMessageListerUseCase {
@@ -26,7 +27,9 @@ export class ChatMessageListerUseCase {
     @inject(ChatService)
     private readonly chatService: ChatService,
     @inject(ChatClosureCommentListerRepository)
-    private readonly chatClosureCommentListerRepository: ChatClosureCommentListerRepository
+    private readonly chatClosureCommentListerRepository: ChatClosureCommentListerRepository,
+    @inject(OfficialWhatsappConversationWindowService)
+    private readonly officialWindowService: OfficialWhatsappConversationWindowService
   ) {}
 
   private async getChatMessage(
@@ -127,6 +130,11 @@ export class ChatMessageListerUseCase {
       query,
       params
     );
+    const officialWindow =
+      await this.officialWindowService.reconcileFromMessages(
+        chat,
+        chatMessages
+      );
 
     if (!chatMessages) {
       const pagings = setPaginationData(0, 0, perPage, currentPage);
@@ -134,6 +142,7 @@ export class ChatMessageListerUseCase {
       return {
         pagings,
         results: [],
+        official_window: officialWindow,
       };
     }
 
@@ -157,6 +166,7 @@ export class ChatMessageListerUseCase {
     return {
       pagings,
       results: enrichedMessages,
+      official_window: officialWindow,
     };
   }
 }

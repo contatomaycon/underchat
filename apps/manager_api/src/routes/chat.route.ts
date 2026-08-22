@@ -8,7 +8,7 @@ import {
   viewPinnedChatSchema,
 } from '@core/schema/chat/viewPinnedChat';
 import { viewChatUnreadSummarySchema } from '@core/schema/chat/unreadSummary';
-import ChatController from '@/controllers/chat';
+import ChatController from '@core/controllers/chat';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 import {
@@ -16,6 +16,7 @@ import {
   chatReadPermissions,
   contactViewPhonePermissions,
   forwardToOutputChatbotPermissions,
+  generateMessageWithAiPermissions,
   kanbanPermissions,
   viewChatAttendantsPermissions,
 } from '@/permissions';
@@ -42,6 +43,8 @@ import { searchChatsSchema } from '@core/schema/chat/searchChats';
 import { viewWorkerConfigForChatSchema } from '@core/schema/chat/viewWorkerConfigForChat';
 import { listTransferOptionsSchema } from '@core/schema/chat/listTransferOptions';
 import { officialOpeningContextSchema } from '@core/schema/chat/officialOpeningContext';
+import { officialConversationContextSchema } from '@core/schema/chat/officialConversationContext';
+import { sendOfficialTemplateSchema } from '@core/schema/chat/sendOfficialTemplate';
 import { listTransferUsersSchema } from '@core/schema/chat/listTransferUsers';
 import { listTransferSectorsSchema } from '@core/schema/chat/listTransferSectors';
 import { listTransferSectorUsersSchema } from '@core/schema/chat/listTransferSectorUsers';
@@ -386,6 +389,28 @@ export default function chatRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.get('/chat/:chat_id/official-conversation/context', {
+    schema: officialConversationContextSchema,
+    handler: chatController.viewOfficialConversationContext,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatReadPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chat/:chat_id/official-template', {
+    schema: sendOfficialTemplateSchema,
+    handler: chatController.sendOfficialTemplate,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
   server.get('/chat/transfer/users', {
     schema: listTransferUsersSchema,
     handler: chatController.listTransferUsers,
@@ -694,7 +719,11 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.generateAiReply,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, chatPermissions),
+        server.authenticateJwt(
+          request,
+          reply,
+          generateMessageWithAiPermissions
+        ),
       planGuard,
       planStatus,
     ],

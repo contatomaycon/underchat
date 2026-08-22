@@ -30,16 +30,33 @@ type AttentionItem = {
   tone: Tone;
 };
 
+type DiagnosticItem = {
+  key: string;
+  title: string;
+  description: string;
+  status: string;
+  icon: string;
+  tone: Tone;
+};
+
+type HealthSection = {
+  available: boolean;
+  error: WhatsappOfficialHealthResponse['phone_number']['error'];
+};
+
 const props = defineProps<{
   modelValue: boolean;
   channel: ListWorkerResponse | null;
   health: WhatsappOfficialHealthResponse | null;
   loading?: boolean;
+  canRepair?: boolean;
+  repairLoading?: boolean;
 }>();
 
 const emit = defineEmits<{
   (event: 'update:modelValue', visible: boolean): void;
   (event: 'refresh'): void;
+  (event: 'repair'): void;
 }>();
 
 const { t, locale } = useI18n();
@@ -57,6 +74,15 @@ const messageAnalytics = computed(
 );
 const conversationAnalytics = computed(
   () => props.health?.analytics.conversations.data ?? null
+);
+const tokenDiagnostic = computed(
+  () => props.health?.diagnostics.token.data ?? null
+);
+const webhookDiagnostic = computed(
+  () => props.health?.diagnostics.webhook_subscription.data ?? null
+);
+const requiresMetaReauthentication = computed(
+  () => props.health?.diagnostics.reauthentication_required === true
 );
 
 const metaValueTranslationKeys: Record<string, string> = {
@@ -144,6 +170,26 @@ const normalizedCanSendStatus = computed(() =>
 );
 
 const statusPresentation = computed(() => {
+  if (requiresMetaReauthentication.value) {
+    return {
+      color: 'error' as const,
+      icon: 'tabler-key-off',
+      label: t('meta_health_access_expired'),
+      title: t('meta_health_access_expired_title'),
+      description: t('meta_health_access_expired_description'),
+    };
+  }
+
+  if (webhookDiagnostic.value?.subscribed === false) {
+    return {
+      color: 'warning' as const,
+      icon: 'tabler-webhook-off',
+      label: t('meta_health_webhook_pending'),
+      title: t('meta_health_webhook_pending_title'),
+      description: t('meta_health_webhook_pending_description'),
+    };
+  }
+
   if (
     normalizedCanSendStatus.value === 'AVAILABLE' ||
     normalizedCanSendStatus.value === 'CONNECTED'
@@ -403,6 +449,24 @@ const summaryRows = computed<SummaryRow[]>(() => {
 const attentionItems = computed<AttentionItem[]>(() => {
   const items: AttentionItem[] = [];
 
+  if (requiresMetaReauthentication.value) {
+    items.push({
+      key: 'meta-access',
+      title: t('meta_health_action_reauthenticate_title'),
+      description: t('meta_health_action_reauthenticate_description'),
+      icon: 'tabler-key-off',
+      tone: 'error',
+    });
+  } else if (webhookDiagnostic.value?.subscribed === false) {
+    items.push({
+      key: 'webhook-subscription',
+      title: t('meta_health_action_webhook_title'),
+      description: t('meta_health_action_webhook_description'),
+      icon: 'tabler-webhook-off',
+      tone: 'warning',
+    });
+  }
+
   if (normalizedCanSendStatus.value === 'BLOCKED') {
     items.push({
       key: 'blocked',
@@ -469,6 +533,204 @@ const attentionItems = computed<AttentionItem[]>(() => {
 });
 
 const visiblePhoneNumbers = computed(() => phoneNumbers.value?.results ?? []);
+
+const formatDiagnosticError = (
+  error: WhatsappOfficialHealthResponse['phone_number']['error']
+) => {
+  if (!error) {
+    return t('meta_health_diagnostic_unavailable');
+  }
+
+  const identifiers = [
+    error.code !== null ? `code ${error.code}` : null,
+    error.error_subcode !== null ? `subcode ${error.error_subcode}` : null,
+    error.type,
+  ].filter((value): value is string => Boolean(value));
+  const prefix = identifiers.length ? `${identifiers.join(' · ')} — ` : '';
+
+  return `${prefix}${error.message}`;
+};
+
+const createSectionDiagnostic = (
+  key: string,
+  titleKey: string,
+  section: HealthSection | undefined,
+  optional = false
+): DiagnosticItem => {
+  if (section?.available) {
+    return {
+      key,
+      title: t(titleKey),
+      description: t('meta_health_diagnostic_success_description'),
+      status: t('meta_health_diagnostic_ok'),
+      icon: 'tabler-circle-check',
+      tone: 'success',
+    };
+  }
+
+  return {
+    key,
+    title: t(titleKey),
+    description: formatDiagnosticError(section?.error ?? null),
+    status: t(
+      optional
+        ? 'meta_health_diagnostic_optional_failure'
+        : 'meta_health_diagnostic_failure'
+    ),
+    icon: optional ? 'tabler-alert-triangle' : 'tabler-circle-x',
+    tone: optional ? 'warning' : 'error',
+  };
+};
+
+const diagnosticItems = computed<DiagnosticItem[]>(() => {
+  if (!props.health) {
+    return [];
+  }
+
+  const items: DiagnosticItem[] = [];
+  const tokenSection = props.health.diagnostics.token;
+
+  if (!tokenSection.available || !tokenDiagnostic.value) {
+    items.push(
+      createSectionDiagnostic(
+        'token',
+        'meta_health_diagnostic_token',
+        tokenSection
+      )
+    );
+  } else {
+    const tokenExpiration =
+      tokenDiagnostic.value.expires_at ??
+      tokenDiagnostic.value.data_access_expires_at;
+    const tokenExpired = tokenExpiration
+      ? Date.parse(tokenExpiration) <= Date.now()
+      : false;
+
+    items.push({
+      key: 'token-validity',
+      title: t('meta_health_diagnostic_token_validity'),
+      description: tokenDiagnostic.value.valid
+        ? t('meta_health_diagnostic_token_valid_description')
+        : t('meta_health_diagnostic_token_invalid_description'),
+      status: tokenDiagnostic.value.valid
+        ? t('meta_health_diagnostic_ok')
+        : t('meta_health_diagnostic_failure'),
+      icon: tokenDiagnostic.value.valid
+        ? 'tabler-circle-check'
+        : 'tabler-circle-x',
+      tone: tokenDiagnostic.value.valid ? 'success' : 'error',
+    });
+    items.push({
+      key: 'token-lifecycle',
+      title: t('meta_health_diagnostic_token_lifecycle'),
+      description: tokenDiagnostic.value.does_not_expire
+        ? t('meta_health_diagnostic_token_permanent_description', {
+            type: tokenDiagnostic.value.type ?? '-',
+          })
+        : tokenExpiration
+          ? t('meta_health_diagnostic_token_expiration_description', {
+              date: formatDateTime(tokenExpiration),
+              type: tokenDiagnostic.value.type ?? '-',
+            })
+          : t('meta_health_diagnostic_token_expiration_unknown_description', {
+              type: tokenDiagnostic.value.type ?? '-',
+            }),
+      status: tokenExpired
+        ? t('meta_health_diagnostic_failure')
+        : t('meta_health_diagnostic_ok'),
+      icon: tokenExpired ? 'tabler-clock-x' : 'tabler-clock-check',
+      tone: tokenExpired ? 'error' : 'success',
+    });
+    items.push({
+      key: 'token-app',
+      title: t('meta_health_diagnostic_app'),
+      description: tokenDiagnostic.value.app_matches_config
+        ? t('meta_health_diagnostic_app_match_description')
+        : t('meta_health_diagnostic_app_mismatch_description'),
+      status: tokenDiagnostic.value.app_matches_config
+        ? t('meta_health_diagnostic_ok')
+        : t('meta_health_diagnostic_failure'),
+      icon: tokenDiagnostic.value.app_matches_config
+        ? 'tabler-circle-check'
+        : 'tabler-circle-x',
+      tone: tokenDiagnostic.value.app_matches_config ? 'success' : 'error',
+    });
+    items.push({
+      key: 'token-scopes',
+      title: t('meta_health_diagnostic_permissions'),
+      description: tokenDiagnostic.value.missing_scopes.length
+        ? t('meta_health_diagnostic_permissions_missing', {
+            permissions: tokenDiagnostic.value.missing_scopes.join(', '),
+          })
+        : t('meta_health_diagnostic_permissions_ok_description'),
+      status: tokenDiagnostic.value.missing_scopes.length
+        ? t('meta_health_diagnostic_failure')
+        : t('meta_health_diagnostic_ok'),
+      icon: tokenDiagnostic.value.missing_scopes.length
+        ? 'tabler-lock-exclamation'
+        : 'tabler-shield-check',
+      tone: tokenDiagnostic.value.missing_scopes.length ? 'error' : 'success',
+    });
+  }
+
+  const webhookSection = props.health.diagnostics.webhook_subscription;
+  if (!webhookSection.available || !webhookDiagnostic.value) {
+    items.push(
+      createSectionDiagnostic(
+        'webhook',
+        'meta_health_diagnostic_webhook',
+        webhookSection
+      )
+    );
+  } else {
+    items.push({
+      key: 'webhook',
+      title: t('meta_health_diagnostic_webhook'),
+      description: webhookDiagnostic.value.subscribed
+        ? t('meta_health_diagnostic_webhook_ok_description')
+        : t('meta_health_diagnostic_webhook_missing_description'),
+      status: webhookDiagnostic.value.subscribed
+        ? t('meta_health_diagnostic_ok')
+        : t('meta_health_diagnostic_attention'),
+      icon: webhookDiagnostic.value.subscribed
+        ? 'tabler-webhook'
+        : 'tabler-webhook-off',
+      tone: webhookDiagnostic.value.subscribed ? 'success' : 'warning',
+    });
+  }
+
+  items.push(
+    createSectionDiagnostic(
+      'waba-access',
+      'meta_health_diagnostic_waba',
+      props.health.waba
+    ),
+    createSectionDiagnostic(
+      'phone-access',
+      'meta_health_diagnostic_phone',
+      props.health.phone_number
+    ),
+    createSectionDiagnostic(
+      'phone-list',
+      'meta_health_diagnostic_phone_list',
+      props.health.phone_numbers
+    ),
+    createSectionDiagnostic(
+      'message-analytics',
+      'meta_health_diagnostic_message_analytics',
+      props.health.analytics.messages,
+      true
+    ),
+    createSectionDiagnostic(
+      'conversation-analytics',
+      'meta_health_diagnostic_conversation_analytics',
+      props.health.analytics.conversations,
+      true
+    )
+  );
+
+  return items;
+});
 
 const formattedPeriod = computed(() => {
   if (!props.health) {
@@ -578,6 +840,30 @@ const formattedPeriod = computed(() => {
             <VIcon :icon="statusPresentation.icon" size="44" />
           </section>
 
+          <div
+            v-if="
+              canRepair &&
+              (requiresMetaReauthentication ||
+                webhookDiagnostic?.subscribed === false)
+            "
+            class="meta-health-repair-callout"
+          >
+            <div>
+              <strong>{{ $t('meta_health_repair_title') }}</strong>
+              <span>{{ $t('meta_health_repair_description') }}</span>
+            </div>
+            <VBtn
+              color="primary"
+              variant="flat"
+              prepend-icon="tabler-refresh-alert"
+              :loading="repairLoading"
+              :disabled="loading || repairLoading"
+              @click="emit('repair')"
+            >
+              {{ $t('repair_whatsapp_official_webhook_subscription') }}
+            </VBtn>
+          </div>
+
           <div class="meta-health-metrics" :class="metricGridClasses">
             <div
               v-for="card in metricCards"
@@ -644,6 +930,42 @@ const formattedPeriod = computed(() => {
               </div>
             </section>
           </div>
+
+          <section class="meta-health-panel meta-health-diagnostics-panel">
+            <div class="meta-health-section-title">
+              <VIcon icon="tabler-stethoscope" size="20" />
+              <div>
+                <span>{{ $t('meta_health_diagnostics_title') }}</span>
+                <small>{{ $t('meta_health_diagnostics_subtitle') }}</small>
+              </div>
+            </div>
+
+            <div class="meta-health-diagnostic-list">
+              <article
+                v-for="diagnostic in diagnosticItems"
+                :key="diagnostic.key"
+                class="meta-health-diagnostic-item"
+                :class="`is-${diagnostic.tone}`"
+              >
+                <div class="meta-health-diagnostic-icon">
+                  <VIcon :icon="diagnostic.icon" size="20" />
+                </div>
+                <div class="meta-health-diagnostic-copy">
+                  <div>
+                    <strong>{{ diagnostic.title }}</strong>
+                    <VChip
+                      size="x-small"
+                      variant="tonal"
+                      :color="diagnostic.tone"
+                    >
+                      {{ diagnostic.status }}
+                    </VChip>
+                  </div>
+                  <p>{{ diagnostic.description }}</p>
+                </div>
+              </article>
+            </div>
+          </section>
 
           <section
             v-if="visiblePhoneNumbers.length"
@@ -921,6 +1243,39 @@ const formattedPeriod = computed(() => {
   line-height: 1.45;
 }
 
+.meta-health-repair-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: linear-gradient(
+    100deg,
+    rgba(var(--v-theme-error), 0.09),
+    rgba(var(--v-theme-warning), 0.08)
+  );
+  border: 1px solid rgba(var(--v-theme-error), 0.22);
+  border-radius: 8px;
+}
+
+.meta-health-repair-callout strong,
+.meta-health-repair-callout span {
+  display: block;
+}
+
+.meta-health-repair-callout strong {
+  color: rgba(var(--v-theme-on-surface), 0.92);
+  font-size: 0.92rem;
+}
+
+.meta-health-repair-callout span {
+  margin-top: 3px;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 .meta-health-metric {
   display: flex;
   flex-direction: column;
@@ -1102,6 +1457,89 @@ const formattedPeriod = computed(() => {
   line-height: 1.35;
 }
 
+.meta-health-diagnostics-panel {
+  margin-top: 16px;
+}
+
+.meta-health-diagnostic-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.meta-health-diagnostic-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  min-width: 0;
+  padding: 12px;
+  background: rgba(var(--v-theme-surface-variant), 0.11);
+  border: 1px solid rgba(var(--v-border-color), 0.14);
+  border-left-width: 3px;
+  border-radius: 8px;
+}
+
+.meta-health-diagnostic-item.is-success {
+  border-left-color: rgb(var(--v-theme-success));
+}
+
+.meta-health-diagnostic-item.is-warning {
+  border-left-color: rgb(var(--v-theme-warning));
+}
+
+.meta-health-diagnostic-item.is-error {
+  border-left-color: rgb(var(--v-theme-error));
+}
+
+.meta-health-diagnostic-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.meta-health-diagnostic-item.is-success .meta-health-diagnostic-icon {
+  color: rgb(var(--v-theme-success));
+  background: rgba(var(--v-theme-success), 0.1);
+}
+
+.meta-health-diagnostic-item.is-warning .meta-health-diagnostic-icon {
+  color: rgb(var(--v-theme-warning));
+  background: rgba(var(--v-theme-warning), 0.12);
+}
+
+.meta-health-diagnostic-item.is-error .meta-health-diagnostic-icon {
+  color: rgb(var(--v-theme-error));
+  background: rgba(var(--v-theme-error), 0.1);
+}
+
+.meta-health-diagnostic-copy {
+  min-width: 0;
+}
+
+.meta-health-diagnostic-copy > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.meta-health-diagnostic-copy strong {
+  color: rgba(var(--v-theme-on-surface), 0.88);
+  font-size: 0.86rem;
+  line-height: 1.3;
+}
+
+.meta-health-diagnostic-copy p {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .meta-health-phone-list-panel {
   margin-top: 16px;
 }
@@ -1175,7 +1613,8 @@ const formattedPeriod = computed(() => {
   }
 
   .meta-health-main-grid,
-  .meta-health-summary-grid {
+  .meta-health-summary-grid,
+  .meta-health-diagnostic-list {
     grid-template-columns: 1fr;
   }
 
@@ -1199,6 +1638,11 @@ const formattedPeriod = computed(() => {
   .meta-health-phone-item {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .meta-health-repair-callout {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .meta-health-metrics,

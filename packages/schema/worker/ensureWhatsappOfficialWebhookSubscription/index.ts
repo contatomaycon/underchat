@@ -2,6 +2,7 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { ensureWhatsappOfficialWebhookSubscriptionParamsSchema } from './params.schema';
+import { ensureWhatsappOfficialWebhookSubscriptionRequestSchema } from './request.schema';
 import { ensureWhatsappOfficialWebhookSubscriptionResponseSchema } from './response.schema';
 
 export const ensureWhatsappOfficialWebhookSubscriptionSchema = {
@@ -24,6 +25,7 @@ export const ensureWhatsappOfficialWebhookSubscriptionSchema = {
     ),
   }),
   params: ensureWhatsappOfficialWebhookSubscriptionParamsSchema,
+  body: ensureWhatsappOfficialWebhookSubscriptionRequestSchema,
   response: {
     200: Type.Object(
       {

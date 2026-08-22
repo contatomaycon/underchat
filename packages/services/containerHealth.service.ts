@@ -5,6 +5,8 @@ import { PassThrough } from 'node:stream';
 const SERVICE_HEALTH_URL = 'http://127.0.0.1:3005/v1/health/check';
 const CONNECTION_HEALTH_URL =
   'http://127.0.0.1:3005/v1/connection/health/check';
+const CONTAINER_HEALTH_DOCKER_API_TIMEOUT_MS = 8_000;
+const CONTAINER_HEALTH_EXEC_STREAM_TIMEOUT_MS = 5_000;
 
 export interface ContainerHealthCheckOptions {
   maxAttempts?: number;
@@ -55,7 +57,10 @@ export class ContainerHealthService {
   private readonly docker: Docker;
 
   constructor() {
-    this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
+    this.docker = new Docker({
+      socketPath: '/var/run/docker.sock',
+      timeout: CONTAINER_HEALTH_DOCKER_API_TIMEOUT_MS,
+    });
   }
 
   private readonly connectionHealthMaxAttempts = 10;
@@ -267,10 +272,7 @@ export class ContainerHealthService {
       stdoutStream.on('data', (chunk) => chunks.push(chunk.toString()));
       stderrStream.on('data', (chunk) => errorChunks.push(chunk.toString()));
 
-      await new Promise<void>((resolve, reject) => {
-        execStream.on('end', resolve);
-        execStream.on('error', reject);
-      });
+      await this.waitForExecStreamEnd(execStream);
 
       const statusCode = chunks.join('').trim();
       const stderr = this.sanitizeHealthError(errorChunks.join(''));
@@ -300,6 +302,53 @@ export class ContainerHealthService {
         ),
       };
     }
+  }
+
+  private waitForExecStreamEnd(
+    execStream: NodeJS.ReadWriteStream
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = (): void => {
+        if (deadlineTimer) {
+          clearTimeout(deadlineTimer);
+        }
+        execStream.removeListener('end', onEnd);
+        execStream.removeListener('error', onError);
+      };
+      const settle = (error?: unknown): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      };
+      const onEnd = (): void => settle();
+      const onError = (error: unknown): void => settle(error);
+
+      execStream.once('end', onEnd);
+      execStream.once('error', onError);
+      deadlineTimer = setTimeout(() => {
+        settle(new Error('container_health_exec_stream_timeout'));
+        try {
+          (
+            execStream as NodeJS.ReadWriteStream & {
+              destroy?: () => void;
+            }
+          ).destroy?.();
+        } catch {
+          // The deadline has already failed the probe. Stream teardown is
+          // best-effort and must never keep a lifecycle lease alive.
+        }
+      }, CONTAINER_HEALTH_EXEC_STREAM_TIMEOUT_MS);
+      deadlineTimer.unref?.();
+    });
   }
 
   private normalizePositiveInteger(

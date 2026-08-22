@@ -5,6 +5,7 @@ import { TranscriptionService } from '@core/services/transcription.service';
 import { TranscribeAudioParams } from '@core/schema/chat/transcribeAudio/request.schema';
 import type { TranscribeAudioResponse } from '@core/schema/chat/transcribeAudio/response.schema';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 
 @injectable()
 export class TranscribeAudioMessageUseCase {
@@ -20,7 +21,8 @@ export class TranscribeAudioMessageUseCase {
     accountId: string,
     params: TranscribeAudioParams,
     userId: string,
-    userChannels: { id: string; name: string }[] = []
+    userChannels: { id: string; name: string }[] = [],
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<TranscribeAudioResponse> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -42,10 +44,19 @@ export class TranscribeAudioMessageUseCase {
       throw new Error(t('chat_access_denied'));
     }
 
+    const message = await this.chatService.findMessageByMessageId(
+      accountId,
+      params.message_id
+    );
+    if (!message || message.chat_id !== params.chat_id) {
+      throw new Error(t('message_not_found'));
+    }
+
     const result = await this.transcriptionService.transcribeMessage(
       params.chat_id,
       params.message_id,
-      accountId
+      accountId,
+      webhookSource
     );
 
     return result;

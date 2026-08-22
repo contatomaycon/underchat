@@ -1,6 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { handleControllerError } from '@core/common/functions/handleControllerError';
+import { handleScheduleControllerError } from '@core/controllers/schedule/methods/handleScheduleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { DeleteScheduleRequest } from '@core/schema/schedule/deleteSchedule/request.schema';
@@ -13,12 +13,14 @@ export const deleteSchedule = async (
   reply: FastifyReply
 ) => {
   const scheduleDeleterUseCase = container.resolve(ScheduleDeleterUseCase);
-  const { t } = request;
+  const { t, tokenJwtData } = request;
 
   try {
     const response = await scheduleDeleterUseCase.execute(
       t,
-      request.params.schedule_id
+      request.params.schedule_id,
+      tokenJwtData.account_id,
+      tokenJwtData.channels
     );
 
     if (response) {
@@ -34,6 +36,6 @@ export const deleteSchedule = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    handleControllerError(error, reply, t);
+    handleScheduleControllerError(error, reply, t);
   }
 };

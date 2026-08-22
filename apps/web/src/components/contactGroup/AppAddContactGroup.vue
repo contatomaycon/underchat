@@ -8,6 +8,7 @@ import { ref, computed, watch } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { EColor } from '@core/common/enums/EColor';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
+import ContactValidationBadge from '@/components/contact/ContactValidationBadge.vue';
 
 const contactGroupStore = useContactGroupStore();
 const contactStore = useContactStore();
@@ -58,6 +59,7 @@ const textColor = (s: string): string => {
 const headers = [
   { title: t('name'), key: 'name' },
   { title: t('phone'), key: 'phone_partial' },
+  { title: t('status'), key: 'status', sortable: false },
   { title: t('label'), key: 'label_template' },
 ];
 
@@ -75,7 +77,12 @@ const searchDebounced = refDebounced(search, 500);
 
 type ContactRow = Pick<
   ListContactResponse,
-  'contact_id' | 'name' | 'phone_partial' | 'label_templates'
+  | 'contact_id'
+  | 'name'
+  | 'phone_partial'
+  | 'label_templates'
+  | 'is_valided'
+  | 'validation_status'
 >;
 
 const contactItems = computed(() => contactStore.list);
@@ -256,7 +263,9 @@ const toggleContact = (contact: ContactRow) => {
                   </span>
                 </div>
 
-                <div class="d-flex align-center justify-space-between flex-wrap gap-4">
+                <div
+                  class="d-flex align-center justify-space-between flex-wrap gap-4"
+                >
                   <div class="d-flex align-center gap-x-2">
                     <div>{{ $t('show') }}</div>
                     <AppSelect
@@ -279,7 +288,7 @@ const toggleContact = (contact: ContactRow) => {
                       dense
                       outlined
                       class="flex-grow-1"
-                      style="min-width: 280px;"
+                      style="min-width: 280px"
                     />
                   </div>
                 </div>
@@ -316,6 +325,14 @@ const toggleContact = (contact: ContactRow) => {
 
                 <template #item.phone_partial="{ item }">
                   <span>{{ item.phone_partial }}</span>
+                </template>
+
+                <template #item.status="{ item }">
+                  <ContactValidationBadge
+                    :validation-status="item.validation_status"
+                    :is-validated="item.is_valided"
+                    compact
+                  />
                 </template>
 
                 <template #item.label_template="{ item }">

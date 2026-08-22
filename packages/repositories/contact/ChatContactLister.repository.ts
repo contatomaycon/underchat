@@ -25,6 +25,8 @@ import {
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
 import { ListChatContactsRequest } from '@core/schema/chat/listContacts/request.schema';
 import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
+import { resolveContactValidationStatus } from '@core/common/types/ContactValidationStatus';
+import type { ContactValidationOrigin } from '@core/common/types/ContactValidationOrigin';
 
 @injectable()
 export class ChatContactListerRepository {
@@ -268,6 +270,7 @@ export class ChatContactListerRepository {
         phone_ddi: contact.phone_ddi,
         photo: contact.photo,
         is_valided: contact.is_valided,
+        validation_origin: contact.validation_origin,
       })
       .from(contact)
       .where(and(...whereConditions))
@@ -485,6 +488,7 @@ export class ChatContactListerRepository {
       phone_ddi: string | null;
       photo: string | null;
       is_valided: boolean | null;
+      validation_origin: ContactValidationOrigin | null;
     }>,
     labelsByContactId: Map<
       string,
@@ -500,6 +504,10 @@ export class ChatContactListerRepository {
       phone_ddi: contactItem.phone_ddi ?? null,
       photo: contactItem.photo ?? null,
       is_valided: contactItem.is_valided ?? null,
+      validation_status: resolveContactValidationStatus(
+        contactItem.is_valided,
+        contactItem.validation_origin
+      ),
       label_templates: labelsByContactId.get(contactItem.contact_id) ?? [],
     }));
   };

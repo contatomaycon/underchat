@@ -3,10 +3,11 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { worker } from '@core/models';
 
 export const workerWhatsappOfficialConnection = pgTable(
@@ -51,6 +52,9 @@ export const workerWhatsappOfficialConnection = pgTable(
     index('worker_whatsapp_official_connection_phone_number_id_idx').on(
       table.phone_number_id
     ),
+    uniqueIndex('worker_whatsapp_official_connection_active_phone_number_uidx')
+      .on(table.phone_number_id)
+      .where(sql`${table.deleted_at} IS NULL`),
     index('worker_whatsapp_official_connection_deleted_at_idx').on(
       table.deleted_at
     ),

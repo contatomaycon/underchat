@@ -62,16 +62,28 @@ describe('WwebjsMessageLocationContactService', () => {
       })
     ).resolves.toEqual({ wrapped: { id: 'm2' } });
 
-    expect(sendMessage).toHaveBeenNthCalledWith(1, 'jid', expect.any(Object), {
-      extra: { x: 1 },
-      quotedMessageId: 'quoted-id',
-      ignoreQuoteErrors: false,
-    });
-    expect(sendMessage).toHaveBeenNthCalledWith(2, 'jid', 'VCARD1', {
-      parseVCards: true,
-      extra: { y: 2 },
-      quotedMessageId: 'quoted-id',
-      ignoreQuoteErrors: false,
-    });
+    expect(sendMessage).toHaveBeenNthCalledWith(
+      1,
+      'jid',
+      expect.any(Object),
+      {
+        extra: { x: 1 },
+        quotedMessageId: 'quoted-id',
+        ignoreQuoteErrors: false,
+      },
+      undefined
+    );
+    expect(sendMessage).toHaveBeenNthCalledWith(
+      2,
+      'jid',
+      'VCARD1',
+      {
+        parseVCards: true,
+        extra: { y: 2 },
+        quotedMessageId: 'quoted-id',
+        ignoreQuoteErrors: false,
+      },
+      undefined
+    );
   });
 });

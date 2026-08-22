@@ -8,6 +8,18 @@ export const scheduleMappings = () => {
         schedule_id: {
           type: 'keyword',
         },
+        attempt_id: {
+          type: 'keyword',
+        },
+        operational_state: {
+          type: 'keyword',
+        },
+        reprocessed_by_message_id: {
+          type: 'keyword',
+        },
+        reprocessed_at: {
+          type: 'date',
+        },
         message_key: {
           type: 'nested',
           properties: {
@@ -98,6 +110,9 @@ export const scheduleMappings = () => {
         },
         last_event_id: {
           type: 'keyword',
+        },
+        status_rank: {
+          type: 'integer',
         },
         send_log: {
           type: 'object',

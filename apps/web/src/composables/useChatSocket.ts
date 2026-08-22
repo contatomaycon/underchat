@@ -1,10 +1,13 @@
 import { ref } from 'vue';
 import { useRoute } from 'vue-router';
 import {
+  acknowledgeRecoveryFallback,
+  addCentrifugoLifecycleListener,
   onMessage,
   unsubscribe,
   isChannelSubscribed,
   fetchHistoryAndProcess,
+  type CentrifugoLifecycleEvent,
 } from '@/@webcore/centrifugo';
 import {
   chatAccountCentrifugo,
@@ -18,19 +21,20 @@ import type { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import { useChatNotifications } from '@/composables/useChatNotifications';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
+import { selectNewestChatSnapshotRevision } from '@core/common/functions/chatSnapshotRevision';
 
 let isInitialized = false;
+let initializedAccountId: string | null = null;
 let initializingPromise: Promise<void> | null = null;
+let initializingAccountId: string | null = null;
 let subscriptions: Array<{
   channel: string;
   unsubscribe: () => Promise<void>;
 }> = [];
 const pendingMessages = ref<Map<string, IChatMessage[]>>(new Map());
 const pendingChatUpdates = ref<Map<string, IChat[]>>(new Map());
-let syncIntervalId: ReturnType<typeof setInterval> | null = null;
 let lastSyncTime = 0;
 let isSyncInProgress = false;
-const SYNC_INTERVAL_MS = 30_000;
 const SYNC_DEBOUNCE_MS = 5_000;
 
 const MESSAGE_BATCH_DELAY_MS = 50;
@@ -41,12 +45,33 @@ const MAX_PENDING_CHATS = 100;
 const MAX_PENDING_MESSAGES_PER_CHAT = 200;
 const KANBAN_FILTERED_REFRESH_DEBOUNCE_MS = 700;
 
-let messageBatchBuffer: IChatMessage[] = [];
+interface SocketLifecycleScope {
+  accountId: string;
+  generation: number;
+}
+
+interface ScopedBatchItem<T> extends SocketLifecycleScope {
+  payload: T;
+}
+
+let messageBatchBuffer: Array<ScopedBatchItem<IChatMessage>> = [];
 let messageBatchTimer: ReturnType<typeof setTimeout> | null = null;
-let chatUpdateBatchBuffer: IChat[] = [];
+let chatUpdateBatchBuffer: Array<ScopedBatchItem<IChat>> = [];
 let chatUpdateBatchTimer: ReturnType<typeof setTimeout> | null = null;
 let kanbanFilteredRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let visibilityHandler: (() => void) | null = null;
+let removeLifecycleListener: (() => void) | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryAttempt = 0;
+let lifecycleGeneration = 0;
+let isStopped = true;
+let forceSyncRequested = false;
+let activeChatUpdateFlushes = 0;
+const chatUpdateFlushWaiters = new Set<() => void>();
+const syncCompletionWaiters = new Set<() => void>();
+
+const RETRY_BASE_DELAY_MS = 1_000;
+const RETRY_MAX_DELAY_MS = 30_000;
 
 const createChatSocket = () => {
   const chatStore = useChatStore();
@@ -54,35 +79,45 @@ const createChatSocket = () => {
   const { handleNewMessage, handleChatStatusChange, handleChatTransfer } =
     useChatNotifications();
 
+  const isScopeCurrent = (scope: SocketLifecycleScope): boolean =>
+    !isStopped &&
+    lifecycleGeneration === scope.generation &&
+    chatStore.user?.account_id === scope.accountId;
+
+  const capturePublicationScope = (): SocketLifecycleScope | null => {
+    const accountId = initializedAccountId ?? initializingAccountId;
+    if (!accountId) {
+      return null;
+    }
+
+    const scope = { accountId, generation: lifecycleGeneration };
+    return isScopeCurrent(scope) ? scope : null;
+  };
+
+  const waitForSyncCompletion = async (): Promise<void> => {
+    if (!isSyncInProgress) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      syncCompletionWaiters.add(resolve);
+    });
+  };
+
+  const waitForChatUpdateFlushes = async (): Promise<void> => {
+    if (activeChatUpdateFlushes === 0) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      chatUpdateFlushWaiters.add(resolve);
+    });
+  };
+
   const isChatOrKanbanRoute = () => {
     const name = route.name as string | undefined;
     return name === 'chat' || name === 'kanban';
   };
-
-  const isActiveAttendedChatForCurrentUser = (
-    chatId: string,
-    chat?: IChat | null
-  ): boolean => {
-    if (!isChatOrKanbanRoute()) {
-      return false;
-    }
-
-    const activeChat = chatStore.activeChat;
-    if (!activeChat || activeChat.chat_id !== chatId) {
-      return false;
-    }
-
-    const participantSource = chat ?? (activeChat as unknown as IChat);
-    return (
-      participantSource.status === EChatStatus.in_chat &&
-      isChatParticipant(participantSource, chatStore.user?.user_id)
-    );
-  };
-
-  const shouldRefreshUnreadSummaryForChat = (
-    chatId: string,
-    chat?: IChat | null
-  ): boolean => !isActiveAttendedChatForCurrentUser(chatId, chat);
 
   const processPendingMessages = async (chatId: string) => {
     const messages = pendingMessages.value.get(chatId);
@@ -99,17 +134,26 @@ const createChatSocket = () => {
     const updates = pendingChatUpdates.value.get(chatId);
     if (!updates || updates.length === 0) return;
 
-    const lastUpdate = updates[updates.length - 1];
-    if (lastUpdate) {
-      chatStore.addChat(lastUpdate);
+    const newestUpdate = updates.reduce<IChat | null>(
+      (selected, update) => selectNewestChatSnapshotRevision(selected, update),
+      null
+    );
+    if (newestUpdate) {
+      chatStore.addChat(newestUpdate);
     }
 
     pendingChatUpdates.value.delete(chatId);
   };
 
-  const refreshActiveChat = async () => {
+  const refreshActiveChat = async (
+    expectedScope?: SocketLifecycleScope
+  ): Promise<boolean> => {
+    if (expectedScope && !isScopeCurrent(expectedScope)) {
+      return false;
+    }
+
     if (!isChatOrKanbanRoute() || !chatStore.activeChat?.chat_id) {
-      return;
+      return true;
     }
 
     const chatId = chatStore.activeChat.chat_id;
@@ -119,27 +163,74 @@ const createChatSocket = () => {
       processPendingChatUpdates(chatId),
     ]);
 
+    if (expectedScope && !isScopeCurrent(expectedScope)) {
+      return false;
+    }
+
     const requestQueue: ListMessageChatsQuery = {
       current_page: 1,
-      per_page: 10,
+      per_page: 100,
     };
-    await chatStore.getChatById(requestQueue, chatId, {
+    const loaded = await chatStore.getChatById(requestQueue, chatId, {
       preserveMessages: true,
       skipLoading: true,
     });
+
+    return expectedScope && !isScopeCurrent(expectedScope) ? false : loaded;
   };
 
-  const syncFromCentrifugoHistory = async () => {
-    if (!chatStore.user?.account_id) {
+  const syncFromApiFallback = async (
+    expectedScope: SocketLifecycleScope
+  ): Promise<boolean> => {
+    if (!isScopeCurrent(expectedScope)) {
+      return false;
+    }
+
+    try {
+      const refreshPrimaryView =
+        route.name === 'kanban'
+          ? chatStore.loadKanbanInitial()
+          : chatStore.reloadAllChatLists();
+
+      const [primaryViewLoaded, , , activeChatLoaded] = await Promise.all([
+        refreshPrimaryView,
+        chatStore.loadPinnedChats(),
+        chatStore.viewUnreadSummary(),
+        refreshActiveChat(expectedScope),
+      ]);
+      return (
+        isScopeCurrent(expectedScope) && primaryViewLoaded && activeChatLoaded
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  const syncFromCentrifugoHistory = async (
+    options: { force?: boolean } = {}
+  ) => {
+    const accountId = chatStore.user?.account_id;
+    if (!accountId) {
       return;
     }
 
     if (isSyncInProgress) {
+      if (options.force) {
+        forceSyncRequested = true;
+      }
       return;
     }
 
     const now = Date.now();
-    if (now - lastSyncTime < SYNC_DEBOUNCE_MS) {
+    if (!options.force && now - lastSyncTime < SYNC_DEBOUNCE_MS) {
+      return;
+    }
+
+    const syncScope: SocketLifecycleScope = {
+      accountId,
+      generation: lifecycleGeneration,
+    };
+    if (!isScopeCurrent(syncScope)) {
       return;
     }
 
@@ -147,47 +238,87 @@ const createChatSocket = () => {
     isSyncInProgress = true;
 
     try {
-      const accountId = chatStore.user.account_id;
+      const channels = [
+        chatAccountCentrifugo(accountId),
+        chatQueueAccountCentrifugo(accountId),
+      ];
+      const historyResults = await Promise.all(
+        channels.map((channel) => fetchHistoryAndProcess(channel))
+      );
+      if (!isScopeCurrent(syncScope)) {
+        return;
+      }
 
-      await Promise.all([
-        fetchHistoryAndProcess(chatAccountCentrifugo(accountId)),
-        fetchHistoryAndProcess(chatQueueAccountCentrifugo(accountId)),
-      ]);
+      const fallbackChannels = channels.filter(
+        (_, index) => historyResults[index]?.requiresFallback
+      );
+
+      if (fallbackChannels.length === 0) {
+        return;
+      }
+
+      const fallbackSucceeded = await syncFromApiFallback(syncScope);
+      if (!fallbackSucceeded || !isScopeCurrent(syncScope)) {
+        return;
+      }
+
+      const acknowledgedChannels = fallbackChannels.filter((channel) =>
+        acknowledgeRecoveryFallback(channel)
+      );
+
+      if (acknowledgedChannels.length === 0) {
+        isInitialized = false;
+        scheduleRetry();
+        return;
+      }
+
+      // Cover the API race window: publications after the captured fallback
+      // baseline are replayed only after the authoritative state is loaded.
+      const catchUpResults = await Promise.all(
+        acknowledgedChannels.map((channel) => fetchHistoryAndProcess(channel))
+      );
+      if (!isScopeCurrent(syncScope)) {
+        return;
+      }
+
+      const failedCatchUp = catchUpResults.filter(
+        (result) => result.requiresFallback
+      );
+      if (failedCatchUp.some((result) => result.reason === 'not_subscribed')) {
+        isInitialized = false;
+        scheduleRetry();
+      }
     } catch {
+      // A later realtime lifecycle or visibility event retries reconciliation.
     } finally {
       isSyncInProgress = false;
+      for (const resolve of syncCompletionWaiters) {
+        resolve();
+      }
+      syncCompletionWaiters.clear();
+
+      if (forceSyncRequested && isScopeCurrent(syncScope)) {
+        forceSyncRequested = false;
+        void syncFromCentrifugoHistory({ force: true });
+      } else if (!isScopeCurrent(syncScope)) {
+        forceSyncRequested = false;
+      }
     }
   };
 
-  const startPeriodicSync = () => {
-    if (syncIntervalId) {
-      return;
-    }
-
-    syncIntervalId = setInterval(() => {
-      syncFromCentrifugoHistory();
-    }, SYNC_INTERVAL_MS);
-  };
-
-  const stopPeriodicSync = () => {
-    if (syncIntervalId) {
-      clearInterval(syncIntervalId);
-      syncIntervalId = null;
-    }
-  };
-
-  const handleRecoveryFailed = (event: CustomEvent<{ channel: string }>) => {
+  const handleRecoveryFailed = (channel: string) => {
     if (import.meta.env.DEV) {
-      console.warn(
-        '[ChatSocket] Recovery failed for channel:',
-        event.detail.channel
-      );
+      console.warn('[ChatSocket] Recovery failed for channel:', channel);
     }
-    syncFromCentrifugoHistory();
+    void syncFromCentrifugoHistory({ force: true });
   };
 
   const scheduleKanbanFilteredRefresh = () => {
+    const scheduledScope = capturePublicationScope();
     if (route.name !== 'kanban' || !chatStore.hasActiveKanbanFilters()) {
+      return;
+    }
+    if (!scheduledScope) {
       return;
     }
 
@@ -199,7 +330,11 @@ const createChatSocket = () => {
     kanbanFilteredRefreshTimer = setTimeout(() => {
       kanbanFilteredRefreshTimer = null;
 
-      if (route.name !== 'kanban' || !chatStore.hasActiveKanbanFilters()) {
+      if (
+        !isScopeCurrent(scheduledScope) ||
+        route.name !== 'kanban' ||
+        !chatStore.hasActiveKanbanFilters()
+      ) {
         return;
       }
 
@@ -246,9 +381,15 @@ const createChatSocket = () => {
   const flushMessageBatch = () => {
     if (messageBatchBuffer.length === 0) return;
 
-    const messages = [...messageBatchBuffer];
+    const batchItems = [...messageBatchBuffer];
     messageBatchBuffer = [];
     messageBatchTimer = null;
+    const currentItems = batchItems.filter(isScopeCurrent);
+    if (currentItems.length === 0) {
+      return;
+    }
+
+    const messages = currentItems.map(({ payload }) => payload);
 
     const messagesByChat = new Map<string, IChatMessage[]>();
     for (const msg of messages) {
@@ -258,15 +399,9 @@ const createChatSocket = () => {
       messagesByChat.set(chatId, chatMessages);
     }
 
-    let shouldRefreshUnreadSummary = false;
-
     for (const [chatId, chatMessages] of messagesByChat) {
       const isActiveChat =
         isChatOrKanbanRoute() && chatStore.activeChat?.chat_id === chatId;
-
-      if (shouldRefreshUnreadSummaryForChat(chatId)) {
-        shouldRefreshUnreadSummary = true;
-      }
 
       if (isActiveChat) {
         const touchedMessageIds = new Set<string>();
@@ -298,104 +433,136 @@ const createChatSocket = () => {
       pending.push(...chatMessages);
       evictPendingMessages(chatId, pending);
     }
-
-    if (shouldRefreshUnreadSummary) {
-      chatStore.scheduleUnreadSummaryRefresh();
-    }
   };
 
   const flushChatUpdateBatch = async (shouldScheduleKanbanRefresh = true) => {
     if (chatUpdateBatchBuffer.length === 0) return;
 
-    const updates = [...chatUpdateBatchBuffer];
+    const batchItems = [...chatUpdateBatchBuffer];
     chatUpdateBatchBuffer = [];
     chatUpdateBatchTimer = null;
-
-    const latestByChatId = new Map<string, IChat>();
-    for (const chat of updates) {
-      latestByChatId.set(chat.chat_id, chat);
+    const currentItems = batchItems.filter(isScopeCurrent);
+    if (currentItems.length === 0) {
+      return;
     }
 
-    let shouldRefreshUnreadSummary = false;
+    const batchScope: SocketLifecycleScope = {
+      accountId: currentItems[0].accountId,
+      generation: currentItems[0].generation,
+    };
+    const updates = currentItems.map(({ payload }) => payload);
 
-    for (const chatData of latestByChatId.values()) {
-      if (chatStore.isActiveChatSummaryOnlyUpdate(chatData)) {
-        chatStore.clearActiveChatUnreadCountLocally();
-        chatStore.scheduleUnreadSummaryRefresh();
-        continue;
-      }
+    activeChatUpdateFlushes += 1;
 
-      const previousChat =
-        chatStore.findChatInLists(chatData.chat_id) ??
-        (chatStore.activeChat?.chat_id === chatData.chat_id
-          ? chatStore.activeChat
-          : null);
-      const previousChatSnapshot = previousChat
-        ? ({
-            ...previousChat,
-            secondary_users: Array.isArray(previousChat.secondary_users)
-              ? [...previousChat.secondary_users]
-              : [],
-          } as IChat)
-        : null;
-      const previousStatus = previousChatSnapshot?.status ?? null;
-
-      const isActiveChat =
-        isChatOrKanbanRoute() &&
-        chatStore.activeChat?.chat_id === chatData.chat_id;
-
-      chatStore.addChat(chatData);
-
-      if (shouldRefreshUnreadSummaryForChat(chatData.chat_id, chatData)) {
-        shouldRefreshUnreadSummary = true;
-      }
-
-      if (!isActiveChat) {
-        const handledTransfer = await handleChatTransfer(
-          chatData,
-          previousChatSnapshot
+    try {
+      const latestByChatId = new Map<string, IChat>();
+      for (const chat of updates) {
+        latestByChatId.set(
+          chat.chat_id,
+          selectNewestChatSnapshotRevision(
+            latestByChatId.get(chat.chat_id),
+            chat
+          )
         );
+      }
 
-        if (!handledTransfer) {
-          handleChatStatusChange(chatData, previousStatus);
+      for (const chatData of latestByChatId.values()) {
+        if (!isScopeCurrent(batchScope)) {
+          return;
         }
-      }
 
-      if (
-        isActiveChat &&
-        chatData.status === EChatStatus.in_chat &&
-        isChatParticipant(chatData, chatStore.user?.user_id)
-      ) {
-        chatStore.clearActiveChatUnreadCountLocally();
-        chatStore.scheduleUnreadSummaryRefresh();
-      }
-
-      if (
-        isChatOrKanbanRoute() &&
-        (chatData as any)._active &&
-        isChatParticipant(chatData, chatStore.user?.user_id)
-      ) {
-        if (chatStore.activeChat?.chat_id !== chatData.chat_id) {
-          chatStore.setActiveChat(chatData.chat_id);
-          refreshActiveChat();
-        } else {
-          processPendingMessages(chatData.chat_id);
-          processPendingChatUpdates(chatData.chat_id);
+        if (chatStore.isActiveChatSummaryOnlyUpdate(chatData)) {
+          chatStore.reconcileUnreadSummaryFromChat(chatData);
+          chatStore.clearActiveChatUnreadCountLocally();
+          continue;
         }
+
+        const previousChat =
+          chatStore.findChatInLists(chatData.chat_id) ??
+          (chatStore.activeChat?.chat_id === chatData.chat_id
+            ? chatStore.activeChat
+            : null);
+        const previousChatSnapshot = previousChat
+          ? ({
+              ...previousChat,
+              secondary_users: Array.isArray(previousChat.secondary_users)
+                ? [...previousChat.secondary_users]
+                : [],
+            } as IChat)
+          : null;
+        const previousStatus = previousChatSnapshot?.status ?? null;
+
+        const isActiveChat =
+          isChatOrKanbanRoute() &&
+          chatStore.activeChat?.chat_id === chatData.chat_id;
+
+        chatStore.reconcileUnreadSummaryFromChat(chatData);
+        chatStore.addChat(chatData);
+
+        if (!isActiveChat) {
+          const handledTransfer = await handleChatTransfer(
+            chatData,
+            previousChatSnapshot
+          );
+
+          if (!isScopeCurrent(batchScope)) {
+            return;
+          }
+
+          if (!handledTransfer) {
+            handleChatStatusChange(chatData, previousStatus);
+          }
+        }
+
+        if (
+          isActiveChat &&
+          chatData.status === EChatStatus.in_chat &&
+          isChatParticipant(chatData, chatStore.user?.user_id)
+        ) {
+          chatStore.clearActiveChatUnreadCountLocally();
+        }
+
+        if (
+          isChatOrKanbanRoute() &&
+          (chatData as any)._active &&
+          isChatParticipant(chatData, chatStore.user?.user_id)
+        ) {
+          if (chatStore.activeChat?.chat_id !== chatData.chat_id) {
+            chatStore.setActiveChat(chatData.chat_id);
+            await refreshActiveChat(batchScope);
+          } else {
+            await Promise.all([
+              processPendingMessages(chatData.chat_id),
+              processPendingChatUpdates(chatData.chat_id),
+            ]);
+          }
+
+          if (!isScopeCurrent(batchScope)) {
+            return;
+          }
+        }
+
+        const chatId = chatData.chat_id;
+        const pendingUpdates = pendingChatUpdates.value.get(chatId) ?? [];
+        pendingUpdates.push(chatData);
+        evictPendingChatUpdates(chatId, pendingUpdates);
       }
 
-      const chatId = chatData.chat_id;
-      const pendingUpdates = pendingChatUpdates.value.get(chatId) ?? [];
-      pendingUpdates.push(chatData);
-      evictPendingChatUpdates(chatId, pendingUpdates);
-    }
+      if (!isScopeCurrent(batchScope)) {
+        return;
+      }
 
-    if (shouldRefreshUnreadSummary) {
-      chatStore.scheduleUnreadSummaryRefresh();
-    }
-
-    if (shouldScheduleKanbanRefresh) {
-      scheduleKanbanFilteredRefresh();
+      if (shouldScheduleKanbanRefresh) {
+        scheduleKanbanFilteredRefresh();
+      }
+    } finally {
+      activeChatUpdateFlushes -= 1;
+      if (activeChatUpdateFlushes === 0) {
+        for (const resolve of chatUpdateFlushWaiters) {
+          resolve();
+        }
+        chatUpdateFlushWaiters.clear();
+      }
     }
   };
 
@@ -405,8 +572,11 @@ const createChatSocket = () => {
    * and get flushed when the timer fires. Under high load, messages are never starved.
    * Additionally, a max buffer size forces immediate flush to prevent unbounded growth.
    */
-  const handleMessageEvent = (messageData: IChatMessage): void => {
-    messageBatchBuffer.push(messageData);
+  const handleMessageEvent = (
+    messageData: IChatMessage,
+    scope: SocketLifecycleScope
+  ): void => {
+    messageBatchBuffer.push({ ...scope, payload: messageData });
 
     if (messageBatchBuffer.length >= MAX_MESSAGE_BATCH_SIZE) {
       if (messageBatchTimer) {
@@ -425,8 +595,11 @@ const createChatSocket = () => {
   /**
    * BUG 1 FIX: Same throttle pattern for chat updates.
    */
-  const handleChatUpdateEvent = (chatData: IChat): void => {
-    chatUpdateBatchBuffer.push(chatData);
+  const handleChatUpdateEvent = (
+    chatData: IChat,
+    scope: SocketLifecycleScope
+  ): void => {
+    chatUpdateBatchBuffer.push({ ...scope, payload: chatData });
 
     if (chatUpdateBatchBuffer.length >= MAX_CHAT_UPDATE_BATCH_SIZE) {
       if (chatUpdateBatchTimer) {
@@ -457,8 +630,8 @@ const createChatSocket = () => {
       clearTimeout(kanbanFilteredRefreshTimer);
       kanbanFilteredRefreshTimer = null;
     }
-    flushMessageBatch();
-    void flushChatUpdateBatch(false);
+    messageBatchBuffer = [];
+    chatUpdateBatchBuffer = [];
   };
 
   const removeVisibilityHandler = () => {
@@ -468,18 +641,146 @@ const createChatSocket = () => {
     }
   };
 
-  const cleanupUnsubscribe = async () => {
-    stopPeriodicSync();
+  const handleAccountPublication = (
+    data: IChatMessage | IChatTyping | IChat | any
+  ): void => {
+    const scope = capturePublicationScope();
+    if (!scope) {
+      return;
+    }
+
+    if ('type' in data && data.type === 'typing') {
+      globalThis.dispatchEvent(
+        new CustomEvent('chat-typing', { detail: data })
+      );
+      return;
+    }
+
+    if ('message_id' in data) {
+      handleMessageEvent(data as IChatMessage, scope);
+      return;
+    }
+
+    if ('chat_id' in data && !('message_id' in data)) {
+      handleChatUpdateEvent(data as IChat, scope);
+    }
+  };
+
+  const handleQueuePublication = (data: IChat): void => {
+    if (!capturePublicationScope()) {
+      return;
+    }
+
+    if (chatStore.isActiveChatSummaryOnlyUpdate(data)) {
+      chatStore.reconcileUnreadSummaryFromChat(data);
+      chatStore.clearActiveChatUnreadCountLocally();
+      return;
+    }
+
+    const isActiveChat =
+      isChatOrKanbanRoute() && chatStore.activeChat?.chat_id === data.chat_id;
+
+    chatStore.reconcileUnreadSummaryFromChat(data);
+    chatStore.addChat(data);
+    scheduleKanbanFilteredRefresh();
+
+    if (
+      isActiveChat &&
+      data.status === EChatStatus.in_chat &&
+      isChatParticipant(data, chatStore.user?.user_id)
+    ) {
+      chatStore.clearActiveChatUnreadCountLocally();
+    }
+  };
+
+  const clearRetryTimer = (resetAttempt = false): void => {
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+
+    if (resetAttempt) {
+      retryAttempt = 0;
+    }
+  };
+
+  const scheduleRetry = (): void => {
+    if (isStopped || retryTimer || !chatStore.user?.account_id) {
+      return;
+    }
+
+    const delay = Math.min(
+      RETRY_BASE_DELAY_MS * 2 ** retryAttempt,
+      RETRY_MAX_DELAY_MS
+    );
+    retryAttempt = Math.min(retryAttempt + 1, 10);
+
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (!isStopped) {
+        void initializeSocket();
+      }
+    }, delay);
+  };
+
+  const handleLifecycleEvent = (event: CentrifugoLifecycleEvent): void => {
+    const accountId = chatStore.user?.account_id;
+    if (!accountId || isStopped || event.type === 'connected') {
+      return;
+    }
+
+    if (
+      'channel' in event &&
+      event.channel !== chatAccountCentrifugo(accountId) &&
+      event.channel !== chatQueueAccountCentrifugo(accountId)
+    ) {
+      return;
+    }
+
+    if (event.type === 'recovery_failed') {
+      handleRecoveryFailed(event.channel);
+      return;
+    }
+
+    isInitialized = false;
+    scheduleRetry();
+  };
+
+  const installLifecycleListener = (): void => {
+    if (!removeLifecycleListener) {
+      removeLifecycleListener =
+        addCentrifugoLifecycleListener(handleLifecycleEvent);
+    }
+  };
+
+  const teardownSubscriptions = async (
+    options: { resetPending?: boolean } = {}
+  ): Promise<void> => {
     clearBatchTimers();
     removeVisibilityHandler();
-
-    globalThis.removeEventListener(
-      'centrifugo-recovery-failed',
-      handleRecoveryFailed as EventListener
+    const activeSubscriptions = subscriptions;
+    subscriptions = [];
+    const accountIds = new Set(
+      [initializedAccountId, initializingAccountId].filter(
+        (accountId): accountId is string => Boolean(accountId)
+      )
+    );
+    const currentAccountId = chatStore.user?.account_id ?? null;
+    const isAccountTransition = Array.from(accountIds).some(
+      (accountId) => accountId !== currentAccountId
     );
 
-    const unsubscribePromises = subscriptions.map((sub) =>
-      sub.unsubscribe().catch((error) => {
+    const unsubscribePromises = [
+      ...activeSubscriptions.map((sub) => sub.unsubscribe()),
+      ...Array.from(accountIds).flatMap((accountId) => [
+        unsubscribe(chatAccountCentrifugo(accountId), handleAccountPublication),
+        unsubscribe(
+          chatQueueAccountCentrifugo(accountId),
+          handleQueuePublication
+        ),
+      ]),
+    ].map((unsubscribePromise) =>
+      unsubscribePromise.catch((error) => {
         if (import.meta.env.DEV) {
           console.error('Erro ao fazer unsubscribe:', error);
         }
@@ -487,14 +788,17 @@ const createChatSocket = () => {
     );
 
     await Promise.all(unsubscribePromises);
+    await Promise.all([waitForChatUpdateFlushes(), waitForSyncCompletion()]);
 
-    subscriptions = [];
     isInitialized = false;
-    initializingPromise = null;
-    isSyncInProgress = false;
+    initializedAccountId = null;
+    forceSyncRequested = false;
     lastSyncTime = 0;
-    pendingMessages.value.clear();
-    pendingChatUpdates.value.clear();
+
+    if (options.resetPending || isAccountTransition) {
+      pendingMessages.value.clear();
+      pendingChatUpdates.value.clear();
+    }
   };
 
   const initializeSocket = async () => {
@@ -502,149 +806,146 @@ const createChatSocket = () => {
       return;
     }
 
+    isStopped = false;
+    installLifecycleListener();
+
     const accountId = chatStore.user.account_id;
-
-    if (isInitialized) {
-      const allSubscriptionsActive = subscriptions.every((sub) =>
-        isChannelSubscribed(sub.channel)
-      );
-
-      if (allSubscriptionsActive) {
-        return;
-      }
-
-      await cleanupUnsubscribe();
-    }
+    const previousAccountId = initializedAccountId ?? initializingAccountId;
+    const isAccountTransition = Boolean(
+      previousAccountId && previousAccountId !== accountId
+    );
 
     if (initializingPromise) {
-      return initializingPromise;
+      if (initializingAccountId === accountId) {
+        return initializingPromise;
+      }
+
+      lifecycleGeneration++;
+      await initializingPromise;
+
+      if (isStopped) {
+        return;
+      }
     }
 
-    initializingPromise = (async () => {
+    const allSubscriptionsActive =
+      initializedAccountId === accountId &&
+      subscriptions.length === 2 &&
+      subscriptions.every((sub) => isChannelSubscribed(sub.channel));
+
+    if (allSubscriptionsActive) {
+      isInitialized = true;
+      clearRetryTimer(true);
+      lastSyncTime = 0;
+      void syncFromCentrifugoHistory({ force: true });
+      return;
+    }
+
+    if (subscriptions.length > 0 || initializedAccountId !== accountId) {
+      lifecycleGeneration++;
+      await teardownSubscriptions();
+    }
+
+    const attemptGeneration = lifecycleGeneration;
+    initializingAccountId = accountId;
+
+    const attempt = (async () => {
       try {
-        globalThis.addEventListener(
-          'centrifugo-recovery-failed',
-          handleRecoveryFailed as EventListener
-        );
+        const accountChannel = chatAccountCentrifugo(accountId);
+        const queueChannel = chatQueueAccountCentrifugo(accountId);
 
-        await onMessage(
-          chatAccountCentrifugo(accountId),
-          (data: IChatMessage | IChatTyping | IChat | any) => {
-            if ('type' in data && data.type === 'typing') {
-              globalThis.dispatchEvent(
-                new CustomEvent('chat-typing', { detail: data })
-              );
-              return;
-            }
+        await onMessage(accountChannel, handleAccountPublication);
+        if (isStopped || lifecycleGeneration !== attemptGeneration) {
+          await unsubscribe(accountChannel, handleAccountPublication);
+          return;
+        }
+        subscriptions.push({
+          channel: accountChannel,
+          unsubscribe: () =>
+            unsubscribe(accountChannel, handleAccountPublication),
+        });
 
-            if ('message_id' in data) {
-              handleMessageEvent(data as IChatMessage);
-              return;
-            }
-
-            if ('chat_id' in data && !('message_id' in data)) {
-              handleChatUpdateEvent(data as IChat);
-            }
-          }
-        );
-
-        await onMessage(
-          chatQueueAccountCentrifugo(accountId),
-          (data: IChat) => {
-            if (chatStore.isActiveChatSummaryOnlyUpdate(data)) {
-              chatStore.clearActiveChatUnreadCountLocally();
-              chatStore.scheduleUnreadSummaryRefresh();
-              return;
-            }
-
-            const isActiveChat =
-              isChatOrKanbanRoute() &&
-              chatStore.activeChat?.chat_id === data.chat_id;
-
-            chatStore.addChat(data);
-            if (shouldRefreshUnreadSummaryForChat(data.chat_id, data)) {
-              chatStore.scheduleUnreadSummaryRefresh();
-            }
-            scheduleKanbanFilteredRefresh();
-
-            if (
-              isActiveChat &&
-              data.status === EChatStatus.in_chat &&
-              isChatParticipant(data, chatStore.user?.user_id)
-            ) {
-              chatStore.clearActiveChatUnreadCountLocally();
-              chatStore.scheduleUnreadSummaryRefresh();
-            }
-          }
-        );
-
-        subscriptions.push(
-          {
-            channel: chatAccountCentrifugo(accountId),
-            unsubscribe: () => unsubscribe(chatAccountCentrifugo(accountId)),
-          },
-          {
-            channel: chatQueueAccountCentrifugo(accountId),
-            unsubscribe: () =>
-              unsubscribe(chatQueueAccountCentrifugo(accountId)),
-          }
-        );
+        await onMessage(queueChannel, handleQueuePublication);
+        if (isStopped || lifecycleGeneration !== attemptGeneration) {
+          await unsubscribe(queueChannel, handleQueuePublication);
+          return;
+        }
+        subscriptions.push({
+          channel: queueChannel,
+          unsubscribe: () => unsubscribe(queueChannel, handleQueuePublication),
+        });
 
         isInitialized = true;
-        startPeriodicSync();
+        initializedAccountId = accountId;
+        clearRetryTimer(true);
 
-        /**
-         * BUG 5 FIX: Sync when tab becomes visible again.
-         * Browsers may throttle/freeze WebSocket connections when tab is hidden.
-         */
+        if (isAccountTransition) {
+          await syncFromApiFallback({
+            accountId,
+            generation: attemptGeneration,
+          });
+          if (isStopped || lifecycleGeneration !== attemptGeneration) {
+            return;
+          }
+        }
+
         removeVisibilityHandler();
         visibilityHandler = () => {
           if (document.visibilityState === 'visible') {
             lastSyncTime = 0;
-            syncFromCentrifugoHistory();
-          } else {
+            void syncFromCentrifugoHistory({ force: true });
           }
         };
         document.addEventListener('visibilitychange', visibilityHandler);
+
+        void syncFromCentrifugoHistory({ force: true });
       } catch (error) {
+        isInitialized = false;
+        initializedAccountId = null;
+        await teardownSubscriptions();
+
+        if (!isStopped && lifecycleGeneration === attemptGeneration) {
+          scheduleRetry();
+        }
+
         if (import.meta.env.DEV) {
           console.error('Erro ao inicializar socket de chat:', error);
         }
-      } finally {
-        initializingPromise = null;
       }
     })();
 
-    return initializingPromise;
+    initializingPromise = attempt;
+
+    try {
+      await attempt;
+    } finally {
+      if (initializingPromise === attempt) {
+        initializingPromise = null;
+        initializingAccountId = null;
+      }
+    }
   };
 
   const cleanup = async () => {
-    stopPeriodicSync();
-    clearBatchTimers();
-    removeVisibilityHandler();
+    isStopped = true;
+    lifecycleGeneration++;
+    clearRetryTimer(true);
 
-    globalThis.removeEventListener(
-      'centrifugo-recovery-failed',
-      handleRecoveryFailed as EventListener
-    );
+    const inFlightInitialization = initializingPromise;
+    await teardownSubscriptions({ resetPending: true });
 
-    const unsubscribePromises = subscriptions.map((sub) =>
-      sub.unsubscribe().catch((error) => {
-        if (import.meta.env.DEV) {
-          console.error('Erro ao fazer unsubscribe:', error);
-        }
-      })
-    );
+    if (inFlightInitialization) {
+      await inFlightInitialization.catch(() => {});
+      await teardownSubscriptions({ resetPending: true });
+    }
 
-    await Promise.all(unsubscribePromises);
+    if (removeLifecycleListener) {
+      removeLifecycleListener();
+      removeLifecycleListener = null;
+    }
 
-    subscriptions = [];
-    isInitialized = false;
     initializingPromise = null;
-    isSyncInProgress = false;
-    lastSyncTime = 0;
-    pendingMessages.value.clear();
-    pendingChatUpdates.value.clear();
+    initializingAccountId = null;
   };
 
   return {
@@ -653,10 +954,12 @@ const createChatSocket = () => {
     refreshActiveChat,
     processPendingMessages,
     processPendingChatUpdates,
-    isInitialized: () => isInitialized,
+    isInitialized: () =>
+      isInitialized &&
+      initializedAccountId === chatStore.user?.account_id &&
+      subscriptions.length === 2 &&
+      subscriptions.every((sub) => isChannelSubscribed(sub.channel)),
     syncFromCentrifugoHistory,
-    startPeriodicSync,
-    stopPeriodicSync,
   };
 };
 

@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { OfficialWhatsappWebhookConsume } from '@core/consumer/webhook/OfficialWhatsappWebhook.consume';
+import { launchServiceApiConsumerStartup } from './startupAttempt';
 
 export function startOfficialWhatsappWebhookConsume(
   server: FastifyInstance
@@ -9,12 +10,13 @@ export function startOfficialWhatsappWebhookConsume(
     OfficialWhatsappWebhookConsume
   );
 
-  officialWhatsappWebhookConsume.execute().catch((error: unknown) => {
-    server.log.error(
-      { err: error },
-      'Error starting official WhatsApp webhook consume'
-    );
-  });
-
-  return officialWhatsappWebhookConsume;
+  return launchServiceApiConsumerStartup(
+    officialWhatsappWebhookConsume,
+    () => officialWhatsappWebhookConsume.execute(),
+    (error) =>
+      server.log.error(
+        { err: error },
+        'Error starting official WhatsApp webhook consume'
+      )
+  );
 }

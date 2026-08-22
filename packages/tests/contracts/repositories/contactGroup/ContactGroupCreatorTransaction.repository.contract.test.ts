@@ -11,6 +11,15 @@ describe('ContactGroupCreatorTransactionRepository', () => {
     'translation',
     undefined
   >;
+  const createOutboundWebhookBatch = () => ({
+    prepareInTransaction: jest.fn(async () => ({
+      accountId: 'acc-1',
+      entries: [],
+    })),
+    markAppliedInTransaction: jest.fn(async () => undefined),
+    completePersistedBestEffort: jest.fn(async () => undefined),
+    cancelBestEffort: jest.fn(async () => undefined),
+  });
 
   it('throws translated error when group creation fails', async () => {
     const dbRw = {
@@ -25,7 +34,8 @@ describe('ContactGroupCreatorTransactionRepository', () => {
       } as never,
       {
         createContactGroupAssignment: jest.fn(),
-      } as never
+      } as never,
+      createOutboundWebhookBatch() as never
     );
 
     await expect(
@@ -46,7 +56,8 @@ describe('ContactGroupCreatorTransactionRepository', () => {
       } as never,
       {
         createContactGroupAssignment: createAssignment,
-      } as never
+      } as never,
+      createOutboundWebhookBatch() as never
     );
 
     await expect(

@@ -1082,11 +1082,14 @@ onMounted(() => {
               </div>
 
               <div v-if="!isPlanCancelled && isCreditCardEnabled" class="mb-3">
-                <div class="d-flex align-center justify-space-between mb-1">
+                <div
+                  class="recurring-payment-row d-flex align-center justify-space-between mb-1"
+                >
                   <span class="text-body-2 text-medium-emphasis">
                     {{ $t('recurring_payment') }}
                   </span>
                   <VSwitch
+                    class="recurring-payment-switch"
                     :model-value="planInvoice.recurring_payment ?? false"
                     :disabled="
                       loading ||
@@ -1095,8 +1098,11 @@ onMounted(() => {
                       isTrialPlan
                     "
                     color="primary"
-                    @update:model-value="toggleRecurringPayment"
+                    density="compact"
                     hide-details
+                    inset
+                    size="small"
+                    @update:model-value="toggleRecurringPayment"
                   />
                 </div>
               </div>
@@ -1718,5 +1724,17 @@ onMounted(() => {
   left: 0;
   z-index: 2;
   opacity: 0.8;
+}
+
+.recurring-payment-row {
+  min-height: 32px;
+}
+
+.recurring-payment-switch {
+  flex: 0 0 auto;
+}
+
+.recurring-payment-switch :deep(.v-selection-control) {
+  min-height: 28px;
 }
 </style>

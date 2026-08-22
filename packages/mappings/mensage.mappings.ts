@@ -1,8 +1,39 @@
+export const workerCommandMessageProperties = () => ({
+  worker_command_transport: { type: 'keyword' },
+  worker_command_issued_at: { type: 'date' },
+  worker_command_retry_of: { type: 'keyword' },
+  worker_command_deadline_at: { type: 'date' },
+  worker_command_expiry_reason: { type: 'keyword' },
+  broker_command_id: { type: 'keyword' },
+  broker_operation_id: { type: 'keyword' },
+  broker_stream: { type: 'keyword' },
+  broker_stream_sequence: { type: 'long' },
+  broker_accepted_at: { type: 'date' },
+  broker_expires_at: { type: 'date' },
+  broker_duplicate: { type: 'boolean' },
+  worker_command_expired_at: { type: 'date' },
+  delivery_status: { type: 'keyword' },
+  provider_error_code: { type: 'integer' },
+  provider_status_at: { type: 'date' },
+});
+
+export const workerCommandMessageMappings = () => ({
+  mappings: {
+    properties: workerCommandMessageProperties(),
+  },
+});
+
 export const mensageMappings = () => {
   return {
     mappings: {
       properties: {
         message_id: {
+          type: 'keyword',
+        },
+        outbound_webhook_event_ids: {
+          type: 'keyword',
+        },
+        inbound_event_ids: {
           type: 'keyword',
         },
         chat_id: {
@@ -43,6 +74,7 @@ export const mensageMappings = () => {
         sent_from_platform: {
           type: 'boolean',
         },
+        ...workerCommandMessageProperties(),
         account: {
           type: 'nested',
           properties: {
@@ -76,9 +108,15 @@ export const mensageMappings = () => {
         },
         content: {
           type: 'nested',
+          dynamic: false,
           properties: {
             type: {
               type: 'keyword',
+            },
+            official_template: {
+              type: 'object',
+              dynamic: false,
+              enabled: false,
             },
             message: {
               type: 'text',

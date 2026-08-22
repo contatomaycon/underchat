@@ -4,10 +4,6 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 
-const AD_BODY =
-  'Olá! Gostaria de saber sobre a Pós-Graduação EAD com um atendimento humanizado!';
-const AD_TITLE = 'Pós-Graduação EAD';
-
 interface AdReplay {
   runId: string;
   phoneNumber: string;
@@ -17,6 +13,10 @@ interface AdReplay {
   contactInfoTo: string;
   adMessageId: string;
   adSerializedId: string;
+  adBody: string;
+  adTitle: string;
+  adDescription: string;
+  adGreeting: string;
   e2eSerializedId: string;
   contactCardSerializedId: string;
   historySequence: number[];
@@ -132,17 +132,16 @@ function makeLogMessage(
   };
 }
 
-function makeAdCtwaContext(): Record<string, unknown> {
+function makeAdCtwaContext(replay: AdReplay): Record<string, unknown> {
   return {
     conversionSource: 'FB_Ads',
     ctwaSignals: 'all,all',
     sourceUrl: 'https://fb.me/6G4qyAUIJ',
-    description:
-      'Você já concluiu a graduação e quer ir além, mas sem enrolação?',
-    title: AD_TITLE,
+    description: replay.adDescription,
+    title: replay.adTitle,
     mediaType: 1,
     sourceApp: 'facebook',
-    greetingMessageBody: 'Olá! Diga como podemos ajudar você.',
+    greetingMessageBody: replay.adGreeting,
     automatedGreetingMessageShown: true,
     sourceId: '120241701325990384',
     originalImageUrl: 'https://www.facebook.com/ads/image/?d=e2e',
@@ -164,7 +163,7 @@ function makeAdMessage(
     from: replay.lidJid,
     to: replay.selfJid,
     ack: 1,
-    ctwaContext: body ? makeAdCtwaContext() : undefined,
+    ctwaContext: body ? makeAdCtwaContext(replay) : undefined,
   });
 }
 
@@ -283,32 +282,32 @@ function buildHistoryEvents(replay: AdReplay): Array<{
     {
       seq: 9325,
       event: 'message_edit',
-      args: [makeAdMessage(replay, 'chat', AD_BODY), AD_BODY, null],
+      args: [makeAdMessage(replay, 'chat', replay.adBody), replay.adBody, null],
     },
     {
       seq: 9326,
       event: 'message_create',
-      args: [makeAdMessage(replay, 'chat', AD_BODY)],
+      args: [makeAdMessage(replay, 'chat', replay.adBody)],
     },
     {
       seq: 9327,
       event: 'message',
-      args: [makeAdMessage(replay, 'chat', AD_BODY)],
+      args: [makeAdMessage(replay, 'chat', replay.adBody)],
     },
     {
       seq: 2886,
       event: 'message_create',
-      args: [makeAdMessage(replay, 'chat', AD_BODY)],
+      args: [makeAdMessage(replay, 'chat', replay.adBody)],
     },
     {
       seq: 2887,
       event: 'message',
-      args: [makeAdMessage(replay, 'chat', AD_BODY)],
+      args: [makeAdMessage(replay, 'chat', replay.adBody)],
     },
     {
       seq: 2888,
       event: 'message_ack',
-      args: [makeAdMessage(replay, 'chat', AD_BODY), 3],
+      args: [makeAdMessage(replay, 'chat', replay.adBody), 3],
     },
     { seq: 2889, event: 'message_create', args: [makeE2ENotification(replay)] },
     { seq: 2890, event: 'message', args: [makeE2ENotification(replay)] },
@@ -793,11 +792,18 @@ async function main(): Promise<void> {
         waitForOutcome: async () => 'sent',
         markFailed: () => undefined,
         markSent: () => undefined,
+      } as never,
+      {
+        claimOperation: async () => ({ status: 'error' }),
+        markProviderInvoked: async () => 'error',
+        markSucceeded: async () => 'error',
+        markAmbiguous: async () => 'error',
+        releaseReservation: async () => 'error',
       } as never
     );
     const client = new FakeWwebjsClient(replay);
     service.bindTo(client as never);
-    service.markConnectionReady();
+    await service.markConnectionReady();
 
     const historyEvents = buildHistoryEvents(replay);
     assertHistorySequence(historyEvents, replay.historySequence);

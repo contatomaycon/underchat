@@ -11,8 +11,9 @@ export const scheduleOfficialTemplateVariableValueSchema = Type.Object({
   key: Type.String(),
   component_type: scheduleOfficialTemplateVariableComponentSchema,
   index: Type.Number(),
+  parameter_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   button_index: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
-  value: Type.String(),
+  value: Type.Union([Type.String(), Type.Number()]),
 });
 
 export const scheduleOfficialTemplateMessageSchema = Type.Object(
@@ -21,6 +22,9 @@ export const scheduleOfficialTemplateMessageSchema = Type.Object(
     language: Type.String(),
     category: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    parameter_format: Type.Optional(
+      Type.Union([Type.Literal('POSITIONAL'), Type.Literal('NAMED')])
+    ),
     components: Type.Optional(Type.Array(Type.Any())),
     variables: Type.Optional(
       Type.Array(scheduleOfficialTemplateVariableValueSchema)

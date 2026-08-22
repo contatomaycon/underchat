@@ -45,4 +45,24 @@ describe('messageToWaLike', () => {
       },
     });
   });
+
+  it('maps the new WWebJS id shape without _serialized', () => {
+    const serializedId = 'false_158733669765176@lid_3EB0D96A98D7EC10E7C610';
+    const output = messageToWaLike({
+      id: {
+        fromMe: false,
+        remote: '158733669765176@lid',
+        remoteJid: '158733669765176@lid',
+        id: '3EB0D96A98D7EC10E7C610',
+        $1: serializedId,
+        name: 'MessageKey',
+      },
+      from: '158733669765176@lid',
+      fromMe: false,
+    } as never);
+
+    expect(output?.key.id).toBe(serializedId);
+    expect(output?.key.id).not.toBe('[object Object]');
+    expect(output?.key.remoteJid).toBe('158733669765176@lid');
+  });
 });

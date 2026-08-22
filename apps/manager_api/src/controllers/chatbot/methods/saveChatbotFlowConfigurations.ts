@@ -24,7 +24,9 @@ export const saveChatbotFlowConfigurations = async (
       await chatbotFlowConfigurationsSaverUseCase.execute(
         t,
         request.body,
-        accountIdToUse
+        accountIdToUse,
+        tokenJwtData.channels,
+        tokenJwtData.actions
       );
 
     if (chatbotConfigurationsId) {

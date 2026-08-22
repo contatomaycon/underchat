@@ -64,16 +64,22 @@ export class ScheduleService {
     perPage: number,
     currentPage: number,
     query: ListScheduleRequest,
-    accountId: string
+    accountId: string,
+    allowedWorkerIds?: readonly string[]
   ): Promise<[ListScheduleResponse[], number]> => {
     const [result, total] = await Promise.all([
       this.scheduleListerRepository.listSchedules(
         perPage,
         currentPage,
         query,
-        accountId
+        accountId,
+        allowedWorkerIds
       ),
-      this.scheduleListerRepository.listScheduleTotal(query, accountId),
+      this.scheduleListerRepository.listScheduleTotal(
+        query,
+        accountId,
+        allowedWorkerIds
+      ),
     ]);
 
     if (!result.length) {
@@ -141,6 +147,7 @@ export class ScheduleService {
   ): Promise<{
     schedule_id: string;
     account_id: string;
+    worker_id: string;
     status: EScheduleStatus;
     send_date: string;
   } | null> => {

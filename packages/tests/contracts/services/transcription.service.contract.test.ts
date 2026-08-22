@@ -1,5 +1,13 @@
 import 'reflect-metadata';
 
+const mockExecuteSafeOutboundHttp = jest.fn();
+
+jest.mock('@core/common/functions/safeOutboundHttp', () => ({
+  ...jest.requireActual('@core/common/functions/safeOutboundHttp'),
+  executeSafeOutboundHttp: (...args: unknown[]) =>
+    mockExecuteSafeOutboundHttp(...args),
+}));
+
 jest.mock('@core/services/chat.service', () => ({ ChatService: class {} }));
 jest.mock('@core/services/aiAgent.service', () => ({
   AiAgentService: class {},
@@ -18,22 +26,21 @@ import { TranscriptionService } from '@core/services/transcription.service';
 import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
 
 describe('TranscriptionService', () => {
-  const originalFetch = global.fetch;
-
   afterEach(() => {
-    global.fetch = originalFetch;
+    mockExecuteSafeOutboundHttp.mockReset();
   });
 
   function createService(overrides?: Record<string, unknown>) {
     const chatService = {
       findMessageByMessageId: jest.fn(async () => ({
+        chat_id: 'c1',
         content: {
           type: 'audio',
           audio: { url: 'https://audio', mimetype: 'audio/ogg' },
         },
       })),
       findChatByChatId: jest.fn(async () => ({ worker: { id: 'w1' } })),
-      updateMessageContent: jest.fn(async () => undefined),
+      updateMessageChat: jest.fn(async () => true),
       ...overrides,
     };
 
@@ -60,6 +67,7 @@ describe('TranscriptionService', () => {
   it('returns cached transcription when already present', async () => {
     const { service } = createService({
       findMessageByMessageId: jest.fn(async () => ({
+        chat_id: 'c1',
         content: {
           type: 'audio',
           audio: { transcription: 'cached text', url: 'x' },
@@ -84,6 +92,7 @@ describe('TranscriptionService', () => {
     const noAudioService = new TranscriptionService(
       {
         findMessageByMessageId: jest.fn(async () => ({
+          chat_id: 'c1',
           content: { type: 'text' },
         })),
       } as never,
@@ -100,6 +109,7 @@ describe('TranscriptionService', () => {
   it('handles url/chat/worker/agent/voice fetch and transcribe errors', async () => {
     const { service } = createService({
       findMessageByMessageId: jest.fn(async () => ({
+        chat_id: 'c1',
         content: { type: 'audio', audio: {} },
       })),
     });
@@ -110,6 +120,7 @@ describe('TranscriptionService', () => {
     const noChatService = new TranscriptionService(
       {
         findMessageByMessageId: jest.fn(async () => ({
+          chat_id: 'c1',
           content: { type: 'audio', audio: { url: 'https://audio' } },
         })),
         findChatByChatId: jest.fn(async () => null),
@@ -125,18 +136,63 @@ describe('TranscriptionService', () => {
   });
 
   it('transcribes and persists when everything is valid', async () => {
-    const fetchMock = jest.fn(async () => ({
-      ok: true,
-      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
-    }));
-    global.fetch = fetchMock as never;
+    const audio = Buffer.from([1, 2, 3]);
+    mockExecuteSafeOutboundHttp.mockResolvedValue({
+      kind: 'response',
+      statusCode: 200,
+      headers: {},
+      body: audio,
+      finalUrl: 'https://audio',
+      redirectCount: 0,
+      durationMs: 1,
+    });
 
     const { service, chatService } = createService();
 
-    await expect(service.transcribeMessage('c1', 'm1', 'a1')).resolves.toEqual({
+    await expect(
+      service.transcribeMessage('c1', 'm1', 'a1', 'public_api')
+    ).resolves.toEqual({
       transcription: 'transcribed text',
       cached: false,
     });
-    expect(chatService.updateMessageContent).toHaveBeenCalled();
+    expect(chatService.updateMessageChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.objectContaining({
+          audio: expect.objectContaining({
+            transcription: 'transcribed text',
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        eventTypes: ['message.transcription.updated'],
+        idempotencyKey: expect.stringContaining('message-transcription:'),
+        source: 'public_api',
+        changes: expect.objectContaining({ origin: 'public_api' }),
+      })
+    );
+    expect(mockExecuteSafeOutboundHttp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://audio',
+        method: 'GET',
+      })
+    );
+  });
+
+  it('rejects audio URLs blocked by the outbound SSRF policy', async () => {
+    mockExecuteSafeOutboundHttp.mockResolvedValue({
+      kind: 'failure',
+      code: 'dns_blocked_address',
+      message: 'blocked',
+      retryable: false,
+      isTimeout: false,
+      durationMs: 1,
+    });
+
+    const { service, chatService } = createService();
+
+    await expect(service.transcribeMessage('c1', 'm1', 'a1')).rejects.toThrow(
+      'Não foi possível baixar o áudio para transcrição.'
+    );
+    expect(chatService.updateMessageChat).not.toHaveBeenCalled();
   });
 });

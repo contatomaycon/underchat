@@ -1,9 +1,14 @@
 import { injectable, inject } from 'tsyringe';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
-import { WwebjsHelpersService } from './helpers.service';
+import {
+  WwebjsHelpersService,
+  type WwebjsProviderInvocationBoundary,
+} from './helpers.service';
 import { messageToWaLike } from '../util/messageToWaLike';
 import type { IMessageKeyResponse } from '@core/common/interfaces/IMessageKeyResponse';
 import type { IMessageKeyInput } from '@core/common/interfaces/IMessageKeyInput';
+import { extractWwebjsMessageId } from '../util/wwebjsMessageId';
+import { isProviderAuxiliaryInvocationFenceError } from '@core/common/functions/providerAuxiliaryInvocation';
 
 type ParsedMessageId = ReturnType<typeof parseSerializedMessageId>;
 
@@ -18,10 +23,11 @@ export class WwebjsMessageReactionsInteractionsService {
 
   async react(
     key: IMessageKeyInput,
-    emoji: string
+    emoji: string,
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
-    const msg = await this.resolveMessageByKey(key);
+    const msg = await this.resolveMessageByKey(key, client);
     if (!msg) {
       return undefined;
     }
@@ -36,42 +42,49 @@ export class WwebjsMessageReactionsInteractionsService {
       throw new Error('Wwebjs puppeteer page not available');
     }
 
-    await pupPage.evaluate(
-      async (messageId: string, reaction: string) => {
-        if (!messageId) {
-          return;
-        }
+    await this.helpers.invokeProviderMutation(
+      client,
+      'react_message',
+      beforeProviderInvoke,
+      () =>
+        pupPage.evaluate(
+          async (messageId: string, reaction: string) => {
+            if (!messageId) {
+              return;
+            }
 
-        const browserGlobal = globalThis as unknown as {
-          require: (module: string) => unknown;
-        };
-        const collections = browserGlobal.require('WAWebCollections') as {
-          Msg: {
-            get: (id: string) => unknown;
-            getMessagesById: (
-              ids: string[]
-            ) => Promise<{ messages?: unknown[] } | undefined>;
-          };
-        };
-        const message =
-          collections.Msg.get(messageId) ||
-          (await collections.Msg.getMessagesById([messageId]))?.messages?.[0];
-        if (!message) {
-          return;
-        }
+            const browserGlobal = globalThis as unknown as {
+              require: (module: string) => unknown;
+            };
+            const collections = browserGlobal.require('WAWebCollections') as {
+              Msg: {
+                get: (id: string) => unknown;
+                getMessagesById: (
+                  ids: string[]
+                ) => Promise<{ messages?: unknown[] } | undefined>;
+              };
+            };
+            const message =
+              collections.Msg.get(messageId) ||
+              (await collections.Msg.getMessagesById([messageId]))
+                ?.messages?.[0];
+            if (!message) {
+              return;
+            }
 
-        const reactionAction = browserGlobal.require(
-          'WAWebSendReactionMsgAction'
-        ) as {
-          sendReactionToMsg: (
-            message: unknown,
-            reactionText: string
-          ) => Promise<unknown>;
-        };
-        await reactionAction.sendReactionToMsg(message, reaction);
-      },
-      serializedId,
-      emoji
+            const reactionAction = browserGlobal.require(
+              'WAWebSendReactionMsgAction'
+            ) as {
+              sendReactionToMsg: (
+                message: unknown,
+                reactionText: string
+              ) => Promise<unknown>;
+            };
+            await reactionAction.sendReactionToMsg(message, reaction);
+          },
+          serializedId,
+          emoji
+        )
     );
 
     return messageToWaLike(msg);
@@ -161,31 +174,7 @@ export class WwebjsMessageReactionsInteractionsService {
   }
 
   private extractSerializedIdFromMessage(msg: unknown): string | undefined {
-    if (!msg || typeof msg !== 'object') {
-      return undefined;
-    }
-
-    const idValue = (msg as { id?: unknown }).id;
-    if (!idValue) {
-      return undefined;
-    }
-
-    if (
-      typeof idValue === 'object' &&
-      idValue !== null &&
-      '_serialized' in (idValue as object)
-    ) {
-      const serialized = (idValue as { _serialized?: unknown })._serialized;
-      return typeof serialized === 'string' && serialized.trim()
-        ? serialized.trim()
-        : undefined;
-    }
-
-    if (typeof idValue === 'string' && idValue.trim()) {
-      return idValue.trim();
-    }
-
-    return undefined;
+    return extractWwebjsMessageId(msg);
   }
 
   private extractStanzaIdFromMessage(msg: unknown): string | undefined {
@@ -239,9 +228,9 @@ export class WwebjsMessageReactionsInteractionsService {
 
   private async resolveMessageByChatScan(
     key: IMessageKeyInput,
-    serializedCandidates: string[]
+    serializedCandidates: string[],
+    client = this.helpers.getClient()
   ): Promise<any | null> {
-    const client = this.helpers.getClient();
     const rawId = key.id?.trim();
     if (!rawId) {
       return null;
@@ -262,7 +251,11 @@ export class WwebjsMessageReactionsInteractionsService {
       let chatMessages: any[] = [];
 
       try {
-        const chat = await client.getChatById(remoteCandidate);
+        const chat = await this.helpers.invokeProviderLookup(
+          client,
+          'reaction_message_lookup',
+          () => client.getChatById(remoteCandidate)
+        );
         if (
           !chat ||
           typeof (chat as { fetchMessages?: unknown }).fetchMessages !==
@@ -271,17 +264,26 @@ export class WwebjsMessageReactionsInteractionsService {
           continue;
         }
 
-        chatMessages = await (
+        const fetchMessages = (
           chat as {
             fetchMessages: (searchOptions: {
               limit?: number;
               fromMe?: boolean;
             }) => Promise<any[]>;
           }
-        ).fetchMessages({
-          limit: this.REACTION_SOURCE_SCAN_FETCH_LIMIT,
-        });
-      } catch {
+        ).fetchMessages.bind(chat);
+        chatMessages = await this.helpers.invokeProviderLookup(
+          client,
+          'reaction_message_lookup',
+          () =>
+            fetchMessages({
+              limit: this.REACTION_SOURCE_SCAN_FETCH_LIMIT,
+            })
+        );
+      } catch (error) {
+        if (isProviderAuxiliaryInvocationFenceError(error)) {
+          throw error;
+        }
         continue;
       }
 
@@ -314,9 +316,9 @@ export class WwebjsMessageReactionsInteractionsService {
   }
 
   private async resolveMessageByKey(
-    key: IMessageKeyInput
+    key: IMessageKeyInput,
+    client = this.helpers.getClient()
   ): Promise<any | null> {
-    const client = this.helpers.getClient();
     const candidates = this.buildSerializedIdCandidates(key);
     if (!candidates.length) {
       return null;
@@ -324,13 +326,21 @@ export class WwebjsMessageReactionsInteractionsService {
 
     for (const candidate of candidates) {
       try {
-        const message = await client.getMessageById(candidate);
+        const message = await this.helpers.invokeProviderLookup(
+          client,
+          'reaction_message_lookup',
+          () => client.getMessageById(candidate)
+        );
         if (message) {
           return message;
         }
-      } catch {}
+      } catch (error) {
+        if (isProviderAuxiliaryInvocationFenceError(error)) {
+          throw error;
+        }
+      }
     }
 
-    return this.resolveMessageByChatScan(key, candidates);
+    return this.resolveMessageByChatScan(key, candidates, client);
   }
 }

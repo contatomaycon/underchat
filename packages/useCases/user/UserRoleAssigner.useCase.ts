@@ -4,6 +4,8 @@ import { UserService } from '@core/services/user.service';
 import { PermissionService } from '@core/services/permission.service';
 import { AssignUserRoleRequest } from '@core/schema/user/assignUserRole/request.schema';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import { PlanLimitEnforcementService } from '@core/services/planLimitEnforcement.service';
+import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
 
 @injectable()
 export class UserRoleAssignerUseCase {
@@ -11,7 +13,9 @@ export class UserRoleAssignerUseCase {
     @inject(UserService)
     private readonly userService: UserService,
     @inject(PermissionService)
-    private readonly permissionService: PermissionService
+    private readonly permissionService: PermissionService,
+    @inject(PlanLimitEnforcementService)
+    private readonly planLimitEnforcementService: PlanLimitEnforcementService
   ) {}
 
   private async validateUserExistsInAccount(
@@ -132,6 +136,13 @@ export class UserRoleAssignerUseCase {
 
     if (!assigned) {
       throw new Error(t('user_role_assignment_failed'));
+    }
+
+    if (isMasterOrAdministratorRole(input.permission_role_id)) {
+      await this.planLimitEnforcementService.activateProtectedUserIfBlocked(
+        accountIdForValidation,
+        userId
+      );
     }
 
     return true;

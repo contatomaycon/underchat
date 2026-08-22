@@ -1,6 +1,5 @@
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
-import { v7 as uuidv7 } from 'uuid';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { IChat } from '@core/common/interfaces/IChat';
@@ -20,8 +19,15 @@ import {
   ForwardMessageResult,
 } from '@core/schema/chat/forwardMessage/response.schema';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
+import { buildForwardWorkerCommandOperationId } from '@core/common/functions/messageIdentity';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
+import { runWithWorkerCommandRetryOf } from '@core/common/functions/workerCommandAcceptanceContext';
+import { v7 as uuidv7 } from 'uuid';
 
 type ForwardTargetType = 'chat' | 'contact';
+
+const UUID_V7_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 @injectable()
 export class ChatMessageForwarderUseCase {
@@ -208,10 +214,12 @@ export class ChatMessageForwarderUseCase {
     sourceMessage: IChatMessage,
     sourceContent: NonNullable<IChatMessage['content']>,
     targetChat: IChat,
-    actorUser: IChat['user'] | null
+    actorUser: IChat['user'] | null,
+    operationId: string,
+    idempotencyKey: string
   ): IChatMessage {
     return {
-      message_id: uuidv7(),
+      message_id: operationId,
       chat_id: targetChat.chat_id,
       message_key: {
         remote_jid: targetChat.message_key?.remote_jid ?? null,
@@ -230,10 +238,10 @@ export class ChatMessageForwarderUseCase {
         is_seen: false,
         is_sent_to_internal: true,
       },
-      date: new Date().toISOString(),
+      date: this.forwardedMessageDate(idempotencyKey),
       deleted: false,
       has_quoted: false,
-      hash: uuidv7(),
+      hash: operationId,
     };
   }
 
@@ -272,6 +280,10 @@ export class ChatMessageForwarderUseCase {
     targetType: ForwardTargetType;
     targetContactId?: string | null;
     actorUser: IChat['user'] | null;
+    idempotencyKey: string;
+    retryOfKey?: string;
+    operationTargetIdentity?: string;
+    webhookSource: OutboundWebhookRequestSource;
   }): Promise<ForwardMessageResult> {
     const {
       t,
@@ -281,6 +293,10 @@ export class ChatMessageForwarderUseCase {
       targetType,
       targetContactId = null,
       actorUser,
+      idempotencyKey,
+      retryOfKey,
+      operationTargetIdentity,
+      webhookSource,
     } = input;
 
     if (!targetChat.worker?.id) {
@@ -306,46 +322,104 @@ export class ChatMessageForwarderUseCase {
       });
     }
 
-    try {
-      const messageToForward = this.buildForwardedMessage(
-        sourceMessage,
-        sourceContent,
-        targetChat,
-        actorUser
-      );
+    const operationId = buildForwardWorkerCommandOperationId(
+      idempotencyKey,
+      operationTargetIdentity ?? targetChat.chat_id
+    );
+    const retryOfOperationId = retryOfKey
+      ? buildForwardWorkerCommandOperationId(
+          retryOfKey,
+          operationTargetIdentity ?? targetChat.chat_id
+        )
+      : null;
+    const messageToForward = this.buildForwardedMessage(
+      sourceMessage,
+      sourceContent,
+      targetChat,
+      actorUser,
+      operationId,
+      idempotencyKey
+    );
 
-      const published =
-        await this.chatMessageService.publishPreparedMessage(messageToForward);
-
-      if (!published) {
+    const existingMessage = await this.chatService.findMessageByMessageId(
+      targetChat.account.id,
+      messageToForward.message_id
+    );
+    if (existingMessage) {
+      if (
+        existingMessage.chat_id !== targetChat.chat_id ||
+        existingMessage.content?.forward?.source_message_id !==
+          sourceMessage.message_id
+      ) {
+        throw new Error('worker_command_operation_identity_conflict');
+      }
+      if (
+        existingMessage.summary?.is_sent === true ||
+        existingMessage.message_key?.id
+      ) {
         return this.buildResult({
           targetType,
           targetChatId: targetChat.chat_id,
           targetContactId,
-          status: 'failed',
-          message: t('chat_forward_publish_failed'),
+          status: 'sent',
+          message: null,
         });
       }
 
+      const republished = await runWithWorkerCommandRetryOf(
+        () =>
+          this.chatMessageService.publishPreparedMessage(
+            existingMessage,
+            webhookSource,
+            undefined,
+            true
+          ),
+        retryOfOperationId
+      );
       return this.buildResult({
         targetType,
         targetChatId: targetChat.chat_id,
         targetContactId,
-        status: 'sent',
-        message: null,
+        status: republished ? 'sent' : 'failed',
+        message: republished ? null : t('chat_forward_publish_failed'),
       });
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : t('chat_forward_error');
+    }
 
+    const published = await runWithWorkerCommandRetryOf(
+      () =>
+        this.chatMessageService.publishPreparedMessage(
+          messageToForward,
+          webhookSource
+        ),
+      retryOfOperationId
+    );
+
+    if (!published) {
       return this.buildResult({
         targetType,
         targetChatId: targetChat.chat_id,
         targetContactId,
         status: 'failed',
-        message: errorMessage,
+        message: t('chat_forward_publish_failed'),
       });
     }
+
+    return this.buildResult({
+      targetType,
+      targetChatId: targetChat.chat_id,
+      targetContactId,
+      status: 'sent',
+      message: null,
+    });
+  }
+
+  private forwardedMessageDate(idempotencyKey: string): string {
+    const timestampHex = idempotencyKey.replaceAll('-', '').slice(0, 12);
+    const timestamp = Number.parseInt(timestampHex, 16);
+    if (!Number.isSafeInteger(timestamp)) {
+      throw new Error('worker_command_operation_id_invalid');
+    }
+    return new Date(timestamp).toISOString();
   }
 
   private async forwardToChatTarget(input: {
@@ -360,6 +434,9 @@ export class ChatMessageForwarderUseCase {
     userSectors: string[];
     userChannels: { id: string; name: string }[];
     actorUser: IChat['user'] | null;
+    idempotencyKey: string;
+    retryOfKey?: string;
+    webhookSource: OutboundWebhookRequestSource;
   }): Promise<ForwardMessageResult> {
     const {
       t,
@@ -373,6 +450,9 @@ export class ChatMessageForwarderUseCase {
       userSectors,
       userChannels,
       actorUser,
+      idempotencyKey,
+      retryOfKey,
+      webhookSource,
     } = input;
 
     if (targetChatId === sourceChatId) {
@@ -422,6 +502,9 @@ export class ChatMessageForwarderUseCase {
       targetChat,
       targetType: 'chat',
       actorUser,
+      idempotencyKey,
+      retryOfKey,
+      webhookSource,
     });
   }
 
@@ -438,6 +521,10 @@ export class ChatMessageForwarderUseCase {
     userSectors: string[];
     userChannels: { id: string; name: string }[];
     actorUser: IChat['user'] | null;
+    idempotencyKey: string;
+    retryOfKey?: string;
+    satisfiedTargetChatIds: Set<string>;
+    webhookSource: OutboundWebhookRequestSource;
   }): Promise<ForwardMessageResult> {
     const {
       t,
@@ -452,6 +539,10 @@ export class ChatMessageForwarderUseCase {
       userSectors,
       userChannels,
       actorUser,
+      idempotencyKey,
+      retryOfKey,
+      satisfiedTargetChatIds,
+      webhookSource,
     } = input;
 
     if (!this.hasChannelAccess(workerId, userChannels)) {
@@ -491,15 +582,6 @@ export class ChatMessageForwarderUseCase {
       });
     }
 
-    if (contact.is_valided !== true) {
-      return this.buildResult({
-        targetType: 'contact',
-        targetContactId,
-        status: 'failed',
-        message: t('chat_forward_contact_not_validated'),
-      });
-    }
-
     let targetChat: IChat;
     try {
       targetChat = await this.startChatWithContactUseCase.execute(
@@ -511,7 +593,8 @@ export class ChatMessageForwarderUseCase {
           worker_id: workerId,
         },
         userChannels,
-        { onExistingInChat: 'reuse_and_takeover' }
+        { onExistingInChat: 'reuse_and_takeover' },
+        webhookSource
       );
     } catch (error) {
       const errorMessage =
@@ -531,6 +614,16 @@ export class ChatMessageForwarderUseCase {
         targetContactId,
         status: 'failed',
         message: t('chat_forward_same_chat_not_allowed'),
+      });
+    }
+
+    if (satisfiedTargetChatIds.has(targetChat.chat_id)) {
+      return this.buildResult({
+        targetType: 'contact',
+        targetChatId: targetChat.chat_id,
+        targetContactId,
+        status: 'sent',
+        message: null,
       });
     }
 
@@ -560,6 +653,10 @@ export class ChatMessageForwarderUseCase {
       targetType: 'contact',
       targetContactId,
       actorUser,
+      idempotencyKey,
+      retryOfKey,
+      operationTargetIdentity: `contact:${workerId}:${targetContactId}`,
+      webhookSource,
     });
   }
 
@@ -571,8 +668,19 @@ export class ChatMessageForwarderUseCase {
     userId: string,
     actions: IJwtGroupHierarchy[],
     userSectors: string[],
-    userChannels: { id: string; name: string }[] = []
+    userChannels: { id: string; name: string }[] = [],
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<ForwardMessageResponse> {
+    const idempotencyKey = body.idempotency_key ?? uuidv7();
+    if (!UUID_V7_PATTERN.test(idempotencyKey)) {
+      throw new Error('worker_command_operation_id_invalid');
+    }
+    if (body.retry_of && !UUID_V7_PATTERN.test(body.retry_of)) {
+      throw new Error('worker_command_retry_of_invalid');
+    }
+    if (body.retry_of === idempotencyKey) {
+      throw new Error('worker_command_retry_of_invalid');
+    }
     const targetChatIds = body.target_chat_ids ?? [];
     const targetContactIds = body.target_contact_ids ?? [];
 
@@ -618,6 +726,7 @@ export class ChatMessageForwarderUseCase {
     const actorUser = await this.resolveActorUser(sourceChat, userId);
 
     const results: ForwardMessageResult[] = [];
+    const satisfiedTargetChatIds = new Set<string>();
     let sent = 0;
 
     for (const targetChatId of targetChatIds) {
@@ -633,10 +742,16 @@ export class ChatMessageForwarderUseCase {
         userSectors,
         userChannels,
         actorUser,
+        idempotencyKey,
+        retryOfKey: body.retry_of,
+        webhookSource,
       });
 
       if (result.status === 'sent') {
         sent += 1;
+        if (result.target_chat_id) {
+          satisfiedTargetChatIds.add(result.target_chat_id);
+        }
       }
 
       results.push(result);
@@ -668,10 +783,17 @@ export class ChatMessageForwarderUseCase {
           userSectors,
           userChannels,
           actorUser,
+          idempotencyKey,
+          retryOfKey: body.retry_of,
+          satisfiedTargetChatIds,
+          webhookSource,
         });
 
         if (result.status === 'sent') {
           sent += 1;
+          if (result.target_chat_id) {
+            satisfiedTargetChatIds.add(result.target_chat_id);
+          }
         }
 
         results.push(result);

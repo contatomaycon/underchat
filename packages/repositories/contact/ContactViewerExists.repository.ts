@@ -10,13 +10,22 @@ export class ContactViewerExistsRepository {
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
-  existsContactById = async (contactId: string): Promise<boolean> => {
+  existsContactById = async (
+    contactId: string,
+    accountId?: string
+  ): Promise<boolean> => {
     const result = await this.dbRo
       .select({
         total: count(),
       })
       .from(contact)
-      .where(and(eq(contact.contact_id, contactId), isNull(contact.deleted_at)))
+      .where(
+        and(
+          eq(contact.contact_id, contactId),
+          isNull(contact.deleted_at),
+          accountId ? eq(contact.account_id, accountId) : undefined
+        )
+      )
       .execute();
 
     if (!result.length) {

@@ -144,15 +144,19 @@ export const useServerStore = defineStore('server', {
       }
     },
 
-    async getServerById(serverId: string): Promise<ViewServerResponse | null> {
+    async getServerById(
+      serverId: string,
+      options: { silent?: boolean } = {}
+    ): Promise<ViewServerResponse | null> {
+      const { silent = false } = options;
       try {
-        this.loading = true;
+        if (!silent) this.loading = true;
 
         const response = await axios.get<IApiResponse<ViewServerResponse>>(
           `/server/${serverId}`
         );
 
-        this.loading = false;
+        if (!silent) this.loading = false;
 
         const data = response?.data;
 
@@ -160,7 +164,7 @@ export const useServerStore = defineStore('server', {
           const mensage =
             data?.message ?? this.i18n.global.t('server_get_error');
 
-          this.showSnackbar(mensage, EColor.error);
+          if (!silent) this.showSnackbar(mensage, EColor.error);
 
           return null;
         }
@@ -172,9 +176,9 @@ export const useServerStore = defineStore('server', {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
 
-        this.showSnackbar(errorMessage, EColor.error);
+        if (!silent) this.showSnackbar(errorMessage, EColor.error);
 
-        this.loading = false;
+        if (!silent) this.loading = false;
 
         return null;
       }

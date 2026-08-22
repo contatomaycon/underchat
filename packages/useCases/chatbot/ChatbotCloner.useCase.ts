@@ -12,6 +12,9 @@ import { chatbotFlowMappings } from '@core/mappings/chatbotFlow.mappings';
 import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/response.schema';
 import { ListChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/listChatbotFlowConfigurations/response.schema';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import { hasFullAccess } from '@core/common/functions/hasFullAccess';
+import type { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { ChatbotUnderchatAccessError } from '@core/common/exceptions/ChatbotUnderchatAccessError';
 
 @injectable()
 export class ChatbotClonerUseCase {
@@ -59,9 +62,22 @@ export class ChatbotClonerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     input: CloneChatbotRequest,
-    accountId: string
+    accountId: string,
+    actions: IJwtGroupHierarchy[] = []
   ): Promise<CloneChatbotResponse | null> {
     await this.validate(t, input, accountId);
+
+    const originalFlow = await this.chatbotService.findChatbotFlowByChatbotId(
+      accountId,
+      input.chatbot_id
+    );
+    if (
+      originalFlow?.nodes.some((node) => node.type === 'underchat') &&
+      !hasFullAccess(actions)
+    ) {
+      throw new ChatbotUnderchatAccessError(t('permission_denied'));
+    }
+
     await this.planAccountService.validateCanCreateChatbot(t, accountId);
 
     const clonedChatbot = await this.chatbotClonerRepository.cloneChatbot(
@@ -73,11 +89,6 @@ export class ChatbotClonerUseCase {
     if (!clonedChatbot) {
       throw new Error(t('chatbot_cloner_error'));
     }
-
-    const originalFlow = await this.chatbotService.findChatbotFlowByChatbotId(
-      accountId,
-      input.chatbot_id
-    );
 
     if (originalFlow) {
       const mappings = chatbotFlowMappings();
@@ -95,7 +106,24 @@ export class ChatbotClonerUseCase {
           chatbot_flow_id: newFlowId,
           chatbot_id: clonedChatbot.chatbot_id,
           account_id: accountId,
-          nodes: originalFlow.nodes,
+          nodes: originalFlow.nodes.map((node) => {
+            if (node.type !== 'apiRequest' || !node.data.apiRequest) {
+              return node;
+            }
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                apiRequest: {
+                  ...node.data.apiRequest,
+                  test: {
+                    state: 'untested' as const,
+                    evidence: null,
+                  },
+                },
+              },
+            };
+          }),
           edges: originalFlow.edges,
           created_at: now,
           updated_at: now,

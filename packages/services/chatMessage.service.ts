@@ -9,7 +9,6 @@ import { ChatService } from './chat.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { StreamProducerService } from './streamProducer.service';
-import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
 import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { CentrifugoService } from './centrifugo.service';
 import { StorageService } from './storage.service';
@@ -47,8 +46,10 @@ import {
 } from '@core/common/interfaces/ISendMessageOptions';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 import {
+  buildDeterministicMessageHash,
   buildMessageSendQueueKey,
   ensureMessageSendHash,
+  resolveWorkerCommandChatEntityKey,
 } from '@core/common/functions/messageIdentity';
 import { messageBelongsToChatAndAccount } from '@core/common/functions/chatMessageOwnership';
 import {
@@ -57,8 +58,19 @@ import {
 } from '@core/common/functions/securityKeyConfig';
 import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
 import { WorkerConfigService } from './workerConfig.service';
+import { OperatorReplyPendingRedistributionTrackerService } from './operatorReplyPendingRedistributionTracker.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialCapabilities';
+import { getKafkaDispatchGuard } from '@core/common/functions/kafkaDispatchFenceContext';
+import type { ICentrifugoPublishGuard } from '@core/common/interfaces/ICentrifugo';
+import { assertOfficialWhatsappInteractivePayload } from '@core/common/functions/officialWhatsappInteractiveValidation';
+import {
+  WorkerCommandAdmissionService,
+  type WorkerCommandAdmissionResult,
+} from './workerCommandAdmission.service';
+import { WORKER_COMMAND_MAX_AGE_MS } from '@core/common/constants/workerCommandTransport';
+import { workerCommandMessagePayload } from '@core/common/functions/workerCommandMessagePayload';
+import { currentWorkerCommandRetryOf } from '@core/common/functions/workerCommandAcceptanceContext';
 
 @injectable()
 export class ChatMessageService {
@@ -68,8 +80,8 @@ export class ChatMessageService {
     private readonly chatService: ChatService,
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(WorkerCommandAdmissionService)
+    private readonly workerCommandAdmissionService: WorkerCommandAdmissionService,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(StreamProducerService)
@@ -87,7 +99,9 @@ export class ChatMessageService {
     @inject(WorkerService)
     private readonly workerService: WorkerService,
     @inject(WorkerConfigService)
-    private readonly workerConfigService: WorkerConfigService
+    private readonly workerConfigService: WorkerConfigService,
+    @inject(OperatorReplyPendingRedistributionTrackerService)
+    private readonly operatorReplyPendingRedistributionTracker: OperatorReplyPendingRedistributionTrackerService | null = null
   ) {}
 
   private async getChat(
@@ -329,7 +343,10 @@ export class ChatMessageService {
     return message?.message_key ?? null;
   }
 
-  private centrifugoChatPublish(dataPublish: IChatMessage): Promise<any> {
+  private async centrifugoChatPublish(
+    dataPublish: IChatMessage,
+    assertActive?: ICentrifugoPublishGuard
+  ): Promise<any> {
     if (
       !messageBelongsToChatAndAccount(
         dataPublish,
@@ -340,9 +357,17 @@ export class ChatMessageService {
       return Promise.resolve(null);
     }
 
+    await assertActive?.();
+    const channel = chatAccountCentrifugo(dataPublish.account.id);
+
+    if (!assertActive) {
+      return this.centrifugoService.publishSub(channel, dataPublish);
+    }
+
     return this.centrifugoService.publishSub(
-      chatAccountCentrifugo(dataPublish.account.id),
-      dataPublish
+      channel,
+      dataPublish,
+      assertActive
     );
   }
 
@@ -481,40 +506,137 @@ export class ChatMessageService {
     return this.isOfficialWorkerContext(message);
   }
 
-  private async publishMessage(message: IChatMessage): Promise<boolean> {
+  private async admitWorkerMessage(
+    message: IChatMessage,
+    source: string,
+    retry: boolean
+  ): Promise<WorkerCommandAdmissionResult> {
+    const workerId = message.worker.id?.trim();
+    if (!workerId) {
+      throw new Error('Worker ID is required to send message');
+    }
+
+    return this.workerCommandAdmissionService.admit({
+      accountId: message.account.id,
+      workerId,
+      commandType: 'direct_send',
+      entityKey: resolveWorkerCommandChatEntityKey(
+        message.account.id,
+        workerId,
+        message
+      ),
+      operationId: message.message_id,
+      retryOf: message.worker_command_retry_of ?? currentWorkerCommandRetryOf(),
+      payload: workerCommandMessagePayload(message),
+      source,
+      retry,
+      issuedAt: message.worker_command_issued_at ?? undefined,
+    });
+  }
+
+  private async publishMessage(
+    message: IChatMessage,
+    outboundWebhookSource?: string,
+    explicitAssertActive?: ICentrifugoPublishGuard,
+    retry = false
+  ): Promise<boolean> {
+    const assertActive = explicitAssertActive ?? getKafkaDispatchGuard();
+    await assertActive?.();
     message.sent_from_platform = true;
     ensureMessageSendHash(message);
     const messageType = message.content?.type;
     const isAnnotation = messageType === EMessageType.annotation;
+    const hasMedia = Boolean(
+      message.content?.image ||
+      message.content?.video ||
+      message.content?.document ||
+      message.content?.audio ||
+      message.content?.sticker
+    );
 
-    const elasticSaved = await this.chatService.saveMessageChat(message);
+    let isOfficialWorker = false;
+    if (!isAnnotation) {
+      message.delivery_status = 'queued';
+      if (!message.worker.id) {
+        throw new Error('Worker ID is required to send message');
+      }
+      isOfficialWorker = await this.isOfficialWorker(message);
+      if (isOfficialWorker) {
+        message.worker_command_transport = 'kafka_global';
+      } else {
+        message.worker_command_retry_of = currentWorkerCommandRetryOf();
+        const issuedAt = message.worker_command_issued_at
+          ? new Date(message.worker_command_issued_at)
+          : new Date();
+        if (!Number.isFinite(issuedAt.getTime())) {
+          throw new Error('worker_command_issued_at_invalid');
+        }
+        message.worker_command_transport = 'jetstream';
+        message.worker_command_issued_at = issuedAt.toISOString();
+        message.worker_command_deadline_at = new Date(
+          issuedAt.getTime() + WORKER_COMMAND_MAX_AGE_MS
+        ).toISOString();
+      }
+    }
+
+    await assertActive?.();
+    const elasticSaved = await this.chatService.saveMessageChat(message, {
+      eventTypes: [
+        ...(isAnnotation
+          ? (['message.annotation.created'] as const)
+          : messageType === EMessageType.system
+            ? (['message.system.created', 'message.delivery.queued'] as const)
+            : (['message.sent', 'message.delivery.queued'] as const)),
+        ...(!isAnnotation && hasMedia
+          ? (['message.media.updated'] as const)
+          : []),
+      ],
+      idempotencyKey: `message-created:${message.message_id}`,
+      source: outboundWebhookSource ?? 'underchat',
+      actor: message.user?.id
+        ? { type: 'user', id: message.user.id }
+        : { type: 'automation' },
+      changes: {
+        direction: isAnnotation ? 'internal' : 'outbound',
+        ...(outboundWebhookSource ? { origin: outboundWebhookSource } : {}),
+        ...(!isAnnotation ? { delivery_status: 'queued' } : {}),
+      },
+    });
     if (!elasticSaved) {
       return false;
     }
+    await assertActive?.();
 
     const postPersistPromises: Promise<any>[] = [
-      this.centrifugoChatPublish(message),
+      this.centrifugoChatPublish(message, assertActive),
     ];
 
     if (!isAnnotation) {
       if (!message.worker.id) {
         throw new Error('Worker ID is required to send message');
       }
-      const isOfficialWorker = await this.isOfficialWorker(message);
-      const kafkaTopic = isOfficialWorker
-        ? this.kafkaServiceQueueService.officialWhatsappSendMessage()
-        : this.kafkaBaileysQueueService.workerSendMessage(message.worker.id);
       postPersistPromises.push(
-        this.streamProducerService.send(
-          kafkaTopic,
-          message,
-          buildMessageSendQueueKey(message.account.id, message.chat_id)
-        )
+        (async () => {
+          await assertActive?.();
+          if (isOfficialWorker) {
+            return this.streamProducerService.send(
+              this.kafkaServiceQueueService.officialWhatsappSendMessage(),
+              message,
+              buildMessageSendQueueKey(message.account.id, message.chat_id)
+            );
+          }
+          return this.admitWorkerMessage(
+            message,
+            outboundWebhookSource ?? 'chat_message',
+            retry
+          );
+        })()
       );
     }
 
     const results = await Promise.allSettled(postPersistPromises);
-    const kafkaResult = results[1];
+    await assertActive?.();
+    const providerResult = results[1];
 
     if (results[0].status === 'rejected') {
       const error = results[0].reason;
@@ -523,72 +645,147 @@ export class ChatMessageService {
       }
     }
 
-    if (kafkaResult && kafkaResult.status === 'rejected') {
-      throw kafkaResult.reason;
+    if (providerResult && providerResult.status === 'rejected') {
+      throw providerResult.reason;
+    }
+
+    if (
+      providerResult?.status === 'fulfilled' &&
+      !isAnnotation &&
+      !isOfficialWorker
+    ) {
+      const admission = providerResult.value as WorkerCommandAdmissionResult;
+      try {
+        await this.chatService.markWorkerCommandAccepted(
+          message.account.id,
+          message.message_id,
+          admission.receipt
+        );
+      } catch (error) {
+        // PubAck is the acceptance boundary. Failing this read-model update
+        // must not turn an accepted command into an opaque HTTP failure; the
+        // bounded queued reconciler persists the same receipt/id afterwards.
+        console.error('[WorkerCommand] Failed to persist PubAck projection:', {
+          operation_id: admission.receipt.operation_id,
+          command_id: admission.receipt.command_id,
+          error: error instanceof Error ? error.name : 'unknown_error',
+        });
+      }
+      message.broker_command_id = admission.receipt.command_id;
+      message.broker_operation_id = admission.receipt.operation_id;
+      message.broker_stream = admission.receipt.stream;
+      message.broker_stream_sequence = admission.receipt.stream_sequence;
+      message.broker_accepted_at = admission.receipt.accepted_at;
+      message.broker_expires_at = admission.receipt.expires_at;
+      message.broker_duplicate = admission.receipt.duplicate;
     }
 
     if (!message.content) {
       return true;
     }
 
-    const messageText = extractMessageTextFromContent(message.content);
-    const lastDateEpochMillis = new Date(message.date).getTime();
-    const incrementUnreadCount = false;
-    const chatBeforeSummary = await this.chatService.findChatByChatId(
-      message.account.id,
-      message.chat_id
-    );
-    const updateOperatorReplyPending =
-      chatBeforeSummary?.status === EChatStatus.in_chat &&
-      message.type_user === ETypeUserChat.operator &&
-      message.content.type !== EMessageType.react &&
-      message.content.type !== EMessageType.annotation;
+    try {
+      const messageText = extractMessageTextFromContent(message.content);
+      const lastDateEpochMillis = new Date(message.date).getTime();
+      const incrementUnreadCount = false;
+      await assertActive?.();
+      const chatBeforeSummary = await this.chatService.findChatByChatId(
+        message.account.id,
+        message.chat_id
+      );
+      const isHumanOperatorMessage =
+        chatBeforeSummary?.status === EChatStatus.in_chat &&
+        message.type_user === ETypeUserChat.operator &&
+        message.content.type !== EMessageType.react &&
+        message.content.type !== EMessageType.annotation;
 
-    await this.chatService.updateChatSummaryAtomically(
-      message.chat_id,
-      messageText,
-      message.date,
-      lastDateEpochMillis,
-      message.message_id,
-      message.message_id,
-      incrementUnreadCount,
-      message.type_user,
-      updateOperatorReplyPending
-    );
+      await assertActive?.();
+      await this.chatService.updateChatSummaryAtomically(
+        message.chat_id,
+        messageText,
+        message.date,
+        lastDateEpochMillis,
+        message.message_id,
+        message.message_id,
+        incrementUnreadCount,
+        message.type_user,
+        isHumanOperatorMessage,
+        isHumanOperatorMessage
+      );
 
-    const updatedChat = await this.chatService.findChatByChatId(
-      message.account.id,
-      message.chat_id
-    );
+      await assertActive?.();
+      const updatedChat = await this.chatService.findChatByChatId(
+        message.account.id,
+        message.chat_id
+      );
 
-    if (!updatedChat) {
-      return false;
+      if (!updatedChat) {
+        return true;
+      }
+
+      if (isHumanOperatorMessage) {
+        await this.operatorReplyPendingRedistributionTracker?.cancel(
+          updatedChat
+        );
+      }
+
+      const channelAccountId = updatedChat.account.id;
+
+      await assertActive?.();
+      const accountChannel = chatAccountCentrifugo(channelAccountId);
+      const queueChannel = chatQueueAccountCentrifugo(channelAccountId);
+      await Promise.all(
+        assertActive
+          ? [
+              this.centrifugoService.publishSub(
+                accountChannel,
+                updatedChat,
+                assertActive
+              ),
+              this.centrifugoService.publishSub(
+                queueChannel,
+                updatedChat,
+                assertActive
+              ),
+            ]
+          : [
+              this.centrifugoService.publishSub(accountChannel, updatedChat),
+              this.centrifugoService.publishSub(queueChannel, updatedChat),
+            ]
+      );
+    } catch (error) {
+      if (assertActive) {
+        throw error;
+      }
+
+      console.error(
+        'Erro ao atualizar a projeção do chat após aceitar a mensagem:',
+        error instanceof Error ? error.message : error
+      );
     }
-
-    const channelAccountId = updatedChat.account.id;
-
-    await Promise.all([
-      this.centrifugoService.publishSub(
-        chatAccountCentrifugo(channelAccountId),
-        updatedChat
-      ),
-      this.centrifugoService.publishSub(
-        chatQueueAccountCentrifugo(channelAccountId),
-        updatedChat
-      ),
-    ]);
 
     return true;
   }
 
-  async publishPreparedMessage(message: IChatMessage): Promise<boolean> {
-    return this.publishMessage(message);
+  async publishPreparedMessage(
+    message: IChatMessage,
+    outboundWebhookSource?: string,
+    assertActive?: ICentrifugoPublishGuard,
+    retry = false
+  ): Promise<boolean> {
+    return this.publishMessage(
+      message,
+      outboundWebhookSource,
+      assertActive,
+      retry
+    );
   }
 
   private createTextMessage(params: ICreateTextMessageParams): IChatMessage {
     const {
       chat,
       chatId,
+      messageId,
       type,
       message,
       linkPreview,
@@ -600,7 +797,7 @@ export class ChatMessageService {
       annotationSubtype,
     } = params;
     return {
-      message_id: uuidv7(),
+      message_id: messageId ?? uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,
@@ -637,6 +834,7 @@ export class ChatMessageService {
     const {
       chat,
       chatId,
+      messageId,
       type,
       message,
       imageData,
@@ -647,7 +845,7 @@ export class ChatMessageService {
       authorUser,
     } = params;
     return {
-      message_id: uuidv7(),
+      message_id: messageId ?? uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,
@@ -694,6 +892,7 @@ export class ChatMessageService {
     const {
       chat,
       chatId,
+      messageId,
       type,
       message,
       videoData,
@@ -704,7 +903,7 @@ export class ChatMessageService {
       authorUser,
     } = params;
     return {
-      message_id: uuidv7(),
+      message_id: messageId ?? uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,
@@ -757,6 +956,7 @@ export class ChatMessageService {
     const {
       chat,
       chatId,
+      messageId,
       type,
       message,
       audioData,
@@ -769,7 +969,7 @@ export class ChatMessageService {
       authorUser,
     } = params;
     return {
-      message_id: uuidv7(),
+      message_id: messageId ?? uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,
@@ -817,6 +1017,7 @@ export class ChatMessageService {
     const {
       chat,
       chatId,
+      messageId,
       type,
       message,
       documentData,
@@ -827,7 +1028,7 @@ export class ChatMessageService {
       authorUser,
     } = params;
     return {
-      message_id: uuidv7(),
+      message_id: messageId ?? uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chat.message_key?.remote_jid ?? null,
@@ -1191,6 +1392,7 @@ export class ChatMessageService {
     const textMessage = this.createTextMessage({
       chat: chatData,
       chatId,
+      messageId: options.messageId,
       type,
       message: finalMessage,
       linkPreview: processedLinkPreview,
@@ -1202,7 +1404,11 @@ export class ChatMessageService {
       annotationSubtype,
     });
 
-    return this.publishMessage(textMessage);
+    return this.publishMessage(
+      textMessage,
+      options.outboundWebhookSource,
+      options.assertActive
+    );
   }
 
   private async processLinkPreview(
@@ -1363,6 +1569,7 @@ export class ChatMessageService {
     const imageMessage = this.createImageMessage({
       chat: chatData,
       chatId,
+      messageId: imageOptions.messageId,
       type,
       message: finalMessage,
       imageData,
@@ -1373,7 +1580,11 @@ export class ChatMessageService {
       authorUser: messageContext.authorUser,
     });
 
-    return this.publishMessage(imageMessage);
+    return this.publishMessage(
+      imageMessage,
+      imageOptions.outboundWebhookSource,
+      imageOptions.assertActive
+    );
   }
 
   private async sendVideoMessage(
@@ -1440,6 +1651,7 @@ export class ChatMessageService {
       {
         chat: chatData,
         chatId,
+        messageId: videoOptions.messageId,
         type,
         message: finalMessage,
         videoData,
@@ -1452,7 +1664,11 @@ export class ChatMessageService {
       messageContext.normalizedHash
     );
 
-    return this.publishMessage(videoMessage);
+    return this.publishMessage(
+      videoMessage,
+      videoOptions.outboundWebhookSource,
+      videoOptions.assertActive
+    );
   }
 
   private async sendAudioMessage(
@@ -1516,6 +1732,7 @@ export class ChatMessageService {
       {
         chat: chatData,
         chatId,
+        messageId: audioOptions.messageId,
         type,
         message: finalMessage,
         audioData,
@@ -1530,7 +1747,11 @@ export class ChatMessageService {
       messageContext.normalizedHash
     );
 
-    return this.publishMessage(audioMessage);
+    return this.publishMessage(
+      audioMessage,
+      audioOptions.outboundWebhookSource,
+      audioOptions.assertActive
+    );
   }
 
   private async sendDocumentMessage(
@@ -1587,6 +1808,7 @@ export class ChatMessageService {
     const documentMessage = this.createDocumentMessage({
       chat: chatData,
       chatId,
+      messageId: documentOptions.messageId,
       type,
       message: finalMessage,
       documentData,
@@ -1597,7 +1819,11 @@ export class ChatMessageService {
       authorUser: messageContext.authorUser,
     });
 
-    return this.publishMessage(documentMessage);
+    return this.publishMessage(
+      documentMessage,
+      documentOptions.outboundWebhookSource,
+      documentOptions.assertActive
+    );
   }
 
   private async sendLocationMessage(
@@ -1629,7 +1855,7 @@ export class ChatMessageService {
     );
 
     const locationMessage: IChatMessage = {
-      message_id: uuidv7(),
+      message_id: locationOptions.messageId ?? uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chatData.message_key?.remote_jid ?? null,
@@ -1665,7 +1891,11 @@ export class ChatMessageService {
       hash: messageContext.normalizedHash,
     };
 
-    return this.publishMessage(locationMessage);
+    return this.publishMessage(
+      locationMessage,
+      locationOptions.outboundWebhookSource,
+      locationOptions.assertActive
+    );
   }
 
   private isImageMessageOptions(
@@ -1724,13 +1954,17 @@ export class ChatMessageService {
       authorUser: IChat['user'] | null;
     }
   ): Promise<boolean> {
+    assertOfficialWhatsappInteractivePayload(
+      officialOptions.officialInteractive.interactive
+    );
+
     const summary =
       officialOptions.officialInteractive.summary?.trim() ||
       message?.trim() ||
       '[Interativo oficial]';
 
     const officialMessage: IChatMessage = {
-      message_id: uuidv7(),
+      message_id: officialOptions.messageId ?? uuidv7(),
       chat_id: chatId,
       message_key: {
         remote_jid: chatData.message_key?.remote_jid ?? null,
@@ -1773,7 +2007,11 @@ export class ChatMessageService {
       hash: messageContext.normalizedHash,
     };
 
-    return this.publishMessage(officialMessage);
+    return this.publishMessage(
+      officialMessage,
+      officialOptions.outboundWebhookSource,
+      officialOptions.assertActive
+    );
   }
 
   private async sendContactMessage(
@@ -1797,7 +2035,7 @@ export class ChatMessageService {
     }
 
     const contactsData = await Promise.all(
-      contactOptions.contactIds.map(async (contactId) => {
+      contactOptions.contactIds.map(async (contactId, sourceIndex) => {
         const contact = await this.contactViewerRepository.viewContactById(
           contactId,
           accountId
@@ -1808,6 +2046,7 @@ export class ChatMessageService {
           await this.contactService.getContactSensitiveDataDecrypted(contactId);
 
         return {
+          sourceIndex,
           contact_id: contact.contact_id,
           name: contact.name,
           last_name: contact.last_name,
@@ -1842,10 +2081,27 @@ export class ChatMessageService {
       contactOptions.securityKeyScopes
     );
 
+    const baseMessageId = contactOptions.messageId ?? uuidv7();
+    const hasMultipleContacts = validContacts.length > 1;
     const publishTasks = validContacts.map((contactData) => {
-      const messageHash = messageContext.normalizedHash || uuidv7();
+      const subitemIdentity = `contact:${contactData.sourceIndex}:${contactData.contact_id}`;
+      const messageId = hasMultipleContacts
+        ? buildDeterministicMessageHash(
+            accountId,
+            chatId,
+            `${baseMessageId}:${subitemIdentity}`
+          )
+        : baseMessageId;
+      const messageHash =
+        hasMultipleContacts && messageContext.normalizedHash
+          ? buildDeterministicMessageHash(
+              accountId,
+              chatId,
+              `${messageContext.normalizedHash}:${subitemIdentity}`
+            )
+          : messageContext.normalizedHash;
       const contactMessage: IChatMessage = {
-        message_id: uuidv7(),
+        message_id: messageId,
         chat_id: chatId,
         message_key: {
           remote_jid: chatData.message_key?.remote_jid ?? null,
@@ -1886,7 +2142,11 @@ export class ChatMessageService {
         hash: messageHash,
       };
 
-      return this.publishMessage(contactMessage);
+      return this.publishMessage(
+        contactMessage,
+        contactOptions.outboundWebhookSource,
+        contactOptions.assertActive
+      );
     });
 
     await Promise.all(publishTasks);
@@ -1898,6 +2158,8 @@ export class ChatMessageService {
     t: TFunction<'translation', undefined>,
     options: SendMessageOptions
   ): Promise<boolean> {
+    const assertActive = options.assertActive ?? getKafkaDispatchGuard();
+    await assertActive?.();
     const {
       chat,
       accountId,

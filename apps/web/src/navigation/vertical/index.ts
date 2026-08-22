@@ -433,6 +433,7 @@ export default [
     title: 'integration',
     to: { name: 'integration' as keyof RouteNamedMap },
     icon: { icon: 'tabler-api' },
+    requiredPlanProducts: [EPlanProduct.integration],
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,

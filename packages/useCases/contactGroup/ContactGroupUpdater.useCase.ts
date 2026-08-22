@@ -16,10 +16,15 @@ export class ContactGroupUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     contactGroupId: string,
-    body: UpdateContactGroupRequest
+    body: UpdateContactGroupRequest,
+    accountId: string,
+    actorUserId?: string
   ): Promise<boolean> {
     const contactGroupExists =
-      await this.contactGroupService.viewContactGroupById(contactGroupId);
+      await this.contactGroupService.viewContactGroupById(
+        contactGroupId,
+        accountId
+      );
 
     if (!contactGroupExists) {
       throw new Error(t('contact_group_not_found'));
@@ -30,7 +35,8 @@ export class ContactGroupUpdaterUseCase {
         if (!c?.contact_id) continue;
 
         const contactExists = await this.contactService.existsContactById(
-          c.contact_id
+          c.contact_id,
+          accountId
         );
 
         if (!contactExists) {
@@ -43,7 +49,9 @@ export class ContactGroupUpdaterUseCase {
       await this.contactGroupService.updateContactGroupById(
         t,
         contactGroupId,
-        body
+        body,
+        accountId,
+        actorUserId
       );
 
     if (!contactGroupUpdater) {

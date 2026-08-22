@@ -42,6 +42,16 @@ export const workerConnectionLogs = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === t('worker_connection_health_database_only')
+    ) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.bad_request,
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };

@@ -28,6 +28,7 @@ import { EColor } from '@core/common/enums/EColor';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import { EAccountFilterStatus } from '@core/common/enums/EAccountFilterStatus';
 import { useRouter } from 'vue-router';
+import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
 
 definePage({
   meta: {
@@ -222,6 +223,10 @@ const handleAccountIdChange = (value: SelectModelValue) => {
 
 const isDialogDeleterShow = ref(false);
 const userToDelete = ref<string | null>(null);
+const userPlanBlockAction = ref<{
+  userId: string;
+  action: 'block' | 'unblock';
+} | null>(null);
 
 const isDialogEditUserShow = ref(false);
 const isAddUserVisible = ref(false);
@@ -402,7 +407,9 @@ const loadSectorFilters = async () => {
 
   sectorsLoading.value = true;
   try {
-    const sectors = await userStore.listUserSectors(sectorFilterAccountId.value);
+    const sectors = await userStore.listUserSectors(
+      sectorFilterAccountId.value
+    );
 
     itemsSector.value = [
       { id: '', text: t('all') },
@@ -552,8 +559,39 @@ const userDisplayName = (item: ListUserResponse): string => {
   return `${item.user_info.name} ${item.user_info.last_name || ''}`.trim();
 };
 
-const isMasterUser = (item: ListUserResponse): boolean =>
-  item.permission_role?.permission_role_id === EPermissionRole.master;
+const isProtectedUser = (item: ListUserResponse): boolean =>
+  isMasterOrAdministratorRole(item.permission_role?.permission_role_id);
+
+const isUserBlockedByPlan = (item: ListUserResponse): boolean =>
+  item.user_status?.user_status_id === EUserStatus.blocked;
+
+const canToggleUserPlanBlock = (item: ListUserResponse): boolean =>
+  can(permissionsEdit) &&
+  currentUser.value?.user_id !== item.user_id &&
+  !isProtectedUser(item);
+
+const isDialogUserPlanBlockShow = computed({
+  get: () => userPlanBlockAction.value !== null,
+  set: (value: boolean) => {
+    if (!value) {
+      userPlanBlockAction.value = null;
+    }
+  },
+});
+
+const userPlanBlockDialogTitle = computed(() => {
+  const action = userPlanBlockAction.value?.action ?? 'block';
+
+  return `${t(action)} ${t('user')}`;
+});
+
+const userPlanBlockDialogMessage = computed(() => {
+  const action = userPlanBlockAction.value?.action ?? 'block';
+
+  return t(
+    action === 'block' ? 'block_user_confirmation' : 'unblock_user_confirmation'
+  );
+});
 
 const openAccountFiltered = (item: ListUserResponse) => {
   const accountId = item.account?.account_id;
@@ -607,6 +645,17 @@ const deleteUser = async (id: string) => {
   isDialogDeleterShow.value = true;
 };
 
+const openUserPlanBlockDialog = (item: ListUserResponse) => {
+  if (!canToggleUserPlanBlock(item)) {
+    return;
+  }
+
+  userPlanBlockAction.value = {
+    userId: item.user_id,
+    action: isUserBlockedByPlan(item) ? 'unblock' : 'block',
+  };
+};
+
 const handleDelete = async () => {
   if (!userToDelete.value) return;
 
@@ -616,6 +665,24 @@ const handleDelete = async () => {
   }
 
   userToDelete.value = null;
+};
+
+const handleUserPlanBlock = async () => {
+  if (!userPlanBlockAction.value) {
+    return;
+  }
+
+  const { userId, action } = userPlanBlockAction.value;
+  const result =
+    action === 'block'
+      ? await userStore.blockUser(userId)
+      : await userStore.unblockUser(userId);
+
+  if (result) {
+    await reloadUsers();
+  }
+
+  userPlanBlockAction.value = null;
 };
 
 const handleUserCreated = async () => {
@@ -972,7 +1039,7 @@ watch(
             <template #item.name="{ item }">
               <div class="d-flex align-center gap-1">
                 <VIcon
-                  v-if="isMasterUser(item)"
+                  v-if="isProtectedUser(item)"
                   icon="tabler-crown"
                   size="16"
                   color="warning"
@@ -1194,6 +1261,28 @@ watch(
                   />
                 </IconBtn>
 
+                <IconBtn v-if="canToggleUserPlanBlock(item)">
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>
+                      {{
+                        `${$t(isUserBlockedByPlan(item) ? 'unblock' : 'block')} ${$t('user')}`
+                      }}
+                    </span>
+                  </VTooltip>
+                  <VIcon
+                    :icon="
+                      isUserBlockedByPlan(item)
+                        ? 'tabler-lock-open'
+                        : 'tabler-lock'
+                    "
+                    @click="openUserPlanBlockDialog(item)"
+                  />
+                </IconBtn>
+
                 <IconBtn
                   v-if="
                     $canPermission(permissionsDelete) &&
@@ -1236,6 +1325,14 @@ watch(
         :title="$t('delete_user')"
         :message="$t('delete_user_confirmation')"
         @confirm="handleDelete"
+      />
+
+      <VDialogHandler
+        v-if="isDialogUserPlanBlockShow"
+        v-model="isDialogUserPlanBlockShow"
+        :title="userPlanBlockDialogTitle"
+        :message="userPlanBlockDialogMessage"
+        @confirm="handleUserPlanBlock"
       />
 
       <VDialogHandler

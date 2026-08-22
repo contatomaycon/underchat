@@ -14,12 +14,24 @@
     "skipLibCheck": true,
     "types": ["node", "jest"],
     "paths": {
+      "@underchat/whatsapp-web-session-browser": [
+        "./packages/whatsapp-web-session-browser/src/index.ts"
+      ],
+      "@underchat/whatsapp-web-session-browser/*": [
+        "./packages/whatsapp-web-session-browser/src/*"
+      ],
       "@core/*": ["./packages/*"],
       "@elastic/elasticsearch/lib/api/types": [
         "./node_modules/@elastic/elasticsearch/lib/api/types"
       ]
     }
   },
-  "include": ["packages/**/*", "playwright.config.ts"],
+  "include": [
+    "packages/**/*",
+    "scripts/atlas-migrate.ts",
+    "scripts/kafka-clean-dead-resources.ts",
+    "scripts/worker-command-operational-barrier.ts",
+    "playwright.config.ts"
+  ],
   "exclude": ["node_modules"]
 }

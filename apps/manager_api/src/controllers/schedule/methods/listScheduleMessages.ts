@@ -1,6 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { handleControllerError } from '@core/common/functions/handleControllerError';
+import { handleScheduleControllerError } from '@core/controllers/schedule/methods/handleScheduleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ListScheduleMessagesRequest } from '@core/schema/schedule/listScheduleMessages/request.schema';
@@ -19,8 +19,10 @@ export const listScheduleMessages = async (
 
   try {
     const response = await scheduleMessagesListerUseCase.execute(
+      t,
       request.query,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.channels
     );
 
     if (response) {
@@ -37,6 +39,6 @@ export const listScheduleMessages = async (
       data: null,
     });
   } catch (error) {
-    handleControllerError(error, reply, t);
+    handleScheduleControllerError(error, reply, t);
   }
 };

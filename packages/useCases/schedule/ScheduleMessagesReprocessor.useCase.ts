@@ -3,6 +3,10 @@ import { TFunction } from 'i18next';
 import { ScheduleService } from '@core/services/schedule.service';
 import { ScheduleSendService } from '@core/services/scheduleSend.service';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
+import {
+  assertUserChannelAccess,
+  UserChannelScope,
+} from '@core/common/functions/assertUserChannelAccess';
 
 @injectable()
 export class ScheduleMessagesReprocessorUseCase {
@@ -16,7 +20,8 @@ export class ScheduleMessagesReprocessorUseCase {
   private async validateScheduleForReprocess(
     t: TFunction<'translation', undefined>,
     scheduleId: string,
-    accountId: string
+    accountId: string,
+    userChannels: UserChannelScope = []
   ): Promise<void> {
     const schedule = await this.scheduleService.findScheduleControlById(
       scheduleId,
@@ -27,6 +32,8 @@ export class ScheduleMessagesReprocessorUseCase {
       throw new Error(t('schedule_not_found'));
     }
 
+    assertUserChannelAccess(t, schedule.worker_id, userChannels);
+
     if (schedule.status === EScheduleStatus.processing) {
       throw new Error(t('schedule_reprocess_schedule_processing'));
     }
@@ -35,12 +42,18 @@ export class ScheduleMessagesReprocessorUseCase {
   async reprocessFailedMessages(
     t: TFunction<'translation', undefined>,
     scheduleId: string,
-    accountId: string
+    accountId: string,
+    userChannels: UserChannelScope = []
   ): Promise<{
     total: number;
     reprocessed: number;
   }> {
-    await this.validateScheduleForReprocess(t, scheduleId, accountId);
+    await this.validateScheduleForReprocess(
+      t,
+      scheduleId,
+      accountId,
+      userChannels
+    );
 
     const result = await this.scheduleSendService.reprocessFailedMessages(
       scheduleId,
@@ -58,9 +71,15 @@ export class ScheduleMessagesReprocessorUseCase {
     t: TFunction<'translation', undefined>,
     scheduleId: string,
     messageId: string,
-    accountId: string
+    accountId: string,
+    userChannels: UserChannelScope = []
   ): Promise<boolean> {
-    await this.validateScheduleForReprocess(t, scheduleId, accountId);
+    await this.validateScheduleForReprocess(
+      t,
+      scheduleId,
+      accountId,
+      userChannels
+    );
 
     const result = await this.scheduleSendService.reprocessScheduleMessage(
       scheduleId,

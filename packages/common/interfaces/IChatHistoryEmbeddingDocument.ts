@@ -6,6 +6,8 @@ export interface IChatHistoryEmbeddingDocument {
   message_text: string;
   embedding?: number[] | null;
   has_embedding?: boolean;
+  embedding_model?: string | null;
+  embedding_generation?: string;
   created_at: string;
   phone?: string | null;
   quality_score?: number | null;

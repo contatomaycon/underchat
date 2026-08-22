@@ -34,6 +34,7 @@ describe('ChatContactListerRepository', () => {
         phone_partial: '9999',
         photo: 'photo',
         is_valided: true,
+        validation_origin: 'official_assumed',
       },
     ]);
     (repository as any).findLabelsByContactIds = jest.fn(
@@ -56,6 +57,7 @@ describe('ChatContactListerRepository', () => {
         phone_partial: '9999',
         photo: 'photo',
         is_valided: true,
+        validation_status: 'official_only',
         label_templates: [
           {
             label_template_id: 'label-1',

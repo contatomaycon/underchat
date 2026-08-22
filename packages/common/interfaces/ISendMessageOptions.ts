@@ -4,10 +4,13 @@ import { ETypeUserChat } from '../enums/ETypeUserChat';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { TSecurityKeyScope } from './ISecurityKeyConfig';
 import { IOfficialWhatsappOutboundInteractiveMessage } from './IOfficialWhatsappOutboundMessage';
+import type { OutboundWebhookRequestSource } from '../functions/outboundWebhookRequestSource';
+import type { ICentrifugoPublishGuard } from './ICentrifugo';
 
 export interface ISendMessageOptions {
   chat: IChat;
   accountId: string;
+  messageId?: string;
   type: EMessageType;
   message?: string | null;
   messageQuotedId?: string | null;
@@ -17,6 +20,8 @@ export interface ISendMessageOptions {
   senderUser?: IChat['user'] | null;
   linkPreview?: any;
   securityKeyScopes?: TSecurityKeyScope[];
+  outboundWebhookSource?: OutboundWebhookRequestSource;
+  assertActive?: ICentrifugoPublishGuard;
 }
 
 export interface ISendTextMessageOptions extends ISendMessageOptions {

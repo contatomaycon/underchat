@@ -20,11 +20,15 @@ describe('LabelTemplateUpdaterRepository', () => {
     const { repository, set } = createRepository(1);
 
     await expect(
-      repository.updateLabelTemplateById('lt-1', {
-        label: 'VIP',
-        color: '#fff',
-        label_status: { label_status_id: 'active' },
-      } as never)
+      repository.updateLabelTemplateById(
+        'lt-1',
+        {
+          label: 'VIP',
+          color: '#fff',
+          label_status: { label_status_id: 'active' },
+        } as never,
+        'acc-1'
+      )
     ).resolves.toBe(true);
     expect(set).toHaveBeenCalledWith({
       label: 'VIP',
@@ -37,7 +41,11 @@ describe('LabelTemplateUpdaterRepository', () => {
     const { repository } = createRepository(0);
 
     await expect(
-      repository.updateLabelTemplateById('lt-1', { label: 'VIP' } as never)
+      repository.updateLabelTemplateById(
+        'lt-1',
+        { label: 'VIP' } as never,
+        'acc-1'
+      )
     ).resolves.toBe(false);
   });
 });

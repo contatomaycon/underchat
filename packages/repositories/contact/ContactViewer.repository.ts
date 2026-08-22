@@ -12,6 +12,8 @@ import { ViewContactResponse } from '@core/schema/contact/viewContact/response.s
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
+import type { ContactValidationOrigin } from '@core/common/types/ContactValidationOrigin';
+import { resolveContactValidationStatus } from '@core/common/types/ContactValidationStatus';
 
 @injectable()
 export class ContactViewerRepository {
@@ -76,6 +78,7 @@ export class ContactViewerRepository {
         document_partial: contact.document_partial,
         created_at: contact.created_at,
         is_valided: contact.is_valided,
+        validation_origin: contact.validation_origin,
         ignore: contact.ignore,
         user: {
           user_id: user.user_id,
@@ -158,6 +161,10 @@ export class ContactViewerRepository {
       document: contactData.document ?? null,
       document_partial: contactData.document_partial ?? null,
       is_valided: contactData.is_valided ?? null,
+      validation_status: resolveContactValidationStatus(
+        contactData.is_valided,
+        contactData.validation_origin
+      ),
       photo: contactData.photo ?? null,
       user: formattedUser,
       ignore: contactData.ignore ?? null,
@@ -168,7 +175,12 @@ export class ContactViewerRepository {
     accountId: string,
     phonesC: string[],
     phoneDdi: string
-  ): Promise<ViewContactResponse | null> => {
+  ): Promise<
+    | (ViewContactResponse & {
+        validation_origin: ContactValidationOrigin | null;
+      })
+    | null
+  > => {
     const contactData = await this.findContactByPhone(
       accountId,
       phonesC,
@@ -223,6 +235,7 @@ export class ContactViewerRepository {
         document_partial: contact.document_partial,
         created_at: contact.created_at,
         is_valided: contact.is_valided,
+        validation_origin: contact.validation_origin,
         ignore: contact.ignore,
         user: {
           user_id: user.user_id,
@@ -255,7 +268,9 @@ export class ContactViewerRepository {
       Awaited<ReturnType<typeof this.findContactByPhone>>
     >,
     labels: Awaited<ReturnType<typeof this.findLabelsByContactId>>
-  ): ViewContactResponse => {
+  ): ViewContactResponse & {
+    validation_origin: ContactValidationOrigin | null;
+  } => {
     if (!contactData.account) {
       throw new Error('Account is required');
     }
@@ -280,6 +295,11 @@ export class ContactViewerRepository {
       document: contactData.document ?? null,
       document_partial: contactData.document_partial ?? null,
       is_valided: contactData.is_valided ?? null,
+      validation_status: resolveContactValidationStatus(
+        contactData.is_valided,
+        contactData.validation_origin
+      ),
+      validation_origin: contactData.validation_origin ?? null,
       photo: contactData.photo ?? null,
       user: formattedUser,
       ignore: contactData.ignore ?? null,

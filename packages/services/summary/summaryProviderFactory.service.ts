@@ -2,6 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import { ISummaryProvider } from './ISummaryProvider';
 import { OpenAISummaryProvider } from './openAiSummaryProvider.service';
 import { GeminiSummaryProvider } from './geminiSummaryProvider.service';
+import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 
 @injectable()
 export class SummaryProviderFactory {
@@ -12,24 +13,13 @@ export class SummaryProviderFactory {
     private readonly geminiProvider: GeminiSummaryProvider
   ) {}
 
-  getProvider(aiAgentTypeId: string, baseUrl: string): ISummaryProvider {
-    const isGemini = this.isGeminiApi(aiAgentTypeId, baseUrl);
+  getProvider(aiAgentTypeId: string, _baseUrl: string): ISummaryProvider {
+    void _baseUrl;
 
-    if (isGemini) {
+    if (aiAgentTypeId === EAiAgentType.gemini) {
       return this.geminiProvider;
     }
 
     return this.openAiProvider;
-  }
-
-  private isGeminiApi(aiAgentTypeId: string, baseUrl: string): boolean {
-    const normalizedTypeId = aiAgentTypeId.toLowerCase();
-    const normalizedBaseUrl = baseUrl.toLowerCase();
-
-    return (
-      normalizedTypeId.includes('gemini') ||
-      normalizedBaseUrl.includes('googleapis.com') ||
-      normalizedBaseUrl.includes('generativelanguage.googleapis.com')
-    );
   }
 }

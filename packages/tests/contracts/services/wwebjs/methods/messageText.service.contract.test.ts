@@ -49,20 +49,38 @@ describe('WwebjsMessageTextService', () => {
       })
     ).resolves.toEqual({ wrapped: { id: 'm3' } });
 
-    expect(sendMessage).toHaveBeenNthCalledWith(1, 'jid', 'hello', {
-      linkPreview: true,
-      extra: { a: 1 },
-      mentions: ['u1@c.us'],
-    });
-    expect(sendMessage).toHaveBeenNthCalledWith(2, 'jid', 'quoted', {
-      extra: { b: 2 },
-      quotedMessageId: 'quoted-id',
-      ignoreQuoteErrors: false,
-    });
-    expect(sendMessage).toHaveBeenNthCalledWith(3, 'jid', 'quoted2', {
-      extra: { c: 3 },
-      quotedMessageId: 'quoted-id',
-      ignoreQuoteErrors: false,
-    });
+    expect(sendMessage).toHaveBeenNthCalledWith(
+      1,
+      'jid',
+      'hello',
+      {
+        linkPreview: true,
+        extra: { a: 1 },
+        mentions: ['u1@c.us'],
+      },
+      undefined
+    );
+    expect(sendMessage).toHaveBeenNthCalledWith(
+      2,
+      'jid',
+      'quoted',
+      {
+        extra: { b: 2 },
+        quotedMessageId: 'quoted-id',
+        ignoreQuoteErrors: false,
+      },
+      undefined
+    );
+    expect(sendMessage).toHaveBeenNthCalledWith(
+      3,
+      'jid',
+      'quoted2',
+      {
+        extra: { c: 3 },
+        quotedMessageId: 'quoted-id',
+        ignoreQuoteErrors: false,
+      },
+      undefined
+    );
   });
 });

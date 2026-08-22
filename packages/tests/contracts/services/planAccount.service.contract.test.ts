@@ -12,12 +12,6 @@ jest.mock(
 jest.mock('@core/services/account.service', () => ({
   AccountService: class {},
 }));
-jest.mock('@core/services/user.service', () => ({ UserService: class {} }));
-jest.mock('@core/services/worker.service', () => ({ WorkerService: class {} }));
-jest.mock('@core/services/role.service', () => ({ RoleService: class {} }));
-jest.mock('@core/repositories/dashboard/DashboardChatbots.repository', () => ({
-  DashboardChatbotsRepository: class {},
-}));
 jest.mock('@core/repositories/dashboard/DashboardStats.repository', () => ({
   DashboardStatsRepository: class {},
 }));
@@ -26,6 +20,12 @@ jest.mock('@core/repositories/dashboard/DashboardSchedules.repository', () => ({
 }));
 jest.mock('@core/services/aiAgent.service', () => ({
   AiAgentService: class {},
+}));
+jest.mock('@core/services/planLimitEnforcement.service', () => ({
+  PlanLimitEnforcementService: class {},
+}));
+jest.mock('@core/services/planEntitlement.service', () => ({
+  PlanEntitlementService: class {},
 }));
 
 import { withLock } from '@core/common/functions/withLock';
@@ -40,27 +40,15 @@ describe('PlanAccountService', () => {
       findPlanAccountByAccountId: jest.fn(async () => ({
         account_id: 'acc-1',
       })),
+      projectPlanAccountCycle: jest.fn(async () => ({
+        lastPaymentDate: '2098-12-01T00:00:00.000Z',
+        nextPaymentDate: '2099-01-01T00:00:00.000Z',
+      })),
       updatePlanAccountByAccountId: jest.fn(async () => true),
     };
 
     const accountService = {
       viewAccountQuantityProduct: jest.fn(async () => 1),
-    };
-
-    const userService = {
-      totalUserByAccount: jest.fn(async () => 0),
-    };
-
-    const workerService = {
-      totalWorkerByAccountId: jest.fn(async () => 0),
-    };
-
-    const roleService = {
-      totalRoleByAccount: jest.fn(async () => 0),
-    };
-
-    const dashboardChatbotsRepository = {
-      getChatbotsTotal: jest.fn(async () => 0),
     };
 
     const dashboardStatsRepository = {
@@ -75,32 +63,37 @@ describe('PlanAccountService', () => {
       totalAiAgentByAccountId: jest.fn(async () => 0),
     };
 
+    const planLimitEnforcementService = {
+      ensureCanActivate: jest.fn(async () => undefined),
+    };
+    const planEntitlementService = {
+      installDenyFence: jest.fn(async (): Promise<string | null> => null),
+      refreshAfterMutation: jest.fn(async () => ({ allowed: true })),
+      willGrantAfterPlanAssignment: jest.fn(async () => false),
+    };
+
     const redis = {};
 
     const service = new PlanAccountService(
       planAccountUpdaterRepository as never,
       accountService as never,
-      userService as never,
-      workerService as never,
-      roleService as never,
-      dashboardChatbotsRepository as never,
       dashboardStatsRepository as never,
       dashboardSchedulesRepository as never,
       aiAgentService as never,
-      redis as never
+      planLimitEnforcementService as never,
+      redis as never,
+      planEntitlementService as never
     );
 
     return {
       service,
       planAccountUpdaterRepository,
       accountService,
-      userService,
-      workerService,
-      roleService,
-      dashboardChatbotsRepository,
       dashboardStatsRepository,
       dashboardSchedulesRepository,
       aiAgentService,
+      planLimitEnforcementService,
+      planEntitlementService,
       redis,
     };
   };
@@ -122,7 +115,15 @@ describe('PlanAccountService', () => {
   });
 
   it('uses withLock to update plan account and falls back to false for null result', async () => {
-    const { service, planAccountUpdaterRepository, redis } = makeService();
+    const {
+      service,
+      planAccountUpdaterRepository,
+      planEntitlementService,
+      redis,
+    } = makeService();
+    planEntitlementService.installDenyFence
+      .mockResolvedValueOnce('11111111-1111-4111-8111-111111111111')
+      .mockResolvedValueOnce('22222222-2222-4222-8222-222222222222');
 
     (withLock as unknown as jest.Mock)
       .mockResolvedValueOnce(true)
@@ -149,6 +150,65 @@ describe('PlanAccountService', () => {
     expect(
       planAccountUpdaterRepository.updatePlanAccountByAccountId
     ).toHaveBeenCalledWith('acc-1', { any: 'value' });
+    expect(planEntitlementService.installDenyFence).toHaveBeenCalledWith(
+      'acc-1',
+      EPlanProduct.integration
+    );
+    expect(planEntitlementService.refreshAfterMutation).toHaveBeenNthCalledWith(
+      1,
+      'acc-1',
+      EPlanProduct.integration,
+      '11111111-1111-4111-8111-111111111111'
+    );
+    expect(planEntitlementService.refreshAfterMutation).toHaveBeenNthCalledWith(
+      2,
+      'acc-1',
+      EPlanProduct.integration,
+      '22222222-2222-4222-8222-222222222222'
+    );
+  });
+
+  it('does not fence an Integration plan to Integration plan assignment', async () => {
+    const { service, planEntitlementService } = makeService();
+    planEntitlementService.willGrantAfterPlanAssignment.mockResolvedValue(true);
+    (withLock as unknown as jest.Mock).mockResolvedValueOnce(true);
+
+    await expect(
+      service.updatePlanAccountByAccountId('acc-1', {
+        plan_id: 'plan-with-integration',
+      } as never)
+    ).resolves.toBe(true);
+
+    expect(planEntitlementService.installDenyFence).not.toHaveBeenCalled();
+    expect(planEntitlementService.refreshAfterMutation).toHaveBeenCalledTimes(
+      2
+    );
+    expect(
+      planEntitlementService.willGrantAfterPlanAssignment
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'acc-1',
+        planId: 'plan-with-integration',
+        includeExistingAddons: true,
+      })
+    );
+  });
+
+  it('does not fence a plan-to-add-on grant projected for the destination cycle', async () => {
+    const { service, planEntitlementService } = makeService();
+    planEntitlementService.willGrantAfterPlanAssignment.mockResolvedValue(true);
+    (withLock as unknown as jest.Mock).mockResolvedValueOnce(true);
+
+    await service.updatePlanAccountByAccountId('acc-1', {
+      plan_id: 'plan-without-integration',
+    } as never);
+
+    expect(
+      planEntitlementService.willGrantAfterPlanAssignment
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ includeExistingAddons: true })
+    );
+    expect(planEntitlementService.installDenyFence).not.toHaveBeenCalled();
   });
 
   it('computes total user limit as quantity + 1', async () => {
@@ -162,93 +222,56 @@ describe('PlanAccountService', () => {
     );
   });
 
-  it('validates user creation limits and throws translated errors', async () => {
-    const { service } = makeService();
-
-    jest.spyOn(service, 'totalUserLimitByAccountId').mockResolvedValueOnce(0);
-    jest
-      .spyOn((service as any).userService, 'totalUserByAccount')
-      .mockResolvedValueOnce(0);
-
-    await expect(service.validateCanCreateUser(t, 'acc-1')).rejects.toThrow(
-      'user_not_available'
-    );
-
-    jest.spyOn(service, 'totalUserLimitByAccountId').mockResolvedValueOnce(2);
-    jest
-      .spyOn((service as any).userService, 'totalUserByAccount')
-      .mockResolvedValueOnce(2);
-
-    await expect(service.validateCanCreateUser(t, 'acc-1')).rejects.toThrow(
-      'user_not_available_additional'
-    );
-
-    jest.spyOn(service, 'totalUserLimitByAccountId').mockResolvedValueOnce(3);
-    jest
-      .spyOn((service as any).userService, 'totalUserByAccount')
-      .mockResolvedValueOnce(1);
+  it('delegates blocked-resource creation limits to the enforcement service', async () => {
+    const { service, planLimitEnforcementService } = makeService();
 
     await expect(
       service.validateCanCreateUser(t, 'acc-1')
     ).resolves.toBeUndefined();
-  });
-
-  it('validates worker, role, chatbot and contact creation limits', async () => {
-    const { service, accountService } = makeService();
-    const workerTotal = (service as any).workerService.totalWorkerByAccountId;
-    const roleTotal = (service as any).roleService.totalRoleByAccount;
-    const chatbotTotal = (service as any).dashboardChatbotsRepository
-      .getChatbotsTotal;
-    const contactTotal = (service as any).dashboardStatsRepository
-      .getContactsTotal;
-
-    accountService.viewAccountQuantityProduct.mockResolvedValueOnce(0);
-    workerTotal.mockResolvedValueOnce(0);
-    await expect(service.validateCanCreateWorker(t, 'acc-1')).rejects.toThrow(
-      'worker_not_available'
-    );
-    accountService.viewAccountQuantityProduct.mockResolvedValueOnce(1);
-    workerTotal.mockResolvedValueOnce(1);
-    await expect(service.validateCanCreateWorker(t, 'acc-1')).rejects.toThrow(
-      'worker_not_available_additional'
-    );
-    accountService.viewAccountQuantityProduct.mockResolvedValueOnce(2);
-    workerTotal.mockResolvedValueOnce(1);
     await expect(
       service.validateCanCreateWorker(t, 'acc-1')
     ).resolves.toBeUndefined();
-
-    accountService.viewAccountQuantityProduct.mockResolvedValueOnce(0);
-    roleTotal.mockResolvedValueOnce(0);
-    await expect(service.validateCanCreateRole(t, 'acc-1')).rejects.toThrow(
-      'role_not_available'
-    );
-    accountService.viewAccountQuantityProduct.mockResolvedValueOnce(2);
-    roleTotal.mockResolvedValueOnce(2);
-    await expect(service.validateCanCreateRole(t, 'acc-1')).rejects.toThrow(
-      'role_not_available_additional'
-    );
-    accountService.viewAccountQuantityProduct.mockResolvedValueOnce(3);
-    roleTotal.mockResolvedValueOnce(1);
     await expect(
       service.validateCanCreateRole(t, 'acc-1')
     ).resolves.toBeUndefined();
-
-    accountService.viewAccountQuantityProduct.mockResolvedValueOnce(0);
-    chatbotTotal.mockResolvedValueOnce(0);
-    await expect(service.validateCanCreateChatbot(t, 'acc-1')).rejects.toThrow(
-      'chatbot_not_available'
-    );
-    accountService.viewAccountQuantityProduct.mockResolvedValueOnce(1);
-    chatbotTotal.mockResolvedValueOnce(1);
-    await expect(service.validateCanCreateChatbot(t, 'acc-1')).rejects.toThrow(
-      'chatbot_not_available_additional'
-    );
-    accountService.viewAccountQuantityProduct.mockResolvedValueOnce(2);
-    chatbotTotal.mockResolvedValueOnce(0);
     await expect(
       service.validateCanCreateChatbot(t, 'acc-1')
     ).resolves.toBeUndefined();
+    await expect(
+      service.validateCanCreateAiAgent(t, 'acc-1')
+    ).resolves.toBeUndefined();
+
+    expect(planLimitEnforcementService.ensureCanActivate).toHaveBeenCalledWith(
+      t,
+      'acc-1',
+      'user'
+    );
+    expect(planLimitEnforcementService.ensureCanActivate).toHaveBeenCalledWith(
+      t,
+      'acc-1',
+      'worker'
+    );
+    expect(planLimitEnforcementService.ensureCanActivate).toHaveBeenCalledWith(
+      t,
+      'acc-1',
+      'role'
+    );
+    expect(planLimitEnforcementService.ensureCanActivate).toHaveBeenCalledWith(
+      t,
+      'acc-1',
+      'chatbot'
+    );
+    expect(planLimitEnforcementService.ensureCanActivate).toHaveBeenCalledWith(
+      t,
+      'acc-1',
+      'ai_agent'
+    );
+  });
+
+  it('validates contact creation limits', async () => {
+    const { service, accountService } = makeService();
+    const contactTotal = (service as any).dashboardStatsRepository
+      .getContactsTotal;
 
     accountService.viewAccountQuantityProduct.mockResolvedValueOnce(0);
     contactTotal.mockResolvedValueOnce(0);
@@ -331,20 +354,16 @@ describe('PlanAccountService', () => {
     ).resolves.toBe(true);
   });
 
-  it('builds ai agent config and validates ai agent creation limits', async () => {
+  it('builds ai agent config', async () => {
     const { service } = makeService();
 
     (service as any).accountService.viewAccountQuantityProduct
-      .mockResolvedValueOnce(0)
-      .mockResolvedValueOnce(2)
       .mockResolvedValueOnce(0)
       .mockResolvedValueOnce(2)
       .mockResolvedValueOnce(3);
     (service as any).aiAgentService.totalAiAgentByAccountId
       .mockResolvedValueOnce(1)
       .mockResolvedValueOnce(1)
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(3)
       .mockResolvedValueOnce(1);
 
     await expect(
@@ -363,16 +382,12 @@ describe('PlanAccountService', () => {
       total: 1,
     });
 
-    await expect(service.validateCanCreateAiAgent(t, 'acc-1')).rejects.toThrow(
-      'ai_agent_not_available'
-    );
-
-    await expect(service.validateCanCreateAiAgent(t, 'acc-1')).rejects.toThrow(
-      'ai_agent_not_available_additional'
-    );
-
     await expect(
-      service.validateCanCreateAiAgent(t, 'acc-1')
-    ).resolves.toBeUndefined();
+      service.viewAiAgentConfigByAccountId('acc-1')
+    ).resolves.toEqual({
+      ai_agent: 3,
+      enabled: true,
+      total: 1,
+    });
   });
 });

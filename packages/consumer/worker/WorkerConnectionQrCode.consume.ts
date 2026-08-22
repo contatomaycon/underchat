@@ -10,6 +10,11 @@ import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionTyp
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import {
+  isRetryableWorkerRuntimeTransitionError,
+  workerErrorDiagnostics,
+  workerErrorFailureReason,
+} from '@core/common/functions/workerErrorDiagnostics';
+import {
   WorkerConnectionQrCodeRedisQueueService,
   WorkerConnectionQrCodeRedisStreamMessage,
 } from '@core/services/workerConnectionQrCodeRedisQueue.service';
@@ -19,15 +24,105 @@ import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnect
 interface ActiveQrAttemptEnvelope {
   worker_type_id?: string;
   runtime_generation?: number | string;
+  authorized_connection_epoch?: string;
   ack?: {
     connection_attempt_id?: string;
     worker_type_id?: string;
     runtime_generation?: number | string;
+    authorized_connection_epoch?: string;
   };
 }
 
+const QR_ATTEMPT_SUPERSEDED_ERROR = 'worker_qr_attempt_superseded';
+const ACTIVE_ATTEMPT_IDENTITY_MISSING = '__underchat_missing_identity__';
+const RELEASE_ACTIVE_ATTEMPT_IF_CURRENT_SCRIPT = `
+  local raw = redis.call('GET', KEYS[1])
+  if not raw then
+    return 0
+  end
+
+  local decoded_ok, envelope = pcall(cjson.decode, raw)
+  if not decoded_ok or type(envelope) ~= 'table'
+    or type(envelope['ack']) ~= 'table'
+  then
+    return 0
+  end
+
+  local ack = envelope['ack']
+  local missing = ARGV[5]
+  local function coalesce_identity(primary, fallback)
+    if primary == nil or primary == cjson.null then
+      return fallback
+    end
+    return primary
+  end
+  local function normalize_identity(value)
+    if value == nil or value == cjson.null then
+      return missing
+    end
+    return tostring(value)
+  end
+
+  local active_attempt_id = ack['connection_attempt_id']
+  local active_authorized_epoch = coalesce_identity(
+    envelope['authorized_connection_epoch'],
+    ack['authorized_connection_epoch']
+  )
+  local active_worker_type = coalesce_identity(
+    envelope['worker_type_id'],
+    ack['worker_type_id']
+  )
+  local active_runtime_generation = coalesce_identity(
+    envelope['runtime_generation'],
+    ack['runtime_generation']
+  )
+
+  if normalize_identity(active_attempt_id) ~= ARGV[1]
+    or normalize_identity(active_authorized_epoch) ~= ARGV[2]
+    or normalize_identity(active_worker_type) ~= ARGV[3]
+    or normalize_identity(active_runtime_generation) ~= ARGV[4]
+  then
+    return 0
+  end
+
+  return redis.call('DEL', KEYS[1])
+`;
+
 @singleton()
 export class WorkerConnectionQrCodeConsume {
+  private static readonly RETRYABLE_TERMINAL_NO_QR_REASONS = new Set([
+    'qr_event_timeout',
+    'first_qr_timeout',
+    'connection_attempt_guard_timeout',
+  ]);
+  private static readonly RETRYABLE_INFRASTRUCTURE_ERROR_CODES = new Set([
+    '40001',
+    '40p01',
+    '53300',
+    '53400',
+    '55p03',
+    '57014',
+    '57p01',
+    '57p02',
+    '57p03',
+    'eai_again',
+    'econnaborted',
+    'econnrefused',
+    'econnreset',
+    'ehostunreach',
+    'enetdown',
+    'enetunreach',
+    'enotfound',
+    'epipe',
+    'etimedout',
+    'err_socket_closed',
+    'err_stream_premature_close',
+    'p1001',
+    'p1002',
+    'p1008',
+    'p1017',
+    'p2024',
+  ]);
   private static readonly ACTIVE_ATTEMPT_REDIS_TIMEOUT_MS = 1_000;
   private static readonly QR_CACHE_TTL_SECONDS = Math.max(
     1,
@@ -64,6 +159,37 @@ export class WorkerConnectionQrCodeConsume {
       30_000,
       Number(process.env.CONNECTION_QRCODE_BAILEYS_LOCAL_RETRY_DELAY_MS) ||
         2_000
+    )
+  );
+  private static readonly FIRST_QR_SETUP_TIMEOUT_MS = Math.max(
+    30_000,
+    Math.min(
+      300_000,
+      Number(process.env.CONNECTION_QRCODE_FIRST_QR_SETUP_TIMEOUT_MS) || 120_000
+    )
+  );
+  private static readonly STREAM_MAX_DELIVERIES = Math.max(
+    1,
+    Math.min(
+      20,
+      Number(process.env.CONNECTION_QRCODE_BAILEYS_STREAM_MAX_DELIVERIES) || 5
+    )
+  );
+  private static readonly STREAM_RETRY_BASE_DELAY_MS = Math.max(
+    1_000,
+    Math.min(
+      30_000,
+      Number(
+        process.env.CONNECTION_QRCODE_BAILEYS_STREAM_RETRY_BASE_DELAY_MS
+      ) || 5_000
+    )
+  );
+  private static readonly STREAM_RETRY_MAX_DELAY_MS = Math.max(
+    WorkerConnectionQrCodeConsume.STREAM_RETRY_BASE_DELAY_MS,
+    Math.min(
+      60_000,
+      Number(process.env.CONNECTION_QRCODE_BAILEYS_STREAM_RETRY_MAX_DELAY_MS) ||
+        30_000
     )
   );
   private isRunning = false;
@@ -260,7 +386,11 @@ export class WorkerConnectionQrCodeConsume {
       );
       const state = await this.requestLocalConnectionWithRetries(data, message);
 
-      await this.cacheQrAttemptState(state, data);
+      if (!(await this.cacheQrAttemptState(state, data))) {
+        this.workerConnectionStatusConsume.cancelConnectionAttempt();
+        await this.ackAndDelete(message);
+        return;
+      }
       void this.connectionLifecycleDebugService.log(
         'baileys.qr_stream.connection_response',
         {
@@ -276,8 +406,10 @@ export class WorkerConnectionQrCodeConsume {
           status: state.status,
           code: state.code,
           reason: state.reason,
-          qrcode: state.qrcode,
-          pairing_code: state.pairing_code,
+          has_qrcode: Boolean(state.qrcode),
+          qrcode_length: state.qrcode?.length ?? 0,
+          has_pairing_code: Boolean(state.pairing_code),
+          pairing_code_length: state.pairing_code?.length ?? 0,
           has_passkey_public_key: Boolean(state.passkey_public_key),
           has_passkey_confirmation_code: Boolean(
             state.passkey_confirmation_code
@@ -289,7 +421,9 @@ export class WorkerConnectionQrCodeConsume {
       if (this.isTerminalNoQrState(state)) {
         await this.releaseActiveAttemptIfCurrent(
           data.worker_id,
-          data.connection_attempt_id
+          data.connection_attempt_id,
+          data.authorized_connection_epoch,
+          data.runtime_generation
         );
         await this.redisQueueService.markProcessed(data);
         await this.ackAndDelete(message);
@@ -331,13 +465,47 @@ export class WorkerConnectionQrCodeConsume {
         }
       );
     } catch (error) {
-      if (this.isLocalRequestTimeoutError(error)) {
-        await this.releaseActiveAttemptIfCurrent(
-          data.worker_id,
-          data.connection_attempt_id
-        );
-        await this.redisQueueService.markProcessed(data);
+      if (
+        error instanceof Error &&
+        error.message === QR_ATTEMPT_SUPERSEDED_ERROR
+      ) {
+        this.workerConnectionStatusConsume.cancelConnectionAttempt();
         await this.ackAndDelete(message);
+        return;
+      }
+      const deliveryCount = Math.max(1, message.delivery_count ?? 1);
+      const retryableInfrastructureFailure =
+        this.isRetryableInfrastructureError(error);
+      const exhausted =
+        deliveryCount >= WorkerConnectionQrCodeConsume.STREAM_MAX_DELIVERIES;
+      const setupDeadlineExceeded = this.isQrSetupDeadlineExceeded(data);
+      const terminal =
+        !retryableInfrastructureFailure ||
+        (setupDeadlineExceeded &&
+          (this.isLocalRequestTimeoutError(error) || exhausted));
+
+      if (terminal) {
+        await this.finalizeFailedAttempt(data, message, error, deliveryCount);
+      } else {
+        const retryDelayMs = this.streamRetryDelayMs(deliveryCount);
+        void this.connectionLifecycleDebugService.log(
+          'baileys.qr_stream.retry_deferred',
+          {
+            trace_id: data.debug_trace_id,
+            layer: 'baileys',
+            worker_id: data.worker_id,
+            account_id: data.account_id,
+            worker_type_id: data.worker_type_id,
+            connection_attempt_id: data.connection_attempt_id,
+            runtime_generation: data.runtime_generation,
+            stream_id: message.stream_id,
+            delivery_count: deliveryCount,
+            max_deliveries: WorkerConnectionQrCodeConsume.STREAM_MAX_DELIVERIES,
+            retry_delay_ms: retryDelayMs,
+            ...workerErrorDiagnostics(error),
+          }
+        );
+        await this.delay(retryDelayMs);
       }
 
       void this.connectionLifecycleDebugService.log('baileys.qr_stream.error', {
@@ -349,7 +517,11 @@ export class WorkerConnectionQrCodeConsume {
         connection_attempt_id: data.connection_attempt_id,
         runtime_generation: data.runtime_generation,
         stream_id: message.stream_id,
-        reason: error instanceof Error ? error.message : String(error),
+        delivery_count: deliveryCount,
+        max_deliveries: WorkerConnectionQrCodeConsume.STREAM_MAX_DELIVERIES,
+        retryable: retryableInfrastructureFailure,
+        terminal,
+        ...workerErrorDiagnostics(error),
       });
     }
   }
@@ -366,19 +538,37 @@ export class WorkerConnectionQrCodeConsume {
       attempt += 1
     ) {
       try {
+        if (!(await this.isActiveAttempt(data))) {
+          throw new Error(QR_ATTEMPT_SUPERSEDED_ERROR);
+        }
         const state = await this.requestLocalConnectionWithTimeout(
           this.buildQrRequestPayload(data)
         );
-
-        if (!this.isRetryableNoQrState(state)) {
-          return state;
+        if (!(await this.isActiveAttempt(data))) {
+          throw new Error(QR_ATTEMPT_SUPERSEDED_ERROR);
         }
 
-        lastNoQrState = state;
+        if (this.isRetryableTerminalNoQrState(state)) {
+          lastNoQrState = state;
+          if (
+            attempt >= WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS
+          ) {
+            return this.isQrSetupDeadlineExceeded(data)
+              ? this.publishTerminalNoQrState(data, state)
+              : this.buildPendingNoQrState(data, state);
+          }
+        } else if (!this.isRetryableNoQrState(state)) {
+          return state;
+        } else {
+          lastNoQrState = state;
+        }
+
         if (
           attempt >= WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS
         ) {
-          return this.publishTerminalNoQrState(data, state);
+          return this.isQrSetupDeadlineExceeded(data)
+            ? this.publishTerminalNoQrState(data, state)
+            : state;
         }
 
         void this.connectionLifecycleDebugService.log(
@@ -403,11 +593,14 @@ export class WorkerConnectionQrCodeConsume {
         );
       } catch (error) {
         if (
-          !this.isLocalRequestTimeoutError(error) ||
+          (!this.isLocalRequestTimeoutError(error) &&
+            !this.isRetryableInfrastructureError(error)) ||
           attempt >= WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS
         ) {
           if (this.isLocalRequestTimeoutError(error)) {
-            return this.publishTerminalNoQrState(data, lastNoQrState, error);
+            return this.isQrSetupDeadlineExceeded(data)
+              ? this.publishTerminalNoQrState(data, lastNoQrState, error)
+              : this.buildPendingNoQrState(data, lastNoQrState, error);
           }
 
           throw error;
@@ -428,7 +621,7 @@ export class WorkerConnectionQrCodeConsume {
             next_local_attempt: attempt + 1,
             max_local_attempts:
               WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS,
-            reason: error instanceof Error ? error.message : String(error),
+            ...workerErrorDiagnostics(error),
           }
         );
       }
@@ -438,7 +631,9 @@ export class WorkerConnectionQrCodeConsume {
       );
     }
 
-    return this.publishTerminalNoQrState(data, lastNoQrState);
+    return this.isQrSetupDeadlineExceeded(data)
+      ? this.publishTerminalNoQrState(data, lastNoQrState)
+      : this.buildPendingNoQrState(data, lastNoQrState);
   }
 
   private buildQrRequestPayload(
@@ -449,6 +644,7 @@ export class WorkerConnectionQrCodeConsume {
       status: EWorkerStatus.online,
       type: EBaileysConnectionType.qrcode,
       connection_attempt_id: data.connection_attempt_id,
+      authorized_connection_epoch: data.authorized_connection_epoch,
       debug_trace_id: data.debug_trace_id,
       runtime_generation: data.runtime_generation,
       qr_pending: true,
@@ -530,21 +726,21 @@ export class WorkerConnectionQrCodeConsume {
       return false;
     }
 
-    if (
-      state.status === EBaileysConnectionStatus.disconnected &&
-      typeof state.attempt === 'number' &&
-      typeof state.max_attempts === 'number' &&
-      state.max_attempts > 0 &&
-      state.attempt > state.max_attempts
-    ) {
+    if (state.status === EBaileysConnectionStatus.disconnected) {
       return true;
     }
 
     return (
-      state.reason === 'qr_event_timeout' ||
-      state.reason === 'first_qr_timeout' ||
-      state.reason === 'connection_attempt_guard_timeout' ||
+      this.isRetryableTerminalNoQrState(state) ||
       state.reason === 'connection_closed_before_qr'
+    );
+  }
+
+  private isRetryableTerminalNoQrState(
+    state: IBaileysConnectionState
+  ): boolean {
+    return WorkerConnectionQrCodeConsume.RETRYABLE_TERMINAL_NO_QR_REASONS.has(
+      state.reason ?? ''
     );
   }
 
@@ -560,6 +756,7 @@ export class WorkerConnectionQrCodeConsume {
         status: EWorkerStatus.online,
         type: EBaileysConnectionType.qrcode,
         connection_attempt_id: data.connection_attempt_id,
+        authorized_connection_epoch: data.authorized_connection_epoch,
         debug_trace_id: data.debug_trace_id,
         runtime_generation: data.runtime_generation,
         qr_pending: false,
@@ -570,6 +767,43 @@ export class WorkerConnectionQrCodeConsume {
         reason,
         degradedReason: state?.degraded_reason,
       }
+    );
+  }
+
+  private buildPendingNoQrState(
+    data: IWorkerConnectionQrCodeQueueMessage,
+    state?: IBaileysConnectionState | null,
+    error?: unknown
+  ): IBaileysConnectionState {
+    return {
+      code: ECodeMessage.awaitConnection,
+      status: EBaileysConnectionStatus.connecting,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: EWorkerType.baileys,
+      worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: data.connection_attempt_id,
+      authorized_connection_epoch: data.authorized_connection_epoch,
+      runtime_generation: data.runtime_generation,
+      debug_trace_id: data.debug_trace_id,
+      qr_pending: true,
+      retryable: true,
+      reason: 'first_qr_pending',
+      degraded_reason: this.resolveNoQrReason(state, error),
+    };
+  }
+
+  private isQrSetupDeadlineExceeded(
+    data: IWorkerConnectionQrCodeQueueMessage
+  ): boolean {
+    const requestedAt = Date.parse(data.requested_at);
+    if (!Number.isFinite(requestedAt)) {
+      return true;
+    }
+
+    return (
+      Date.now() - requestedAt >=
+      WorkerConnectionQrCodeConsume.FIRST_QR_SETUP_TIMEOUT_MS
     );
   }
 
@@ -603,6 +837,113 @@ export class WorkerConnectionQrCodeConsume {
     );
   }
 
+  private isRetryableInfrastructureError(error: unknown): boolean {
+    if (isRetryableWorkerRuntimeTransitionError(error)) {
+      return true;
+    }
+
+    const { error_code: errorCode } = workerErrorDiagnostics(error);
+    if (/^08[a-z0-9]{3}$/.test(errorCode)) {
+      return true;
+    }
+
+    return WorkerConnectionQrCodeConsume.RETRYABLE_INFRASTRUCTURE_ERROR_CODES.has(
+      errorCode
+    );
+  }
+
+  private streamRetryDelayMs(deliveryCount: number): number {
+    const exponent = Math.max(0, Math.min(6, deliveryCount - 1));
+    return Math.min(
+      WorkerConnectionQrCodeConsume.STREAM_RETRY_MAX_DELAY_MS,
+      WorkerConnectionQrCodeConsume.STREAM_RETRY_BASE_DELAY_MS * 2 ** exponent
+    );
+  }
+
+  private async finalizeFailedAttempt(
+    data: IWorkerConnectionQrCodeQueueMessage,
+    message: WorkerConnectionQrCodeRedisStreamMessage,
+    error: unknown,
+    deliveryCount: number
+  ): Promise<void> {
+    const reason = workerErrorFailureReason(
+      'baileys_qr_connection_temporarily_unavailable',
+      error
+    );
+    let state: IBaileysConnectionState;
+    try {
+      state =
+        await this.workerConnectionStatusConsume.publishQrCodeAttemptFailed(
+          {
+            worker_id: data.worker_id,
+            status: EWorkerStatus.online,
+            type: EBaileysConnectionType.qrcode,
+            connection_attempt_id: data.connection_attempt_id,
+            authorized_connection_epoch: data.authorized_connection_epoch,
+            debug_trace_id: data.debug_trace_id,
+            runtime_generation: data.runtime_generation,
+            qr_pending: false,
+          },
+          {
+            attempt: WorkerConnectionQrCodeConsume.STREAM_MAX_DELIVERIES + 1,
+            maxAttempts: WorkerConnectionQrCodeConsume.STREAM_MAX_DELIVERIES,
+            reason,
+            degradedReason: reason,
+          }
+        );
+    } catch (publishError) {
+      void this.connectionLifecycleDebugService.log(
+        'baileys.qr_stream.failed_attempt_projection_deferred',
+        {
+          trace_id: data.debug_trace_id,
+          layer: 'baileys',
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          worker_type_id: data.worker_type_id,
+          connection_attempt_id: data.connection_attempt_id,
+          runtime_generation: data.runtime_generation,
+          stream_id: message.stream_id,
+          delivery_count: deliveryCount,
+          retry_delay_ms:
+            WorkerConnectionQrCodeConsume.STREAM_RETRY_MAX_DELAY_MS,
+          ...workerErrorDiagnostics(publishError),
+        }
+      );
+      await this.delay(WorkerConnectionQrCodeConsume.STREAM_RETRY_MAX_DELAY_MS);
+      throw publishError;
+    }
+
+    this.workerConnectionStatusConsume.cancelConnectionAttempt();
+    await this.releaseActiveAttemptIfCurrent(
+      data.worker_id,
+      data.connection_attempt_id,
+      data.authorized_connection_epoch,
+      data.runtime_generation
+    );
+    await this.redisQueueService.markProcessed(data);
+    await this.ackAndDelete(message);
+    void this.connectionLifecycleDebugService.log(
+      'baileys.qr_stream.failed_attempt_finalized',
+      {
+        trace_id: data.debug_trace_id,
+        layer: 'baileys',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type_id: data.worker_type_id,
+        connection_attempt_id: data.connection_attempt_id,
+        runtime_generation: data.runtime_generation,
+        stream_id: message.stream_id,
+        delivery_count: deliveryCount,
+        max_deliveries: WorkerConnectionQrCodeConsume.STREAM_MAX_DELIVERIES,
+        status: state.status,
+        code: state.code,
+        reason: state.reason,
+        retryable: state.retryable,
+        ...workerErrorDiagnostics(error),
+      }
+    );
+  }
+
   private shouldCompleteQrRequest(state: IBaileysConnectionState): boolean {
     if (
       state.qrcode ||
@@ -628,7 +969,9 @@ export class WorkerConnectionQrCodeConsume {
 
   private async releaseActiveAttemptIfCurrent(
     workerId: string,
-    connectionAttemptId: string
+    connectionAttemptId: string,
+    authorizedConnectionEpoch?: string,
+    runtimeGeneration?: number
   ): Promise<void> {
     if (!this.isRedisReady()) {
       return;
@@ -636,17 +979,20 @@ export class WorkerConnectionQrCodeConsume {
 
     try {
       const key = this.activeAttemptKey(workerId, EWorkerType.baileys);
-      const raw = await this.redisGetWithTimeout(key, 'active_attempt_release');
-      if (!raw) {
-        return;
-      }
-
-      const parsed = JSON.parse(raw) as ActiveQrAttemptEnvelope;
-      if (parsed.ack?.connection_attempt_id !== connectionAttemptId) {
-        return;
-      }
-
-      await this.redis.del(key);
+      await this.runRedisWithTimeout('EVAL active_attempt_release', () =>
+        this.redis.eval(
+          RELEASE_ACTIVE_ATTEMPT_IF_CURRENT_SCRIPT,
+          1,
+          key,
+          connectionAttemptId,
+          authorizedConnectionEpoch ?? ACTIVE_ATTEMPT_IDENTITY_MISSING,
+          EWorkerType.baileys,
+          runtimeGeneration === undefined
+            ? ACTIVE_ATTEMPT_IDENTITY_MISSING
+            : String(runtimeGeneration),
+          ACTIVE_ATTEMPT_IDENTITY_MISSING
+        )
+      );
     } catch {}
   }
 
@@ -702,8 +1048,13 @@ export class WorkerConnectionQrCodeConsume {
           parsed.runtime_generation ?? parsed.ack?.runtime_generation;
         const activeWorkerTypeId =
           parsed.worker_type_id ?? parsed.ack?.worker_type_id;
+        const activeAuthorizedConnectionEpoch =
+          parsed.authorized_connection_epoch ??
+          parsed.ack?.authorized_connection_epoch;
         const active =
           parsed.ack?.connection_attempt_id === data.connection_attempt_id &&
+          activeAuthorizedConnectionEpoch ===
+            data.authorized_connection_epoch &&
           (!activeWorkerTypeId || activeWorkerTypeId === data.worker_type_id) &&
           !(
             data.runtime_generation !== undefined &&
@@ -723,18 +1074,18 @@ export class WorkerConnectionQrCodeConsume {
   private async cacheQrAttemptState(
     state: IBaileysConnectionState,
     data: IWorkerConnectionQrCodeQueueMessage
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (
       !state.qrcode &&
       !state.pairing_code &&
       !state.passkey_public_key &&
       !state.passkey_confirmation_code
     ) {
-      return;
+      return true;
     }
 
     if (state.worker_type_id && state.worker_type_id !== EWorkerType.baileys) {
-      return;
+      return true;
     }
 
     const normalized: IBaileysConnectionState = {
@@ -744,6 +1095,8 @@ export class WorkerConnectionQrCodeConsume {
       worker_type_id: EWorkerType.baileys,
       connection_attempt_id:
         state.connection_attempt_id || data.connection_attempt_id,
+      authorized_connection_epoch:
+        state.authorized_connection_epoch ?? data.authorized_connection_epoch,
       debug_trace_id: state.debug_trace_id ?? data.debug_trace_id,
       runtime_generation: state.runtime_generation ?? data.runtime_generation,
       qr_pending: false,
@@ -752,14 +1105,14 @@ export class WorkerConnectionQrCodeConsume {
     normalized.expires_at ??= this.qrExpiresAt(normalized);
     const ttlSeconds = this.qrCacheTtlForState(normalized);
 
-    try {
-      await this.redis.set(
-        this.qrAttemptCacheKey(normalized.worker_id, EWorkerType.baileys),
-        JSON.stringify(normalized),
-        'EX',
-        ttlSeconds
-      );
-    } catch {}
+    if (!this.isRedisReady()) {
+      return true;
+    }
+    return this.redisQueueService.cacheAttemptStateIfActive(
+      data,
+      JSON.stringify(normalized),
+      ttlSeconds
+    );
   }
 
   private qrCacheTtlForState(state: IBaileysConnectionState): number {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './chatbot-node-workbench.css';
 import { ref, computed, watch, onMounted } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
@@ -104,17 +105,32 @@ const handleRemove = () => {
 </script>
 
 <template>
-  <div class="chatbot-tag-node">
-    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
-    <Handle id="source" type="source" :position="Position.Bottom" class="handle-source" />
+  <div class="chatbot-tag-node chatbot-workbench-node">
+    <Handle
+      id="target"
+      type="target"
+      :position="Position.Top"
+      class="handle-target"
+    />
+    <Handle
+      id="source"
+      type="source"
+      :position="Position.Bottom"
+      class="handle-source"
+    />
 
-    <VCard class="tag-card" elevation="2">
+    <VCard class="tag-card chatbot-workbench-card" elevation="2">
       <VCardTitle
-        class="d-flex align-center justify-space-between pa-2 node-drag-handle"
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle chatbot-workbench-header"
       >
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-tag" color="secondary" size="20" />
-          <span class="text-sm font-weight-medium">{{
+        <div class="d-flex align-center ga-2 chatbot-workbench-identity">
+          <VIcon
+            icon="tabler-tag"
+            color="secondary"
+            size="20"
+            class="chatbot-workbench-icon"
+          />
+          <span class="text-sm font-weight-medium chatbot-workbench-title">{{
             t('chatbot_tag_node_title')
           }}</span>
         </div>
@@ -123,12 +139,12 @@ const handleRemove = () => {
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
+      <VCardText class="pa-3 chatbot-workbench-body">
         <VLabel class="text-body-2 mb-1">{{
           t('chatbot_tag_type_label')
         }}</VLabel>

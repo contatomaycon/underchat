@@ -92,7 +92,6 @@ export const externalAppEnvPublicPromotions = [
   ['DB_PUBLIC_PORT_RW', 'DB_PORT_RW'],
   ['DB_PUBLIC_HOST_RO', 'DB_HOST_RO'],
   ['DB_PUBLIC_PORT_RO', 'DB_PORT_RO'],
-  ['DB_PUBLIC_DATABASE_URL', 'DB_DATABASE_URL'],
   ['DB_PUBLIC_ATLAS', 'DB_ATLAS'],
   ['DB_ELASTIC_PUBLIC_HOST', 'DB_ELASTIC_HOST'],
   ['DB_CACHE_PUBLIC_HOST', 'DB_CACHE_HOST'],
@@ -106,12 +105,17 @@ export const externalAppEnvPublicPromotions = [
   ['KAFKA_PUBLIC_SASL_MECHANISM', 'SASL_MECHANISM'],
 ] as const;
 
+export const externalAppCompositeDatabaseEnvVarsToRemove = [
+  'DB_PUBLIC_DATABASE_URL',
+  'DB_PRIVATE_DATABASE_URL',
+  'DB_DATABASE_URL',
+] as const;
+
 export const externalAppPrivateScopedEnvVarsToRemove = [
   'DB_PRIVATE_HOST_RW',
   'DB_PRIVATE_PORT_RW',
   'DB_PRIVATE_HOST_RO',
   'DB_PRIVATE_PORT_RO',
-  'DB_PRIVATE_DATABASE_URL',
   'DB_PRIVATE_ATLAS',
   'DB_ELASTIC_PRIVATE_HOST',
   'DB_CACHE_PRIVATE_HOST',
@@ -168,7 +172,10 @@ export function getPrepareExternalAppEnvFileCommand(
   const promotionCommands = externalAppEnvPublicPromotions
     .map(([source, target]) => `promote_env '${source}' '${target}'`)
     .join('\n');
-  const privateDeleteExpressions = externalAppPrivateScopedEnvVarsToRemove
+  const deleteExpressions = [
+    ...externalAppCompositeDatabaseEnvVarsToRemove,
+    ...externalAppPrivateScopedEnvVarsToRemove,
+  ]
     .map((envVar) => `-e '/^${escapeForSedPattern(envVar)}=/d'`)
     .join(' ');
 
@@ -184,7 +191,7 @@ promote_env() {
   fi
 }
 ${promotionCommands}
-sed -i ${privateDeleteExpressions} -e '/^UNDERCHAT_ENV_SCOPE=/d' "$ENV_FILE"
+sed -i ${deleteExpressions} -e '/^UNDERCHAT_ENV_SCOPE=/d' "$ENV_FILE"
 printf '%s\\n' 'UNDERCHAT_ENV_SCOPE=public' >> "$ENV_FILE"`;
 
   return `bash -c '${escapeShellSingleQuotes(script)}'`;

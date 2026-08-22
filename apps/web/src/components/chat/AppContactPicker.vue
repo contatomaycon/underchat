@@ -8,6 +8,7 @@ import { EColor } from '@core/common/enums/EColor';
 import type { ISelectedContactPreview } from '@core/common/interfaces/IChatFilePreview';
 import type { SortRequest } from '@core/schema/common/sortRequestSchema';
 import type { ListInternalChatContactsResponse } from '@core/schema/internalChat/listContacts/response.schema';
+import ContactValidationBadge from '@/components/contact/ContactValidationBadge.vue';
 
 type ContactPickerContact =
   ListInternalChatContactsResponse['data']['results'][number];
@@ -249,17 +250,11 @@ const headers = computed(() => [
           </template>
 
           <template #item.status="{ item }">
-            <VChip
-              v-if="item.is_valided"
-              class="uc-chip"
-              size="small"
-              color="success"
-            >
-              {{ $t('validated') }}
-            </VChip>
-            <VChip v-else class="uc-chip" size="small" color="error">
-              {{ $t('not_validated') }}
-            </VChip>
+            <ContactValidationBadge
+              :validation-status="item.validation_status"
+              :is-validated="item.is_valided"
+              compact
+            />
           </template>
 
           <template #no-data>

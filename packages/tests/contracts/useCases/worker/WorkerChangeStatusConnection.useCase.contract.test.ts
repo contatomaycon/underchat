@@ -78,7 +78,7 @@ describe('WorkerChangeStatusConnectionUseCase', () => {
     expect(centrifugoService.publishSub).toHaveBeenCalledWith(
       workerCentrifugoQueue('account-1'),
       expect.objectContaining({
-        status: EBaileysConnectionStatus.connecting,
+        status: EBaileysConnectionStatus.info,
         code: ECodeMessage.logoutInProgress,
         worker_id: 'worker-1',
         account_id: 'account-1',

@@ -32,6 +32,28 @@ describe('wwebjsMessageToUpsert', () => {
     jest.restoreAllMocks();
   });
 
+  it('uses $1 as the canonical id for the new WWebJS message shape', async () => {
+    const serializedId = 'false_158733669765176@lid_3EB0D96A98D7EC10E7C610';
+    const upsert = await wwebjsMessageToUpsert({
+      ...baseMessage,
+      id: {
+        fromMe: false,
+        remote: '158733669765176@lid',
+        remoteJid: '158733669765176@lid',
+        id: '3EB0D96A98D7EC10E7C610',
+        $1: serializedId,
+        name: 'MessageKey',
+      },
+      type: 'chat',
+      body: 'Oi',
+      from: '158733669765176@lid',
+      fromMe: false,
+    } as never);
+
+    expect(upsert?.message.key.id).toBe(serializedId);
+    expect(upsert?.message.key.id).not.toBe('[object Object]');
+  });
+
   it('converts automated greeting messages into readable text with ad context', async () => {
     const upsert = await wwebjsMessageToUpsert({
       ...baseMessage,
@@ -560,5 +582,75 @@ describe('wwebjsMessageToUpsert', () => {
     expect(upsert?.content?.message).toBe(
       'this should not become a chatbot text trigger'
     );
+  });
+
+  it('routes quoted-message SDK lookup through the supplied provider boundary', async () => {
+    const getQuotedMessage = jest.fn(async () => ({
+      ...baseMessage,
+      id: {
+        ...baseMessage.id,
+        id: 'QUOTED_MESSAGE_ID',
+        _serialized: 'false_5511999999999@c.us_QUOTED_MESSAGE_ID',
+      },
+      type: 'chat',
+      body: 'mensagem citada',
+    }));
+    let invokeProviderCalls = 0;
+    const invokeProvider = async <T>(invoke: () => Promise<T>): Promise<T> => {
+      invokeProviderCalls += 1;
+      return invoke();
+    };
+
+    const upsert = await wwebjsMessageToUpsert(
+      {
+        ...baseMessage,
+        type: 'chat',
+        body: 'resposta',
+        hasQuotedMsg: true,
+        getQuotedMessage,
+      } as never,
+      undefined,
+      undefined,
+      undefined,
+      invokeProvider
+    );
+
+    expect(upsert).not.toBeNull();
+    expect(invokeProviderCalls).toBe(1);
+    expect(getQuotedMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not downgrade a quoted-message provider fence into missing context', async () => {
+    const providerFenceError = Object.assign(
+      new Error('quoted-message lookup timed out'),
+      {
+        code: 'WHATSAPP_PROVIDER_AUXILIARY_TIMEOUT',
+      }
+    );
+    const getQuotedMessage = jest.fn();
+    let invokeProviderCalls = 0;
+    const invokeProvider = async <T>(_invoke: () => Promise<T>): Promise<T> => {
+      invokeProviderCalls += 1;
+      throw providerFenceError;
+    };
+
+    await expect(
+      wwebjsMessageToUpsert(
+        {
+          ...baseMessage,
+          type: 'chat',
+          body: 'resposta',
+          hasQuotedMsg: true,
+          getQuotedMessage,
+        } as never,
+        undefined,
+        undefined,
+        undefined,
+        invokeProvider
+      )
+    ).rejects.toBe(providerFenceError);
+
+    expect(invokeProviderCalls).toBe(1);
+    expect(getQuotedMessage).not.toHaveBeenCalled();
   });
 });

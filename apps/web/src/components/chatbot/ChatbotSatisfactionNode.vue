@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './chatbot-node-workbench.css';
 import { ref, computed, watch, nextTick } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position, useVueFlow } from '@vue-flow/core';
@@ -6,6 +7,8 @@ import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { useI18n } from 'vue-i18n';
+import ApiVariableField from './api-request/ApiVariableField.vue';
+import type { ApiRequestVariable } from './api-request/types';
 
 interface SatisfactionOption {
   id: string;
@@ -16,6 +19,7 @@ interface SatisfactionData {
   title: string;
   message: string;
   options: SatisfactionOption[];
+  availableVariables?: ApiRequestVariable[];
   onRemove?: () => void;
   onRemoveOption?: (optionId: string) => void;
 }
@@ -43,6 +47,9 @@ const isDraggingOption = ref(false);
 const lastOptionPointerDown = ref<HTMLElement | null>(null);
 
 const messageLength = computed(() => satisfactionData.value.message.length);
+const availableVariables = computed<ApiRequestVariable[]>(
+  () => (props.data as SatisfactionData)?.availableVariables || []
+);
 const maxMessageLength = 500;
 
 const buildOptionHandleId = (optionId: string) => {
@@ -237,16 +244,26 @@ watch(
 </script>
 
 <template>
-  <div class="chatbot-satisfaction-node">
-    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
+  <div class="chatbot-satisfaction-node chatbot-workbench-node">
+    <Handle
+      id="target"
+      type="target"
+      :position="Position.Top"
+      class="handle-target"
+    />
 
-    <VCard class="satisfaction-card" elevation="2">
+    <VCard class="satisfaction-card chatbot-workbench-card" elevation="2">
       <VCardTitle
-        class="d-flex align-center justify-space-between pa-2 node-drag-handle"
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle chatbot-workbench-header"
       >
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-star" color="primary" size="20" />
-          <span class="text-sm font-weight-medium">{{
+        <div class="d-flex align-center ga-2 chatbot-workbench-identity">
+          <VIcon
+            icon="tabler-star"
+            color="primary"
+            size="20"
+            class="chatbot-workbench-icon"
+          />
+          <span class="text-sm font-weight-medium chatbot-workbench-title">{{
             t('chatbot_satisfaction')
           }}</span>
         </div>
@@ -255,12 +272,12 @@ watch(
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
+      <VCardText class="pa-3 chatbot-workbench-body">
         <VTextField
           v-model="satisfactionData.title"
           :placeholder="t('chatbot_satisfaction_title_placeholder')"
@@ -272,13 +289,13 @@ watch(
         />
 
         <div class="mb-3 message-textarea-wrapper">
-          <VTextarea
+          <ApiVariableField
             id="message-textarea"
             v-model="satisfactionData.message"
+            :variables="availableVariables"
             :placeholder="t('chatbot_message_placeholder')"
-            variant="outlined"
-            density="compact"
-            rows="3"
+            multiline
+            :rows="3"
             :counter="maxMessageLength"
             :maxlength="maxMessageLength"
             hide-details

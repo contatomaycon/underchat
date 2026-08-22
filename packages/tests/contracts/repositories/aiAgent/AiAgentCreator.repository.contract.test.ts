@@ -101,7 +101,7 @@ describe('AiAgentCreatorRepository', () => {
 
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
-        base_url: 'https://api.deepseek.com/v1',
+        base_url: 'https://api.deepseek.com',
       })
     );
   });

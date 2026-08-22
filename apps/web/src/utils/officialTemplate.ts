@@ -9,8 +9,17 @@ import type {
 } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 
 export type OfficialTemplate = OfficialOpeningTemplate;
-export type OfficialTemplateVariable = IOfficialTemplateVariable;
-export type OfficialTemplateVariableValue = IOfficialTemplateVariableValue;
+export type OfficialTemplateParameterFormat = 'POSITIONAL' | 'NAMED';
+export type OfficialTemplateVariable = IOfficialTemplateVariable & {
+  parameter_name?: string | null;
+};
+export type OfficialTemplateVariableValue = Omit<
+  IOfficialTemplateVariableValue,
+  'value'
+> & {
+  parameter_name?: string | null;
+  value: string;
+};
 
 export interface OfficialTemplateOption {
   value: string;
@@ -95,17 +104,45 @@ export const createOfficialTemplateOptions = (
     template,
   }));
 
+type OfficialTemplateVariableIdentifier = string | number;
+
+const normalizeParameterName = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized || null;
+};
+
+const variableIdentifier = (
+  variable: Pick<OfficialTemplateVariable, 'index' | 'parameter_name'>
+): OfficialTemplateVariableIdentifier =>
+  normalizeParameterName(variable.parameter_name) ?? variable.index;
+
 const variableKey = (
   componentType: OfficialTemplateVariableComponent,
-  index: number,
+  identifier: OfficialTemplateVariableIdentifier,
   buttonIndex?: number | null
 ) => {
   if (componentType === 'BUTTON') {
-    return `${componentType}:${buttonIndex ?? 0}:${index}`;
+    return `${componentType}:${buttonIndex ?? 0}:${identifier}`;
   }
 
-  return `${componentType}:${index}`;
+  return `${componentType}:${identifier}`;
 };
+
+export const formatOfficialTemplateVariableToken = (
+  variable: Pick<OfficialTemplateVariable, 'index' | 'parameter_name'>
+) => `{{${variableIdentifier(variable)}}}`;
+
+export const formatOfficialTemplateVariableLabel = (
+  variable: Pick<
+    OfficialTemplateVariable,
+    'component_type' | 'index' | 'parameter_name'
+  >
+) =>
+  `${variable.component_type} ${formatOfficialTemplateVariableToken(variable)}`;
 
 export const createManualOfficialTemplateVariable = (
   index: number
@@ -125,12 +162,61 @@ export const refreshOfficialTemplateVariableKey = <
   ...variable,
   key: variableKey(
     variable.component_type,
-    variable.index,
+    variableIdentifier(variable),
     variable.button_index ?? null
   ),
+  parameter_name: normalizeParameterName(variable.parameter_name),
   button_index:
     variable.component_type === 'BUTTON' ? (variable.button_index ?? 0) : null,
 });
+
+export const normalizeEditableOfficialTemplateVariables = (
+  variables?: unknown[]
+): OfficialTemplateVariableValue[] => {
+  const rawVariables = Array.isArray(variables) ? variables : [];
+
+  return rawVariables.map((variable, index) => {
+    if (!variable || typeof variable !== 'object' || Array.isArray(variable)) {
+      return createManualOfficialTemplateVariable(index);
+    }
+
+    const record = variable as Record<string, unknown>;
+    const componentType: OfficialTemplateVariableComponent =
+      record.component_type === 'HEADER' ||
+      record.component_type === 'FOOTER' ||
+      record.component_type === 'BUTTON'
+        ? record.component_type
+        : 'BODY';
+    const variableIndex =
+      typeof record.index === 'number' &&
+      Number.isFinite(record.index) &&
+      record.index > 0
+        ? record.index
+        : index + 1;
+    const rawValue = record.value;
+
+    return refreshOfficialTemplateVariableKey({
+      key:
+        typeof record.key === 'string'
+          ? record.key
+          : variableKey(componentType, variableIndex),
+      component_type: componentType,
+      index: variableIndex,
+      parameter_name: normalizeParameterName(record.parameter_name),
+      button_index:
+        typeof record.button_index === 'number' &&
+        Number.isFinite(record.button_index)
+          ? record.button_index
+          : null,
+      value:
+        typeof rawValue === 'number' && Number.isFinite(rawValue)
+          ? String(rawValue)
+          : typeof rawValue === 'string'
+            ? rawValue
+            : '',
+    });
+  });
+};
 
 export const createOfficialTemplateVariableValues = (
   variables: OfficialTemplateVariable[] | undefined,
@@ -144,28 +230,82 @@ export const createOfficialTemplateVariableValues = (
     key: variable.key,
     component_type: variable.component_type,
     index: variable.index,
+    parameter_name: normalizeParameterName(variable.parameter_name),
     button_index: variable.button_index ?? null,
     value: currentValueMap.get(variable.key) ?? '',
   }));
 };
 
+export const createOfficialTemplateVariableValueRecord = (
+  variables: OfficialTemplateVariable[] | undefined,
+  currentValues: Readonly<Record<string, string | number | undefined>> = {}
+): Record<string, string> =>
+  Object.fromEntries(
+    (variables ?? []).map((variable) => {
+      const currentValue = currentValues[variable.key];
+
+      return [
+        variable.key,
+        typeof currentValue === 'number'
+          ? String(currentValue)
+          : (currentValue ?? ''),
+      ];
+    })
+  );
+
 export const buildOfficialTemplateVariablePayload = (
   variables: OfficialTemplateVariable[],
-  values: Record<string, string>
+  values: Record<string, string | number>
 ): OfficialTemplateVariableValue[] =>
-  variables.map((variable) => ({
-    key: variable.key,
-    component_type: variable.component_type,
-    index: variable.index,
-    button_index: variable.button_index ?? null,
-    value: values[variable.key]?.trim() ?? '',
-  }));
+  variables.map((variable) => {
+    const rawValue = values[variable.key];
+    return {
+      key: variable.key,
+      component_type: variable.component_type,
+      index: variable.index,
+      parameter_name: normalizeParameterName(variable.parameter_name),
+      button_index: variable.button_index ?? null,
+      value:
+        typeof rawValue === 'number'
+          ? String(rawValue)
+          : (rawValue?.trim() ?? ''),
+    };
+  });
+
+const findVariableForPlaceholder = (input: {
+  token: string;
+  componentType: OfficialTemplateVariableComponent;
+  variables: OfficialTemplateVariable[];
+  buttonIndex?: number | null;
+}) => {
+  const parameterName = /^\d+$/u.test(input.token) ? null : input.token;
+  const index = parameterName ? null : Number(input.token);
+
+  return input.variables.find((variable) => {
+    if (variable.component_type !== input.componentType) {
+      return false;
+    }
+    if (
+      input.componentType === 'BUTTON' &&
+      (variable.button_index ?? 0) !== (input.buttonIndex ?? 0)
+    ) {
+      return false;
+    }
+
+    return parameterName
+      ? normalizeParameterName(variable.parameter_name) === parameterName
+      : !normalizeParameterName(variable.parameter_name) &&
+          variable.index === index;
+  });
+};
 
 export const fillOfficialTemplateText = (input: {
   text: string | null | undefined;
   componentType: OfficialTemplateVariableComponent;
   variables: OfficialTemplateVariable[];
-  values?: Record<string, string> | OfficialTemplateVariableValue[];
+  values?:
+    | Record<string, string | number>
+    | Array<OfficialTemplateVariableValue & { value: string | number }>;
   buttonIndex?: number | null;
 }) => {
   if (!input.text) {
@@ -176,24 +316,43 @@ export const fillOfficialTemplateText = (input: {
     ? new Map(input.values.map((variable) => [variable.key, variable.value]))
     : new Map(Object.entries(input.values ?? {}));
 
-  return input.text.replace(/\{\{\s*(\d+)\s*\}\}/gu, (_, index: string) => {
-    const key = variableKey(
-      input.componentType,
-      Number(index),
-      input.buttonIndex
-    );
-    const value = valueMap.get(key)?.trim();
-    const sample = input.variables.find(
-      (variable) => variable.key === key
-    )?.sample;
+  return input.text.replace(
+    /\{\{([1-9]\d*|[a-z][a-z0-9_]*)\}\}/gu,
+    (placeholder, token: string, offset: number, source: string) => {
+      if (
+        source[offset - 1] === '{' ||
+        source[offset + placeholder.length] === '}'
+      ) {
+        return placeholder;
+      }
+      const variable = findVariableForPlaceholder({
+        token,
+        componentType: input.componentType,
+        variables: input.variables,
+        buttonIndex: input.buttonIndex,
+      });
+      const key =
+        variable?.key ??
+        variableKey(input.componentType, token, input.buttonIndex);
+      const rawValue = valueMap.get(key);
+      const value =
+        typeof rawValue === 'number' ? String(rawValue) : rawValue?.trim();
+      const sample = variable?.sample;
 
-    return value || sample || `{{${index}}}`;
-  });
+      return value || sample || `{{${token}}}`;
+    }
+  );
 };
+
+export const containsUnderchatVariableTag = (value: unknown): boolean =>
+  typeof value === 'string' &&
+  /\{\{\s*[A-Za-z_][\w]*(?:\.[\w]+)*\s*\}\}/u.test(value);
 
 export const buildOfficialTemplatePreview = (
   template: OfficialTemplate | null | undefined,
-  values?: Record<string, string> | OfficialTemplateVariableValue[],
+  values?:
+    | Record<string, string | number>
+    | Array<OfficialTemplateVariableValue & { value: string | number }>,
   variableOverride?: OfficialTemplateVariable[]
 ): OfficialTemplatePreview | null => {
   if (!template) {

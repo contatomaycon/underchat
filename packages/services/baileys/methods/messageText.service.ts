@@ -25,7 +25,8 @@ export class BaileysMessageTextService {
       linkPreview?: WAUrlInfo | null;
       mentions?: string[];
       contextInfo?: proto.IContextInfo;
-    }
+    },
+    beforeProviderInvoke?: () => Promise<void>
   ): Promise<WAMessage | undefined> {
     const content: AnyMessageContent = {
       text,
@@ -34,7 +35,14 @@ export class BaileysMessageTextService {
       contextInfo: options?.contextInfo,
     };
 
-    return this.baileysHelpersService.send(jid, content, options);
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          content,
+          options,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, content, options);
   }
 
   /**
@@ -44,13 +52,18 @@ export class BaileysMessageTextService {
     jid: string,
     text: string,
     quoted: WAMessage,
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
-    return this.baileysHelpersService.send(
-      jid,
-      { text },
-      { ...options, quoted }
-    );
+    const sendOptions = { ...options, quoted };
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          { text },
+          sendOptions,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, { text }, sendOptions);
   }
 
   /**
@@ -72,12 +85,16 @@ export class BaileysMessageTextService {
     jid: string,
     msg: WAMessage,
     force = false,
-    options?: MiscMessageGenerationOptions
+    options?: MiscMessageGenerationOptions,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
-    return this.baileysHelpersService.send(
-      jid,
-      { forward: msg, force },
-      options
-    );
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          { forward: msg, force },
+          options,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, { forward: msg, force }, options);
   }
 }

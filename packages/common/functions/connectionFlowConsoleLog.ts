@@ -1,4 +1,7 @@
-type ConnectionFlowFields = Record<string, unknown>;
+import { createHash } from 'node:crypto';
+import { workerErrorDiagnostics } from '@core/common/functions/workerErrorDiagnostics';
+
+export type ConnectionFlowFields = Record<string, unknown>;
 
 const SENSITIVE_KEYS = new Set([
   'authenticatordata',
@@ -18,6 +21,10 @@ const SENSITIVE_KEYS = new Set([
   'userhandle',
   'webauthnassertion',
 ]);
+const SAFE_OPERATIONAL_LABEL_PATTERN = /^[a-z][a-z0-9_.:-]{0,159}$/;
+const SAFE_INTERNAL_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_.:-]{0,159}$/;
+const SAFE_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function normalizeKey(key: string): string {
   return key.replaceAll(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -32,6 +39,44 @@ function isSensitiveKey(key: string): boolean {
     normalized.includes('authenticatordata') ||
     normalized.includes('webauthnassertion')
   );
+}
+
+function isIdentifierKey(key: string): boolean {
+  const normalized = normalizeKey(key);
+  return (
+    normalized.endsWith('jid') ||
+    normalized.endsWith('jidalt') ||
+    normalized === 'phone' ||
+    normalized.endsWith('phonenumber') ||
+    normalized === 'redactedphone' ||
+    normalized === 'participant' ||
+    normalized === 'author' ||
+    normalized === 'from' ||
+    normalized === 'to' ||
+    normalized.endsWith('messageid') ||
+    normalized.endsWith('chatid') ||
+    normalized.endsWith('callid')
+  );
+}
+
+function isLocationOrCredentialKey(key: string): boolean {
+  const normalized = normalizeKey(key);
+  return (
+    normalized.includes('url') ||
+    normalized.includes('dsn') ||
+    normalized.includes('connectionstring') ||
+    normalized.includes('cookie') ||
+    normalized.includes('credential') ||
+    normalized.includes('password') ||
+    normalized.includes('secret') ||
+    (normalized.includes('proxy') && normalized !== 'proxyenabled')
+  );
+}
+
+function hashIdentifier(value: unknown): string {
+  const raw = typeof value === 'string' ? value.trim() : String(value ?? '');
+  if (!raw) return '';
+  return `sha256:${createHash('sha256').update(raw).digest('hex')}`;
 }
 
 function redactedMetadata(value: unknown): Record<string, unknown> {
@@ -57,8 +102,27 @@ function safeStringify(value: unknown): string {
   try {
     return JSON.stringify(value);
   } catch {
-    return String(value);
+    return '[unserializable]';
   }
+}
+
+function redactedStringMetadata(value: string): Record<string, unknown> {
+  return {
+    redacted: true,
+    present: value.length > 0,
+    length: value.length,
+    sha256: hashIdentifier(value),
+  };
+}
+
+function isSafeInternalIdentifier(key: string, value: string): boolean {
+  if (key === 'revisionid' && /^\d{1,20}$/.test(value)) {
+    return true;
+  }
+  return (
+    SAFE_UUID_PATTERN.test(value) ||
+    SAFE_INTERNAL_IDENTIFIER_PATTERN.test(value)
+  );
 }
 
 function sanitizeValue(
@@ -71,11 +135,16 @@ function sanitizeValue(
     return redactedMetadata(value);
   }
 
+  if (isIdentifierKey(key)) {
+    return hashIdentifier(value);
+  }
+
+  if (isLocationOrCredentialKey(key)) {
+    return redactedMetadata(value);
+  }
+
   if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: value.message,
-    };
+    return workerErrorDiagnostics(value);
   }
 
   if (value instanceof Date) {
@@ -85,11 +154,42 @@ function sanitizeValue(
   if (
     value === null ||
     value === undefined ||
-    typeof value === 'string' ||
     typeof value === 'number' ||
     typeof value === 'boolean'
   ) {
     return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = normalizeKey(key);
+    if (
+      normalized === 'workerid' ||
+      normalized === 'accountid' ||
+      normalized === 'sessionid' ||
+      normalized === 'traceid' ||
+      normalized === 'revisionid' ||
+      normalized === 'connectionepoch'
+    ) {
+      return isSafeInternalIdentifier(normalized, value)
+        ? value
+        : redactedStringMetadata(value);
+    }
+    if (
+      normalized === 'event' ||
+      normalized === 'provider' ||
+      normalized === 'stage' ||
+      normalized === 'status' ||
+      normalized === 'state' ||
+      normalized === 'reason' ||
+      normalized === 'source' ||
+      normalized === 'type' ||
+      normalized.endsWith('errorcode')
+    ) {
+      return SAFE_OPERATIONAL_LABEL_PATTERN.test(value)
+        ? value
+        : redactedStringMetadata(value);
+    }
+    return redactedStringMetadata(value);
   }
 
   if (typeof value === 'bigint') {
@@ -135,22 +235,36 @@ export function logConnectionFlowConsole(
   event: string,
   fields: ConnectionFlowFields = {}
 ): void {
-  const seen = new WeakSet<object>();
   const payload: ConnectionFlowFields = {
     event,
     timestamp: new Date().toISOString(),
+    ...sanitizeConnectionFlowFields(fields),
   };
-
-  for (const [key, value] of Object.entries(fields)) {
-    payload[key] = sanitizeValue(key, value, seen, 0);
-  }
 
   try {
     console.log('[CONNECTION_FLOW]', JSON.stringify(payload));
   } catch (error) {
     console.log('[CONNECTION_FLOW]', event, {
-      serialization_error:
-        error instanceof Error ? error.message : String(error),
+      serialization_error: workerErrorDiagnostics(error),
     });
   }
+}
+
+/**
+ * Applies the same fail-closed redaction policy to every connection lifecycle
+ * sink. Keeping this separate from the console writer prevents a second sink
+ * from accidentally emitting the unsanitized context that was passed to the
+ * primary connection-flow log.
+ */
+export function sanitizeConnectionFlowFields(
+  fields: ConnectionFlowFields = {}
+): ConnectionFlowFields {
+  const seen = new WeakSet<object>();
+  const sanitized: ConnectionFlowFields = {};
+
+  for (const [key, value] of Object.entries(fields)) {
+    sanitized[key] = sanitizeValue(key, value, seen, 0);
+  }
+
+  return sanitized;
 }

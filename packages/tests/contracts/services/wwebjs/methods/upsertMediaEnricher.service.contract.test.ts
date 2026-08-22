@@ -54,4 +54,40 @@ describe('WwebjsUpsertMediaEnricher', () => {
       source: 'wwebjs',
     });
   });
+
+  it('maps media album metadata from the new $1 parent key shape', () => {
+    const service = new WwebjsUpsertMediaEnricher(
+      {} as never
+    ) as unknown as WwebjsAlbumEnricher;
+    const content: Partial<IContent> = { type: EMessageType.image };
+    const serializedId = 'false_158733669765176@lid_3EB0D96A98D7EC10E7C610';
+
+    service.enrichAlbum(
+      content,
+      {
+        _data: {
+          associationType: 'MEDIA_ALBUM',
+          parentMsgKey: {
+            fromMe: false,
+            remote: '158733669765176@lid',
+            id: '3EB0D96A98D7EC10E7C610',
+            $1: serializedId,
+          },
+          messageIndex: 3,
+        },
+      },
+      {
+        type: EMessageType.image,
+        message: { key: { id: 'image-message-id' } },
+      } as IUpsertMessage
+    );
+
+    expect(content.album).toEqual({
+      id: serializedId,
+      parent_message_id: serializedId,
+      item_index: 3,
+      association_type: 'MEDIA_ALBUM',
+      source: 'wwebjs',
+    });
+  });
 });

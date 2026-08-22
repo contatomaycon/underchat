@@ -14,12 +14,11 @@ import (
 	groupRecord "go.mau.fi/libsignal/groups/state/record"
 	"go.mau.fi/libsignal/keys/identity"
 	"go.mau.fi/libsignal/protocol"
-	"go.mau.fi/libsignal/serialize"
 	"go.mau.fi/libsignal/state/record"
 	"go.mau.fi/libsignal/state/store"
 )
 
-var SignalProtobufSerializer = serialize.NewProtoBufSerializer()
+var SignalProtobufSerializer = NewCanonicalSignalSerializer()
 
 var _ store.SignalProtocol = (*Device)(nil)
 

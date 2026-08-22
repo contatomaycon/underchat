@@ -33,6 +33,17 @@ export const transcribeAudioSchema = {
       },
       { description: 'Successful' }
     ),
+    400: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Optional(Type.Boolean({ default: false })),
+        message: Type.String(),
+        data: Type.Optional(Type.Null()),
+        statusCode: Type.Optional(Type.Number()),
+        error: Type.Optional(Type.String()),
+      },
+      { description: 'Bad Request' }
+    ),
     401: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -50,6 +61,15 @@ export const transcribeAudioSchema = {
         data: Type.Null(),
       },
       { description: 'Forbidden' }
+    ),
+    404: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ default: false }),
+        message: Type.String(),
+        data: Type.Null(),
+      },
+      { description: 'Not Found' }
     ),
     500: Type.Object(
       {

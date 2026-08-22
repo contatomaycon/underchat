@@ -22,6 +22,7 @@ export class ScheduleControlRepository {
       .select({
         schedule_id: schedule.schedule_id,
         account_id: schedule.account_id,
+        worker_id: schedule.worker_id,
         status: schedule.status,
         send_date: schedule.send_date,
       })
@@ -42,6 +43,7 @@ export class ScheduleControlRepository {
     return {
       schedule_id: result[0].schedule_id,
       account_id: result[0].account_id,
+      worker_id: result[0].worker_id,
       status: result[0].status as EScheduleStatus,
       send_date: result[0].send_date,
     };

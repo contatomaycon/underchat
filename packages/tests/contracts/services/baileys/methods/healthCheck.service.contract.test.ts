@@ -4,6 +4,7 @@ jest.mock('@core/config/environments', () => ({
   baileysEnvironment: {
     baileysAccountId: 'account-1',
     baileysWorkerId: 'worker-1',
+    runtimeGeneration: 7,
   },
 }));
 
@@ -49,6 +50,7 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { BaileysHealthCheckService } from '@core/services/baileys/methods/healthCheck.service';
+import { ProviderInvocationSingleFlight } from '@core/common/functions/providerInvocationSingleFlight';
 
 describe('BaileysHealthCheckService', () => {
   const makeService = () => {
@@ -60,7 +62,7 @@ describe('BaileysHealthCheckService', () => {
       updateWithOCC: jest.fn(async () => 'updated'),
     };
     const balanceWorkerStatusGrpcClientService = {
-      notifyWorkerStatus: jest.fn(async () => undefined),
+      notifyWorkerStatus: jest.fn(async (_payload: unknown) => undefined),
     };
 
     const service = new BaileysHealthCheckService(
@@ -137,6 +139,26 @@ describe('BaileysHealthCheckService', () => {
     service.resetLastKnownStatus();
 
     expect((service as any).lastKnownStatus).toBe(Status.initial);
+    expect((service as any).lastKnownWorkerStatus).toBe(
+      EWorkerStatus.disponible
+    );
+  });
+
+  it('records a transient disconnect without publishing a central status', async () => {
+    const { service } = makeService();
+    const notifyStatusChangeSpy = jest
+      .spyOn(service as any, 'notifyStatusChange')
+      .mockResolvedValue(undefined);
+
+    await service.notifyDisconnected('temporary network loss', {
+      detectedStatus: Status.connecting,
+      workerStatus: EWorkerStatus.disponible,
+      providerState: 'reconnecting',
+      publishStatus: false,
+    });
+
+    expect(notifyStatusChangeSpy).not.toHaveBeenCalled();
+    expect((service as any).lastKnownStatus).toBe(Status.connecting);
     expect((service as any).lastKnownWorkerStatus).toBe(
       EWorkerStatus.disponible
     );
@@ -221,8 +243,10 @@ describe('BaileysHealthCheckService', () => {
       Status.connected,
       EWorkerStatus.online
     );
-    expect(centrifugo.publishSub).toHaveBeenCalledWith(
-      'channel-account-1',
+    expect(centrifugo.publishSub).not.toHaveBeenCalled();
+    expect(
+      balanceWorkerStatusGrpcClientService.notifyWorkerStatus
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         status: Status.connected,
         worker_status_id: EWorkerStatus.online,
@@ -231,13 +255,201 @@ describe('BaileysHealthCheckService', () => {
         session_ready: true,
       })
     );
-    expect(
-      balanceWorkerStatusGrpcClientService.notifyWorkerStatus
-    ).toHaveBeenCalled();
+  });
+
+  it('shares an open-socket provider probe across concurrent readiness callers', async () => {
+    const { service } = makeService();
+    let releasePrivacyProbe!: () => void;
+    const privacyProbe = new Promise<void>((resolve) => {
+      releasePrivacyProbe = resolve;
+    });
+    const socket = {
+      ws: { isOpen: true },
+      user: { id: '5511999999999@s.whatsapp.net' },
+      fetchPrivacySettings: jest.fn(() => privacyProbe),
+      onWhatsApp: jest.fn(async () => [{ exists: true }]),
+    };
+
+    service.configure({
+      getSocket: () => socket as never,
+      getStatus: () => Status.connecting,
+      getCode: () => ECodeMessage.awaitConnection,
+      reconnect: jest.fn(),
+      isConnected: () => false,
+      hasSession: () => true,
+      isIncomingBound: () => true,
+    });
+
+    const first = service.verifyCurrentSession();
+    const second = service.verifyCurrentSession();
+    await Promise.resolve();
+
+    expect(socket.fetchPrivacySettings).toHaveBeenCalledTimes(1);
+    expect(socket.onWhatsApp).not.toHaveBeenCalled();
+
+    releasePrivacyProbe();
+
+    await expect(first).resolves.toMatchObject({
+      detectedStatus: Status.connected,
+      session_ready: true,
+      can_send: true,
+    });
+    await expect(second).resolves.toMatchObject({
+      detectedStatus: Status.connected,
+      session_ready: true,
+      can_send: true,
+    });
+    expect(socket.fetchPrivacySettings).toHaveBeenCalledTimes(1);
+    expect(socket.onWhatsApp).toHaveBeenCalledTimes(1);
+  });
+
+  it('fences a timed-out provider probe, observes its late rejection, and accepts only a recreated socket', async () => {
+    jest.useFakeTimers();
+    const { service } = makeService();
+    const onProviderProbeTimeout = jest.fn();
+    let rejectPrivacyProbe: (reason?: unknown) => void = () => undefined;
+    const oldSocket = {
+      ws: { isOpen: true },
+      user: { id: '5511999999999@s.whatsapp.net' },
+      fetchPrivacySettings: jest.fn(
+        () =>
+          new Promise<unknown>((_resolve, reject) => {
+            rejectPrivacyProbe = reject;
+          })
+      ),
+      onWhatsApp: jest.fn(async () => [{ exists: true }]),
+    };
+    let activeSocket = oldSocket;
+
+    service.configure({
+      getSocket: () => activeSocket as never,
+      getStatus: () => Status.connected,
+      getCode: () => ECodeMessage.connectionEstablished,
+      reconnect: jest.fn(),
+      isConnected: () => true,
+      hasSession: () => true,
+      isIncomingBound: () => true,
+      onProviderProbeTimeout,
+    });
+
+    const timedOutCheck = service.runHealthCheck();
+    await jest.advanceTimersByTimeAsync(10_000);
+    await expect(timedOutCheck).resolves.toMatchObject({
+      detectedStatus: Status.connecting,
+      session_ready: false,
+    });
+    expect(oldSocket.fetchPrivacySettings).toHaveBeenCalledTimes(1);
+    expect(oldSocket.onWhatsApp).not.toHaveBeenCalled();
+    expect(onProviderProbeTimeout).toHaveBeenCalledTimes(1);
+
+    await expect(service.runHealthCheck()).resolves.toMatchObject({
+      detectedStatus: Status.connecting,
+      session_ready: false,
+    });
+    expect(oldSocket.fetchPrivacySettings).toHaveBeenCalledTimes(1);
+    expect(onProviderProbeTimeout).toHaveBeenCalledTimes(2);
+
+    rejectPrivacyProbe(new Error('late privacy failure'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(console.warn).toHaveBeenCalledWith(
+      '[WhatsappProviderAuxiliary] operation_rejected_after_timeout',
+      expect.objectContaining({
+        provider: 'baileys',
+        operation: 'health:fetchPrivacySettings',
+      })
+    );
+
+    activeSocket = {
+      ws: { isOpen: true },
+      user: { id: '5511999999999@s.whatsapp.net' },
+      fetchPrivacySettings: jest.fn(async () => ({})),
+      onWhatsApp: jest.fn(async () => [{ exists: true }]),
+    };
+    await expect(service.runHealthCheck()).resolves.toMatchObject({
+      detectedStatus: Status.connected,
+      session_ready: true,
+      can_send: true,
+    });
+    expect(activeSocket.fetchPrivacySettings).toHaveBeenCalledTimes(1);
+    expect(activeSocket.onWhatsApp).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats healthy provider capacity saturation as a skipped probe without recovery', async () => {
+    const { service } = makeService();
+    const onProviderProbeTimeout = jest.fn();
+    const socket = {
+      ws: { isOpen: true },
+      user: { id: '5511999999999@s.whatsapp.net' },
+      fetchPrivacySettings: jest.fn(async () => ({})),
+      onWhatsApp: jest.fn(async () => [{ exists: true }]),
+    };
+    const admission = new ProviderInvocationSingleFlight();
+    const leases = Array.from({ length: 4 }, () => admission.acquire(socket));
+    service.configure({
+      getSocket: () => socket as never,
+      getStatus: () => Status.connected,
+      getCode: () => ECodeMessage.connectionEstablished,
+      reconnect: jest.fn(),
+      isConnected: () => true,
+      hasSession: () => true,
+      isIncomingBound: () => true,
+      onProviderProbeTimeout,
+    });
+
+    try {
+      await expect(service.runHealthCheck()).resolves.toMatchObject({
+        isHealthy: true,
+        detectedStatus: Status.connecting,
+        session_ready: false,
+        degraded_reason: 'outbound_provider_capacity_saturated',
+      });
+      expect(socket.fetchPrivacySettings).not.toHaveBeenCalled();
+      expect(socket.onWhatsApp).not.toHaveBeenCalled();
+      expect(onProviderProbeTimeout).not.toHaveBeenCalled();
+    } finally {
+      leases.forEach((lease) => lease?.releaseBeforeStart());
+    }
+  });
+
+  it('does not expose provider probe error contents as degraded reasons', async () => {
+    const { service } = makeService();
+    const secret =
+      'postgres://worker:password@database:5432/underchat capability-secret qr-secret session-secret';
+    const socket = {
+      ws: { isOpen: true },
+      user: { id: '5511999999999@s.whatsapp.net' },
+      fetchPrivacySettings: jest.fn(async () => {
+        throw Object.assign(new Error(secret), { code: '57P01' });
+      }),
+      onWhatsApp: jest.fn(async () => [{ exists: true }]),
+    };
+    service.configure({
+      getSocket: () => socket as never,
+      getStatus: () => Status.connected,
+      getCode: () => ECodeMessage.connectionEstablished,
+      reconnect: jest.fn(),
+      isConnected: () => true,
+      hasSession: () => true,
+      isIncomingBound: () => true,
+    });
+
+    const result = await (service as any).checkConnectivity(
+      socket,
+      Status.connected
+    );
+
+    expect(result).toMatchObject({
+      reason: 'Session probe failed',
+      degraded_reason: 'session_probe_failed:57p01',
+      session_ready: false,
+    });
+    expect(JSON.stringify(result)).not.toContain(secret);
   });
 
   it('keeps reported connected socket in connecting state on transient closed websocket', async () => {
-    const { service } = makeService();
+    const { service, centrifugo, balanceWorkerStatusGrpcClientService } =
+      makeService();
     const mismatch = jest.fn();
 
     service.configure({
@@ -264,9 +476,310 @@ describe('BaileysHealthCheckService', () => {
       workerStatus: EWorkerStatus.disponible,
       session_ready: false,
     });
-    expect(mismatch).toHaveBeenCalledWith(
-      Status.connecting,
-      EWorkerStatus.disponible
+    expect(mismatch).not.toHaveBeenCalled();
+    expect(centrifugo.publishSub).not.toHaveBeenCalled();
+    expect(
+      balanceWorkerStatusGrpcClientService.notifyWorkerStatus
+    ).not.toHaveBeenCalled();
+  });
+
+  it('preloads an asynchronous PostgreSQL session before bootstrap checks and reconnects it', async () => {
+    const { service } = makeService();
+    const callOrder: string[] = [];
+    let sessionKnown = false;
+    const prepareSession = jest.fn(async () => {
+      callOrder.push('prepare:start');
+      await Promise.resolve();
+      sessionKnown = true;
+      callOrder.push('prepare:done');
+    });
+    const hasSession = jest.fn(() => {
+      callOrder.push('has_session');
+      return sessionKnown;
+    });
+    const reconnect = jest.fn(() => {
+      callOrder.push('reconnect');
+      return true;
+    });
+
+    service.configure({
+      getSocket: () => undefined,
+      getStatus: () => Status.disconnected,
+      getCode: () => ECodeMessage.awaitConnection,
+      reconnect,
+      isConnected: () => false,
+      prepareSession,
+      hasSession,
+    });
+
+    await expect(service.bootstrapConnection()).resolves.toBeUndefined();
+
+    expect(prepareSession).toHaveBeenCalledTimes(1);
+    expect(hasSession).toHaveBeenCalledTimes(1);
+    expect(reconnect).toHaveBeenCalledWith({
+      initial_connection: true,
+      requested_by_user: false,
+      from_disconnect_restart: true,
+      runtime_generation: 7,
+    });
+    expect(callOrder).toEqual([
+      'prepare:start',
+      'prepare:done',
+      'has_session',
+      'reconnect',
+    ]);
+  });
+
+  it('keeps bootstrap dormant after a tombstone without reading or reconnecting the session', async () => {
+    const { service, balanceWorkerStatusGrpcClientService } = makeService();
+    const prepareSession = jest.fn(async () => false);
+    const hasSession = jest.fn(() => true);
+    const reconnect = jest.fn(() => true);
+
+    service.configure({
+      getSocket: () => undefined,
+      getStatus: () => Status.disconnected,
+      getCode: () => ECodeMessage.awaitConnection,
+      reconnect,
+      isConnected: () => false,
+      prepareSession,
+      hasSession,
+    });
+
+    await expect(service.bootstrapConnection()).resolves.toBeUndefined();
+
+    expect(prepareSession).toHaveBeenCalledTimes(1);
+    expect(hasSession).not.toHaveBeenCalled();
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(
+      balanceWorkerStatusGrpcClientService.notifyWorkerStatus
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: Status.info,
+        worker_status_id: EWorkerStatus.disponible,
+        session_ready: false,
+        degraded_reason: 'Waiting for an authorized QR connection grant',
+      })
+    );
+  });
+
+  it('fails bootstrap closed with safe offline diagnostics when PostgreSQL session preload fails', async () => {
+    const {
+      service,
+      centrifugo,
+      elasticDatabaseService,
+      balanceWorkerStatusGrpcClientService,
+    } = makeService();
+    const secret =
+      'postgres://worker:password@database/session capability-secret qr-payload';
+    const reportSecret = 'elastic://report-secret';
+    const prepareSession = jest.fn(async () => {
+      throw Object.assign(new Error(secret), { code: '42501' });
+    });
+    const hasSession = jest.fn(() => false);
+    const reconnect = jest.fn(() => true);
+
+    service.configure({
+      getSocket: () => undefined,
+      getStatus: () => Status.disconnected,
+      getCode: () => ECodeMessage.awaitConnection,
+      reconnect,
+      isConnected: () => false,
+      prepareSession,
+      hasSession,
+    });
+    elasticDatabaseService.updateWithOCC.mockRejectedValueOnce(
+      new Error(reportSecret)
+    );
+
+    await expect(service.bootstrapConnection()).rejects.toThrow(
+      'baileys_bootstrap_session_refresh_failed:42501'
+    );
+
+    expect(prepareSession).toHaveBeenCalledTimes(1);
+    expect(hasSession).not.toHaveBeenCalled();
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(centrifugo.publishSub).not.toHaveBeenCalled();
+    expect(
+      balanceWorkerStatusGrpcClientService.notifyWorkerStatus
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      balanceWorkerStatusGrpcClientService.notifyWorkerStatus
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: Status.disconnected,
+        code: ECodeMessage.connectionLost,
+        worker_status_id: EWorkerStatus.offline,
+        session_ready: false,
+        provider_state: 'bootstrap_session_refresh_failed',
+        degraded_reason: 'baileys_bootstrap_session_refresh_failed:42501',
+      })
+    );
+    expect(
+      balanceWorkerStatusGrpcClientService.notifyWorkerStatus.mock.calls[0][0]
+    ).not.toEqual(
+      expect.objectContaining({
+        qrcode: expect.anything(),
+      })
+    );
+    expect(service.getReadinessSnapshot()).toMatchObject({
+      isHealthy: false,
+      detectedStatus: Status.disconnected,
+      workerStatus: EWorkerStatus.offline,
+      provider_state: 'bootstrap_session_refresh_failed',
+      degraded_reason: 'baileys_bootstrap_session_refresh_failed:42501',
+    });
+    expect(JSON.stringify(jest.mocked(console.error).mock.calls)).not.toContain(
+      secret
+    );
+    expect(JSON.stringify(jest.mocked(console.error).mock.calls)).not.toContain(
+      reportSecret
+    );
+  });
+
+  it('does not downgrade a connection that becomes current while session preload is pending', async () => {
+    const { service, balanceWorkerStatusGrpcClientService } = makeService();
+    const secret = 'postgres://bootstrap-race-secret';
+    let rejectPreparation!: (error: Error) => void;
+    let connected = false;
+    let status = Status.connecting;
+    const prepareSession = jest.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectPreparation = reject;
+        })
+    );
+    const hasSession = jest.fn(() => true);
+    const reconnect = jest.fn(() => true);
+
+    service.configure({
+      getSocket: () => undefined,
+      getStatus: () => status,
+      getCode: () => ECodeMessage.awaitConnection,
+      reconnect,
+      isConnected: () => connected,
+      prepareSession,
+      hasSession,
+    });
+
+    const bootstrap = service.bootstrapConnection();
+    await Promise.resolve();
+    connected = true;
+    status = Status.connected;
+    rejectPreparation(Object.assign(new Error(secret), { code: '42501' }));
+
+    await expect(bootstrap).resolves.toBeUndefined();
+    expect(hasSession).not.toHaveBeenCalled();
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(
+      balanceWorkerStatusGrpcClientService.notifyWorkerStatus
+    ).not.toHaveBeenCalled();
+    expect(JSON.stringify(jest.mocked(console.error).mock.calls)).not.toContain(
+      secret
+    );
+  });
+
+  it('single-flights PostgreSQL session preload across concurrent bootstrap callers', async () => {
+    const { service } = makeService();
+    let finishPreparation!: () => void;
+    const prepareSession = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPreparation = resolve;
+        })
+    );
+    const hasSession = jest.fn(() => true);
+    const reconnect = jest.fn(() => true);
+
+    service.configure({
+      getSocket: () => undefined,
+      getStatus: () => Status.disconnected,
+      getCode: () => ECodeMessage.awaitConnection,
+      reconnect,
+      isConnected: () => false,
+      prepareSession,
+      hasSession,
+    });
+
+    const first = service.bootstrapConnection();
+    const second = service.bootstrapConnection();
+
+    expect(first).toBe(second);
+    await Promise.resolve();
+    expect(prepareSession).toHaveBeenCalledTimes(1);
+    expect(hasSession).not.toHaveBeenCalled();
+    expect(reconnect).not.toHaveBeenCalled();
+
+    finishPreparation();
+    await expect(first).resolves.toBeUndefined();
+    await expect(second).resolves.toBeUndefined();
+
+    expect(prepareSession).toHaveBeenCalledTimes(1);
+    expect(hasSession).toHaveBeenCalledTimes(1);
+    expect(reconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels an in-flight bootstrap before a stale reconnect can be scheduled', async () => {
+    const { service, balanceWorkerStatusGrpcClientService } = makeService();
+    let finishPreparation!: () => void;
+    const prepareSession = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPreparation = resolve;
+        })
+    );
+    const reconnect = jest.fn(() => true);
+
+    service.configure({
+      getSocket: () => undefined,
+      getStatus: () => Status.disconnected,
+      getCode: () => ECodeMessage.awaitConnection,
+      reconnect,
+      isConnected: () => false,
+      prepareSession,
+      hasSession: () => true,
+    });
+
+    const bootstrap = service.bootstrapConnection();
+    await Promise.resolve();
+    service.stop();
+    finishPreparation();
+
+    await expect(bootstrap).rejects.toThrow('baileys_bootstrap_cancelled');
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(
+      balanceWorkerStatusGrpcClientService.notifyWorkerStatus
+    ).not.toHaveBeenCalled();
+  });
+
+  it('fails bootstrap closed when reconnect does not acknowledge a scheduled or started attempt', async () => {
+    const { service, centrifugo, balanceWorkerStatusGrpcClientService } =
+      makeService();
+    const reconnect = jest.fn(() => false);
+
+    service.configure({
+      getSocket: () => undefined,
+      getStatus: () => Status.disconnected,
+      getCode: () => ECodeMessage.connectionLost,
+      reconnect,
+      isConnected: () => false,
+      hasSession: () => true,
+    });
+
+    await expect(service.bootstrapConnection()).rejects.toThrow(
+      'baileys_bootstrap_reconnect_not_started'
+    );
+    expect(reconnect).toHaveBeenCalledTimes(1);
+    expect(centrifugo.publishSub).not.toHaveBeenCalled();
+    expect(
+      balanceWorkerStatusGrpcClientService.notifyWorkerStatus
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: Status.disconnected,
+        worker_status_id: EWorkerStatus.offline,
+        provider_state: 'bootstrap_reconnect_not_started',
+        degraded_reason: 'baileys_bootstrap_reconnect_not_started',
+      })
     );
   });
 
@@ -275,7 +788,7 @@ describe('BaileysHealthCheckService', () => {
 
     await expect(service.bootstrapConnection()).resolves.toBeUndefined();
 
-    const reconnectAction = jest.fn();
+    const reconnectAction = jest.fn(() => true);
 
     service.configure({
       getSocket: () => undefined,
@@ -323,6 +836,7 @@ describe('BaileysHealthCheckService', () => {
       initial_connection: true,
       requested_by_user: false,
       from_disconnect_restart: true,
+      runtime_generation: 7,
     });
 
     service.configure({
@@ -336,7 +850,9 @@ describe('BaileysHealthCheckService', () => {
       hasSession: () => true,
     });
 
-    await expect(service.bootstrapConnection()).resolves.toBeUndefined();
+    await expect(service.bootstrapConnection()).rejects.toThrow(
+      'baileys_bootstrap_reconnect_failed'
+    );
 
     service.configure({
       getSocket: () => undefined,
@@ -448,10 +964,10 @@ describe('BaileysHealthCheckService', () => {
         Status.connecting
       )
     ).resolves.toMatchObject({
-      isHealthy: true,
-      reason: 'Connecting (reported by service)',
-      detectedStatus: Status.connecting,
-      workerStatus: EWorkerStatus.disponible,
+      isHealthy: false,
+      reason: 'WebSocket client state: CLOSED',
+      detectedStatus: Status.disconnected,
+      workerStatus: EWorkerStatus.offline,
       session_ready: false,
     });
 
@@ -583,7 +1099,7 @@ describe('BaileysHealthCheckService', () => {
       })
     ).resolves.toBeUndefined();
 
-    expect(centrifugo.publishSub).toHaveBeenCalled();
+    expect(centrifugo.publishSub).not.toHaveBeenCalled();
     expect(
       balanceWorkerStatusGrpcClientService.notifyWorkerStatus
     ).toHaveBeenCalled();
@@ -596,9 +1112,10 @@ describe('BaileysHealthCheckService', () => {
       'worker-1'
     );
 
-    centrifugo.publishSub.mockRejectedValueOnce(new Error('centrifugo down'));
+    const secret =
+      'postgres://worker:password@database:5432/underchat capability-secret qr-secret session-secret';
     balanceWorkerStatusGrpcClientService.notifyWorkerStatus.mockRejectedValueOnce(
-      new Error('grpc down')
+      Object.assign(new Error(secret), { code: '57P01' })
     );
 
     await expect(
@@ -609,6 +1126,9 @@ describe('BaileysHealthCheckService', () => {
         reason: 'down',
       })
     ).resolves.toBeUndefined();
+    expect(JSON.stringify(jest.mocked(console.error).mock.calls)).not.toContain(
+      secret
+    );
 
     balanceWorkerStatusGrpcClientService.notifyWorkerStatus.mockRejectedValueOnce(
       new Error('bootstrap notify down')
@@ -616,6 +1136,14 @@ describe('BaileysHealthCheckService', () => {
     await expect(
       (service as any).notifyDisponibleStatus('manual bootstrap status')
     ).resolves.toBeUndefined();
+    expect(
+      balanceWorkerStatusGrpcClientService.notifyWorkerStatus
+    ).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        runtime_generation: 7,
+      })
+    );
 
     elasticDatabaseService.indices.mockResolvedValueOnce(false);
     await expect(

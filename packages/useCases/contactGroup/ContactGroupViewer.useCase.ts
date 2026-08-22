@@ -12,15 +12,22 @@ export class ContactGroupViewerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    contactGroupId: string
+    contactGroupId: string,
+    accountId: string
   ): Promise<ViewContactGroupResponse | null> {
     const contactGroupExists =
-      await this.contactGroupService.existsContactGroupById(contactGroupId);
+      await this.contactGroupService.existsContactGroupById(
+        contactGroupId,
+        accountId
+      );
 
     if (!contactGroupExists) {
       throw new Error(t('contact_group_not_found'));
     }
 
-    return this.contactGroupService.viewContactGroupById(contactGroupId);
+    return this.contactGroupService.viewContactGroupById(
+      contactGroupId,
+      accountId
+    );
   }
 }

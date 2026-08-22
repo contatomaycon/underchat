@@ -9,6 +9,7 @@ lerna-debug.log*
 .turbo
 .scannerwork
 .certs/
+.playwright-cli
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
@@ -83,6 +84,7 @@ web_modules/
 .env.test.local
 .env.production.local
 .env.local
+.env.production
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -96,6 +98,7 @@ out
 .nuxt
 dist
 apps/underchat_authenticator/release/
+apps/underchat_chrome_extension/release/
 apps/underchat_authenticator/build/certs/
 apps/underchat_authenticator/build/electron/
 apps/underchat_authenticator/build/electron-builder-cache/

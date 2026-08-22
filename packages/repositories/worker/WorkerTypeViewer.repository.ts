@@ -19,6 +19,7 @@ export class WorkerTypeViewerRepository {
       .select({
         worker_id: worker.worker_id,
         worker_type_id: worker.worker_type_id,
+        session_storage: worker.session_storage,
       })
       .from(worker)
       .where(

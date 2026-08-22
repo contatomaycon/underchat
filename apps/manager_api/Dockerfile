@@ -63,8 +63,16 @@ WORKDIR /app
 COPY --from=deps /app/node_modules/ .
 COPY --from=pruned /app/out/full/ .
 COPY packages ./packages
+COPY apps/service_api/scripts/assertMessageUpsertArtifact.mjs /app/apps/service_api/scripts/assertMessageUpsertArtifact.mjs
 
-RUN pnpm build:manager
+RUN rm -rf /app/apps/manager_api/dist && \
+    pnpm build:manager && \
+    node /app/apps/service_api/scripts/assertMessageUpsertArtifact.mjs \
+      --window-recorder-only \
+      /app/apps/manager_api/dist/packages/services/officialWhatsappWebhookWindowRecorder.service.js && \
+    OFFICIAL_WINDOW_RECORDER_SHA256="$(sha256sum /app/apps/manager_api/dist/packages/services/officialWhatsappWebhookWindowRecorder.service.js | cut -d ' ' -f 1)" && \
+    printf '%s  /app/packages/services/officialWhatsappWebhookWindowRecorder.service.js\n' \
+      "$OFFICIAL_WINDOW_RECORDER_SHA256" > /manager-official-window-recorder.sha256
 RUN mkdir -p /build_locales
 
 COPY packages/plugins/i18next/locales /build_locales
@@ -80,13 +88,14 @@ COPY --from=builder /app/apps/manager_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/manager_api/package*.json ./apps/manager_api
-COPY --from=builder /app/apps/manager_api/downloads ./apps/manager_api/downloads
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 COPY --from=builder /app/packages/proto ./packages/proto
+COPY --from=builder /manager-official-window-recorder.sha256 /usr/local/share/underchat/manager-official-window-recorder.sha256
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ffmpeg \
+      fonts-noto-core \
       librdkafka1 \
       curl && \
     apt-get clean && \
@@ -96,4 +105,4 @@ EXPOSE 3002
 
 WORKDIR /app/apps/manager_api
 
-CMD ["node", "src/index.js"]
+CMD ["sh", "-c", "sha256sum -c /usr/local/share/underchat/manager-official-window-recorder.sha256 && exec node src/index.js"]

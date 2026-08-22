@@ -1,5 +1,10 @@
 import 'reflect-metadata';
 
+jest.mock('@whiskeysockets/baileys', () => ({
+  jidNormalizedUser: jest.fn((jid: string) => jid),
+  proto: {},
+}));
+
 jest.mock('@core/services/elasticDatabase.service', () => ({
   ElasticDatabaseService: class ElasticDatabaseService {},
 }));

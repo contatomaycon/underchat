@@ -146,6 +146,47 @@ describe('wwebjsUpsertBuilders', () => {
     }
   });
 
+  it('uses distinct $1 ids from the new WWebJS shape in builder events', () => {
+    const firstId = 'false_158733669765176@lid_STANZA-ONE';
+    const secondId = 'false_158733669765176@lid_STANZA-TWO';
+    const first = buildDeleteMessageUpsert(
+      {
+        id: {
+          fromMe: false,
+          remote: '158733669765176@lid',
+          remoteJid: '158733669765176@lid',
+          id: 'STANZA-ONE',
+          $1: firstId,
+        },
+        from: '158733669765176@lid',
+        fromMe: false,
+        timestamp: 1,
+      } as never,
+      null,
+      { remoteJid: '158733669765176@lid' }
+    );
+    const second = buildDeleteMessageUpsert(
+      {
+        id: {
+          fromMe: false,
+          remote: '158733669765176@lid',
+          remoteJid: '158733669765176@lid',
+          id: 'STANZA-TWO',
+          $1: secondId,
+        },
+        from: '158733669765176@lid',
+        fromMe: false,
+        timestamp: 2,
+      } as never,
+      null,
+      { remoteJid: '158733669765176@lid' }
+    );
+
+    expect(first?.message.key.id).toBe(firstId);
+    expect(second?.message.key.id).toBe(secondId);
+    expect(first?.message.key.id).not.toBe(second?.message.key.id);
+  });
+
   it('builds revoke-me and edit upserts and handles missing ids', () => {
     const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1711111112000);
 
@@ -276,6 +317,7 @@ describe('wwebjsUpsertBuilders', () => {
       );
       expect(withCallId.message.messageTimestamp).toBe(1711111113);
       expect(withCallId.is_call_event).toBe(true);
+      expect(withCallId.event_revision).toBe('call-id-1');
 
       const withoutCallId = buildCallUpsert(
         '55117777@c.us',
@@ -291,6 +333,7 @@ describe('wwebjsUpsertBuilders', () => {
         'Ligacao recebida'
       );
       expect(withoutCallId.message.messageTimestamp).toBe(1711111113);
+      expect(withoutCallId.event_revision).toBeUndefined();
       expect(withoutCallId.call_name).toBeNull();
     } finally {
       nowSpy.mockRestore();

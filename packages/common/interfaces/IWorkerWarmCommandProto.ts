@@ -25,11 +25,13 @@ export interface IActivateWarmWorkerRequestProto {
   account_id?: string;
   server_id?: string;
   worker_type_id?: string;
+  session_storage?: string;
   lifecycle_operation_id?: string;
   remove_session?: boolean;
   remove_volume?: boolean;
   previous_worker_type_id?: string;
   previous_worker_status_id?: string;
+  lifecycle_semantic_fingerprint?: string;
   debug_trace_id?: string;
 }
 

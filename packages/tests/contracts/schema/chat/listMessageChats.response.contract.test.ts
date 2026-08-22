@@ -48,6 +48,7 @@ describe('listMessageChats response contract', () => {
     type MappingProperty = {
       type?: string;
       enabled?: boolean;
+      dynamic?: boolean;
       properties?: Record<string, MappingProperty>;
     };
     const properties = mapping.mappings.properties as Record<
@@ -56,12 +57,45 @@ describe('listMessageChats response contract', () => {
     >;
 
     expect(properties.sent_from_platform).toEqual({ type: 'boolean' });
+    expect(properties.content).toEqual(
+      expect.objectContaining({
+        type: 'nested',
+        dynamic: false,
+      })
+    );
+    expect(properties.content?.properties?.official_template).toEqual({
+      type: 'object',
+      dynamic: false,
+      enabled: false,
+    });
     expect(
       properties.content?.properties?.official?.properties?.display
     ).toEqual({
       type: 'object',
       enabled: false,
     });
+    expect(properties.content?.properties?.official?.properties?.raw).toEqual({
+      type: 'object',
+      enabled: false,
+    });
+  });
+
+  it('exposes the provider failure diagnostics used by realtime clients', () => {
+    expect(
+      Value.Check(listMessageResultSchema, {
+        message_id: 'message-failed-1',
+        chat_id: 'chat-1',
+        type_user: ETypeUserChat.operator,
+        date: '2026-08-16T19:49:55.000Z',
+        delivery_status: 'failed',
+        provider_error_code: 131047,
+        provider_status_at: '2026-08-16T19:49:59.000Z',
+      })
+    ).toBe(true);
+
+    const properties = mensageMappings().mappings.properties;
+    expect(properties.provider_error_code).toEqual({ type: 'integer' });
+    expect(properties.provider_status_at).toEqual({ type: 'date' });
   });
 
   it('exposes official display metadata for rich Meta messages', () => {
@@ -178,22 +212,34 @@ describe('listMessageChats response contract', () => {
 
     const stringify = fastJson(listMessageChatsSchema.response[200] as never);
 
-    expect(() =>
-      stringify({
-        id: null,
-        status: true,
-        message: 'chat_list_success',
-        data: {
-          pagings: {
-            current_page: 1,
-            total_pages: 1,
-            per_page: 10,
-            count: 1,
-            total: 1,
-          },
-          results: [result],
+    const serialized = stringify({
+      id: null,
+      status: true,
+      message: 'chat_list_success',
+      data: {
+        pagings: {
+          current_page: 1,
+          total_pages: 1,
+          per_page: 10,
+          count: 1,
+          total: 1,
         },
-      })
-    ).not.toThrow();
+        results: [result],
+        official_window: {
+          is_official: true,
+          state: 'open',
+          reason: 'customer_service_window_open',
+          can_send_freeform: true,
+          can_send_template: true,
+          last_inbound_at: '2026-07-03T12:00:00.000Z',
+          service_window_expires_at: '2026-07-04T12:00:00.000Z',
+        },
+      },
+    });
+
+    expect(JSON.parse(serialized).data.official_window).toMatchObject({
+      state: 'open',
+      can_send_freeform: true,
+    });
   });
 });

@@ -1,6 +1,7 @@
 import * as schema from '@core/models';
 import { chatbot } from '@core/models';
 import { EChatbotType } from '@core/common/enums/EChatbotType';
+import { EChatbotStatus } from '@core/common/enums/EChatbotStatus';
 import { ListScheduleChatbotsResponse } from '@core/schema/schedule/listScheduleChatbots/response.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
@@ -25,7 +26,8 @@ export class ScheduleChatbotsListerRepository {
       .where(
         and(
           eq(chatbot.account_id, accountId),
-          eq(chatbot.type, EChatbotType.schedule)
+          eq(chatbot.type, EChatbotType.schedule),
+          eq(chatbot.status, EChatbotStatus.active)
         )
       )
       .orderBy(asc(chatbot.name))
@@ -52,7 +54,8 @@ export class ScheduleChatbotsListerRepository {
       .where(
         and(
           eq(chatbot.chatbot_id, chatbotId),
-          eq(chatbot.account_id, accountId)
+          eq(chatbot.account_id, accountId),
+          eq(chatbot.status, EChatbotStatus.active)
         )
       )
       .execute();

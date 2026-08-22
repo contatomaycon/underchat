@@ -417,6 +417,14 @@ export function ContactFormModal({
     }
     return pt.document;
   }, [documentTypeId]);
+  const documentKeyboardType =
+    documentTypeId === CONTACT_DOCUMENT_TYPE.cnpj
+      ? 'default'
+      : Platform.OS === 'ios'
+        ? 'number-pad'
+        : 'numeric';
+  const documentInputMode =
+    documentTypeId === CONTACT_DOCUMENT_TYPE.cnpj ? undefined : 'numeric';
 
   useEffect(() => {
     if (!document || isMaskedValue(document)) return;
@@ -1195,10 +1203,8 @@ export function ContactFormModal({
                             editable={
                               !canToggleDocumentVisibility || documentVisible
                             }
-                            keyboardType={
-                              Platform.OS === 'ios' ? 'number-pad' : 'numeric'
-                            }
-                            inputMode="numeric"
+                            keyboardType={documentKeyboardType}
+                            inputMode={documentInputMode}
                             maxLength={documentMaskMaxLength}
                             placeholder={documentPlaceholder}
                             placeholderTextColor={colors.grey500}

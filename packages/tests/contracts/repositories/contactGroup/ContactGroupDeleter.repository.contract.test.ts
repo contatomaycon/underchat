@@ -24,7 +24,7 @@ describe('ContactGroupDeleterRepository', () => {
     const repository = new ContactGroupDeleterRepository({} as never);
 
     await expect(
-      repository.deleteContactGroupById(tx as never, 'cg-1')
+      repository.deleteContactGroupById(tx as never, 'cg-1', 'account-1')
     ).resolves.toBe(true);
     expect(set).toHaveBeenCalledWith({
       deleted_at: '2026-01-01T00:00:00.000Z',

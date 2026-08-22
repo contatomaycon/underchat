@@ -38,12 +38,26 @@ var NoopDevice = &Device{
 	PrivacyTokens: nilStore,
 	NCTSalt:       nilStore,
 	EventBuffer:   nilStore,
+	Transport:     nilStore,
 	LIDs:          nilStore,
 	Container:     nilStore,
 }
 
 var _ AllStores = (*NoopStore)(nil)
 var _ DeviceContainer = (*NoopStore)(nil)
+var _ TransportStore = (*NoopStore)(nil)
+
+func (n *NoopStore) PutTransportRoutingInfo(context.Context, []byte) error {
+	return n.Error
+}
+
+func (n *NoopStore) GetTransportRoutingInfo(context.Context) ([]byte, error) {
+	return nil, n.Error
+}
+
+func (n *NoopStore) DeleteTransportRoutingInfo(context.Context) error {
+	return n.Error
+}
 
 func (n *NoopStore) PutIdentity(ctx context.Context, address string, key [32]byte) error {
 	return n.Error

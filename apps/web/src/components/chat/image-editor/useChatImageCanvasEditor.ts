@@ -101,15 +101,27 @@ type EmojiOverlay = {
   resizeStartFontSize: number;
 };
 
-const editableMimeTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+const editableMimeTypes = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+]);
+const MAX_EXPORT_QUALITY = 1;
 
 const getOutputMimeType = (file: File): string => {
+  if (file.type === 'image/jpg') return 'image/jpeg';
   if (editableMimeTypes.has(file.type)) return file.type;
   return 'image/png';
 };
 
 const getEditedFileName = (file: File, mimeType: string): string => {
-  const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+  const extension =
+    mimeType === 'image/png'
+      ? 'png'
+      : mimeType === 'image/webp'
+        ? 'webp'
+        : 'jpg';
   const baseName = file.name.replace(/\.[^/.]+$/, '') || 'image';
   return `${baseName}-edited.${extension}`;
 };
@@ -135,7 +147,10 @@ const loadHtmlImage = (src: string): Promise<HTMLImageElement> =>
     image.src = src;
   });
 
-const getCanvasPoint = (event: PointerEvent, canvas: HTMLCanvasElement): Point => {
+const getCanvasPoint = (
+  event: PointerEvent,
+  canvas: HTMLCanvasElement
+): Point => {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / Math.max(1, rect.width);
   const scaleY = canvas.height / Math.max(1, rect.height);
@@ -146,7 +161,10 @@ const getCanvasPoint = (event: PointerEvent, canvas: HTMLCanvasElement): Point =
   };
 };
 
-const normalizeCropRect = (rect: CropRect, canvas: HTMLCanvasElement): CropRect => {
+const normalizeCropRect = (
+  rect: CropRect,
+  canvas: HTMLCanvasElement
+): CropRect => {
   const x = Math.max(0, Math.min(rect.x, rect.x + rect.width));
   const y = Math.max(0, Math.min(rect.y, rect.y + rect.height));
   const width = Math.min(Math.abs(rect.width), canvas.width - x);
@@ -224,7 +242,9 @@ export const useChatImageCanvasEditor = ({
   const hasCropRect = computed(() => !!cropRect.value);
   const canUndo = computed(() => historyIndex.value > 0);
   const canRedo = computed(
-    () => historyIndex.value >= 0 && historyIndex.value < historyStack.value.length - 1
+    () =>
+      historyIndex.value >= 0 &&
+      historyIndex.value < historyStack.value.length - 1
   );
   const textOverlay = reactive<TextOverlay>({
     visible: false,
@@ -689,7 +709,12 @@ export const useChatImageCanvasEditor = ({
     context.save();
     context.fillStyle = 'rgba(15, 23, 42, 0.38)';
     context.fillRect(0, 0, canvas.width, normalizedRect.y);
-    context.fillRect(0, normalizedRect.y, normalizedRect.x, normalizedRect.height);
+    context.fillRect(
+      0,
+      normalizedRect.y,
+      normalizedRect.x,
+      normalizedRect.height
+    );
     context.fillRect(
       normalizedRect.x + normalizedRect.width,
       normalizedRect.y,
@@ -740,7 +765,11 @@ export const useChatImageCanvasEditor = ({
     const viewport = viewportRef.value.getBoundingClientRect();
     const maxWidth = Math.max(280, viewport.width - 28);
     const maxHeight = Math.max(220, viewport.height - 28);
-    const scale = Math.min(maxWidth / naturalWidth, maxHeight / naturalHeight, 1);
+    const scale = Math.min(
+      maxWidth / naturalWidth,
+      maxHeight / naturalHeight,
+      1
+    );
     const width = Math.max(1, Math.round(naturalWidth * scale));
     const height = Math.max(1, Math.round(naturalHeight * scale));
 
@@ -858,7 +887,9 @@ export const useChatImageCanvasEditor = ({
     shapeOverlay.y = canvas.height / 2;
     shapeOverlay.width = Math.min(180, canvas.width * 0.42);
     shapeOverlay.height =
-      shape === 'line' || shape === 'arrow' ? 42 : Math.min(120, canvas.height * 0.32);
+      shape === 'line' || shape === 'arrow'
+        ? 42
+        : Math.min(120, canvas.height * 0.32);
     shapeOverlay.rotation = 0;
     shapeOverlay.isDragging = false;
     shapeOverlay.isResizing = false;
@@ -900,7 +931,11 @@ export const useChatImageCanvasEditor = ({
     emojiOverlay.emoji = emoji;
     emojiOverlay.x = canvas.width / 2;
     emojiOverlay.y = canvas.height / 2;
-    emojiOverlay.fontSize = clamp(Math.round(Math.min(canvas.width, canvas.height) * 0.16), 42, 78);
+    emojiOverlay.fontSize = clamp(
+      Math.round(Math.min(canvas.width, canvas.height) * 0.16),
+      42,
+      78
+    );
     emojiOverlay.isDragging = false;
     emojiOverlay.isResizing = false;
   };
@@ -928,7 +963,12 @@ export const useChatImageCanvasEditor = ({
 
     if (!directLayer.context || !directLayer.canvas) return;
 
-    directLayer.context.clearRect(0, 0, directLayer.canvas.width, directLayer.canvas.height);
+    directLayer.context.clearRect(
+      0,
+      0,
+      directLayer.canvas.width,
+      directLayer.canvas.height
+    );
     commitHistory();
     redraw();
   };
@@ -943,12 +983,47 @@ export const useChatImageCanvasEditor = ({
     restoreHistory(historyIndex.value + 1);
   };
 
-  const canvasToDataUrl = (sourceFile: File): string | null => {
-    const canvas = getCanvas();
-    if (!canvas) return null;
-
+  const canvasToDataUrl = (
+    canvas: HTMLCanvasElement,
+    sourceFile: File
+  ): string => {
     const mimeType = getOutputMimeType(sourceFile);
-    return canvas.toDataURL(mimeType, getOutputFormat(sourceFile) === 'png' ? undefined : 0.92);
+    return canvas.toDataURL(
+      mimeType,
+      getOutputFormat(sourceFile) === 'png' ? undefined : MAX_EXPORT_QUALITY
+    );
+  };
+
+  const renderFullResolutionCanvas = (): HTMLCanvasElement | null => {
+    const image = sourceImage.value;
+    if (!image) return null;
+
+    const output = document.createElement('canvas');
+    output.width = Math.max(1, image.naturalWidth || image.width || 1);
+    output.height = Math.max(1, image.naturalHeight || image.height || 1);
+
+    const context = output.getContext('2d');
+    if (!context) return null;
+
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    drawBaseImage(context, output, image);
+
+    if (directLayer.canvas) {
+      context.drawImage(
+        directLayer.canvas,
+        0,
+        0,
+        directLayer.canvas.width,
+        directLayer.canvas.height,
+        0,
+        0,
+        output.width,
+        output.height
+      );
+    }
+
+    return output;
   };
 
   const createCropResetState = async (
@@ -964,7 +1039,8 @@ export const useChatImageCanvasEditor = ({
     cropRect.value = null;
     redraw();
 
-    const preview = canvasToDataUrl(sourceFile);
+    const output = renderFullResolutionCanvas();
+    const preview = output ? canvasToDataUrl(output, sourceFile) : null;
 
     rotation.value = previousRotation;
     cropRect.value = previousCropRect;
@@ -979,7 +1055,9 @@ export const useChatImageCanvasEditor = ({
     };
   };
 
-  const exportVisibleCanvas = async (sourceFile: File): Promise<ChatImageExportResult | null> => {
+  const exportVisibleCanvas = async (
+    sourceFile: File
+  ): Promise<ChatImageExportResult | null> => {
     commitTextOverlay();
     commitShapeOverlay();
     commitBlurOverlay();
@@ -987,14 +1065,17 @@ export const useChatImageCanvasEditor = ({
     cropRect.value = null;
     redraw();
 
-    const dataUrl = canvasToDataUrl(sourceFile);
-    if (!dataUrl) return null;
+    const output = renderFullResolutionCanvas();
+    if (!output) return null;
 
+    const dataUrl = canvasToDataUrl(output, sourceFile);
     const file = await dataUrlToFile(dataUrl, sourceFile);
     return { file, preview: dataUrl };
   };
 
-  const applyCrop = async (sourceFile: File): Promise<ChatImageExportResult | null> => {
+  const applyCrop = async (
+    sourceFile: File
+  ): Promise<ChatImageExportResult | null> => {
     commitTextOverlay();
     commitShapeOverlay();
     commitBlurOverlay();
@@ -1011,26 +1092,37 @@ export const useChatImageCanvasEditor = ({
       return exportVisibleCanvas(sourceFile);
     }
 
+    const fullResolutionCanvas = renderFullResolutionCanvas();
+    if (!fullResolutionCanvas) return null;
+
+    const scaleX = fullResolutionCanvas.width / canvas.width;
+    const scaleY = fullResolutionCanvas.height / canvas.height;
+    const sourceX = Math.round(rect.x * scaleX);
+    const sourceY = Math.round(rect.y * scaleY);
+    const sourceWidth = Math.max(1, Math.round(rect.width * scaleX));
+    const sourceHeight = Math.max(1, Math.round(rect.height * scaleY));
+
     const output = document.createElement('canvas');
-    output.width = Math.round(rect.width);
-    output.height = Math.round(rect.height);
+    output.width = sourceWidth;
+    output.height = sourceHeight;
     const context = output.getContext('2d');
     if (!context) return null;
 
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
     context.drawImage(
-      canvas,
-      rect.x,
-      rect.y,
-      rect.width,
-      rect.height,
+      fullResolutionCanvas,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
       0,
       0,
       output.width,
       output.height
     );
 
-    const mimeType = getOutputMimeType(sourceFile);
-    const dataUrl = output.toDataURL(mimeType, getOutputFormat(sourceFile) === 'png' ? undefined : 0.92);
+    const dataUrl = canvasToDataUrl(output, sourceFile);
     const file = await dataUrlToFile(dataUrl, sourceFile);
     await loadImage(dataUrl);
 
@@ -1088,7 +1180,11 @@ export const useChatImageCanvasEditor = ({
     event.preventDefault();
     const point = getCanvasPoint(event, canvas);
     shapeOverlay.x = clamp(point.x - shapeOverlay.dragOffsetX, 0, canvas.width);
-    shapeOverlay.y = clamp(point.y - shapeOverlay.dragOffsetY, 0, canvas.height);
+    shapeOverlay.y = clamp(
+      point.y - shapeOverlay.dragOffsetY,
+      0,
+      canvas.height
+    );
   };
 
   const endShapeDrag = (event: PointerEvent) => {
@@ -1119,8 +1215,11 @@ export const useChatImageCanvasEditor = ({
 
     event.preventDefault();
     const point = getCanvasPoint(event, canvas);
-    const nextWidth = shapeOverlay.resizeStartWidth + (point.x - shapeOverlay.resizeStartX) * 2;
-    const nextHeight = shapeOverlay.resizeStartHeight + (point.y - shapeOverlay.resizeStartY) * 2;
+    const nextWidth =
+      shapeOverlay.resizeStartWidth + (point.x - shapeOverlay.resizeStartX) * 2;
+    const nextHeight =
+      shapeOverlay.resizeStartHeight +
+      (point.y - shapeOverlay.resizeStartY) * 2;
     shapeOverlay.width = clamp(nextWidth, 24, canvas.width);
     shapeOverlay.height = clamp(
       nextHeight,
@@ -1158,9 +1257,14 @@ export const useChatImageCanvasEditor = ({
 
     event.preventDefault();
     const point = getCanvasPoint(event, canvas);
-    const nextAngle = getAngleDegrees({ x: shapeOverlay.x, y: shapeOverlay.y }, point);
+    const nextAngle = getAngleDegrees(
+      { x: shapeOverlay.x, y: shapeOverlay.y },
+      point
+    );
     shapeOverlay.rotation =
-      shapeOverlay.rotateStartRotation + nextAngle - shapeOverlay.rotateStartAngle;
+      shapeOverlay.rotateStartRotation +
+      nextAngle -
+      shapeOverlay.rotateStartAngle;
   };
 
   const endShapeRotate = (event: PointerEvent) => {
@@ -1220,8 +1324,10 @@ export const useChatImageCanvasEditor = ({
 
     event.preventDefault();
     const point = getCanvasPoint(event, canvas);
-    const nextWidth = blurOverlay.resizeStartWidth + (point.x - blurOverlay.resizeStartX) * 2;
-    const nextHeight = blurOverlay.resizeStartHeight + (point.y - blurOverlay.resizeStartY) * 2;
+    const nextWidth =
+      blurOverlay.resizeStartWidth + (point.x - blurOverlay.resizeStartX) * 2;
+    const nextHeight =
+      blurOverlay.resizeStartHeight + (point.y - blurOverlay.resizeStartY) * 2;
     blurOverlay.width = clamp(nextWidth, 32, canvas.width);
     blurOverlay.height = clamp(nextHeight, 32, canvas.height);
   };
@@ -1252,8 +1358,16 @@ export const useChatImageCanvasEditor = ({
     event.preventDefault();
     const point = getCanvasPoint(event, canvas);
     const margin = emojiOverlay.fontSize * 0.46;
-    emojiOverlay.x = clamp(point.x - emojiOverlay.dragOffsetX, margin, canvas.width - margin);
-    emojiOverlay.y = clamp(point.y - emojiOverlay.dragOffsetY, margin, canvas.height - margin);
+    emojiOverlay.x = clamp(
+      point.x - emojiOverlay.dragOffsetX,
+      margin,
+      canvas.width - margin
+    );
+    emojiOverlay.y = clamp(
+      point.y - emojiOverlay.dragOffsetY,
+      margin,
+      canvas.height - margin
+    );
   };
 
   const endEmojiDrag = (event: PointerEvent) => {
@@ -1329,16 +1443,25 @@ export const useChatImageCanvasEditor = ({
 
     const point = getCanvasPoint(event, canvas);
 
-    if (isPointerDrawing.value && lastPoint.value && drawingMode.value && directLayer.context) {
+    if (
+      isPointerDrawing.value &&
+      lastPoint.value &&
+      drawingMode.value &&
+      directLayer.context
+    ) {
       const context = directLayer.context;
       context.save();
-      context.strokeStyle = drawingMode.value.blur ? 'rgba(226, 232, 240, 0.48)' : drawingMode.value.color;
+      context.strokeStyle = drawingMode.value.blur
+        ? 'rgba(226, 232, 240, 0.48)'
+        : drawingMode.value.color;
       context.lineWidth = drawingMode.value.blur
         ? Math.max(18, drawingMode.value.width * 4)
         : drawingMode.value.width;
       context.lineCap = 'round';
       context.lineJoin = 'round';
-      context.shadowColor = drawingMode.value.blur ? 'rgba(148, 163, 184, 0.5)' : 'transparent';
+      context.shadowColor = drawingMode.value.blur
+        ? 'rgba(148, 163, 184, 0.5)'
+        : 'transparent';
       context.shadowBlur = drawingMode.value.blur ? 16 : 0;
       context.beginPath();
       context.moveTo(lastPoint.value.x, lastPoint.value.y);

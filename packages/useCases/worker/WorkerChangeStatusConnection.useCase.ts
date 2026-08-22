@@ -59,6 +59,10 @@ export class WorkerChangeStatusConnectionUseCase {
       throw new Error(t('worker_not_found'));
     }
 
+    if (view?.status?.id === EWorkerStatus.blocked) {
+      throw new Error(t('worker_blocked_by_plan'));
+    }
+
     const cleanPhone = this.cleanPhoneNumber(input.phone_connection);
     const payload: StatusConnectionWorkerRequest = {
       worker_id: input.worker_id,
@@ -92,7 +96,7 @@ export class WorkerChangeStatusConnectionUseCase {
         await this.centrifugoService.publishSub(
           workerCentrifugoQueue(accountId),
           {
-            status: EBaileysConnectionStatus.connecting,
+            status: EBaileysConnectionStatus.info,
             worker_id: input.worker_id,
             account_id: accountId,
             disconnected_user: true,

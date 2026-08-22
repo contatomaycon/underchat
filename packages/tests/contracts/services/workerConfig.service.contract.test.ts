@@ -1,8 +1,10 @@
 import 'reflect-metadata';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import {
+  DEFAULT_TYPING_SIMULATION_MAX_DELAY_MS,
   DEFAULT_TYPING_SIMULATION_SPEED,
   TYPING_SIMULATION_CACHE_TTL_SECONDS,
+  resolveTypingSimulationMaxDelayMs,
   typingSimulationCacheKey,
 } from '@core/common/functions/typingSimulationConfig';
 import { defaultSecurityKeyConfig } from '@core/common/functions/securityKeyConfig';
@@ -37,10 +39,16 @@ function buildService() {
       async () => DEFAULT_TYPING_SIMULATION_SPEED
     ),
     updateSecurityKey: jest.fn(async () => undefined),
+    updateOperatorReplyPendingRedistribution: jest.fn(
+      async (_workerId: string, value: string) => value
+    ),
   };
   const redis = {
     del: jest.fn(async () => 1),
     set: jest.fn(async () => 'OK'),
+  };
+  const workerConfigRevisionService = {
+    registerCurrent: jest.fn(async () => undefined),
   };
 
   const service = new WorkerConfigService(
@@ -48,7 +56,7 @@ function buildService() {
     workerConfigUpserterRepository as never,
     {} as never,
     {} as never,
-    {} as never,
+    workerConfigRevisionService as never,
     redis as never
   );
 
@@ -57,12 +65,24 @@ function buildService() {
     service,
     workerConfigUpserterRepository,
     workerConfigViewerRepository,
+    workerConfigRevisionService,
   };
 }
 
 describe('WorkerConfigService typing simulation defaults', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('bounds typing simulation without requiring an environment override', () => {
+    expect(resolveTypingSimulationMaxDelayMs(undefined)).toBe(
+      DEFAULT_TYPING_SIMULATION_MAX_DELAY_MS
+    );
+    expect(resolveTypingSimulationMaxDelayMs('invalid')).toBe(
+      DEFAULT_TYPING_SIMULATION_MAX_DELAY_MS
+    );
+    expect(resolveTypingSimulationMaxDelayMs('1')).toBe(1_000);
+    expect(resolveTypingSimulationMaxDelayMs('999999')).toBe(60_000);
   });
 
   it('creates typing simulation active with speed 50 when a worker has no config yet', async () => {
@@ -174,5 +194,150 @@ describe('WorkerConfigService typing simulation defaults', () => {
         quick_message: false,
       })
     ).rejects.toThrow('security_key_requires_active_option');
+  });
+
+  it('persists and returns the normalized operator reply sector scope', async () => {
+    const {
+      service,
+      workerConfigUpserterRepository,
+      workerConfigViewerRepository,
+    } = buildService();
+    workerConfigViewerRepository.fetchConfigValueByType.mockResolvedValue({
+      statusId: EWorkerConfigStatus.active,
+      value: String(DEFAULT_TYPING_SIMULATION_SPEED),
+    });
+
+    await expect(
+      service.updateOperatorReplyPendingRedistribution('worker-1', {
+        enabled: true,
+        time_minutes: 12,
+        sector_ids: ['sector-1', 'sector-2'],
+      })
+    ).resolves.toEqual({
+      enabled: true,
+      time_minutes: 12,
+      sector_ids: ['sector-1', 'sector-2'],
+    });
+
+    expect(
+      workerConfigUpserterRepository.updateOperatorReplyPendingRedistribution
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      JSON.stringify({
+        time_minutes: 12,
+        sector_ids: ['sector-1', 'sector-2'],
+      }),
+      EWorkerConfigStatus.active
+    );
+  });
+
+  it('keys worker config events by worker so all providers observe one order', async () => {
+    const workerConfigViewerRepository = {
+      viewWorkerConfigByWorkerId: jest.fn(async () => ({
+        worker_config_id: 'config-1',
+        worker_id: 'worker-1',
+        reject_call: true,
+      })),
+      fetchConfigValueByType: jest.fn(async () => ({
+        statusId: EWorkerConfigStatus.active,
+        value: String(DEFAULT_TYPING_SIMULATION_SPEED),
+      })),
+    };
+    const workerConfigUpserterRepository = {
+      upsertWorkerConfig: jest.fn(async () => ({
+        reject_call_revision: '1777777777000000',
+      })),
+      viewRejectCallRevision: jest.fn(async () => '1777777777000000'),
+    };
+    const workerCommandAdmissionService = {
+      admit: jest.fn(async () => undefined),
+    };
+    const redis = {
+      del: jest.fn(async () => 1),
+      set: jest.fn(async () => 'OK'),
+    };
+    const workerConfigRevisionService = {
+      registerCurrent: jest.fn(async () => undefined),
+    };
+    const service = new WorkerConfigService(
+      workerConfigViewerRepository as never,
+      workerConfigUpserterRepository as never,
+      workerCommandAdmissionService as never,
+      {} as never,
+      workerConfigRevisionService as never,
+      redis as never
+    );
+
+    await service.upsertWorkerConfig(
+      jest.fn((key: string) => key) as never,
+      'account-1',
+      'worker-1',
+      { reject_call: true } as never
+    );
+
+    expect(workerCommandAdmissionService.admit).toHaveBeenCalledWith({
+      accountId: 'account-1',
+      workerId: 'worker-1',
+      commandType: 'worker_config',
+      entityKey: 'control:account-1:worker-1:config',
+      operationId: '1777777777000000',
+      payload: {
+        worker_id: 'worker-1',
+        reject_call: true,
+        revision: '1777777777000000',
+      },
+      source: 'worker_config',
+    });
+    expect(workerConfigRevisionService.registerCurrent).toHaveBeenCalledWith(
+      'worker-1',
+      '1777777777000000'
+    );
+  });
+
+  it('does not publish a revision superseded by another API pod', async () => {
+    const workerConfigViewerRepository = {
+      viewWorkerConfigByWorkerId: jest.fn(async () => ({
+        worker_config_id: 'config-1',
+        worker_id: 'worker-1',
+        reject_call: false,
+      })),
+      fetchConfigValueByType: jest.fn(async () => ({
+        statusId: EWorkerConfigStatus.active,
+        value: String(DEFAULT_TYPING_SIMULATION_SPEED),
+      })),
+    };
+    const workerConfigUpserterRepository = {
+      upsertWorkerConfig: jest.fn(async () => ({
+        reject_call_revision: '1777777777000000',
+      })),
+      viewRejectCallRevision: jest.fn(async () => '1777777777000001'),
+    };
+    const workerCommandAdmissionService = {
+      admit: jest.fn(async () => undefined),
+    };
+    const workerConfigRevisionService = {
+      registerCurrent: jest.fn(async () => undefined),
+    };
+    const service = new WorkerConfigService(
+      workerConfigViewerRepository as never,
+      workerConfigUpserterRepository as never,
+      workerCommandAdmissionService as never,
+      {} as never,
+      workerConfigRevisionService as never,
+      {
+        del: jest.fn(async () => 1),
+        set: jest.fn(async () => 'OK'),
+      } as never
+    );
+
+    await service.upsertWorkerConfig(
+      jest.fn((key: string) => key) as never,
+      'account-1',
+      'worker-1',
+      { reject_call: true } as never
+    );
+
+    expect(workerConfigRevisionService.registerCurrent).not.toHaveBeenCalled();
+    expect(workerCommandAdmissionService.admit).not.toHaveBeenCalled();
   });
 });

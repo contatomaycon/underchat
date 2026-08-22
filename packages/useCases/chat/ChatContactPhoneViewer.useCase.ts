@@ -12,8 +12,20 @@ export class ChatContactPhoneViewerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    contactId: string
+    contactId: string,
+    accountId: string,
+    allowedChannelIds: string[]
   ): Promise<ViewChatContactPhoneResponse | null> {
+    const contact = await this.chatContactService.viewChatContactById(
+      contactId,
+      accountId,
+      allowedChannelIds
+    );
+
+    if (!contact) {
+      throw new Error(t('contact_not_found'));
+    }
+
     const phone =
       await this.chatContactService.getChatContactPhoneDecrypted(contactId);
 

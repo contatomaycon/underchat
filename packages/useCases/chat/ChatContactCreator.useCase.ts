@@ -5,6 +5,7 @@ import { CreateContactRequest } from '@core/schema/contact/createContact/request
 import { ContactCreatorUseCase } from '@core/useCases/contact/ContactCreator.useCase';
 import { normalizeContactRequest } from '@core/common/functions/normalizeContactRequest';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
+import type { OutboundWebhookRequestSource } from '@core/common/functions/outboundWebhookRequestSource';
 
 @injectable()
 export class ChatContactCreatorUseCase {
@@ -31,7 +32,9 @@ export class ChatContactCreatorUseCase {
     t: TFunction<'translation', undefined>,
     input: CreateChatContactRequest,
     accountId: string,
-    allowedChannelIds: string[] = []
+    allowedChannelIds: string[] = [],
+    actorUserId?: string,
+    webhookSource: OutboundWebhookRequestSource = 'manager_api'
   ): Promise<boolean> {
     const normalizedInput = normalizeContactRequest(input);
     const chatId = this.extractChatId(normalizedInput.chat_id);
@@ -61,7 +64,9 @@ export class ChatContactCreatorUseCase {
       t,
       contactRequest,
       accountId,
-      allowedChannelIds
+      allowedChannelIds,
+      actorUserId,
+      webhookSource
     );
 
     return !!result;

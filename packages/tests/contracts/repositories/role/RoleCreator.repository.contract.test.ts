@@ -14,31 +14,56 @@ describe('RoleCreatorRepository', () => {
 
   it('creates role and returns permission_role_id', async () => {
     const returning = jest.fn(async () => [{ permission_role_id: 'role-id' }]);
-    const values = jest.fn(() => ({ returning }));
-    const insert = jest.fn(() => ({ values }));
-    const repository = new RoleCreatorRepository({ insert } as never);
+    const roleValues = jest.fn(() => ({ returning }));
+    const permissionValues = jest.fn(async () => undefined);
+    const insert = jest
+      .fn()
+      .mockReturnValueOnce({ values: roleValues })
+      .mockReturnValueOnce({ values: permissionValues });
+    const limit = jest.fn(async () => [
+      { permission_action_id: 'transfer-permission-id' },
+    ]);
+    const where = jest.fn(() => ({ limit }));
+    const from = jest.fn(() => ({ where }));
+    const select = jest.fn(() => ({ from }));
+    const transaction = jest.fn(async (callback) =>
+      callback({ insert, select })
+    );
+    const repository = new RoleCreatorRepository({ transaction } as never);
 
     await expect(
       repository.createRole('Admin', 'acc-1', 'Descrição')
     ).resolves.toEqual({ permission_role_id: 'role-id' });
 
-    expect(values).toHaveBeenCalledWith({
+    expect(roleValues).toHaveBeenCalledWith({
       permission_role_id: 'role-id',
       account_id: 'acc-1',
       name: 'Admin',
       description: 'Descrição',
     });
+    expect(permissionValues).toHaveBeenCalledWith({
+      permission_role_action_id: 'role-id',
+      permission_action_id: 'transfer-permission-id',
+      permission_role_id: 'role-id',
+    });
   });
 
   it('stores null description when omitted', async () => {
     const returning = jest.fn(async () => [{ permission_role_id: 'role-id' }]);
-    const values = jest.fn(() => ({ returning }));
-    const insert = jest.fn(() => ({ values }));
-    const repository = new RoleCreatorRepository({ insert } as never);
+    const roleValues = jest.fn(() => ({ returning }));
+    const insert = jest.fn(() => ({ values: roleValues }));
+    const limit = jest.fn(async () => []);
+    const where = jest.fn(() => ({ limit }));
+    const from = jest.fn(() => ({ where }));
+    const select = jest.fn(() => ({ from }));
+    const transaction = jest.fn(async (callback) =>
+      callback({ insert, select })
+    );
+    const repository = new RoleCreatorRepository({ transaction } as never);
 
     await repository.createRole('Admin', 'acc-1', undefined);
 
-    expect(values).toHaveBeenCalledWith(
+    expect(roleValues).toHaveBeenCalledWith(
       expect.objectContaining({
         description: null,
       })
@@ -47,9 +72,10 @@ describe('RoleCreatorRepository', () => {
 
   it('returns null when returning has no rows', async () => {
     const returning = jest.fn(async () => []);
-    const values = jest.fn(() => ({ returning }));
-    const insert = jest.fn(() => ({ values }));
-    const repository = new RoleCreatorRepository({ insert } as never);
+    const roleValues = jest.fn(() => ({ returning }));
+    const insert = jest.fn(() => ({ values: roleValues }));
+    const transaction = jest.fn(async (callback) => callback({ insert }));
+    const repository = new RoleCreatorRepository({ transaction } as never);
 
     await expect(
       repository.createRole('Admin', 'acc-1', null)

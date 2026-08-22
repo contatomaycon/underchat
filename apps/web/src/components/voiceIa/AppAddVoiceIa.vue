@@ -136,7 +136,7 @@ watch(voiceIaType, (newType) => {
   }
   if (newType === EVoiceIaType.gemini) {
     voiceId.value = 'Kore';
-    modelId.value = 'gemini-2.5-flash-preview-tts';
+    modelId.value = 'gemini-3.1-flash-tts-preview';
     return;
   }
   voiceId.value = '';

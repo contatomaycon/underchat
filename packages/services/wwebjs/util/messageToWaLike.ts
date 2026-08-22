@@ -1,5 +1,6 @@
 import type { Message } from '@wwebjs/whatsapp-web.js';
 import { IMessageKeyResponse } from '@core/common/interfaces/IMessageKeyResponse';
+import { extractWwebjsMessageId } from './wwebjsMessageId';
 
 function getNonEmptyString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -46,10 +47,10 @@ export function messageToWaLike(
     return undefined;
   }
 
-  const id =
-    typeof msg.id === 'object' && msg.id !== null && '_serialized' in msg.id
-      ? (msg.id as { _serialized: string })._serialized
-      : String(msg.id);
+  const id = extractWwebjsMessageId(msg);
+  if (!id) {
+    return undefined;
+  }
 
   const remoteJid =
     getMessageIdRemoteValue(msg, 'remoteJid') ??

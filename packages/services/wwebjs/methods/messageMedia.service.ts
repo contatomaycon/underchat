@@ -2,7 +2,10 @@ import { injectable, inject } from 'tsyringe';
 import whatsappWeb from '@wwebjs/whatsapp-web.js';
 import { withMediaUrlFromInput } from '@core/common/functions/getMediaUrlFromInput';
 import { downloadMediaBuffer } from '@core/common/functions/downloadMediaBuffer';
-import { WwebjsHelpersService } from './helpers.service';
+import {
+  WwebjsHelpersService,
+  type WwebjsProviderInvocationBoundary,
+} from './helpers.service';
 import { messageToWaLike } from '../util/messageToWaLike';
 import {
   resolveQuotedMessageId,
@@ -13,10 +16,6 @@ import type { IMediaInput } from '@core/common/interfaces/IMediaInput';
 
 const { MessageMedia } = whatsappWeb;
 type MessageMediaType = InstanceType<typeof MessageMedia>;
-
-async function mediaFromInput(input: IMediaInput): Promise<MessageMediaType> {
-  return withMediaUrlFromInput(input, (url) => MessageMedia.fromUrl(url));
-}
 
 function firstNonEmpty(...values: Array<string | null | undefined>): string {
   for (const value of values) {
@@ -107,6 +106,7 @@ async function mediaFromDownloadedInput(
 }
 
 async function getQuotedMessageId(
+  helpers: WwebjsHelpersService,
   client: ReturnType<WwebjsHelpersService['getClient']>,
   jid: string,
   quoted?: { key: IWwebjsQuotedKeyInput }
@@ -115,7 +115,9 @@ async function getQuotedMessageId(
     return undefined;
   }
 
-  return resolveQuotedMessageId(client, jid, quoted.key);
+  return resolveQuotedMessageId(client, jid, quoted.key, (invoke) =>
+    helpers.invokeProviderLookup(client, 'quoted_message_lookup', invoke)
+  );
 }
 
 @injectable()
@@ -129,11 +131,20 @@ export class WwebjsMessageMediaService {
     jid: string,
     image: IMediaInput,
     args?: { caption?: string; extra?: Record<string, unknown> },
-    quoted?: { key: IWwebjsQuotedKeyInput }
+    quoted?: { key: IWwebjsQuotedKeyInput },
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
-    const media = await mediaFromInput(image);
-    const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
+    const media = await mediaFromDownloadedInput(image, {
+      fallbackMimetype: 'image/jpeg',
+      fallbackFilename: 'image.jpg',
+    });
+    const quotedMessageId = await getQuotedMessageId(
+      this.helpers,
+      client,
+      jid,
+      quoted
+    );
     const options: {
       caption?: string;
       quotedMessageId?: string;
@@ -147,7 +158,12 @@ export class WwebjsMessageMediaService {
       options.quotedMessageId = quotedMessageId;
       options.ignoreQuoteErrors = false;
     }
-    const msg = await this.helpers.sendMessage(jid, media, options);
+    const msg = await this.helpers.sendMessage(
+      jid,
+      media,
+      options,
+      beforeProviderInvoke
+    );
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -163,7 +179,8 @@ export class WwebjsMessageMediaService {
       filesize?: number;
       extra?: Record<string, unknown>;
     },
-    quoted?: { key: IWwebjsQuotedKeyInput }
+    quoted?: { key: IWwebjsQuotedKeyInput },
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const media = await mediaFromDownloadedInput(video, {
@@ -173,7 +190,12 @@ export class WwebjsMessageMediaService {
       fallbackMimetype: 'video/mp4',
       fallbackFilename: 'video.mp4',
     });
-    const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
+    const quotedMessageId = await getQuotedMessageId(
+      this.helpers,
+      client,
+      jid,
+      quoted
+    );
     const options: {
       caption?: string;
       quotedMessageId?: string;
@@ -187,7 +209,12 @@ export class WwebjsMessageMediaService {
       options.quotedMessageId = quotedMessageId;
       options.ignoreQuoteErrors = false;
     }
-    const msg = await this.helpers.sendMessage(jid, media, options);
+    const msg = await this.helpers.sendMessage(
+      jid,
+      media,
+      options,
+      beforeProviderInvoke
+    );
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -205,7 +232,8 @@ export class WwebjsMessageMediaService {
       waveform?: Uint8Array;
       extra?: Record<string, unknown>;
     },
-    quoted?: { key: IWwebjsQuotedKeyInput }
+    quoted?: { key: IWwebjsQuotedKeyInput },
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const isPtt = args?.ptt ?? true;
@@ -217,7 +245,12 @@ export class WwebjsMessageMediaService {
       fallbackMimetype: isPtt ? 'audio/ogg; codecs=opus' : 'audio/mpeg',
       fallbackFilename: isPtt ? 'audio.ogg' : 'audio.mp3',
     });
-    const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
+    const quotedMessageId = await getQuotedMessageId(
+      this.helpers,
+      client,
+      jid,
+      quoted
+    );
     const options: {
       sendAudioAsVoice: boolean;
       isViewOnce?: boolean;
@@ -234,7 +267,12 @@ export class WwebjsMessageMediaService {
       options.ignoreQuoteErrors = false;
     }
 
-    const msg = await this.helpers.sendMessage(jid, media, options);
+    const msg = await this.helpers.sendMessage(
+      jid,
+      media,
+      options,
+      beforeProviderInvoke
+    );
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -243,11 +281,20 @@ export class WwebjsMessageMediaService {
     jid: string,
     sticker: IMediaInput,
     quoted?: { key: IWwebjsQuotedKeyInput },
-    extra?: Record<string, unknown>
+    extra?: Record<string, unknown>,
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
-    const media = await mediaFromInput(sticker);
-    const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
+    const media = await mediaFromDownloadedInput(sticker, {
+      fallbackMimetype: 'image/webp',
+      fallbackFilename: 'sticker.webp',
+    });
+    const quotedMessageId = await getQuotedMessageId(
+      this.helpers,
+      client,
+      jid,
+      quoted
+    );
     const options: {
       sendMediaAsSticker: true;
       quotedMessageId?: string;
@@ -261,7 +308,12 @@ export class WwebjsMessageMediaService {
       options.quotedMessageId = quotedMessageId;
       options.ignoreQuoteErrors = false;
     }
-    const msg = await this.helpers.sendMessage(jid, media, options);
+    const msg = await this.helpers.sendMessage(
+      jid,
+      media,
+      options,
+      beforeProviderInvoke
+    );
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -274,7 +326,8 @@ export class WwebjsMessageMediaService {
       caption?: string;
       extra?: Record<string, unknown>;
     },
-    quoted?: { key: IWwebjsQuotedKeyInput }
+    quoted?: { key: IWwebjsQuotedKeyInput },
+    beforeProviderInvoke?: WwebjsProviderInvocationBoundary
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const media = await mediaFromDownloadedInput(document, {
@@ -283,7 +336,12 @@ export class WwebjsMessageMediaService {
       fallbackMimetype: args.mimetype,
       fallbackFilename: args.fileName ?? 'document',
     });
-    const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
+    const quotedMessageId = await getQuotedMessageId(
+      this.helpers,
+      client,
+      jid,
+      quoted
+    );
     const options: {
       sendMediaAsDocument: true;
       caption?: string;
@@ -299,7 +357,12 @@ export class WwebjsMessageMediaService {
       options.quotedMessageId = quotedMessageId;
       options.ignoreQuoteErrors = false;
     }
-    const msg = await this.helpers.sendMessage(jid, media, options);
+    const msg = await this.helpers.sendMessage(
+      jid,
+      media,
+      options,
+      beforeProviderInvoke
+    );
 
     return messageToWaLike(msg ?? undefined);
   }

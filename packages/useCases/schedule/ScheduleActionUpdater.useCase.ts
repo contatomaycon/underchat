@@ -4,6 +4,10 @@ import { ScheduleService } from '@core/services/schedule.service';
 import { ScheduleSendService } from '@core/services/scheduleSend.service';
 import { TFunction } from 'i18next';
 import { inject, injectable } from 'tsyringe';
+import {
+  assertUserChannelAccess,
+  UserChannelScope,
+} from '@core/common/functions/assertUserChannelAccess';
 
 const START_ALLOWED_STATUSES: EScheduleStatus[] = [
   EScheduleStatus.pending,
@@ -98,7 +102,8 @@ export class ScheduleActionUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     scheduleId: string,
     action: EScheduleAction,
-    accountId: string
+    accountId: string,
+    userChannels: UserChannelScope = []
   ): Promise<boolean> {
     const schedule = await this.scheduleService.findScheduleControlById(
       scheduleId,
@@ -108,6 +113,8 @@ export class ScheduleActionUpdaterUseCase {
     if (!schedule) {
       throw new Error(t('schedule_not_found'));
     }
+
+    assertUserChannelAccess(t, schedule.worker_id, userChannels);
 
     this.ensureActionAllowed(t, schedule.status, action);
 

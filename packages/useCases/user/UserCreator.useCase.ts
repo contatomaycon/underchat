@@ -7,6 +7,9 @@ import { CountryService } from '@core/services/country.service';
 import { StorageService } from '@core/services/storage.service';
 import { validatePassword } from '@core/common/utils/passwordValidator';
 import { PlanAccountService } from '@core/services/planAccount.service';
+import { EUserStatus } from '@core/common/enums/EUserStatus';
+import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
+import { extractIndexedMultipartValues } from '@core/common/functions/extractIndexedMultipartValues';
 
 @injectable()
 export class UserCreatorUseCase {
@@ -88,48 +91,33 @@ export class UserCreatorUseCase {
       throw new Error(t('last_name_required'));
     }
 
-    await this.planAccountService.validateCanCreateUser(t, accountId);
+    const requestedStatus = input.user_status_id?.value;
+    const requestedRoleId = input.permission_role_id?.value;
+    if (
+      requestedStatus === EUserStatus.blocked &&
+      isMasterOrAdministratorRole(requestedRoleId)
+    ) {
+      throw new Error(t('cannot_block_system_user'));
+    }
+
+    if (!requestedStatus || requestedStatus === EUserStatus.active) {
+      await this.planAccountService.validateCanCreateUser(t, accountId);
+    }
   }
 
   private processSectorIdsFromMultipartFormData(input: any): void {
-    const sectorIdsArray: string[] = [];
-
-    Object.keys(input).forEach((key) => {
-      const match = key.match(/^sector_ids\[(\d+)\]$/);
-      if (!match) {
-        return;
-      }
-
-      const index = parseInt(match[1], 10);
-      const field = input[key];
-      const value =
-        typeof field === 'object' && field.value ? field.value : field;
-      sectorIdsArray[index] = value;
-    });
+    const sectorIdsArray = extractIndexedMultipartValues(input, 'sector_ids');
 
     if (sectorIdsArray.length > 0) {
-      input.sector_ids = sectorIdsArray.filter(Boolean);
+      input.sector_ids = sectorIdsArray;
     }
   }
 
   private processChannelIdsFromMultipartFormData(input: any): void {
-    const channelIdsArray: string[] = [];
-
-    Object.keys(input).forEach((key) => {
-      const match = key.match(/^channel_ids\[(\d+)\]$/);
-      if (!match) {
-        return;
-      }
-
-      const index = parseInt(match[1], 10);
-      const field = input[key];
-      const value =
-        typeof field === 'object' && field.value ? field.value : field;
-      channelIdsArray[index] = value;
-    });
+    const channelIdsArray = extractIndexedMultipartValues(input, 'channel_ids');
 
     if (channelIdsArray.length > 0) {
-      input.channel_ids = channelIdsArray.filter(Boolean);
+      input.channel_ids = channelIdsArray;
     }
   }
 

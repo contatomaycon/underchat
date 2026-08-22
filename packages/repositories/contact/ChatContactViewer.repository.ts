@@ -9,6 +9,7 @@ import {
   userInfo,
 } from '@core/models';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
+import { resolveContactValidationStatus } from '@core/common/types/ContactValidationStatus';
 import { ViewChatContactByPhoneResponse } from '@core/schema/chat/viewContactByPhone/response.schema';
 import { and, eq, inArray, isNull, notExists, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -74,6 +75,7 @@ export class ChatContactViewerRepository {
         document: contact.document,
         document_partial: contact.document_partial,
         is_valided: contact.is_valided,
+        validation_origin: contact.validation_origin,
         ignore: contact.ignore,
         contact_document_type: {
           contact_document_type_id:
@@ -204,6 +206,10 @@ export class ChatContactViewerRepository {
       document_partial: contactData.document_partial ?? null,
       photo: contactData.photo ?? null,
       is_valided: contactData.is_valided ?? null,
+      validation_status: resolveContactValidationStatus(
+        contactData.is_valided,
+        contactData.validation_origin
+      ),
       label_templates: labelTemplates,
       contact_document_type: contactData.contact_document_type,
       user: formattedUser,
@@ -372,6 +378,7 @@ export class ChatContactViewerRepository {
         document: contact.document,
         document_partial: contact.document_partial,
         is_valided: contact.is_valided,
+        validation_origin: contact.validation_origin,
         ignore: contact.ignore,
         contact_document_type: {
           contact_document_type_id:
@@ -497,6 +504,10 @@ export class ChatContactViewerRepository {
         document_partial: contactData.document_partial ?? null,
         photo: contactData.photo ?? null,
         is_valided: contactData.is_valided ?? null,
+        validation_status: resolveContactValidationStatus(
+          contactData.is_valided,
+          contactData.validation_origin
+        ),
         label_templates: labelTemplates,
         contact_document_type: contactData.contact_document_type,
         user: formattedUser,

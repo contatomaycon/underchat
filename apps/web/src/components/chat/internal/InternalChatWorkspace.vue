@@ -8673,7 +8673,7 @@ onBeforeUnmount(async () => {
 
             <div v-else class="internal-chat-members-empty">
               <VAvatar size="42" variant="tonal" color="primary" class="mb-2">
-                <VIcon size="22">tabler-users-off</VIcon>
+                <VIcon size="22">tabler-users-minus</VIcon>
               </VAvatar>
               <span>{{ t('internal_chat_no_users_to_add') }}</span>
             </div>
@@ -8780,7 +8780,7 @@ onBeforeUnmount(async () => {
 
             <div v-else class="internal-chat-members-empty">
               <VAvatar size="42" variant="tonal" color="primary" class="mb-2">
-                <VIcon size="22">tabler-users-off</VIcon>
+                <VIcon size="22">tabler-users-minus</VIcon>
               </VAvatar>
               <span>{{ t('internal_chat_no_users_to_add_group') }}</span>
             </div>

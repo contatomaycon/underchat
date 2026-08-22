@@ -23,95 +23,123 @@ export class BaileysMessageStatusStoriesService {
     jid: string,
     media: IMediaInput,
     args: IStatusArgs,
-    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
     const statusJidList = this.baileysHelpersService.addOwnJidToStatusList(
       args.statusJidList ?? []
     );
 
-    return this.baileysHelpersService.send(
-      jid,
-      { image: media, caption: args.caption },
-      {
-        ...options,
-        statusJidList,
-        backgroundColor: args.backgroundColor,
-        font: args.font,
-        broadcast: true,
-      }
-    );
+    const content = { image: media, caption: args.caption };
+    const sendOptions = {
+      ...options,
+      statusJidList,
+      backgroundColor: args.backgroundColor,
+      font: args.font,
+      broadcast: true,
+    };
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          content,
+          sendOptions,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, content, sendOptions);
   }
 
   sendStatusVideo(
     jid: string,
     media: IMediaInput,
     args: IStatusArgs,
-    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
     const statusJidList = this.baileysHelpersService.addOwnJidToStatusList(
       args.statusJidList ?? []
     );
 
-    return this.baileysHelpersService.send(
-      jid,
-      { video: media, caption: args.caption },
-      {
-        ...options,
-        statusJidList,
-        backgroundColor: args.backgroundColor,
-        font: args.font,
-        broadcast: true,
-      }
-    );
+    const content = { video: media, caption: args.caption };
+    const sendOptions = {
+      ...options,
+      statusJidList,
+      backgroundColor: args.backgroundColor,
+      font: args.font,
+      broadcast: true,
+    };
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          content,
+          sendOptions,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, content, sendOptions);
   }
 
   sendStatusText(
     jid: string,
     text: string,
     args: IStatusTextArgs,
-    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
     const statusJidList = this.baileysHelpersService.addOwnJidToStatusList(
       args.statusJidList ?? []
     );
 
-    return this.baileysHelpersService.send(
-      jid,
-      { text },
-      {
-        ...options,
-        statusJidList,
-        backgroundColor: args.backgroundColor,
-        font: args.font,
-        broadcast: true,
-      }
-    );
+    const content = { text };
+    const sendOptions = {
+      ...options,
+      statusJidList,
+      backgroundColor: args.backgroundColor,
+      font: args.font,
+      broadcast: true,
+    };
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          content,
+          sendOptions,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, content, sendOptions);
   }
 
   sendStatusAudio(
     jid: string,
     media: IMediaInput,
     args: IStatusArgs,
-    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>
+    options?: Omit<MiscMessageGenerationOptions, IStatusOmitKeys>,
+    beforeProviderInvoke?: () => Promise<void>
   ) {
     const statusJidList = this.baileysHelpersService.addOwnJidToStatusList(
       args.statusJidList ?? []
     );
 
-    return this.baileysHelpersService.send(
-      jid,
-      { audio: media, caption: args.caption },
-      {
-        ...options,
-        statusJidList,
-        backgroundColor: args.backgroundColor,
-        font: args.font,
-        broadcast: true,
-      }
-    );
+    const content = { audio: media, caption: args.caption };
+    const sendOptions = {
+      ...options,
+      statusJidList,
+      backgroundColor: args.backgroundColor,
+      font: args.font,
+      broadcast: true,
+    };
+    return beforeProviderInvoke
+      ? this.baileysHelpersService.send(
+          jid,
+          content,
+          sendOptions,
+          beforeProviderInvoke
+        )
+      : this.baileysHelpersService.send(jid, content, sendOptions);
   }
 
-  deleteStatus(externalId: string, statusJidList?: string[]) {
+  deleteStatus(
+    externalId: string,
+    statusJidList?: string[],
+    beforeProviderInvoke?: () => Promise<void>
+  ) {
     const jid = 'status@broadcast';
     const key: WAMessageKey = {
       remoteJid: jid,
@@ -123,9 +151,21 @@ export class BaileysMessageStatusStoriesService {
       statusJidList ?? []
     );
 
-    return this.baileysMessageEditDeleteService.deleteMessage(jid, key, {
+    const sendOptions = {
       broadcast: true,
       statusJidList: finalStatusJidList,
-    });
+    };
+    return beforeProviderInvoke
+      ? this.baileysMessageEditDeleteService.deleteMessage(
+          jid,
+          key,
+          sendOptions,
+          beforeProviderInvoke
+        )
+      : this.baileysMessageEditDeleteService.deleteMessage(
+          jid,
+          key,
+          sendOptions
+        );
   }
 }

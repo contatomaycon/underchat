@@ -4,6 +4,8 @@ import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { WorkerService } from '@core/services/worker.service';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { UpdateAiAgentConfigRequest } from '@core/schema/worker/updateAiAgentConfig/request.schema';
+import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { prepareAiAgentProviderConfiguration } from '@core/services/aiAgentProviderConfiguration.service';
 
 @injectable()
 export class UpdateAiAgentConfigUseCase {
@@ -44,15 +46,21 @@ export class UpdateAiAgentConfigUseCase {
     const enabledToSave =
       body.enabled === undefined ? currentConfig.enabled : body.enabled;
 
-    if (aiAgentIdToSave) {
+    if (enabledToSave && !aiAgentIdToSave) {
+      throw new Error(t('ai_agent_not_found'));
+    }
+
+    if (enabledToSave && aiAgentIdToSave) {
       const aiAgent = await this.aiAgentService.viewAiAgent(
         aiAgentIdToSave,
         accountId
       );
 
-      if (!aiAgent) {
+      if (!aiAgent || aiAgent.status !== EAiAgentStatus.active) {
         throw new Error(t('ai_agent_not_found'));
       }
+
+      await prepareAiAgentProviderConfiguration(aiAgent);
     }
 
     const result = await this.workerConfigService.updateAiAgent(

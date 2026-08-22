@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { ContactValidationUpdateConsume } from '@core/consumer/contact/ContactValidationUpdate.consume';
+import { launchServiceApiConsumerStartup } from './startupAttempt';
 
 export function startContactValidationUpdateConsume(
   server: FastifyInstance
@@ -9,12 +10,13 @@ export function startContactValidationUpdateConsume(
     ContactValidationUpdateConsume
   );
 
-  contactValidationUpdateConsume.execute().catch((error: unknown) => {
-    server.log.error(
-      { err: error },
-      'Error starting contact validation update consume'
-    );
-  });
-
-  return contactValidationUpdateConsume;
+  return launchServiceApiConsumerStartup(
+    contactValidationUpdateConsume,
+    () => contactValidationUpdateConsume.execute(),
+    (error) =>
+      server.log.error(
+        { err: error },
+        'Error starting contact validation update consume'
+      )
+  );
 }

@@ -216,7 +216,9 @@ export class AuthForgotPasswordResetPasswordUseCase {
       this.accountService.viewAccountInfoByAccountId(accountId),
       this.userService.listUserSectors(accountId, userId),
       this.userService.listUserChannelsWithNames(accountId, userId),
-      this.accountService.listActivePlanProductIds(accountId),
+      this.accountService.listActivePlanProductIds(accountId, {
+        bypassIntegrationCache: true,
+      }),
     ]);
 
     const planIsActive = await this.accountService.isPlanActive(accountId);

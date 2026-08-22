@@ -16,6 +16,8 @@ import { viewContactEmailSchema } from '@core/schema/contact/viewContactEmail';
 import { viewContactDocumentSchema } from '@core/schema/contact/viewContactDocument';
 import { deleteContactSchema } from '@core/schema/contact/deleteContact';
 import { bulkDeleteContactSchema } from '@core/schema/contact/bulkDeleteContact';
+import { bulkUpdateContactLabelsSchema } from '@core/schema/contact/bulkUpdateContactLabels';
+import { bulkUpdateContactDetailsSchema } from '@core/schema/contact/bulkUpdateContactDetails';
 import { editContactSchema } from '@core/schema/contact/editContact';
 import { exportContactSchema } from '@core/schema/contact/exportContact';
 import { validateContactSchema } from '@core/schema/contact/validateContact';
@@ -171,6 +173,28 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactDeletePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/contact/bulk/labels', {
+    schema: bulkUpdateContactLabelsSchema,
+    handler: contactController.bulkUpdateContactLabels,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactUpdatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/contact/bulk/details', {
+    schema: bulkUpdateContactDetailsSchema,
+    handler: contactController.bulkUpdateContactDetails,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactUpdatePermissions),
       planGuard,
       planStatus,
     ],

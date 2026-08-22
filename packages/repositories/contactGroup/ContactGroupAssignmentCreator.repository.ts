@@ -1,6 +1,6 @@
 import * as schema from '@core/models';
-import { contactGroupAssignment } from '@core/models';
-import { ExtractTablesWithRelations } from 'drizzle-orm';
+import { contactGroup, contactGroupAssignment } from '@core/models';
+import { ExtractTablesWithRelations, and, eq, isNull } from 'drizzle-orm';
 import {
   NodePgDatabase,
   NodePgQueryResultHKT,
@@ -8,6 +8,11 @@ import {
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
+import {
+  type ContactOutboundWebhookMarker,
+  lockContactOutboundWebhookSnapshotInTransaction,
+  markContactOutboundWebhookAppliedInTransaction,
+} from '@core/repositories/contact/contactOutboundWebhookOutbox';
 
 @injectable()
 export class ContactGroupAssignmentCreatorRepository {
@@ -22,9 +27,36 @@ export class ContactGroupAssignmentCreatorRepository {
       ExtractTablesWithRelations<typeof schema>
     >,
     contactGroupId: string,
-    contactId: string
+    contactId: string,
+    accountId: string,
+    requestedAssignmentId?: string,
+    webhookMarker?: ContactOutboundWebhookMarker | null
   ): Promise<string | null> => {
-    const contactGroupAssignmentId = uuidv7();
+    const groups = await tx
+      .select({ id: contactGroup.contact_group_id })
+      .from(contactGroup)
+      .where(
+        and(
+          eq(contactGroup.contact_group_id, contactGroupId),
+          eq(contactGroup.account_id, accountId),
+          isNull(contactGroup.deleted_at)
+        )
+      )
+      .for('key share')
+      .limit(1)
+      .execute();
+    if (!groups[0]) {
+      throw new Error('contact_group_account_mismatch');
+    }
+
+    const previousContact =
+      await lockContactOutboundWebhookSnapshotInTransaction(
+        tx,
+        contactId,
+        webhookMarker,
+        accountId
+      );
+    const contactGroupAssignmentId = requestedAssignmentId ?? uuidv7();
 
     const result = await tx
       .insert(contactGroupAssignment)
@@ -33,34 +65,45 @@ export class ContactGroupAssignmentCreatorRepository {
         contact_group_id: contactGroupId,
         contact_id: contactId,
       })
+      .onConflictDoNothing({
+        target: [
+          contactGroupAssignment.contact_id,
+          contactGroupAssignment.contact_group_id,
+        ],
+      })
+      .returning({
+        id: contactGroupAssignment.contact_group_assignment_id,
+      })
       .execute();
 
-    if (!result) {
-      return null;
+    const createdAssignmentId = result[0]?.id ?? null;
+    if (createdAssignmentId && webhookMarker) {
+      await markContactOutboundWebhookAppliedInTransaction(
+        tx,
+        contactId,
+        webhookMarker,
+        previousContact
+      );
     }
-
-    return contactGroupAssignmentId;
+    return createdAssignmentId;
   };
 
   createContactGroupAssignmentDirectly = async (
     contactGroupId: string,
-    contactId: string
+    contactId: string,
+    accountId: string,
+    requestedAssignmentId?: string,
+    webhookMarker?: ContactOutboundWebhookMarker | null
   ): Promise<string | null> => {
-    const contactGroupAssignmentId = uuidv7();
-
-    const result = await this.dbRw
-      .insert(contactGroupAssignment)
-      .values({
-        contact_group_assignment_id: contactGroupAssignmentId,
-        contact_group_id: contactGroupId,
-        contact_id: contactId,
-      })
-      .execute();
-
-    if (!result) {
-      return null;
-    }
-
-    return contactGroupAssignmentId;
+    return this.dbRw.transaction((tx) =>
+      this.createContactGroupAssignment(
+        tx,
+        contactGroupId,
+        contactId,
+        accountId,
+        requestedAssignmentId,
+        webhookMarker
+      )
+    );
   };
 }

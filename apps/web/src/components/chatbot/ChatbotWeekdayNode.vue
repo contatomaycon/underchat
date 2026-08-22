@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './chatbot-node-workbench.css';
 import { computed, ref, watch } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
@@ -141,7 +142,7 @@ watch(
 </script>
 
 <template>
-  <div class="chatbot-weekday-node">
+  <div class="chatbot-weekday-node chatbot-workbench-node">
     <Handle
       id="target"
       type="target"
@@ -149,13 +150,18 @@ watch(
       class="handle-target"
     />
 
-    <VCard class="weekday-card" elevation="2">
+    <VCard class="weekday-card chatbot-workbench-card" elevation="2">
       <VCardTitle
-        class="d-flex align-center justify-space-between pa-2 node-drag-handle"
+        class="d-flex align-center justify-space-between pa-2 node-drag-handle chatbot-workbench-header"
       >
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-calendar" color="primary" size="20" />
-          <span class="text-sm font-weight-medium">{{
+        <div class="d-flex align-center ga-2 chatbot-workbench-identity">
+          <VIcon
+            icon="tabler-calendar"
+            color="primary"
+            size="20"
+            class="chatbot-workbench-icon"
+          />
+          <span class="text-sm font-weight-medium chatbot-workbench-title">{{
             t('chatbot_weekday')
           }}</span>
         </div>
@@ -164,12 +170,12 @@ watch(
           icon="tabler-x"
           size="18"
           color="error"
-          class="cursor-pointer"
+          class="cursor-pointer chatbot-workbench-remove"
           @click.stop="handleRemove"
         />
       </VCardTitle>
 
-      <VCardText class="pa-3">
+      <VCardText class="pa-3 chatbot-workbench-body">
         <div class="options-list nodrag">
           <div
             v-for="(option, index) in weekdayData.options"

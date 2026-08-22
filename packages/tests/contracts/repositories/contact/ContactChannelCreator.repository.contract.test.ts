@@ -11,16 +11,36 @@ jest.mock('@core/common/functions/currentTime', () => ({
 }));
 
 describe('ContactChannelCreatorRepository', () => {
+  const createWorkerSelect = (found = true) => {
+    const chain = {} as Record<string, jest.Mock>;
+    for (const method of ['from', 'where', 'for', 'limit']) {
+      chain[method] = jest.fn(() => chain);
+    }
+    chain.execute = jest.fn(async () => (found ? [{ id: 'channel-1' }] : []));
+    return jest.fn(() => chain);
+  };
+
+  const createInsert = (result: unknown) => {
+    const values = jest.fn();
+    const chain = {
+      onConflictDoNothing: jest.fn(),
+      returning: jest.fn(),
+      execute: jest.fn(async () => result),
+    };
+    chain.onConflictDoNothing.mockReturnValue(chain);
+    chain.returning.mockReturnValue(chain);
+    values.mockReturnValue(chain);
+    return { insert: jest.fn(() => ({ values })), values };
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     (uuidv7 as unknown as jest.Mock).mockReturnValue('contact-channel-id');
   });
 
   it('creates contact channel in transaction and returns id', async () => {
-    const execute = jest.fn(async () => ({ rowCount: 1 }));
-    const values = jest.fn(() => ({ execute }));
-    const insert = jest.fn(() => ({ values }));
-    const tx = { insert };
+    const { insert, values } = createInsert([{ id: 'contact-channel-id' }]);
+    const tx = { insert, select: createWorkerSelect() };
 
     const repository = new ContactChannelCreatorRepository({} as never);
 
@@ -46,10 +66,8 @@ describe('ContactChannelCreatorRepository', () => {
   });
 
   it('returns null when insert returns null', async () => {
-    const execute = jest.fn(async () => null);
-    const values = jest.fn(() => ({ execute }));
-    const insert = jest.fn(() => ({ values }));
-    const tx = { insert };
+    const { insert } = createInsert([]);
+    const tx = { insert, select: createWorkerSelect() };
 
     const repository = new ContactChannelCreatorRepository({} as never);
 
@@ -61,5 +79,21 @@ describe('ContactChannelCreatorRepository', () => {
         'account-1'
       )
     ).resolves.toBeNull();
+  });
+
+  it('rejects a channel from another account before inserting the relation', async () => {
+    const insert = jest.fn();
+    const tx = { insert, select: createWorkerSelect(false) };
+    const repository = new ContactChannelCreatorRepository({} as never);
+
+    await expect(
+      repository.createContactChannelInTransaction(
+        tx as never,
+        'contact-1',
+        'channel-from-another-account',
+        'account-1'
+      )
+    ).rejects.toThrow('contact_channel_not_available');
+    expect(insert).not.toHaveBeenCalled();
   });
 });

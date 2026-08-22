@@ -2,7 +2,10 @@ import { injectable, inject } from 'tsyringe';
 import { AccountInfoViewerRepository } from '@core/repositories/account/AccountInfoViewer.repository';
 import { AccountInfoResponse } from '@core/schema/auth/login/response.schema';
 import { AccountQuantityProductViewerRepository } from '@core/repositories/account/AccountQuantityProductViewer.repository';
-import { AccountPlanProductIdsListerRepository } from '@core/repositories/account/AccountPlanProductIdsLister.repository';
+import {
+  AccountPlanProductIdsListerRepository,
+  type AccountPlanProductIdsListOptions,
+} from '@core/repositories/account/AccountPlanProductIdsLister.repository';
 import { AccountViewerExistsRepository } from '@core/repositories/account/AccountViewerExists.repository';
 import { AccountNameViewerRepository } from '@core/repositories/account/AccountNameViewer.repository';
 import { IViewAccountName } from '@core/common/interfaces/IViewAccountName';
@@ -38,6 +41,8 @@ import { PlanAccountExclusiveDeleterRepository } from '@core/repositories/planAc
 import { ExclusivePlansListerRepository } from '@core/repositories/planAccountExclusive/ExclusivePlansLister.repository';
 import { ListExclusivePlansResponseArray } from '@core/schema/planAccountExclusive/listExclusivePlans/response.schema';
 import Redis from 'ioredis';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import { PlanEntitlementService } from './planEntitlement.service';
 
 @injectable()
 export class AccountService {
@@ -86,8 +91,92 @@ export class AccountService {
     private readonly planAccountExclusiveDeleterRepository: PlanAccountExclusiveDeleterRepository,
     @inject(ExclusivePlansListerRepository)
     private readonly exclusivePlansListerRepository: ExclusivePlansListerRepository,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    @inject(PlanEntitlementService)
+    private readonly planEntitlementService: PlanEntitlementService
   ) {}
+
+  private readonly restoreIntegrationEntitlementAfterFailure = async (
+    accountId: string,
+    denyFenceOwnerToken?: string
+  ): Promise<void> => {
+    try {
+      await (denyFenceOwnerToken
+        ? this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration,
+            denyFenceOwnerToken
+          )
+        : this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration
+          ));
+    } catch (error) {
+      console.error(
+        'Could not restore Integration entitlement after an account mutation.',
+        error
+      );
+    }
+  };
+
+  private readonly runWithIntegrationDenyFence = async <T>(
+    accountId: string,
+    mutate: () => Promise<T>
+  ): Promise<T> => {
+    const currentEntitlement =
+      await this.planEntitlementService.resolveAuthoritatively(
+        accountId,
+        EPlanProduct.integration
+      );
+    let denyFenceOwnerToken: string | null = null;
+    if (currentEntitlement.allowed) {
+      denyFenceOwnerToken = await this.planEntitlementService.installDenyFence(
+        accountId,
+        EPlanProduct.integration
+      );
+    }
+
+    let mutationCompleted = false;
+    try {
+      const result = await mutate();
+      mutationCompleted = true;
+      await (denyFenceOwnerToken
+        ? this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration,
+            denyFenceOwnerToken
+          )
+        : this.planEntitlementService.refreshAfterMutation(
+            accountId,
+            EPlanProduct.integration
+          ));
+      return result;
+    } catch (error) {
+      if (!mutationCompleted) {
+        await this.restoreIntegrationEntitlementAfterFailure(
+          accountId,
+          denyFenceOwnerToken ?? undefined
+        );
+      }
+      throw error;
+    }
+  };
+
+  private readonly refreshIntegrationAfterGrant = async <T>(
+    accountId: string,
+    mutate: () => Promise<T>
+  ): Promise<T> => {
+    await this.planEntitlementService.refreshAfterMutation(
+      accountId,
+      EPlanProduct.integration
+    );
+    const result = await mutate();
+    await this.planEntitlementService.refreshAfterMutation(
+      accountId,
+      EPlanProduct.integration
+    );
+    return result;
+  };
 
   viewAccountInfoByAccountId = async (
     accountId: string
@@ -115,9 +204,13 @@ export class AccountService {
     );
   };
 
-  listActivePlanProductIds = async (accountId: string): Promise<string[]> => {
+  listActivePlanProductIds = async (
+    accountId: string,
+    options: AccountPlanProductIdsListOptions = {}
+  ): Promise<string[]> => {
     return this.accountPlanProductIdsListerRepository.listActivePlanProductIds(
-      accountId
+      accountId,
+      options
     );
   };
 
@@ -129,6 +222,14 @@ export class AccountService {
     accountId: string
   ): Promise<IViewAccountName | null> => {
     return this.accountNameViewerRepository.viewAccountName(accountId);
+  };
+
+  viewAccountNameConsistent = async (
+    accountId: string
+  ): Promise<IViewAccountName | null> => {
+    return this.accountNameViewerRepository.viewAccountNameConsistent(
+      accountId
+    );
   };
 
   listAccounts = async (
@@ -167,14 +268,25 @@ export class AccountService {
   };
 
   deleteAccountById = async (accountId: string): Promise<boolean> => {
-    return this.accountDeleterRepository.deleteAccountById(accountId);
+    return this.runWithIntegrationDenyFence(accountId, () =>
+      this.accountDeleterRepository.deleteAccountById(accountId)
+    );
   };
 
   updateAccountById = async (
     input: UpdateAccountRequest,
     accountId: string
   ): Promise<boolean> => {
-    return this.accountUpdaterRepository.updateAccountById(input, accountId);
+    const accountStatusId = input.account_status?.account_status_id;
+    if (!accountStatusId) {
+      return this.accountUpdaterRepository.updateAccountById(input, accountId);
+    }
+
+    const mutate = () =>
+      this.accountUpdaterRepository.updateAccountById(input, accountId);
+    return accountStatusId === EAccountStatus.blocked
+      ? this.runWithIntegrationDenyFence(accountId, mutate)
+      : this.refreshIntegrationAfterGrant(accountId, mutate);
   };
 
   existsAccountInfoById = async (accountId: string): Promise<boolean> => {
@@ -329,10 +441,14 @@ export class AccountService {
     accountId: string,
     accountStatusId: string
   ): Promise<boolean> => {
-    return this.accountUpdaterRepository.updateAccountStatusById(
-      accountId,
-      accountStatusId
-    );
+    const mutate = () =>
+      this.accountUpdaterRepository.updateAccountStatusById(
+        accountId,
+        accountStatusId
+      );
+    return accountStatusId === EAccountStatus.blocked
+      ? this.runWithIntegrationDenyFence(accountId, mutate)
+      : this.refreshIntegrationAfterGrant(accountId, mutate);
   };
 
   clearAllAccountSessions = async (accountId: string): Promise<void> => {

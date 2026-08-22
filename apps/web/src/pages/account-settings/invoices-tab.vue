@@ -629,7 +629,7 @@ watch(
                 v-if="accountSettingsStore.accountPaymentNfse.pdf_url"
                 color="primary"
                 variant="outlined"
-                prepend-icon="tabler-file-pdf"
+                prepend-icon="tabler-file-type-pdf"
                 @click="downloadPdf"
               >
                 {{ $t('download_pdf') }}
@@ -646,7 +646,7 @@ watch(
             </div>
           </div>
           <div v-else class="text-center py-8">
-            <VIcon icon="tabler-file-invoice-off" size="48" class="mb-4" />
+            <VIcon icon="tabler-receipt-off" size="48" class="mb-4" />
             <p class="text-body-1">{{ $t('nfse_not_found') }}</p>
           </div>
         </VCardText>

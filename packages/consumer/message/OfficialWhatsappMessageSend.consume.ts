@@ -2,8 +2,9 @@ import { singleton, inject } from 'tsyringe';
 import type { KafkaConsumer } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { Buffer } from 'node:buffer';
-import { v7 as uuidv7 } from 'uuid';
+import { createHash } from 'node:crypto';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS } from '@core/common/functions/serviceApiWhatsappConsumerBindings';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import {
   MetaWhatsappContactMessage,
@@ -13,7 +14,11 @@ import {
 } from '@core/services/metaWhatsappEmbedded.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
-import { MessageSendIdempotencyService } from '@core/services/messageSendIdempotency.service';
+import {
+  IMessageSendAcquiredClaim,
+  MessageSendClaimResult,
+  MessageSendIdempotencyService,
+} from '@core/services/messageSendIdempotency.service';
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { OfficialWhatsappTemplateService } from '@core/services/officialWhatsappTemplate.service';
@@ -29,6 +34,7 @@ import {
   buildMessageSendQueueKey,
   buildScheduleSendQueueKey,
   resolveMessageSendIdentity,
+  resolveMessageSendOperationId,
 } from '@core/common/functions/messageIdentity';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 import type {
@@ -41,6 +47,37 @@ import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { scheduleMappings } from '@core/mappings/schedule.mappings';
+import { OfficialWhatsappConversationWindowService } from '@core/services/officialWhatsappConversationWindow.service';
+import {
+  MessageUpdatePublishFailedError,
+  isMessageUpdatePublishFailedError,
+} from '@core/common/exceptions/MessageUpdatePublishFailedError';
+import { isKafkaConsumerDispatchRevokedError } from '@core/common/exceptions/KafkaConsumerDispatchRevokedError';
+import {
+  ScheduleMessageSendAmbiguousError,
+  isScheduleMessageSendAmbiguousError,
+} from '@core/common/exceptions/ScheduleMessageSendAmbiguousError';
+import { buildOfficialWhatsappMessageStatusEventId } from '@core/common/functions/officialWhatsappEventIdentity';
+import {
+  buildMessageUpdateKafkaKey,
+  ensureMessageUpdateIdentity,
+} from '@core/common/functions/messageUpdateIdentity';
+import {
+  buildScheduleStatusKafkaKey,
+  ensureScheduleStatusEventId,
+} from '@core/common/functions/scheduleStatusIdentity';
+import { buildMessageStatusEventId } from '@core/common/functions/messageStatusIdentity';
+import {
+  ScheduleMessageInFlightLeaseUnavailableError,
+  ScheduleStatusCoordinationService,
+} from '@core/services/scheduleStatusCoordination.service';
+import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
+import { assertOfficialWhatsappInteractivePayload } from '@core/common/functions/officialWhatsappInteractiveValidation';
+import {
+  buildScheduleSendAmbiguousRecovery,
+  IScheduleSendAmbiguousRecovery,
+  normalizeScheduleSendAmbiguousRecovery,
+} from '@core/common/functions/outboundAuxiliarySendRecovery';
 
 interface IQueuedEnvelope {
   sourceTopic: string;
@@ -50,6 +87,51 @@ interface IQueuedEnvelope {
   payload: unknown;
   queueKey: string;
   chatId: string | null;
+  assertDispatchActive: () => void;
+}
+
+type OfficialSchedulePreLeaseRecoveryResult =
+  | { status: 'continue' }
+  | { status: 'handled' }
+  | {
+      status: 'reserved_takeover';
+      claim: IMessageSendAcquiredClaim;
+    };
+
+interface IOfficialSucceededRecovery {
+  schema_version: 'official_whatsapp_send_recovery_v1';
+  provider_result: MetaWhatsappMessageSendResult;
+  update_message: IUpdateMessage | null;
+  message_status_update: IMessageStatusUpdate | null;
+  schedule_status_update: IScheduleStatusUpdate | null;
+  annotation: {
+    message_id: string;
+    message: string;
+    date: string;
+  } | null;
+}
+
+interface IOfficialProviderRejectedRecovery {
+  schema_version: 'official_whatsapp_provider_rejected_recovery_v1';
+  failure_kind: 'meta_graph_api_rejection';
+  schedule_id?: string;
+  contact_id?: string;
+  message_id?: string;
+  attempt_id?: string;
+  error: {
+    message: string;
+    code: number | null;
+    error_subcode: number | null;
+    type: string | null;
+  };
+}
+
+interface IOfficialAmbiguousTerminalRecovery {
+  schema_version: 'message_send_ambiguous_terminal_v1';
+  provider: 'official';
+  operation_id: string;
+  outcome_digest: string;
+  status_update: IMessageStatusUpdate;
 }
 
 @singleton()
@@ -60,6 +142,16 @@ export class OfficialWhatsappMessageSendConsume {
   private isRunning = false;
   private readonly SYSTEM_QUEUE_KEY = 'system';
   private readonly META_MESSAGE_ID_PREFIX = 'wamid.';
+  private readonly PROCESSING_WATCHDOG_MS = 180_000;
+  private readonly persistedProviderRejections =
+    new WeakSet<MetaGraphApiError>();
+  private pendingProviderRejectionCompactions = new WeakMap<
+    MetaGraphApiError,
+    {
+      claim: IMessageSendAcquiredClaim;
+      recovery: IOfficialProviderRejectedRecovery;
+    }
+  >();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -82,7 +174,15 @@ export class OfficialWhatsappMessageSendConsume {
     @inject(OfficialWhatsappTemplateService)
     private readonly officialWhatsappTemplateService: OfficialWhatsappTemplateService,
     @inject(ElasticDatabaseService)
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(ScheduleStatusCoordinationService)
+    private readonly scheduleStatusCoordinationService: ScheduleStatusCoordinationService,
+    @inject(OfficialWhatsappConversationWindowService)
+    private readonly officialWindowService: OfficialWhatsappConversationWindowService = {
+      recordProviderAcceptedMessage: async () => undefined,
+      recordTemplateFailureForMessage: async () => undefined,
+      markClosedByMetaReengagementForMessage: async () => undefined,
+    } as unknown as OfficialWhatsappConversationWindowService
   ) {}
 
   public async execute(): Promise<void> {
@@ -92,12 +192,17 @@ export class OfficialWhatsappMessageSendConsume {
     this.runner = new KafkaConsumerRunner<unknown>({
       kafka: this.kafka,
       topic,
-      groupId: 'group-underchat-official-whatsapp-send',
+      groupId: SERVICE_API_WHATSAPP_CONSUMER_GROUP_IDS.officialWhatsappSend,
       parse: (message) =>
         this.parseRawMessage(this.extractRawMessage(message.value)),
       resolveEntityKey: (payload, message) =>
         this.resolveQueueContext(payload, message).queueKey,
       preserveEntityOrder: true,
+      maxRetries: 3,
+      retryDelaysMs: [250, 1000],
+      shouldContinueRetryWithoutCommit: (_payload, _context, error) =>
+        isMessageUpdatePublishFailedError(error),
+      processingTimeoutMs: this.PROCESSING_WATCHDOG_MS,
       handle: (payload, context) =>
         this.processRunnerPayload(topic, payload, context),
       logger: console,
@@ -233,12 +338,46 @@ export class OfficialWhatsappMessageSendConsume {
       payload,
       queueKey,
       chatId,
+      assertDispatchActive: context.assertActive,
     };
 
     try {
       await this.processPayload(payload, envelope);
     } catch (error) {
-      await this.routeFailedMessage(envelope, error);
+      if (isScheduleMessageSendAmbiguousError(error)) {
+        if (isKafkaConsumerDispatchRevokedError(error.originalCause)) {
+          throw error.originalCause;
+        }
+        console.warn(
+          '[OfficialWhatsappMessageSend] Provider result is ambiguous; suppressing not-sent state and automatic retry',
+          {
+            message_id: this.extractMessageId(payload),
+            error:
+              error.originalCause instanceof Error
+                ? error.originalCause.message
+                : String(error.originalCause),
+          }
+        );
+        return;
+      }
+      if (
+        isMessageUpdatePublishFailedError(error) ||
+        isKafkaConsumerDispatchRevokedError(error)
+      ) {
+        throw error;
+      }
+      try {
+        await this.routeFailedMessage(envelope, error);
+        await this.compactProviderRejectionIfPending(error);
+      } catch (routeError) {
+        if (
+          isMessageUpdatePublishFailedError(routeError) ||
+          isKafkaConsumerDispatchRevokedError(routeError)
+        ) {
+          throw routeError;
+        }
+        throw new MessageUpdatePublishFailedError(routeError);
+      }
     }
   }
 
@@ -246,6 +385,8 @@ export class OfficialWhatsappMessageSendConsume {
     payload: unknown,
     envelope: IQueuedEnvelope
   ): Promise<void> {
+    envelope.assertDispatchActive();
+
     if (this.isScheduleMessage(payload)) {
       await this.processSchedulePayload(payload, envelope);
       return;
@@ -256,22 +397,181 @@ export class OfficialWhatsappMessageSendConsume {
       return;
     }
 
-    const claimStatus = await this.claimMessageSend(payload);
-    if (claimStatus === 'duplicate') {
+    const claim = await this.claimMessageSend(payload);
+    if (!claim) {
+      throw new Error('message_send_idempotency_error');
+    }
+    if (claim.status === 'error') {
+      if (
+        claim.reason === 'redis_unavailable' ||
+        claim.reason === 'invalid_reply'
+      ) {
+        throw new MessageUpdatePublishFailedError(
+          new Error(`message_send_idempotency_${claim.reason}`)
+        );
+      }
+      throw new Error(`message_send_idempotency_${claim.reason}`);
+    }
+    if (claim.status === 'duplicate') {
+      if (claim.compacted) {
+        return;
+      }
+      if (claim.state === 'succeeded') {
+        try {
+          const projectionPublished = Boolean(
+            this.normalizeSucceededRecovery(claim.result, payload, null)
+          );
+          await this.recoverSucceededEffects(
+            claim.result,
+            payload,
+            null,
+            envelope.assertDispatchActive
+          );
+          if (projectionPublished) {
+            await this.compactTerminalRecovery(
+              claim,
+              'succeeded',
+              claim.result
+            );
+          }
+        } catch (error) {
+          if (
+            isMessageUpdatePublishFailedError(error) ||
+            isKafkaConsumerDispatchRevokedError(error)
+          ) {
+            throw error;
+          }
+          throw new MessageUpdatePublishFailedError(error);
+        }
+      } else if (claim.state === 'failed') {
+        try {
+          const projectionPublished = await this.recoverProviderRejectedEffects(
+            claim.result,
+            envelope,
+            envelope.assertDispatchActive
+          );
+          if (projectionPublished) {
+            await this.compactTerminalRecovery(claim, 'failed', claim.result);
+          }
+        } catch (error) {
+          if (
+            isMessageUpdatePublishFailedError(error) ||
+            isKafkaConsumerDispatchRevokedError(error)
+          ) {
+            throw error;
+          }
+          throw new MessageUpdatePublishFailedError(error);
+        }
+      } else if (claim.state === 'provider_invoked') {
+        throw new MessageUpdatePublishFailedError(
+          new Error('official_message_send_provider_attempt_in_flight')
+        );
+      } else if (claim.state === 'ambiguous') {
+        await this.recoverDirectAmbiguousEffects(
+          claim,
+          payload,
+          envelope.assertDispatchActive
+        );
+      } else if (claim.state === 'reserved') {
+        throw new MessageUpdatePublishFailedError(
+          new Error('official_message_send_idempotency_reserved')
+        );
+      }
       return;
     }
 
-    if (claimStatus !== 'acquired') {
-      throw new Error(`message_send_idempotency_${claimStatus}`);
-    }
-
-    const result = await this.sendMessage(payload);
-    await this.pushMessageUpdate(payload, result);
-    await this.pushSentStatus(payload, result);
-
-    const annotation = this.resolveWindowAnnotation(payload, result.raw);
-    if (annotation) {
-      await this.publishAnnotation(payload, annotation);
+    let providerInvoked = false;
+    let providerResultCommitted = false;
+    const ambiguousRecovery = this.buildDirectAmbiguousRecovery(
+      payload,
+      claim.operationId
+    );
+    try {
+      const result = await this.sendMessage(
+        payload,
+        async () => {
+          envelope.assertDispatchActive();
+          const invoked =
+            await this.messageSendIdempotencyService.markProviderInvoked(
+              claim,
+              ambiguousRecovery
+            );
+          if (invoked !== 'transitioned') {
+            throw new Error(`message_send_idempotency_${invoked}`);
+          }
+          providerInvoked = true;
+        },
+        envelope.assertDispatchActive
+      );
+      const recovery = this.buildSucceededRecovery(payload, result);
+      const succeeded = await this.messageSendIdempotencyService.markSucceeded(
+        claim,
+        recovery
+      );
+      if (succeeded !== 'transitioned') {
+        throw new Error(`message_send_idempotency_${succeeded}`);
+      }
+      providerResultCommitted = true;
+      await this.applySucceededEffects(
+        recovery,
+        payload,
+        envelope.assertDispatchActive,
+        null
+      );
+      await this.compactTerminalRecovery(claim, 'succeeded', recovery);
+    } catch (error) {
+      if (providerInvoked && !providerResultCommitted) {
+        if (this.isDefinitiveProviderRejection(error)) {
+          const rejectionState = await this.persistProviderRejection({
+            claim,
+            error,
+            context: { message_id: payload.message_id },
+            ambiguousRecovery,
+          });
+          if (rejectionState === 'failed') {
+            throw error;
+          }
+          await this.publishDirectAmbiguousTerminalStatus(
+            ambiguousRecovery,
+            envelope.assertDispatchActive
+          );
+          await this.compactTerminalRecovery(
+            claim,
+            'ambiguous',
+            ambiguousRecovery
+          );
+          throw new ScheduleMessageSendAmbiguousError(error);
+        }
+        const ambiguous =
+          await this.messageSendIdempotencyService.markAmbiguous(
+            claim,
+            error,
+            ambiguousRecovery
+          );
+        if (ambiguous !== 'transitioned') {
+          throw new MessageUpdatePublishFailedError(
+            new Error(`message_send_idempotency_ambiguous_${ambiguous}`)
+          );
+        }
+        await this.publishDirectAmbiguousTerminalStatus(
+          ambiguousRecovery,
+          envelope.assertDispatchActive
+        );
+        await this.compactTerminalRecovery(
+          claim,
+          'ambiguous',
+          ambiguousRecovery
+        );
+        throw new ScheduleMessageSendAmbiguousError(error);
+      } else if (!providerInvoked) {
+        await this.messageSendIdempotencyService
+          .releaseReservation(claim)
+          .catch(() => undefined);
+      }
+      if (providerResultCommitted) {
+        throw new MessageUpdatePublishFailedError(error);
+      }
+      throw error;
     }
 
     envelope.chatId = this.resolveChatId(payload);
@@ -281,72 +581,741 @@ export class OfficialWhatsappMessageSendConsume {
     payload: IScheduleMessage,
     envelope: IQueuedEnvelope
   ): Promise<void> {
+    payload.attempt_id = payload.attempt_id?.trim() || undefined;
+    const preLeaseRecovery =
+      await this.recoverOfficialScheduleBeforeAttemptLease(payload, envelope);
+    if (preLeaseRecovery.status === 'handled') {
+      return;
+    }
+    try {
+      await this.scheduleStatusCoordinationService.withMessageInFlight(
+        {
+          scheduleId: payload.schedule_id,
+          accountId: payload.account_id ?? payload.message.account.id,
+          workerId: payload.message.worker.id,
+          messageId: payload.message.message_id,
+          attemptId: payload.attempt_id,
+        },
+        async (assertLeaseActive) => {
+          await assertLeaseActive();
+          try {
+            await this.processSchedulePayloadWithLease(
+              payload,
+              envelope,
+              assertLeaseActive,
+              preLeaseRecovery.status === 'reserved_takeover'
+                ? preLeaseRecovery.claim
+                : null
+            );
+          } catch (error) {
+            if (isScheduleMessageSendAmbiguousError(error)) {
+              if (
+                isKafkaConsumerDispatchRevokedError(error.originalCause) ||
+                this.isScheduleMessageAttemptLeaseError(error.originalCause)
+              ) {
+                throw error.originalCause;
+              }
+              console.warn(
+                '[OfficialWhatsappMessageSend] Official schedule provider result is ambiguous; suppressing failed status and automatic retry',
+                {
+                  schedule_id: payload.schedule_id,
+                  contact_id: payload.contact_id,
+                  message_id: payload.message.message_id,
+                  attempt_id: payload.attempt_id,
+                  error:
+                    error.originalCause instanceof Error
+                      ? error.originalCause.message
+                      : String(error.originalCause),
+                }
+              );
+              return;
+            }
+            if (
+              isMessageUpdatePublishFailedError(error) ||
+              isKafkaConsumerDispatchRevokedError(error) ||
+              this.isScheduleMessageAttemptLeaseError(error)
+            ) {
+              throw error;
+            }
+
+            try {
+              await assertLeaseActive();
+              await this.routeFailedMessage(envelope, error, assertLeaseActive);
+              await this.compactProviderRejectionIfPending(error);
+            } catch (routeError) {
+              if (
+                isKafkaConsumerDispatchRevokedError(routeError) ||
+                this.isScheduleMessageAttemptLeaseError(routeError)
+              ) {
+                throw routeError;
+              }
+              if (
+                error instanceof MetaGraphApiError &&
+                this.persistedProviderRejections.has(error)
+              ) {
+                throw new MessageUpdatePublishFailedError(routeError);
+              }
+              console.error(
+                '[OfficialWhatsappMessageSend] Failed to route terminal schedule error:',
+                routeError
+              );
+            }
+          }
+        }
+      );
+    } catch (error) {
+      if (this.isScheduleMessageAttemptLeaseError(error)) {
+        console.info(
+          '[OfficialWhatsappMessageSend] Deferring schedule message without an active distributed attempt lease',
+          {
+            schedule_id: payload.schedule_id,
+            message_id: payload.message.message_id,
+            attempt_id: payload.attempt_id,
+          }
+        );
+        throw new MessageUpdatePublishFailedError(error);
+      }
+      throw error;
+    }
+  }
+
+  private buildOfficialScheduleAmbiguousRecovery(
+    payload: IScheduleMessage,
+    claim: Pick<
+      Extract<MessageSendClaimResult, { status: 'acquired' | 'duplicate' }>,
+      'accountId' | 'operationId'
+    >
+  ): IScheduleSendAmbiguousRecovery {
+    const messageId = payload.message.message_id.trim();
+    return buildScheduleSendAmbiguousRecovery({
+      provider: 'official',
+      operationId: claim.operationId,
+      scheduleId: payload.schedule_id,
+      contactId: payload.contact_id,
+      messageId,
+      attemptId: payload.attempt_id?.trim() || `legacy:${messageId}`,
+      accountId: claim.accountId,
+      workerId: payload.message.worker.id,
+    });
+  }
+
+  private async recoverOfficialScheduleBeforeAttemptLease(
+    payload: IScheduleMessage,
+    envelope: IQueuedEnvelope
+  ): Promise<OfficialSchedulePreLeaseRecoveryResult> {
+    const identity = resolveMessageSendIdentity(payload.message);
+    if (!identity) {
+      return { status: 'continue' };
+    }
+
+    const idempotencyService = this.messageSendIdempotencyService;
+    if (
+      !idempotencyService ||
+      typeof idempotencyService.inspectOperation !== 'function'
+    ) {
+      return { status: 'continue' };
+    }
+
+    const inspection = await idempotencyService.inspectOperation({
+      accountId: identity.accountId,
+      operationType: 'schedule',
+      operationId: identity.messageId,
+      meta: this.buildMessageSendClaimMeta(payload.message, identity, payload),
+      compatibleLegacyMetaKeys: ['attempt_id'],
+    });
+    envelope.assertDispatchActive();
+
+    if (inspection.status === 'error') {
+      if (inspection.reason === 'identity_conflict') {
+        console.error(
+          '[OfficialWhatsappMessageSend] Conflicting immutable schedule recovery identity discarded before attempt lease',
+          {
+            schedule_id: payload.schedule_id,
+            contact_id: payload.contact_id,
+            message_id: payload.message.message_id,
+            attempt_id: payload.attempt_id,
+          }
+        );
+        return { status: 'handled' };
+      }
+      throw new MessageUpdatePublishFailedError(
+        new Error(`message_send_inspection_${inspection.reason}`)
+      );
+    }
+    if (inspection.status === 'duplicate' && inspection.compacted) {
+      return { status: 'handled' };
+    }
+    if (inspection.status === 'not_found' || inspection.state === 'reserved') {
+      const takeover = await this.claimMessageSend(payload.message, payload);
+      if (!takeover) {
+        throw new MessageUpdatePublishFailedError(
+          new Error('official_schedule_reserved_takeover_identity_invalid')
+        );
+      }
+      if (takeover.status === 'error') {
+        if (takeover.reason === 'identity_conflict') {
+          console.error(
+            '[OfficialWhatsappMessageSend] Reserved takeover identity conflict discarded',
+            {
+              schedule_id: payload.schedule_id,
+              contact_id: payload.contact_id,
+              message_id: payload.message.message_id,
+              attempt_id: payload.attempt_id,
+            }
+          );
+          return { status: 'handled' };
+        }
+        throw new MessageUpdatePublishFailedError(
+          new Error(`official_schedule_reserved_takeover_${takeover.reason}`)
+        );
+      }
+      if (takeover.status === 'duplicate') {
+        if (takeover.compacted) {
+          return { status: 'handled' };
+        }
+        throw new MessageUpdatePublishFailedError(
+          new Error(`official_schedule_reserved_takeover_${takeover.state}`)
+        );
+      }
+
+      try {
+        const adoption =
+          await this.scheduleStatusCoordinationService.adoptMessageAttemptFromLedgerReservation(
+            {
+              scheduleId: payload.schedule_id,
+              accountId: identity.accountId,
+              workerId: payload.message.worker.id,
+              messageId: identity.messageId,
+              attemptId:
+                payload.attempt_id?.trim() || `legacy:${identity.messageId}`,
+              ledgerOperationId: takeover.operationId,
+              ledgerReservationOwner: takeover.owner,
+            }
+          );
+        if (adoption === 'stale' || adoption === 'terminal') {
+          await idempotencyService
+            .releaseReservation(takeover)
+            .catch(() => undefined);
+          console.error(
+            '[OfficialWhatsappMessageSend] Reserved ledger takeover was not adopted by the operational identity',
+            {
+              schedule_id: payload.schedule_id,
+              contact_id: payload.contact_id,
+              message_id: payload.message.message_id,
+              attempt_id: payload.attempt_id,
+              adoption,
+            }
+          );
+          return { status: 'handled' };
+        }
+        if (adoption === 'invalid') {
+          throw new Error(
+            'official_schedule_reserved_takeover_adoption_invalid'
+          );
+        }
+        envelope.assertDispatchActive();
+      } catch (error) {
+        await idempotencyService
+          .releaseReservation(takeover)
+          .catch(() => undefined);
+        if (isKafkaConsumerDispatchRevokedError(error)) {
+          throw error;
+        }
+        throw new MessageUpdatePublishFailedError(error);
+      }
+      return {
+        status: 'reserved_takeover',
+        claim: takeover,
+      };
+    }
+    if (inspection.state === 'provider_invoked') {
+      throw new MessageUpdatePublishFailedError(
+        new Error('official_schedule_provider_attempt_in_flight')
+      );
+    }
+    if (inspection.state === 'ambiguous') {
+      const expected = this.buildOfficialScheduleAmbiguousRecovery(
+        payload,
+        inspection
+      );
+      const recovery = normalizeScheduleSendAmbiguousRecovery(
+        inspection.result,
+        {
+          provider: expected.provider,
+          operationId: expected.operation_id,
+          scheduleId: expected.schedule_id,
+          contactId: expected.contact_id,
+          messageId: expected.message_id,
+          attemptId: expected.attempt_id,
+          accountId: expected.account_id,
+          workerId: expected.worker_id,
+        }
+      );
+      if (!recovery) {
+        const legacyRecovery =
+          await this.messageSendIdempotencyService.recoverLegacyAmbiguous(
+            inspection,
+            expected,
+            this.buildMessageSendClaimMeta(payload.message, identity, payload),
+            ['attempt_id']
+          );
+        if (legacyRecovery === 'identity_conflict') {
+          console.error(
+            '[OfficialWhatsappMessageSend] Official legacy ledger identity changed before terminal CAS',
+            {
+              schedule_id: payload.schedule_id,
+              contact_id: payload.contact_id,
+              message_id: payload.message.message_id,
+              attempt_id: payload.attempt_id,
+            }
+          );
+          return { status: 'handled' };
+        }
+        if (legacyRecovery !== 'transitioned') {
+          throw new MessageUpdatePublishFailedError(
+            new Error(
+              `official_schedule_${inspection.state}_recovery_${legacyRecovery}`
+            )
+          );
+        }
+      }
+      await this.ensureOfficialScheduleOperationalStateFromLedger(
+        inspection,
+        payload,
+        'ambiguous'
+      );
+      return { status: 'handled' };
+    }
+    if (inspection.state === 'succeeded') {
+      await this.ensureOfficialScheduleOperationalStateFromLedger(
+        inspection,
+        payload,
+        'succeeded'
+      );
+      const projectionPublished = Boolean(
+        this.normalizeSucceededRecovery(
+          inspection.result,
+          payload.message,
+          payload
+        )
+      );
+      await this.recoverSucceededEffects(
+        inspection.result,
+        payload.message,
+        payload,
+        envelope.assertDispatchActive
+      );
+      if (projectionPublished) {
+        await this.compactTerminalRecovery(
+          inspection,
+          'succeeded',
+          inspection.result
+        );
+      }
+      return { status: 'handled' };
+    }
+    if (inspection.state === 'failed') {
+      await this.ensureOfficialScheduleOperationalStateFromLedger(
+        inspection,
+        payload,
+        'provider_rejected'
+      );
+      try {
+        const projectionPublished = await this.recoverProviderRejectedEffects(
+          inspection.result,
+          envelope,
+          envelope.assertDispatchActive,
+          async () => undefined,
+          true
+        );
+        if (projectionPublished) {
+          await this.compactTerminalRecovery(
+            inspection,
+            'failed',
+            inspection.result
+          );
+        }
+      } catch (error) {
+        if (
+          isMessageUpdatePublishFailedError(error) ||
+          isKafkaConsumerDispatchRevokedError(error) ||
+          this.isScheduleMessageAttemptLeaseError(error)
+        ) {
+          throw error;
+        }
+        throw new MessageUpdatePublishFailedError(error);
+      }
+      return { status: 'handled' };
+    }
+    return { status: 'continue' };
+  }
+
+  private async ensureOfficialScheduleOperationalStateFromLedger(
+    claim: Pick<
+      Extract<MessageSendClaimResult, { status: 'duplicate' }>,
+      'operationId'
+    >,
+    payload: IScheduleMessage,
+    state: 'provider_rejected' | 'ambiguous' | 'succeeded'
+  ): Promise<void> {
+    try {
+      const messageId = payload.message.message_id;
+      const result =
+        await this.scheduleStatusCoordinationService.setMessageOperationalStateFromLedger(
+          {
+            scheduleId: payload.schedule_id,
+            accountId: payload.account_id?.trim() || payload.message.account.id,
+            workerId: payload.message.worker.id,
+            messageId,
+            attemptId: payload.attempt_id?.trim() || `legacy:${messageId}`,
+            ledgerOperationId: claim.operationId,
+          },
+          state
+        );
+      if (result === 'stale') {
+        console.error(
+          '[OfficialWhatsappMessageSend] Ledger outcome matched but official schedule operational identity was stale; provider remains terminal and will not be retried',
+          {
+            schedule_id: payload.schedule_id,
+            contact_id: payload.contact_id,
+            message_id: payload.message.message_id,
+            attempt_id: payload.attempt_id,
+            state,
+          }
+        );
+        return;
+      }
+      if (result === 'invalid') {
+        throw new Error(
+          `official_schedule_ledger_operational_state_${state}_${result}`
+        );
+      }
+    } catch (error) {
+      if (isMessageUpdatePublishFailedError(error)) {
+        throw error;
+      }
+      throw new MessageUpdatePublishFailedError(error);
+    }
+  }
+
+  private async processSchedulePayloadWithLease(
+    payload: IScheduleMessage,
+    envelope: IQueuedEnvelope,
+    assertLeaseActive: () => Promise<void>,
+    reservedTakeoverClaim: IMessageSendAcquiredClaim | null = null
+  ): Promise<void> {
     const message = payload.message;
-    const claimStatus = await this.claimMessageSend(message, payload);
-    if (claimStatus === 'duplicate') {
+    await assertLeaseActive();
+    const claim =
+      reservedTakeoverClaim ?? (await this.claimMessageSend(message, payload));
+    if (!claim) {
+      throw new Error('message_send_idempotency_error');
+    }
+    if (claim.status === 'error') {
+      if (
+        claim.reason === 'redis_unavailable' ||
+        claim.reason === 'invalid_reply'
+      ) {
+        throw new MessageUpdatePublishFailedError(
+          new Error(`message_send_idempotency_${claim.reason}`)
+        );
+      }
+      throw new Error(`message_send_idempotency_${claim.reason}`);
+    }
+    if (claim.status === 'duplicate') {
+      if (claim.compacted) {
+        return;
+      }
+      if (claim.state === 'succeeded') {
+        try {
+          await assertLeaseActive();
+          await this.transitionScheduleOperationalState(payload, 'succeeded');
+          const projectionPublished = Boolean(
+            this.normalizeSucceededRecovery(claim.result, message, payload)
+          );
+          await this.recoverSucceededEffects(
+            claim.result,
+            message,
+            payload,
+            envelope.assertDispatchActive,
+            assertLeaseActive
+          );
+          if (projectionPublished) {
+            await this.compactTerminalRecovery(
+              claim,
+              'succeeded',
+              claim.result
+            );
+          }
+        } catch (error) {
+          if (
+            isMessageUpdatePublishFailedError(error) ||
+            isKafkaConsumerDispatchRevokedError(error)
+          ) {
+            throw error;
+          }
+          throw new MessageUpdatePublishFailedError(error);
+        }
+      } else if (claim.state === 'failed') {
+        try {
+          await assertLeaseActive();
+          const projectionPublished = await this.recoverProviderRejectedEffects(
+            claim.result,
+            envelope,
+            envelope.assertDispatchActive,
+            assertLeaseActive
+          );
+          if (projectionPublished) {
+            await this.compactTerminalRecovery(claim, 'failed', claim.result);
+          }
+        } catch (error) {
+          if (
+            isMessageUpdatePublishFailedError(error) ||
+            isKafkaConsumerDispatchRevokedError(error) ||
+            this.isScheduleMessageAttemptLeaseError(error)
+          ) {
+            throw error;
+          }
+          throw new MessageUpdatePublishFailedError(error);
+        }
+      } else if (claim.state === 'provider_invoked') {
+        throw new MessageUpdatePublishFailedError(
+          new Error('official_schedule_provider_attempt_in_flight')
+        );
+      } else if (claim.state === 'ambiguous') {
+        await this.ensureOfficialScheduleOperationalStateFromLedger(
+          claim,
+          payload,
+          'ambiguous'
+        );
+      } else if (claim.state === 'reserved') {
+        throw new MessageUpdatePublishFailedError(
+          new Error('official_schedule_send_idempotency_reserved')
+        );
+      }
       return;
     }
 
-    if (claimStatus !== 'acquired') {
-      throw new Error(`message_send_idempotency_${claimStatus}`);
-    }
-
-    const result = await this.sendMessage(message);
-    await this.pushMessageUpdate(message, result);
-    await this.pushSentStatus(message, result);
-    await this.sendScheduleStatus(payload, EScheduleStatus.sent);
-    await this.sendScheduleLog(payload, result, null, true);
-
-    const annotation = this.resolveWindowAnnotation(message, result.raw);
-    if (annotation) {
-      await this.publishAnnotation(message, annotation);
+    let providerInvoked = false;
+    let providerResultCommitted = false;
+    const ambiguousRecovery = this.buildOfficialScheduleAmbiguousRecovery(
+      payload,
+      claim
+    );
+    try {
+      const result = await this.sendMessage(
+        message,
+        async () => {
+          envelope.assertDispatchActive();
+          await assertLeaseActive();
+          const invoked =
+            await this.messageSendIdempotencyService.markProviderInvoked(
+              claim,
+              ambiguousRecovery
+            );
+          if (invoked !== 'transitioned') {
+            throw new Error(`message_send_idempotency_${invoked}`);
+          }
+          providerInvoked = true;
+        },
+        envelope.assertDispatchActive
+      );
+      const recovery = this.buildSucceededRecovery(message, result, payload);
+      const succeeded = await this.messageSendIdempotencyService.markSucceeded(
+        claim,
+        recovery
+      );
+      if (succeeded !== 'transitioned') {
+        throw new Error(`message_send_idempotency_${succeeded}`);
+      }
+      providerResultCommitted = true;
+      await assertLeaseActive();
+      await this.transitionScheduleOperationalState(payload, 'succeeded');
+      await this.applySucceededEffects(
+        recovery,
+        message,
+        envelope.assertDispatchActive,
+        payload,
+        assertLeaseActive
+      );
+      await this.compactTerminalRecovery(claim, 'succeeded', recovery);
+    } catch (error) {
+      if (providerInvoked && !providerResultCommitted) {
+        if (this.isDefinitiveProviderRejection(error)) {
+          const rejectionState = await this.persistProviderRejection({
+            claim,
+            error,
+            context: {
+              schedule_id: payload.schedule_id,
+              contact_id: payload.contact_id,
+              message_id: message.message_id,
+              attempt_id:
+                payload.attempt_id?.trim() || `legacy:${message.message_id}`,
+            },
+            ambiguousRecovery,
+          });
+          if (rejectionState === 'failed') {
+            throw error;
+          }
+          throw new ScheduleMessageSendAmbiguousError(error);
+        }
+        const ambiguous =
+          await this.messageSendIdempotencyService.markAmbiguous(
+            claim,
+            error,
+            ambiguousRecovery
+          );
+        if (ambiguous !== 'transitioned') {
+          throw new MessageUpdatePublishFailedError(
+            new Error(`message_send_idempotency_ambiguous_${ambiguous}`)
+          );
+        }
+        try {
+          await this.transitionScheduleOperationalState(payload, 'ambiguous');
+        } catch (transitionError) {
+          throw new MessageUpdatePublishFailedError(transitionError);
+        }
+        throw new ScheduleMessageSendAmbiguousError(error);
+      } else if (!providerInvoked) {
+        await this.messageSendIdempotencyService
+          .releaseReservation(claim)
+          .catch(() => undefined);
+      }
+      if (providerResultCommitted) {
+        throw new MessageUpdatePublishFailedError(error);
+      }
+      throw error;
     }
 
     envelope.chatId = this.resolveChatId(message);
   }
 
+  private async transitionScheduleOperationalState(
+    payload: IScheduleMessage,
+    state:
+      'pre_provider_failed' | 'provider_rejected' | 'ambiguous' | 'succeeded'
+  ): Promise<void> {
+    const messageId = payload.message.message_id;
+    const result =
+      await this.scheduleStatusCoordinationService.setMessageOperationalState(
+        {
+          scheduleId: payload.schedule_id,
+          accountId: payload.account_id?.trim() || payload.message.account.id,
+          workerId: payload.message.worker.id,
+          messageId,
+          attemptId: payload.attempt_id?.trim() || `legacy:${messageId}`,
+        },
+        state
+      );
+    if (result === 'stale' || result === 'invalid') {
+      throw new Error(`schedule_message_operational_state_${state}_${result}`);
+    }
+  }
+
+  private async transitionSchedulePreProviderFailure(
+    payload: IScheduleMessage
+  ): Promise<boolean> {
+    try {
+      await this.transitionScheduleOperationalState(
+        payload,
+        'pre_provider_failed'
+      );
+      return true;
+    } catch (error) {
+      console.warn(
+        '[OfficialWhatsappMessageSend] Suppressing failed state because the durable operational outcome rejected the transition',
+        {
+          schedule_id: payload.schedule_id,
+          contact_id: payload.contact_id,
+          message_id: payload.message.message_id,
+          attempt_id: payload.attempt_id,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+      return false;
+    }
+  }
+
+  private async transitionScheduleProviderRejection(
+    payload: IScheduleMessage
+  ): Promise<boolean> {
+    try {
+      await this.transitionScheduleOperationalState(
+        payload,
+        'provider_rejected'
+      );
+      return true;
+    } catch (error) {
+      const isDurableConflict =
+        error instanceof Error &&
+        (error.message.endsWith('_stale') ||
+          error.message.endsWith('_invalid'));
+      if (!isDurableConflict) {
+        throw error;
+      }
+
+      console.warn(
+        '[OfficialWhatsappMessageSend] Suppressing provider-rejected failure because the durable operational outcome rejected the transition',
+        {
+          schedule_id: payload.schedule_id,
+          contact_id: payload.contact_id,
+          message_id: payload.message.message_id,
+          attempt_id: payload.attempt_id,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+      return false;
+    }
+  }
+
   private async claimMessageSend(
     payload: IChatMessage,
     schedule?: IScheduleMessage
-  ): Promise<'acquired' | 'duplicate' | 'error' | 'missing_identity'> {
+  ): Promise<MessageSendClaimResult | null> {
     const identity = resolveMessageSendIdentity(payload);
-    if (!identity) {
-      return 'missing_identity';
+    const operationId = schedule
+      ? (identity?.messageId ?? null)
+      : resolveMessageSendOperationId(payload);
+    if (!identity || !operationId) {
+      return null;
     }
 
     payload.hash = identity.hash;
 
-    const claimStatus = await this.messageSendIdempotencyService.claimSend(
-      identity.accountId,
-      identity.hash,
-      {
-        provider: this.PROVIDER,
-        account_id: identity.accountId,
-        chat_id: identity.chatId,
-        message_id: identity.messageId,
-        worker_id: payload.worker.id,
-        ...(schedule
-          ? {
-              schedule_id: schedule.schedule_id,
-              contact_id: schedule.contact_id,
-            }
-          : {}),
-      }
-    );
+    return this.messageSendIdempotencyService.claimOperation({
+      accountId: identity.accountId,
+      operationType: schedule ? 'schedule' : 'direct',
+      operationId,
+      meta: this.buildMessageSendClaimMeta(payload, identity, schedule),
+      reservationLeaseMs:
+        MessageSendIdempotencyService.FAST_RECOVERY_RESERVATION_LEASE_MS,
+    });
+  }
 
-    if (claimStatus === 'duplicate') {
-      return 'duplicate';
-    }
-
-    if (claimStatus === 'error') {
-      return 'error';
-    }
-
-    return 'acquired';
+  private buildMessageSendClaimMeta(
+    payload: IChatMessage,
+    identity: NonNullable<ReturnType<typeof resolveMessageSendIdentity>>,
+    schedule?: IScheduleMessage
+  ): Record<string, unknown> {
+    return {
+      provider: this.PROVIDER,
+      account_id: identity.accountId,
+      chat_id: identity.chatId,
+      message_id: identity.messageId,
+      worker_id: payload.worker.id,
+      ...(schedule
+        ? {
+            schedule_id: schedule.schedule_id,
+            contact_id: schedule.contact_id,
+          }
+        : {}),
+    };
   }
 
   private async sendMessage(
-    data: IChatMessage
+    data: IChatMessage,
+    beforeProviderSend: () => Promise<void>,
+    assertActive: () => void
   ): Promise<MetaWhatsappMessageSendResult> {
     const connection =
       await this.workerWhatsappOfficialConnectionRepository.findActiveByWorkerId(
@@ -380,6 +1349,9 @@ export class OfficialWhatsappMessageSendConsume {
         throw new Error('official_whatsapp_interactive_required');
       }
 
+      assertOfficialWhatsappInteractivePayload(interactive);
+
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendInteractiveMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -396,6 +1368,12 @@ export class OfficialWhatsappMessageSendConsume {
         throw new Error('official_whatsapp_template_required');
       }
 
+      const components =
+        this.officialWhatsappTemplateService.buildMetaComponents(
+          template.variables,
+          template.components
+        );
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendTemplateMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -403,9 +1381,7 @@ export class OfficialWhatsappMessageSendConsume {
         to,
         templateName: template.name,
         language: template.language,
-        components: this.officialWhatsappTemplateService.buildMetaComponents(
-          template.variables
-        ),
+        components,
       });
     }
 
@@ -418,6 +1394,7 @@ export class OfficialWhatsappMessageSendConsume {
         throw new Error('official_whatsapp_text_required');
       }
 
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendTextMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -430,14 +1407,18 @@ export class OfficialWhatsappMessageSendConsume {
 
     if (messageType === EMessageType.image) {
       const image = data.content?.image;
-      const mediaId = await this.uploadOutboundMedia({
-        apiVersion: connection.api_version,
-        accessToken,
-        phoneNumberId: connection.phone_number_id,
-        media: image,
-        fallbackPrefix: 'image',
-      });
+      const mediaId = await this.uploadOutboundMedia(
+        {
+          apiVersion: connection.api_version,
+          accessToken,
+          phoneNumberId: connection.phone_number_id,
+          media: image,
+          fallbackPrefix: 'image',
+        },
+        assertActive
+      );
 
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendImageMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -451,14 +1432,18 @@ export class OfficialWhatsappMessageSendConsume {
 
     if (messageType === EMessageType.video) {
       const video = data.content?.video;
-      const mediaId = await this.uploadOutboundMedia({
-        apiVersion: connection.api_version,
-        accessToken,
-        phoneNumberId: connection.phone_number_id,
-        media: video,
-        fallbackPrefix: 'video',
-      });
+      const mediaId = await this.uploadOutboundMedia(
+        {
+          apiVersion: connection.api_version,
+          accessToken,
+          phoneNumberId: connection.phone_number_id,
+          media: video,
+          fallbackPrefix: 'video',
+        },
+        assertActive
+      );
 
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendVideoMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -475,14 +1460,18 @@ export class OfficialWhatsappMessageSendConsume {
       if (audio?.view_once) {
         throw new Error('whatsapp_official_view_once_not_supported');
       }
-      const mediaId = await this.uploadOutboundMedia({
-        apiVersion: connection.api_version,
-        accessToken,
-        phoneNumberId: connection.phone_number_id,
-        media: audio,
-        fallbackPrefix: 'audio',
-      });
+      const mediaId = await this.uploadOutboundMedia(
+        {
+          apiVersion: connection.api_version,
+          accessToken,
+          phoneNumberId: connection.phone_number_id,
+          media: audio,
+          fallbackPrefix: 'audio',
+        },
+        assertActive
+      );
 
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendAudioMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -496,14 +1485,18 @@ export class OfficialWhatsappMessageSendConsume {
 
     if (messageType === EMessageType.document) {
       const document = data.content?.document;
-      const mediaId = await this.uploadOutboundMedia({
-        apiVersion: connection.api_version,
-        accessToken,
-        phoneNumberId: connection.phone_number_id,
-        media: document,
-        fallbackPrefix: 'document',
-      });
+      const mediaId = await this.uploadOutboundMedia(
+        {
+          apiVersion: connection.api_version,
+          accessToken,
+          phoneNumberId: connection.phone_number_id,
+          media: document,
+          fallbackPrefix: 'document',
+        },
+        assertActive
+      );
 
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendDocumentMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -518,14 +1511,18 @@ export class OfficialWhatsappMessageSendConsume {
 
     if (messageType === EMessageType.sticker) {
       const sticker = data.content?.sticker;
-      const mediaId = await this.uploadOutboundMedia({
-        apiVersion: connection.api_version,
-        accessToken,
-        phoneNumberId: connection.phone_number_id,
-        media: sticker,
-        fallbackPrefix: 'sticker',
-      });
+      const mediaId = await this.uploadOutboundMedia(
+        {
+          apiVersion: connection.api_version,
+          accessToken,
+          phoneNumberId: connection.phone_number_id,
+          media: sticker,
+          fallbackPrefix: 'sticker',
+        },
+        assertActive
+      );
 
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendStickerMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -545,6 +1542,7 @@ export class OfficialWhatsappMessageSendConsume {
         throw new Error('official_whatsapp_location_required');
       }
 
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendLocationMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -567,6 +1565,7 @@ export class OfficialWhatsappMessageSendConsume {
         throw new Error('official_whatsapp_contacts_required');
       }
 
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendContactsMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -584,6 +1583,7 @@ export class OfficialWhatsappMessageSendConsume {
         throw new Error('official_whatsapp_reaction_target_required');
       }
 
+      await beforeProviderSend();
       return this.metaWhatsappEmbeddedService.sendReactionMessage({
         apiVersion: connection.api_version,
         accessToken,
@@ -595,6 +1595,391 @@ export class OfficialWhatsappMessageSendConsume {
     }
 
     throw new Error(this.unsupportedOfficialTypeError(messageType));
+  }
+
+  private isDefinitiveProviderRejection(
+    error: unknown
+  ): error is MetaGraphApiError {
+    return error instanceof MetaGraphApiError;
+  }
+
+  private buildDirectAmbiguousRecovery(
+    payload: IChatMessage,
+    operationId: string
+  ): IOfficialAmbiguousTerminalRecovery {
+    const statusUpdate: IMessageStatusUpdate = {
+      account_id: payload.account.id,
+      worker_id: payload.worker.id,
+      source_provider: 'official_whatsapp',
+      message_id: payload.message_id.trim(),
+      internal_message_id: payload.message_id.trim(),
+      terminal_failure_schema: 'message_send_ambiguous_terminal_v1',
+      patch: {},
+      failed: true,
+      ambiguous: true,
+      key: {
+        id: payload.message_key?.id ?? undefined,
+        remoteJid:
+          payload.message_key?.remote_jid ?? payload.chat_id ?? undefined,
+        fromMe: payload.message_key?.from_me ?? true,
+        participant: payload.message_key?.participant ?? undefined,
+      },
+    };
+    const eventId = buildMessageStatusEventId(statusUpdate);
+    if (!eventId) {
+      throw new Error('official_message_status_event_identity_missing');
+    }
+    statusUpdate.event_id = eventId;
+
+    return {
+      schema_version: 'message_send_ambiguous_terminal_v1',
+      provider: 'official',
+      operation_id: operationId.trim(),
+      outcome_digest: this.directAmbiguousOutcomeDigest(
+        operationId,
+        statusUpdate
+      ),
+      status_update: statusUpdate,
+    };
+  }
+
+  private directAmbiguousOutcomeDigest(
+    operationId: string,
+    statusUpdate: IMessageStatusUpdate
+  ): string {
+    return createHash('sha256')
+      .update(
+        [
+          'message_send_ambiguous_terminal_v1',
+          'official',
+          operationId.trim(),
+          statusUpdate.event_id?.trim() ?? '',
+          statusUpdate.account_id.trim(),
+          statusUpdate.worker_id?.trim() ?? '',
+          statusUpdate.message_id.trim(),
+          statusUpdate.internal_message_id?.trim() ?? '',
+          statusUpdate.key?.id?.trim() ?? '',
+          statusUpdate.key?.remoteJid?.trim() ?? '',
+          statusUpdate.key?.participant?.trim() ?? '',
+          statusUpdate.key?.fromMe === false ? 'false' : 'true',
+        ].join('\0')
+      )
+      .digest('hex');
+  }
+
+  private normalizeDirectAmbiguousRecovery(
+    result: unknown,
+    payload: IChatMessage,
+    operationId: string
+  ): IOfficialAmbiguousTerminalRecovery | null {
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+
+    const recovery = result as Partial<IOfficialAmbiguousTerminalRecovery>;
+    const statusUpdate = recovery.status_update;
+    const expected = this.buildDirectAmbiguousRecovery(payload, operationId);
+    if (
+      recovery.schema_version !== 'message_send_ambiguous_terminal_v1' ||
+      recovery.provider !== 'official' ||
+      recovery.operation_id !== expected.operation_id ||
+      recovery.outcome_digest !== expected.outcome_digest ||
+      !statusUpdate ||
+      typeof statusUpdate !== 'object' ||
+      statusUpdate.failed !== true ||
+      statusUpdate.ambiguous !== true ||
+      statusUpdate.terminal_failure_schema !==
+        'message_send_ambiguous_terminal_v1' ||
+      statusUpdate.account_id?.trim() !== payload.account.id.trim() ||
+      statusUpdate.worker_id?.trim() !== payload.worker.id.trim() ||
+      statusUpdate.source_provider !== 'official_whatsapp' ||
+      statusUpdate.message_id?.trim() !== payload.message_id.trim() ||
+      statusUpdate.internal_message_id?.trim() !== payload.message_id.trim() ||
+      statusUpdate.event_id?.trim() !==
+        expected.status_update.event_id?.trim() ||
+      statusUpdate.key?.id !== expected.status_update.key?.id ||
+      statusUpdate.key?.remoteJid !== expected.status_update.key?.remoteJid ||
+      statusUpdate.key?.participant !==
+        expected.status_update.key?.participant ||
+      statusUpdate.key?.fromMe !== expected.status_update.key?.fromMe ||
+      Object.keys(statusUpdate.patch ?? {}).length !== 0 ||
+      this.directAmbiguousOutcomeDigest(operationId, statusUpdate) !==
+        expected.outcome_digest
+    ) {
+      return null;
+    }
+
+    return recovery as IOfficialAmbiguousTerminalRecovery;
+  }
+
+  private async recoverDirectAmbiguousEffects(
+    claim: Extract<MessageSendClaimResult, { status: 'duplicate' }>,
+    payload: IChatMessage,
+    assertActive: () => void
+  ): Promise<void> {
+    const expected = this.buildDirectAmbiguousRecovery(
+      payload,
+      claim.operationId
+    );
+    let recovery = this.normalizeDirectAmbiguousRecovery(
+      claim.result,
+      payload,
+      claim.operationId
+    );
+    if (!recovery) {
+      const identity = resolveMessageSendIdentity(payload);
+      if (!identity) {
+        throw new MessageUpdatePublishFailedError(
+          new Error('official_ambiguous_recovery_identity_invalid')
+        );
+      }
+      const migrated =
+        await this.messageSendIdempotencyService.recoverLegacyAmbiguous(
+          claim,
+          expected,
+          this.buildMessageSendClaimMeta(payload, identity)
+        );
+      if (migrated !== 'transitioned') {
+        throw new MessageUpdatePublishFailedError(
+          new Error(`official_ambiguous_recovery_${migrated}`)
+        );
+      }
+      recovery = expected;
+    }
+
+    await this.publishDirectAmbiguousTerminalStatus(recovery, assertActive);
+    await this.compactTerminalRecovery(claim, 'ambiguous', recovery);
+  }
+
+  private async publishDirectAmbiguousTerminalStatus(
+    recovery: IOfficialAmbiguousTerminalRecovery,
+    assertActive: () => void
+  ): Promise<void> {
+    const statusUpdate = recovery.status_update;
+    try {
+      assertActive();
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.updateMessageStatus(),
+        statusUpdate,
+        MessageStatusService.statusKafkaKey(
+          statusUpdate.account_id,
+          statusUpdate.message_id,
+          statusUpdate.worker_id
+        ),
+        undefined,
+        async () => {
+          assertActive();
+        }
+      );
+      assertActive();
+    } catch (error) {
+      if (
+        isMessageUpdatePublishFailedError(error) ||
+        isKafkaConsumerDispatchRevokedError(error)
+      ) {
+        throw error;
+      }
+      throw new MessageUpdatePublishFailedError(error);
+    }
+  }
+
+  private async compactTerminalRecovery(
+    claim: Extract<
+      MessageSendClaimResult,
+      { status: 'acquired' | 'duplicate' }
+    >,
+    state: 'succeeded' | 'failed' | 'ambiguous',
+    recovery: unknown
+  ): Promise<void> {
+    const idempotency = this.messageSendIdempotencyService;
+    const compact = idempotency?.compactTerminalAfterRecoveryPubAck;
+    if (typeof compact !== 'function') {
+      return;
+    }
+    const compacted = await compact.call(idempotency, claim, state, recovery);
+    if (compacted !== 'transitioned') {
+      throw new MessageUpdatePublishFailedError(
+        new Error(`message_send_idempotency_compaction_${compacted}`)
+      );
+    }
+  }
+
+  private async persistProviderRejection(input: {
+    claim: IMessageSendAcquiredClaim;
+    error: MetaGraphApiError;
+    context: Record<string, unknown>;
+    ambiguousRecovery: unknown;
+  }): Promise<'failed' | 'ambiguous'> {
+    const recovery = this.buildProviderRejectedRecovery(
+      input.error,
+      input.context
+    );
+    const rejected =
+      await this.messageSendIdempotencyService.markProviderRejected(
+        input.claim,
+        input.error,
+        recovery
+      );
+    if (rejected === 'transitioned') {
+      this.persistedProviderRejections.add(input.error);
+      this.providerRejectionCompactionMap().set(input.error, {
+        claim: input.claim,
+        recovery,
+      });
+      return 'failed';
+    }
+
+    const ambiguous = await this.messageSendIdempotencyService.markAmbiguous(
+      input.claim,
+      input.error,
+      input.ambiguousRecovery
+    );
+    if (ambiguous !== 'transitioned') {
+      throw new MessageUpdatePublishFailedError(
+        new Error(`message_send_provider_rejection_ambiguous_${ambiguous}`)
+      );
+    }
+    console.error(
+      '[OfficialWhatsappMessageSend] Definitive provider rejection could not be persisted as failed; preserving fail-closed ambiguous state:',
+      {
+        ...input.context,
+        failed_transition: rejected,
+        ambiguous_transition: ambiguous,
+        error: this.errorMessage(input.error),
+      }
+    );
+    return 'ambiguous';
+  }
+
+  private async compactProviderRejectionIfPending(
+    error: unknown
+  ): Promise<void> {
+    if (!(error instanceof MetaGraphApiError)) {
+      return;
+    }
+    const pending = this.providerRejectionCompactionMap().get(error);
+    if (!pending) {
+      return;
+    }
+    await this.compactTerminalRecovery(
+      pending.claim,
+      'failed',
+      pending.recovery
+    );
+    this.providerRejectionCompactionMap().delete(error);
+  }
+
+  private providerRejectionCompactionMap(): WeakMap<
+    MetaGraphApiError,
+    {
+      claim: IMessageSendAcquiredClaim;
+      recovery: IOfficialProviderRejectedRecovery;
+    }
+  > {
+    this.pendingProviderRejectionCompactions ??= new WeakMap();
+    return this.pendingProviderRejectionCompactions;
+  }
+
+  private buildProviderRejectedRecovery(
+    error: MetaGraphApiError,
+    context: Record<string, unknown> = {}
+  ): IOfficialProviderRejectedRecovery {
+    const scheduleId =
+      typeof context.schedule_id === 'string' && context.schedule_id.trim()
+        ? context.schedule_id.trim()
+        : null;
+    const contactId =
+      typeof context.contact_id === 'string' && context.contact_id.trim()
+        ? context.contact_id.trim()
+        : null;
+    const messageId =
+      typeof context.message_id === 'string' && context.message_id.trim()
+        ? context.message_id.trim()
+        : null;
+    const attemptId =
+      typeof context.attempt_id === 'string' && context.attempt_id.trim()
+        ? context.attempt_id.trim()
+        : null;
+    return {
+      schema_version: 'official_whatsapp_provider_rejected_recovery_v1',
+      failure_kind: 'meta_graph_api_rejection',
+      ...(scheduleId && contactId && messageId && attemptId
+        ? {
+            schedule_id: scheduleId,
+            contact_id: contactId,
+            message_id: messageId,
+            attempt_id: attemptId,
+          }
+        : {}),
+      error: {
+        message: error.message,
+        code: error.code,
+        error_subcode: error.errorSubcode,
+        type: error.type,
+      },
+    };
+  }
+
+  private normalizeProviderRejectedRecovery(
+    result: unknown
+  ): MetaGraphApiError | null {
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+
+    const candidate = result as Partial<IOfficialProviderRejectedRecovery>;
+    if (
+      candidate.schema_version !==
+        'official_whatsapp_provider_rejected_recovery_v1' ||
+      candidate.failure_kind !== 'meta_graph_api_rejection' ||
+      !candidate.error ||
+      typeof candidate.error !== 'object' ||
+      typeof candidate.error.message !== 'string' ||
+      !candidate.error.message.trim() ||
+      !(
+        candidate.error.code === null ||
+        typeof candidate.error.code === 'number'
+      )
+    ) {
+      return null;
+    }
+
+    return new MetaGraphApiError({
+      message: candidate.error.message,
+      code: candidate.error.code ?? undefined,
+      error_subcode:
+        candidate.error.error_subcode === null ||
+        typeof candidate.error.error_subcode !== 'number'
+          ? undefined
+          : candidate.error.error_subcode,
+      type:
+        typeof candidate.error.type === 'string'
+          ? candidate.error.type
+          : undefined,
+    });
+  }
+
+  private async recoverProviderRejectedEffects(
+    result: unknown,
+    envelope: IQueuedEnvelope,
+    assertActive: () => void,
+    assertLeaseActive: () => Promise<void> = async () => undefined,
+    scheduleOperationalStateAlreadyDurable = false
+  ): Promise<boolean> {
+    const error = this.normalizeProviderRejectedRecovery(result);
+    if (!error) {
+      return false;
+    }
+
+    assertActive();
+    await assertLeaseActive();
+    await this.routeFailedMessage(
+      envelope,
+      error,
+      assertLeaseActive,
+      scheduleOperationalStateAlreadyDurable
+    );
+    return true;
   }
 
   private resolveOfficialInteractivePayload(
@@ -648,23 +2033,27 @@ export class OfficialWhatsappMessageSendConsume {
     return messageId;
   }
 
-  private async uploadOutboundMedia(input: {
-    apiVersion: string;
-    accessToken: string;
-    phoneNumberId: string;
-    media?: {
-      url?: string | null;
-      mimetype?: string | null;
-      name?: string | null;
-      extension?: string | null;
-    } | null;
-    fallbackPrefix: string;
-  }): Promise<string> {
+  private async uploadOutboundMedia(
+    input: {
+      apiVersion: string;
+      accessToken: string;
+      phoneNumberId: string;
+      media?: {
+        url?: string | null;
+        mimetype?: string | null;
+        name?: string | null;
+        extension?: string | null;
+      } | null;
+      fallbackPrefix: string;
+    },
+    assertActive: () => void
+  ): Promise<string> {
     const url = input.media?.url?.trim();
     if (!url) {
       throw new Error('official_whatsapp_media_url_required');
     }
 
+    assertActive();
     return this.metaWhatsappEmbeddedService.uploadMediaFromUrl({
       apiVersion: input.apiVersion,
       accessToken: input.accessToken,
@@ -824,21 +2213,36 @@ export class OfficialWhatsappMessageSendConsume {
   }
 
   private resolveRecipientPhone(data: IChatMessage): string | null {
-    const rawPhone =
-      data.phone || data.message_key?.remote_jid?.split('@')[0] || '';
-    const digits = rawPhone.replace(/\D/gu, '');
-    return digits || null;
+    const phoneFromJid = getPhoneFromJid(
+      data.message_key?.remote_jid,
+      data.message_key?.remote_jid_alt
+    );
+    if (phoneFromJid) {
+      return phoneFromJid;
+    }
+
+    const phoneDigits = (data.phone ?? '').replace(/\D/gu, '');
+    const ddiDigits = (data.phone_ddi ?? '').replace(/\D/gu, '');
+    if (!phoneDigits) {
+      return ddiDigits || null;
+    }
+
+    return ddiDigits && !phoneDigits.startsWith(ddiDigits)
+      ? `${ddiDigits}${phoneDigits}`
+      : phoneDigits;
   }
 
-  private async pushMessageUpdate(
+  private buildMessageUpdate(
     data: IChatMessage,
     result: MetaWhatsappMessageSendResult
-  ): Promise<void> {
+  ): IUpdateMessage | null {
     if (!result.message_id) {
-      return;
+      return null;
     }
 
     const update: IUpdateMessage = {
+      worker_id: data.worker.id,
+      source_provider: 'official_whatsapp',
       message: {
         key: {
           id: result.message_id,
@@ -850,24 +2254,236 @@ export class OfficialWhatsappMessageSendConsume {
       },
       data,
     };
-
-    await this.streamProducerService.send(
-      this.kafkaServiceQueueService.updateMessage(),
-      update,
-      buildMessageSendQueueKey(data.account.id, data.chat_id)
-    );
+    ensureMessageUpdateIdentity(update);
+    return update;
   }
 
-  private async pushSentStatus(
+  private buildSucceededRecovery(
     data: IChatMessage,
-    result: MetaWhatsappMessageSendResult
-  ): Promise<void> {
-    if (!result.message_id) {
-      return;
+    result: MetaWhatsappMessageSendResult,
+    schedule: IScheduleMessage | null = null
+  ): IOfficialSucceededRecovery {
+    const annotationMessage = this.resolveWindowAnnotation(data, result.raw);
+    return {
+      schema_version: 'official_whatsapp_send_recovery_v1',
+      provider_result: result,
+      update_message: this.buildMessageUpdate(data, result),
+      message_status_update: this.buildSentStatusUpdate(data, result),
+      schedule_status_update: schedule
+        ? this.buildScheduleStatusUpdate(schedule, EScheduleStatus.sent)
+        : null,
+      annotation: annotationMessage
+        ? {
+            message_id: this.buildAnnotationMessageId(data, result.message_id),
+            message: annotationMessage,
+            date: new Date().toISOString(),
+          }
+        : null,
+    };
+  }
+
+  private normalizeSucceededRecovery(
+    result: unknown,
+    data: IChatMessage,
+    schedule: IScheduleMessage | null
+  ): IOfficialSucceededRecovery | null {
+    if (!result || typeof result !== 'object') {
+      return null;
     }
 
-    const statusUpdate: IMessageStatusUpdate = {
+    const candidate = result as Partial<IOfficialSucceededRecovery>;
+    if (
+      candidate.schema_version === 'official_whatsapp_send_recovery_v1' &&
+      candidate.provider_result &&
+      typeof candidate.provider_result === 'object'
+    ) {
+      return {
+        schema_version: 'official_whatsapp_send_recovery_v1',
+        provider_result: candidate.provider_result,
+        update_message:
+          candidate.update_message &&
+          typeof candidate.update_message === 'object'
+            ? candidate.update_message
+            : null,
+        message_status_update:
+          candidate.message_status_update &&
+          typeof candidate.message_status_update === 'object'
+            ? candidate.message_status_update
+            : null,
+        schedule_status_update:
+          candidate.schedule_status_update &&
+          typeof candidate.schedule_status_update === 'object'
+            ? candidate.schedule_status_update
+            : null,
+        annotation:
+          candidate.annotation &&
+          typeof candidate.annotation === 'object' &&
+          typeof candidate.annotation.message_id === 'string' &&
+          typeof candidate.annotation.message === 'string' &&
+          typeof candidate.annotation.date === 'string'
+            ? candidate.annotation
+            : null,
+      };
+    }
+
+    const update = (result as { update_message?: unknown }).update_message;
+    if (!update || typeof update !== 'object') {
+      return null;
+    }
+
+    const recoveredUpdate = update as IUpdateMessage;
+    const workerId = recoveredUpdate.data?.worker?.id;
+    const messageUpdate: IUpdateMessage = {
+      ...recoveredUpdate,
+      worker_id: recoveredUpdate.worker_id ?? workerId,
+      source_provider: recoveredUpdate.source_provider ?? 'official_whatsapp',
+    };
+    ensureMessageUpdateIdentity(messageUpdate);
+    const providerMessageId = messageUpdate.message?.key?.id?.trim() || null;
+    const remoteJid = messageUpdate.message?.key?.remoteJid;
+    const providerResult: MetaWhatsappMessageSendResult = {
+      message_id: providerMessageId,
+      contact_wa_id:
+        typeof remoteJid === 'string' ? remoteJid.split('@')[0] || null : null,
+      message_status: 'sent',
+      raw: {} as MetaWhatsappMessageSendResult['raw'],
+    };
+    const recovery = this.buildSucceededRecovery(
+      data,
+      providerResult,
+      schedule
+    );
+    recovery.update_message = messageUpdate;
+    return recovery;
+  }
+
+  private async recoverSucceededEffects(
+    result: unknown,
+    data: IChatMessage,
+    schedule: IScheduleMessage | null,
+    assertActive: () => void,
+    assertLeaseActive: () => Promise<void> = async () => undefined
+  ): Promise<boolean> {
+    const recovery = this.normalizeSucceededRecovery(result, data, schedule);
+    if (!recovery) {
+      return false;
+    }
+    await this.applySucceededEffects(
+      recovery,
+      data,
+      assertActive,
+      schedule,
+      assertLeaseActive
+    );
+    return true;
+  }
+
+  private async applySucceededEffects(
+    recovery: IOfficialSucceededRecovery,
+    data: IChatMessage,
+    assertActive: () => void,
+    schedule: IScheduleMessage | null,
+    assertLeaseActive: () => Promise<void> = async () => undefined
+  ): Promise<void> {
+    if (recovery.update_message) {
+      const messageUpdate: IUpdateMessage = {
+        ...recovery.update_message,
+        worker_id: recovery.update_message.worker_id ?? data.worker.id,
+        source_provider:
+          recovery.update_message.source_provider ?? 'official_whatsapp',
+      };
+      ensureMessageUpdateIdentity(messageUpdate);
+      assertActive();
+      await assertLeaseActive();
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.updateMessage(),
+        messageUpdate,
+        buildMessageUpdateKafkaKey(messageUpdate),
+        undefined,
+        async () => {
+          assertActive();
+          await assertLeaseActive();
+          assertActive();
+        }
+      );
+    }
+
+    if (recovery.message_status_update) {
+      assertActive();
+      await assertLeaseActive();
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.updateMessageStatus(),
+        recovery.message_status_update,
+        MessageStatusService.statusKafkaKey(
+          recovery.message_status_update.account_id,
+          recovery.message_status_update.message_id,
+          recovery.message_status_update.worker_id
+        ),
+        undefined,
+        async () => {
+          assertActive();
+          await assertLeaseActive();
+          assertActive();
+        }
+      );
+    }
+
+    assertActive();
+    await assertLeaseActive();
+    await this.officialWindowService.recordProviderAcceptedMessage(
+      data,
+      recovery.provider_result.message_id
+    );
+
+    if (schedule) {
+      const scheduleStatus =
+        recovery.schedule_status_update ??
+        this.buildScheduleStatusUpdate(schedule, EScheduleStatus.sent);
+      await this.publishScheduleStatusUpdate(
+        scheduleStatus,
+        assertActive,
+        assertLeaseActive
+      );
+      await assertLeaseActive();
+      await this.sendScheduleLog(
+        schedule,
+        recovery.provider_result,
+        null,
+        true,
+        assertActive
+      );
+    }
+
+    if (recovery.annotation) {
+      await assertLeaseActive();
+      await this.publishAnnotation(
+        data,
+        recovery.annotation.message,
+        assertActive,
+        recovery.annotation.message_id,
+        recovery.annotation.date
+      );
+    }
+  }
+
+  private buildSentStatusUpdate(
+    data: IChatMessage,
+    result: MetaWhatsappMessageSendResult
+  ): IMessageStatusUpdate | null {
+    if (!result.message_id) {
+      return null;
+    }
+
+    return {
+      event_id: buildOfficialWhatsappMessageStatusEventId({
+        accountId: data.account.id,
+        workerId: data.worker.id,
+        providerMessageId: result.message_id,
+        status: 'sent',
+      }),
       account_id: data.account.id,
+      worker_id: data.worker.id,
+      source_provider: 'official_whatsapp',
       message_id: result.message_id,
       patch: {
         is_sent: true,
@@ -880,42 +2496,97 @@ export class OfficialWhatsappMessageSendConsume {
         fromMe: true,
       },
     };
-
-    await this.streamProducerService.send(
-      this.kafkaServiceQueueService.updateMessageStatus(),
-      statusUpdate,
-      MessageStatusService.statusKafkaKey(data.account.id, result.message_id)
-    );
   }
 
   private async routeFailedMessage(
     envelope: IQueuedEnvelope,
-    error: unknown
+    error: unknown,
+    assertLeaseActive: () => Promise<void> = async () => undefined,
+    scheduleOperationalStateAlreadyDurable = false
   ): Promise<void> {
+    if (
+      this.isScheduleMessage(envelope.payload) &&
+      !scheduleOperationalStateAlreadyDurable
+    ) {
+      const transitioned = this.isDefinitiveProviderRejection(error)
+        ? await this.transitionScheduleProviderRejection(envelope.payload)
+        : await this.transitionSchedulePreProviderFailure(envelope.payload);
+      if (!transitioned) {
+        return;
+      }
+    }
+
     const messageId = this.extractMessageId(envelope.payload);
     const message = this.resolvePayloadMessage(envelope.payload);
     if (messageId && message) {
-      await this.messageStatusService.markMessageAsNotSent(
-        message.account.id,
-        messageId
+      envelope.assertDispatchActive();
+      await assertLeaseActive();
+      if (error instanceof MetaGraphApiError) {
+        await this.messageStatusService.markMessageAsNotSent(
+          message.account.id,
+          messageId,
+          () => envelope.assertDispatchActive(),
+          'failed',
+          {
+            errorCode: error.code,
+            occurredAt: new Date().toISOString(),
+          }
+        );
+      } else {
+        await this.messageStatusService.markMessageAsNotSent(
+          message.account.id,
+          messageId,
+          () => envelope.assertDispatchActive()
+        );
+      }
+    }
+
+    if (message?.content?.type === EMessageType.official_template) {
+      envelope.assertDispatchActive();
+      await assertLeaseActive();
+      await this.officialWindowService.recordTemplateFailureForMessage(
+        message,
+        error instanceof MetaGraphApiError ? error.code : null
+      );
+    }
+
+    if (
+      message &&
+      error instanceof MetaGraphApiError &&
+      error.code === 131047
+    ) {
+      envelope.assertDispatchActive();
+      await assertLeaseActive();
+      await this.officialWindowService.markClosedByMetaReengagementForMessage(
+        message,
+        error.code
       );
     }
 
     const annotation = this.resolveWindowAnnotation(message, error);
     if (annotation && message) {
-      await this.publishAnnotation(message, annotation);
+      await assertLeaseActive();
+      await this.publishAnnotation(
+        message,
+        annotation,
+        envelope.assertDispatchActive
+      );
     }
 
     if (this.isScheduleMessage(envelope.payload)) {
       await this.sendScheduleStatusBestEffort(
         envelope.payload,
-        EScheduleStatus.failed
+        EScheduleStatus.failed,
+        envelope.assertDispatchActive,
+        assertLeaseActive
       );
+      await assertLeaseActive();
       await this.sendScheduleLogBestEffort(
         envelope.payload,
         null,
         this.errorMessage(error),
-        false
+        false,
+        envelope.assertDispatchActive
       );
     }
 
@@ -946,33 +2617,77 @@ export class OfficialWhatsappMessageSendConsume {
 
   private async sendScheduleStatus(
     data: IScheduleMessage,
-    status: EScheduleStatus.sent | EScheduleStatus.failed
+    status: EScheduleStatus.sent | EScheduleStatus.failed,
+    assertActive: () => void,
+    assertLeaseActive: () => Promise<void> = async () => undefined
   ): Promise<void> {
+    await this.publishScheduleStatusUpdate(
+      this.buildScheduleStatusUpdate(data, status),
+      assertActive,
+      assertLeaseActive
+    );
+  }
+
+  private buildScheduleStatusUpdate(
+    data: IScheduleMessage,
+    status: EScheduleStatus.sent | EScheduleStatus.failed
+  ): IScheduleStatusUpdate {
     const statusUpdate: IScheduleStatusUpdate = {
+      attempt_id:
+        data.attempt_id?.trim() || `legacy:${data.message.message_id}`,
+      account_id: data.account_id ?? data.message.account.id,
+      worker_id: data.message.worker.id,
+      source_provider: 'official_whatsapp',
       schedule_id: data.schedule_id,
       contact_id: data.contact_id,
       message_id: data.message.message_id,
       processed_at: new Date().toISOString(),
       status,
     };
+    ensureScheduleStatusEventId(statusUpdate);
+    return statusUpdate;
+  }
 
+  private async publishScheduleStatusUpdate(
+    statusUpdate: IScheduleStatusUpdate,
+    assertActive: () => void,
+    assertLeaseActive: () => Promise<void>
+  ): Promise<void> {
+    assertActive();
+    await assertLeaseActive();
     await this.streamProducerService.send(
       this.kafkaServiceQueueService.scheduleStatusUpdate(),
       statusUpdate,
-      buildScheduleSendQueueKey(
-        data.account_id ?? data.message.account.id,
-        data.message.worker.id
-      )
+      buildScheduleStatusKafkaKey(statusUpdate),
+      undefined,
+      async () => {
+        assertActive();
+        await assertLeaseActive();
+        assertActive();
+      }
     );
   }
 
   private async sendScheduleStatusBestEffort(
     data: IScheduleMessage,
-    status: EScheduleStatus.sent | EScheduleStatus.failed
+    status: EScheduleStatus.sent | EScheduleStatus.failed,
+    assertActive: () => void,
+    assertLeaseActive: () => Promise<void> = async () => undefined
   ): Promise<void> {
     try {
-      await this.sendScheduleStatus(data, status);
+      await this.sendScheduleStatus(
+        data,
+        status,
+        assertActive,
+        assertLeaseActive
+      );
     } catch (error) {
+      if (
+        isKafkaConsumerDispatchRevokedError(error) ||
+        this.isScheduleMessageAttemptLeaseError(error)
+      ) {
+        throw error;
+      }
       console.error(
         `Failed to publish official schedule status update for message ${data.message.message_id}:`,
         error
@@ -980,12 +2695,24 @@ export class OfficialWhatsappMessageSendConsume {
     }
   }
 
+  private isScheduleMessageAttemptLeaseError(
+    error: unknown
+  ): error is ScheduleMessageInFlightLeaseUnavailableError {
+    return (
+      error instanceof ScheduleMessageInFlightLeaseUnavailableError ||
+      (error instanceof Error &&
+        error.name === 'ScheduleMessageInFlightLeaseUnavailableError')
+    );
+  }
+
   private async sendScheduleLog(
     data: IScheduleMessage,
     result: MetaWhatsappMessageSendResult | null,
     error: string | null,
-    success: boolean
+    success: boolean,
+    assertActive: () => void
   ): Promise<void> {
+    assertActive();
     await this.elasticDatabaseService.indices(
       EElasticIndex.schedule,
       scheduleMappings()
@@ -999,6 +2726,7 @@ export class OfficialWhatsappMessageSendConsume {
       payload: data.message.content,
     };
 
+    assertActive();
     await this.elasticDatabaseService.updateField(
       EElasticIndex.schedule,
       data.message.message_id,
@@ -1012,11 +2740,15 @@ export class OfficialWhatsappMessageSendConsume {
     data: IScheduleMessage,
     result: MetaWhatsappMessageSendResult | null,
     error: string | null,
-    success: boolean
+    success: boolean,
+    assertActive: () => void
   ): Promise<void> {
     try {
-      await this.sendScheduleLog(data, result, error, success);
+      await this.sendScheduleLog(data, result, error, success, assertActive);
     } catch (logError) {
+      if (isKafkaConsumerDispatchRevokedError(logError)) {
+        throw logError;
+      }
       console.error(
         `Failed to save official schedule send log for message ${data.message.message_id}:`,
         logError
@@ -1094,34 +2826,68 @@ export class OfficialWhatsappMessageSendConsume {
 
   private async publishAnnotation(
     data: IChatMessage,
-    message: string
+    message: string,
+    assertActive: () => void,
+    preparedMessageId?: string,
+    preparedDate?: string
   ): Promise<void> {
-    await this.chatMessageService.publishPreparedMessage({
-      message_id: uuidv7(),
-      chat_id: data.chat_id,
-      message_key: {
-        remote_jid: data.message_key?.remote_jid ?? null,
-        remote_jid_alt: data.message_key?.remote_jid_alt ?? null,
-        is_view_once: false,
+    assertActive();
+    await this.chatMessageService.publishPreparedMessage(
+      {
+        message_id:
+          preparedMessageId ?? this.buildAnnotationMessageId(data, null),
+        chat_id: data.chat_id,
+        message_key: {
+          remote_jid: data.message_key?.remote_jid ?? null,
+          remote_jid_alt: data.message_key?.remote_jid_alt ?? null,
+          is_view_once: false,
+        },
+        type_user: ETypeUserChat.system,
+        account: data.account,
+        worker: data.worker,
+        user: data.user ?? null,
+        phone: data.phone,
+        summary: {
+          is_sent: false,
+          is_delivered: false,
+          is_seen: false,
+          is_sent_to_internal: true,
+        },
+        deleted: false,
+        has_quoted: false,
+        content: {
+          type: EMessageType.annotation,
+          message,
+        },
+        date: preparedDate ?? new Date().toISOString(),
       },
-      type_user: ETypeUserChat.system,
-      account: data.account,
-      worker: data.worker,
-      user: data.user ?? null,
-      phone: data.phone,
-      summary: {
-        is_sent: false,
-        is_delivered: false,
-        is_seen: false,
-        is_sent_to_internal: true,
-      },
-      deleted: false,
-      has_quoted: false,
-      content: {
-        type: EMessageType.annotation,
-        message,
-      },
-      date: new Date().toISOString(),
-    });
+      undefined,
+      assertActive
+    );
+  }
+
+  private buildAnnotationMessageId(
+    data: IChatMessage,
+    providerMessageId: string | null
+  ): string {
+    const digest = createHash('sha256')
+      .update(
+        [
+          'official-window-annotation:v1',
+          data.account.id,
+          data.worker.id,
+          data.message_id,
+          providerMessageId?.trim() || data.message_key?.id?.trim() || '',
+        ].join('\0')
+      )
+      .digest('hex');
+    const variant = (
+      (Number.parseInt(digest.slice(16, 17), 16) & 0x3) |
+      0x8
+    ).toString(16);
+    return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(
+      13,
+      16
+    )}-${variant}${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
   }
 }

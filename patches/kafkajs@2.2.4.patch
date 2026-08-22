@@ -1,0 +1,28 @@
+diff --git a/src/network/requestQueue/index.js b/src/network/requestQueue/index.js
+--- a/src/network/requestQueue/index.js
++++ b/src/network/requestQueue/index.js
+@@ -311,13 +311,15 @@ module.exports = class RequestQueue extends EventEmitter {
+     // we will anyways check the queue when one of them gets fulfilled.
+-    let scheduleAt = this.throttledUntil - Date.now()
+-    if (!this.throttleCheckTimeoutId) {
+-      if (this.pending.length > 0) {
+-        scheduleAt = scheduleAt > 0 ? scheduleAt : CHECK_PENDING_REQUESTS_INTERVAL
+-      }
+-      this.throttleCheckTimeoutId = setTimeout(() => {
+-        this.throttleCheckTimeoutId = null
+-        this.checkPendingRequests()
+-      }, scheduleAt)
++    if (this.throttleCheckTimeoutId || this.pending.length === 0) {
++      return
+     }
++
++    const throttleDelay = this.throttledUntil - Date.now()
++    const scheduleAt =
++      throttleDelay > 0 ? throttleDelay : CHECK_PENDING_REQUESTS_INTERVAL
++
++    this.throttleCheckTimeoutId = setTimeout(() => {
++      this.throttleCheckTimeoutId = null
++      this.checkPendingRequests()
++    }, scheduleAt)
+   }
+ }

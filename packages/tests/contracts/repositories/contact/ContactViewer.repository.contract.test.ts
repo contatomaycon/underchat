@@ -124,6 +124,7 @@ describe('ContactViewerRepository', () => {
       document_partial: '***',
       created_at: '2026-04-21T00:00:00.000Z',
       is_valided: true,
+      validation_origin: 'official_inbound',
       ignore: false,
       user: null,
     }));
@@ -136,6 +137,7 @@ describe('ContactViewerRepository', () => {
     ).resolves.toEqual(
       expect.objectContaining({
         contact_id: 'contact-1',
+        validation_origin: 'official_inbound',
         label_templates: [
           {
             label_template_id: 'label-1',

@@ -3,6 +3,7 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { Static, Type } from '@sinclair/typebox';
 import { viewLinkPreviewResponseSchema } from '../viewLinkPreview/response.schema';
 import { pagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
+import { officialWindowSchema } from '@core/schema/chat/officialWindow.schema';
 
 export const userSchema = Type.Object({
   id: Type.String(),
@@ -284,6 +285,7 @@ export const officialTemplateVariableSchema = Type.Object({
     Type.Literal('BUTTON'),
   ]),
   index: Type.Number(),
+  parameter_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   button_index: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   value: Type.Optional(Type.String()),
   sample: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -326,6 +328,9 @@ export const officialTemplateMessageSchema = Type.Object(
     language: Type.String(),
     category: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    parameter_format: Type.Optional(
+      Type.Union([Type.Literal('POSITIONAL'), Type.Literal('NAMED')])
+    ),
     components: Type.Optional(Type.Array(officialTemplateComponentSchema)),
     variables: Type.Optional(Type.Array(officialTemplateVariableSchema)),
     preview: Type.Optional(officialTemplatePreviewSchema),
@@ -599,11 +604,17 @@ export const listMessageResultSchema = Type.Object({
   has_quoted: Type.Optional(Type.Boolean()),
   hash: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   sent_from_platform: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  delivery_status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  provider_error_code: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  provider_status_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const listMessageResponseSchema = Type.Object({
   ...pagingResponseSchema.properties,
   results: Type.Array(listMessageResultSchema),
+  official_window: Type.Optional(
+    Type.Union([officialWindowSchema, Type.Null()])
+  ),
 });
 
 export type ListMessageResult = Static<typeof listMessageResultSchema>;

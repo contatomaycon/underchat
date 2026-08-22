@@ -106,6 +106,43 @@ describe('ScheduleCreatorRepository', () => {
     ]);
   });
 
+  it('persists the selected chatbot id on schedule creation', async () => {
+    (uuidv7 as unknown as jest.Mock).mockReturnValueOnce('sch-1');
+    const { insert, valuesMocks } = createInsertMock([{ rowCount: 1 }]);
+
+    const repository = new ScheduleCreatorRepository({
+      transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({ insert })
+      ),
+    } as never);
+
+    await expect(
+      repository.createSchedule({
+        account_id: 'acc-1',
+        worker_id: 'wk-1',
+        type: 'chatbot',
+        send_to: EScheduleSendTo.contacts,
+        send_speed: 'low',
+        chatbot_id: 'chatbot-1',
+        message: null,
+        url: null,
+        mimetype: null,
+        duration: null,
+        width: null,
+        height: null,
+        send_date: '2026-04-21T22:00:00.000Z',
+      })
+    ).resolves.toBe('sch-1');
+
+    expect(valuesMocks[0]).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schedule_id: 'sch-1',
+        type: 'chatbot',
+        chatbot_id: 'chatbot-1',
+      })
+    );
+  });
+
   it('creates schedule and scheduled contact groups when send_to is contact_groups', async () => {
     (uuidv7 as unknown as jest.Mock)
       .mockReturnValueOnce('sch-1')

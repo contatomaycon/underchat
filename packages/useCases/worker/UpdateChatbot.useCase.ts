@@ -12,6 +12,7 @@ import {
 import { IChatbotWorkingHoursRule } from '@core/common/interfaces/IChatbotWorkingHours';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { hasOfficialChatbotNodes } from '@core/common/functions/chatbotOfficialNodes';
+import { EChatbotStatus } from '@core/common/enums/EChatbotStatus';
 
 @injectable()
 export class UpdateChatbotUseCase {
@@ -87,7 +88,10 @@ export class UpdateChatbotUseCase {
 
     if (chatbotIdToSave) {
       const chatbotExists = chatbots.some(
-        (c) => c.chatbot_id === chatbotIdToSave && c.type === 'input'
+        (c) =>
+          c.chatbot_id === chatbotIdToSave &&
+          c.type === 'input' &&
+          c.status === EChatbotStatus.active
       );
 
       if (!chatbotExists) {
@@ -97,7 +101,10 @@ export class UpdateChatbotUseCase {
 
     if (outputChatbotIdToSave) {
       const chatbotExists = chatbots.some(
-        (c) => c.chatbot_id === outputChatbotIdToSave && c.type === 'output'
+        (c) =>
+          c.chatbot_id === outputChatbotIdToSave &&
+          c.type === 'output' &&
+          c.status === EChatbotStatus.active
       );
 
       if (!chatbotExists) {
@@ -115,7 +122,10 @@ export class UpdateChatbotUseCase {
       }
 
       const chatbotExists = chatbots.some(
-        (c) => c.chatbot_id === rule.chatbot_id && c.type === 'input'
+        (c) =>
+          c.chatbot_id === rule.chatbot_id &&
+          c.type === 'input' &&
+          c.status === EChatbotStatus.active
       );
 
       if (!chatbotExists) {

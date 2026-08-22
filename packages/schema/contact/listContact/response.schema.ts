@@ -1,5 +1,6 @@
 import { pagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import { Static, Type } from '@sinclair/typebox';
+import { contactValidationStatusSchema } from '../contactValidationStatus.schema';
 
 const labelTemplateSchema = Type.Object({
   label_template_id: Type.String({ format: 'uuid' }),
@@ -31,6 +32,7 @@ export const listContactResponseSchema = Type.Object({
   birthday: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   notes: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  validation_status: Type.Optional(contactValidationStatusSchema),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   responsible_attendant: Type.Optional(
     Type.Union([responsibleAttendantSchema, Type.Null()])

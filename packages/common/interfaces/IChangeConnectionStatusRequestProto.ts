@@ -6,6 +6,7 @@ export interface IChangeConnectionStatusRequestProto {
   phone_connection?: string;
   remove_session?: boolean;
   connection_attempt_id?: string;
+  authorized_connection_epoch?: string;
   debug_trace_id?: string;
   runtime_generation?: number | string;
   warm_pool_id?: string;

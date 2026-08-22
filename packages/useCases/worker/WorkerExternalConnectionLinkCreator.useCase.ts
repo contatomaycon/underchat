@@ -5,6 +5,7 @@ import { EAppEnvironment } from '@core/common/enums/EAppEnvironment';
 import { WorkerService } from '@core/services/worker.service';
 import { WorkerExternalConnectionTokenService } from '@core/services/workerExternalConnectionToken.service';
 import { WorkerExternalConnectionLinkResponse } from '@core/schema/worker/externalConnectionLink/response.schema';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 @injectable()
 export class WorkerExternalConnectionLinkCreatorUseCase {
@@ -34,6 +35,11 @@ export class WorkerExternalConnectionLinkCreatorUseCase {
     if (!worker) {
       throw new Error(t('worker_not_found'));
     }
+
+    if (worker.status?.id === EWorkerStatus.blocked) {
+      throw new Error(t('worker_blocked_by_plan'));
+    }
+
     const updatedAt = (worker as { updated_at?: string | Date | null })
       .updated_at;
 
@@ -45,6 +51,7 @@ export class WorkerExternalConnectionLinkCreatorUseCase {
           updatedAt instanceof Date
             ? updatedAt.toISOString()
             : (updatedAt ?? undefined),
+        external_connection_revision: worker.external_connection_revision,
       });
 
     return {

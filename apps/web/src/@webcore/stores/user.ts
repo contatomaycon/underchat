@@ -595,6 +595,69 @@ export const useUsersStore = defineStore('users', {
       }
     },
 
+    async setUserPlanBlockStatus(
+      userId: string,
+      action: 'block' | 'unblock'
+    ): Promise<boolean> {
+      const isBlock = action === 'block';
+
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/user/${userId}/${action}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ??
+            this.i18n.global.t(
+              isBlock ? 'user_block_error' : 'user_unblock_error'
+            );
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t(
+              isBlock ? 'user_block_success' : 'user_unblock_success'
+            ),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          isBlock ? 'user_block_error' : 'user_unblock_error'
+        );
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async blockUser(userId: string): Promise<boolean> {
+      return this.setUserPlanBlockStatus(userId, 'block');
+    },
+
+    async unblockUser(userId: string): Promise<boolean> {
+      return this.setUserPlanBlockStatus(userId, 'unblock');
+    },
+
     async getUserPhoneDecrypted(userId: string): Promise<string | null> {
       try {
         const response = await axios.get<IApiResponse<ViewUserPhoneResponse>>(
