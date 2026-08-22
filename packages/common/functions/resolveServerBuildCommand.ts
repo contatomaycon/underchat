@@ -25,6 +25,7 @@ export function resolveServerBuildCommand(
       args: [
         'buildx',
         'build',
+        '--progress=plain',
         '--no-cache',
         '--push',
         '-t',

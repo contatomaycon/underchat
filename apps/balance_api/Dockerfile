@@ -60,11 +60,22 @@ FROM deps AS builder
 
 WORKDIR /app
 
-COPY --from=deps /app/node_modules/ .
+COPY --from=deps /app/node_modules ./node_modules
 COPY --from=pruned /app/out/full/ .
 COPY packages ./packages
+COPY scripts/build-command-heartbeat.mjs ./scripts/build-command-heartbeat.mjs
 
-RUN pnpm build:balancer
+RUN rm -rf /app/apps/balance_api/dist && \
+    UNDERCHAT_COMMAND_HEARTBEAT_LABEL=balance-api-typescript-build \
+    UNDERCHAT_COMMAND_HEARTBEAT_INTERVAL_MS=30000 \
+    UNDERCHAT_COMMAND_TIMEOUT_MS=1800000 \
+    node scripts/build-command-heartbeat.mjs -- \
+      node node_modules/typescript/bin/tsc \
+        -p apps/balance_api/tsconfig.json && \
+    node node_modules/tsc-alias/dist/bin/index.js \
+      -p apps/balance_api/tsconfig.json \
+      -f \
+      -fe .js
 RUN mkdir -p /build_locales
 
 COPY packages/plugins/i18next/locales /build_locales

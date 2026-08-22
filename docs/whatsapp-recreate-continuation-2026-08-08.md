@@ -14811,3 +14811,87 @@ foram baixados integralmente com cache-buster. Os 12 downloads retornaram HTTP
 200 e reproduziram exatamente os tamanhos e SHA-256 da tabela. A publicação foi
 concluída às `2026-08-22T13:11:27-03:00`; portanto, os links já configurados no
 painel de Downloads não precisam ser alterados ou salvos novamente.
+
+## 2026-08-22 — Balance API: watchdog ocultava reinstalação implícita no stage de build
+
+### Diagnóstico causal
+
+O job `01a02ada-9afb-755b-8571-1372196fb53c`, versão
+`v20260822190244730`, concluiu Baileys, WWebJS e WhatsMeow, mas o item
+`balance_api` foi encerrado após o executor permanecer dez minutos sem receber
+stdout do comando `docker buildx build --no-cache --push`. Não houve falta de
+disco, inode ou memória, evento de OOM ou falha do Harbor. Três históricos do
+BuildKit reproduziram a interrupção em aproximadamente `11m52s`–`11m56s`,
+sempre no passo que deveria compilar o Balance API.
+
+Os logs completos do BuildKit mostraram que o TypeScript nem chegava a iniciar.
+O stage `deps` instalava corretamente as dependências em `/app/node_modules`,
+mas o stage `builder` usava `COPY --from=deps /app/node_modules/ .`, copiando o
+conteúdo do diretório para `/app` em vez de recriar `/app/node_modules`. Em
+seguida, o Dockerfile copiava novamente o workspace e executava
+`pnpm build:balancer`. No pnpm `11.9.0`, `verifyDepsBeforeRun` tem valor default
+`install`; ao detectar o workspace diferente, o pnpm iniciava silenciosamente
+uma reconciliação completa antes do script. Essa segunda instalação aguardava
+retries de rede para a dependência opcional e incompatível
+`@esbuild/win32-ia32`. O watchdog apenas tornou terminal esse bloqueio; ele não
+era a causa.
+
+A medição fora do Docker confirmou a diferença: o TypeScript do Balance API
+processou `3.428` arquivos e `167.881` linhas TypeScript em aproximadamente
+`9,5 s`, com RSS máximo próximo de `1,29 GiB`, sem pressão de memória. O build
+Turborepo filtrado terminou em aproximadamente `12 s`.
+
+### Correção e proteções
+
+O commit `d19d804ef` tornou o executor observável e cancelável de forma segura:
+
+- `docker buildx` passou a usar `--progress=plain`;
+- o compilador recebeu heartbeat a cada 30 segundos e timeout próprio de 30
+  minutos, separado do watchdog genérico de ausência de saída;
+- o executor passou a iniciar cada comando em grupo de processos próprio e a
+  encerrar o grupo inteiro em cancelamento ou timeout, primeiro com `SIGTERM` e
+  depois com `SIGKILL` se necessário;
+- contratos comprovam heartbeat, preservação do exit code, timeout e remoção da
+  árvore de subprocessos.
+
+O commit `7bf0c4532` eliminou a causa raiz:
+
+- o stage agora copia explicitamente `/app/node_modules` para
+  `./node_modules`;
+- o build invoca diretamente os binários locais de `typescript` e `tsc-alias`,
+  sem passar por `pnpm run` e sem permitir instalação implícita antes do
+  compilador;
+- o diretório `dist` do Balance API é removido antes da compilação limpa;
+- `.playwright-cli`, `output` e `test-results` foram excluídos do contexto
+  Docker. Na estação de desenvolvimento isso reduziu o contexto observado de
+  mais de `8 GiB` para aproximadamente `510 MiB`; o snapshot limpo usado pelo
+  executor permaneceu em `61,34 MiB`.
+
+O watchdog continua existindo como proteção contra travamento real. Nenhum
+timeout global foi simplesmente ampliado para mascarar o problema, e os builds
+dos três workers não foram alterados.
+
+### Validação e aceite operacional
+
+Os contratos direcionados passaram **2 suites / 6 testes**. Também passaram o
+typecheck global, ESLint seletivo, Prettier do contrato, verificação de
+localização dos testes, `git diff --check` e o build filtrado do Balance API.
+Uma imagem Docker local sem cache, limitada ao target `builder`, concluiu em
+`3m08s`; dentro dela, a compilação corrigida levou `10,4 s` e não executou uma
+segunda instalação.
+
+Após o push do código, somente o item falhado `balance_api` do mesmo job foi
+rearmado e publicado novamente na fila `build.version.generate.request`. O
+consumer estava ready, autorizado, com assignments completos e lag zero. O
+retry começou às `18:26:23-03` e concluiu às `18:31:07-03`, total de `4m35s` no
+BuildKit. A instalação única do stage de dependências levou `1m24,8s`, o
+TypeScript levou `10,4s`, o push das layers levou `105,5s` e o manifesto levou
+`1,6s`. Não ocorreu nova consulta a `@esbuild/win32-ia32` após o stage de
+dependências, não houve heartbeat perdido e nenhum processo Docker ficou
+órfão.
+
+O job terminou `completed`, o item `balance_api` terminou `success` e a imagem
+foi persistida como default em
+`harbor.devunder.com/underchat/balance/under-balance-api:v20260822190244730`.
+O manifesto OCI foi lido diretamente do Harbor com HTTP `200`; seu digest é
+`sha256:dfe056fc3b119dd54595b26e5794e942515f589513cc465422f9f408faa4aec6`.

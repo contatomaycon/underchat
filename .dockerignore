@@ -8,6 +8,9 @@ node_modules
 .pnpm-store
 coverage
 **/dist
+output
+test-results
+.playwright-cli
 
 # Worker build/runtime artifacts must never leak from the host into an image.
 # Each worker image compiles its own clean output in its builder stage.

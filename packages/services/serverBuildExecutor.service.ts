@@ -676,6 +676,22 @@ export class ServerBuildExecutorService {
     this.activeProcesses.delete(executionKey);
   }
 
+  private signalChildProcessTree(
+    child: ChildProcessWithoutNullStreams,
+    signal: NodeJS.Signals
+  ): void {
+    if (process.platform !== 'win32' && child.pid) {
+      try {
+        process.kill(-child.pid, signal);
+        return;
+      } catch {}
+    }
+
+    try {
+      child.kill(signal);
+    } catch {}
+  }
+
   private async isCancelRequested(serverBuildJobId: string): Promise<boolean> {
     if (this.cancelRequested.has(serverBuildJobId)) {
       return true;
@@ -718,6 +734,7 @@ export class ServerBuildExecutorService {
       const child = spawn(command, args, {
         cwd: options.cwd,
         env: options.env ?? process.env,
+        detached: process.platform !== 'win32',
         stdio: 'pipe',
       });
 
@@ -739,36 +756,28 @@ export class ServerBuildExecutorService {
           `Command watchdog triggered after ${this.formatDuration(timeoutMs)}: ${timeoutReason}`
         );
 
-        try {
-          child.kill('SIGTERM');
-        } catch {}
+        this.signalChildProcessTree(child, 'SIGTERM');
 
         if (cancelKillTimer) {
           return;
         }
 
         cancelKillTimer = setTimeout(() => {
-          try {
-            child.kill('SIGKILL');
-          } catch {}
+          this.signalChildProcessTree(child, 'SIGKILL');
         }, 5000);
       };
 
       const requestCancellation = (): void => {
         this.cancelRequested.add(serverBuildJobId);
 
-        try {
-          child.kill('SIGTERM');
-        } catch {}
+        this.signalChildProcessTree(child, 'SIGTERM');
 
         if (cancelKillTimer) {
           return;
         }
 
         cancelKillTimer = setTimeout(() => {
-          try {
-            child.kill('SIGKILL');
-          } catch {}
+          this.signalChildProcessTree(child, 'SIGKILL');
         }, 5000);
       };
 
@@ -1003,9 +1012,7 @@ export class ServerBuildExecutorService {
     }
 
     for (const [, child] of activeChildren) {
-      try {
-        child.kill('SIGTERM');
-      } catch {}
+      this.signalChildProcessTree(child, 'SIGTERM');
     }
 
     setTimeout(() => {
@@ -1014,9 +1021,7 @@ export class ServerBuildExecutorService {
       );
 
       for (const [, child] of runningChildren) {
-        try {
-          child.kill('SIGKILL');
-        } catch {}
+        this.signalChildProcessTree(child, 'SIGKILL');
       }
     }, 5000);
 
